@@ -1,0 +1,18 @@
+{
+  "id": "c1537fab",
+  "name": "analyze this",
+  "system_prompt": "You are a knowledgeable personal assistant. Be concise, accurate, and helpful.",
+  "model": "gemma3:12b",
+  "created_at": "2026-03-22T21:20:58.217824",
+  "updated_at": "2026-03-22T21:25:04.014485",
+  "messages": [
+    {
+      "role": "user",
+      "content": "analyze this"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, here's an analysis of Edward O’Neill's resume based on the provided excerpts:\n\n**Overall Impression:**\n\nEdward O’Neill presents as a highly accomplished and driven finance student with a strong academic record and relevant professional experience. He demonstrates a clear interest in investment banking and financial modeling.\n\n**Key Strengths & Highlights:**\n\n*   **Academic Excellence:** A 3.93 GPA and selection as a Wall Street Scholar are impressive indicators of his academic abilities (OneillLJ Edward Resume 2025 current.pdf).\n*   **Financial Modeling Skills:** His internship at Von Lehman M&A Advisory (Wildcat Advisory Group) showcases practical experience in developing LBO and DCF financial models, including a full LBO model with a 36% IRR and 4.66x cash-on-cash return (OneillLJ Edward Resume 2025 current.pdf).\n*   **Competition Success:** Winning 1st place in the Wildcat Advisory Group Investment Banking Pitch Competition demonstrates his ability to apply his knowledge and present effectively (OneillLJ Edward Resume 2025 current.pdf).\n*   **International Exposure:** His Accounting Study Abroad Program in London provided valuable exposure to international finance and economic history (OneillLJ Edward Resume 2025 current.pdf).\n*   **Certifications:** He is pursuing Bloomberg Market Concepts (BMC), SIE, and Adventis Financial Modeling Certification (FMC) (OneillLJ Edward Resume 2025 current.pdf).\n*   **Well-Rounded:**  His involvement in community service (5k run and Lourdes Hospital volunteering) and interests (professional boxing/MMA, hiking) suggest a well-rounded personality (OneillLJ Edward Resume 2025 current.pdf).\n\n**Areas for Potential Development (Based on limited information):**\n\n*   **SIE Completion:** The SIE exam is listed as \"in progress.\" Completion would strengthen his credentials.\n\n\n\n**Summary:** Edward appears to be a strong candidate for roles in finance, particularly investment banking or financial analysis."
+    }
+  ]
+}

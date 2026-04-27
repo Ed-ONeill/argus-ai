@@ -1,0 +1,19 @@
+# GPU-accelerated extras — install AFTER requirements.txt
+# Run:  pip install -r requirements-gpu.txt
+#
+# Requires NVIDIA GPU + CUDA 12.x toolkit
+# Download CUDA: https://developer.nvidia.com/cuda-downloads
+
+-r requirements.txt
+
+# FAISS GPU build (replaces faiss-cpu)
+faiss-gpu>=1.8.0
+
+# PyTorch with CUDA support (sentence-transformers will use GPU automatically)
+--index-url https://download.pytorch.org/whl/cu121
+torch>=2.3.0
+torchvision>=0.18.0
+
+# llama-cpp-python with CUDA (for running GGUF models without Ollama)
+# Uncomment if you want direct GGUF inference:
+# llama-cpp-python>=0.2.77  --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121

@@ -1,0 +1,40 @@
+# ── Core LLM backends ─────────────────────────────────────────────────────────
+ollama>=0.2.0                  # Local model serving (Ollama client)
+openai>=1.30.0                 # OpenAI-compatible API client (also works with local servers)
+
+# ── Embeddings & Vector DB ────────────────────────────────────────────────────
+sentence-transformers>=2.7.0   # Local embedding models
+chromadb>=0.5.0                # Local vector database (Phase 5 RAG)
+faiss-cpu>=1.8.0               # Fast ANN search alternative
+
+# ── Document ingestion ────────────────────────────────────────────────────────
+pypdf2>=3.0.0                  # PDF parsing
+python-docx>=1.1.0             # Word document parsing
+beautifulsoup4>=4.12.0         # HTML/web scraping
+feedparser>=6.0.0              # RSS/Atom feed parsing (used by app/feeds.py and api/podcast_feeds.py)
+markdown>=3.6                  # Markdown rendering
+
+# ── Data & utilities ──────────────────────────────────────────────────────────
+pydantic>=2.7.0                # Config management and data validation
+pydantic-settings>=2.3.0       # Settings from .env files
+python-dotenv>=1.0.0           # .env file loading
+rich>=13.7.0                   # Beautiful terminal output / CLI
+tiktoken>=0.7.0                # Token counting
+httpx>=0.27.0                  # Async HTTP client
+
+# ── API server (Phase 7) ──────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# ── Web UI (Phase 8) ──────────────────────────────────────────────────────────
+gradio>=4.36.0
+
+# ── Evaluation (Phase 9) ─────────────────────────────────────────────────────
+rouge-score>=0.1.2
+nltk>=3.8.1
+
+# ── Development ───────────────────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+black>=24.4.0
+ruff>=0.4.0
