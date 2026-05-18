@@ -368,13 +368,20 @@ def generate_market_take(
     Returns "" on failure or when there are fewer than 2 summarised items.
     """
     candidates = [i for i in items if i.summary][:top_n]
+    log.info(
+        "[take] candidates=%d / items=%d  summaries=%d",
+        len(candidates), len(items),
+        sum(1 for i in items if i.summary),
+    )
     if len(candidates) < 2:
+        log.warning("[take] not enough summarised items (%d) — skipping", len(candidates))
         return ""
 
     key = _take_cache_key(candidates)
     if key in _TAKE_CACHE:
-        log.debug("Market take: cache hit")
-        return _TAKE_CACHE[key]
+        cached = _TAKE_CACHE[key]
+        log.info("[take] cache hit  chars=%d  preview=%.80r", len(cached), cached)
+        return cached
 
     model = model_name or settings.ollama_model
     lines = [
@@ -385,16 +392,23 @@ def generate_market_take(
         Message.system(_TAKE_SYSTEM),
         Message.user("Top headlines today:\n" + "\n".join(lines)),
     ]
+    log.info("[take] calling LLM  backend=%s  candidates=%d", settings.llm_backend, len(candidates))
 
     try:
         client = get_client()
         settings.ollama_model = model
-        take = "".join(client.chat(messages, stream=True, temperature=0.3)).strip()
+        # stream=False — simpler error propagation; market take is short (2 sentences)
+        raw = client.chat(messages, stream=False, temperature=0.3)
+        take = (raw or "").strip()
+        log.info("[take] raw response  chars=%d  preview=%.120r", len(take), take)
+        if not take:
+            log.warning("[take] LLM returned empty string — not caching")
+            return ""
         _TAKE_CACHE[key] = take
-        log.debug("Market take generated (%d chars)", len(take))
+        log.info("[take] done  chars=%d", len(take))
         return take
-    except Exception as exc:
-        log.warning("Market take generation failed: %s", exc)
+    except Exception:
+        log.exception("[take] generation failed")
         return ""
 
 

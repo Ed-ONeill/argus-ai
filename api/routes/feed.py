@@ -194,6 +194,11 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         for w in (entry.what_matters_now or [])
     ]
 
+    log.info(
+        "[feed] _build_response  market_take=%s  chars=%d",
+        "EMPTY" if not entry.market_take else "OK",
+        len(entry.market_take),
+    )
     return FeedResponse(
         items=schemas,
         top_stories=TopStoriesSchema(
