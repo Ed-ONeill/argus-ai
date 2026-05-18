@@ -158,7 +158,16 @@ def run_pipeline(
     items = _cap_category(items, "Markets", cap=25, multiplier=2.0)
 
     # ── 3. Summarise new items (cached items return instantly) ─────────────────
-    model = settings.ollama_model
+    # Use active_model (backend-aware) not ollama_model (always the Ollama model name)
+    import os as _os
+    model = settings.active_model
+    log.info(
+        "[bg] LLM config  backend=%s  model=%s  pydantic_key=%s  env_key=%s",
+        settings.llm_backend,
+        model,
+        bool(settings.openai_api_key),
+        bool(_os.environ.get("OPENAI_API_KEY")),
+    )
     result = summarize_items(items, model_name=model)
     t_sum = time.perf_counter()
     log.info(

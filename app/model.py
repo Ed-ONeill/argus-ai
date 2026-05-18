@@ -8,11 +8,10 @@ All backends expose the same interface:
 
 from __future__ import annotations
 
-# rebuild trigger
-
 import logging
+import os
 from abc import ABC, abstractmethod
-from typing import Generator, Iterator
+from typing import Iterator
 
 from app.config import Backend, settings
 
@@ -123,8 +122,43 @@ class OpenAIClient(LLMClient):
             raise ImportError("Install openai: pip install openai")
 
         self._model = settings.active_model
+
+        # Three-layer key resolution so that Railway env vars are always found
+        # even if Pydantic Settings fails to load them for any reason:
+        #   1. Explicit caller arg
+        #   2. Pydantic settings (reads from .env file and env vars)
+        #   3. Direct os.environ read (bypasses Pydantic entirely)
+        resolved_key = (
+            api_key
+            or settings.openai_api_key
+            or os.environ.get("OPENAI_API_KEY", "")
+        )
+
+        is_openai_backend = settings.llm_backend == Backend.openai
+        key_looks_real    = bool(resolved_key) and resolved_key not in ("not-needed", "sk-...", "your-key-here")
+
+        log.info(
+            "[model] OpenAIClient init  backend=%s  model=%s  api_key_present=%s  "
+            "pydantic_key=%s  env_key=%s  base_url=%s",
+            settings.llm_backend,
+            self._model,
+            key_looks_real,
+            bool(settings.openai_api_key),
+            bool(os.environ.get("OPENAI_API_KEY")),
+            base_url or settings.active_base_url or "(openai default)",
+        )
+
+        if not resolved_key or not key_looks_real:
+            if is_openai_backend:
+                raise ValueError(
+                    "OPENAI_API_KEY is required when LLM_BACKEND=openai. "
+                    "Set the OPENAI_API_KEY environment variable on the Railway backend service."
+                )
+            # Local servers (lmstudio, llamacpp) don't need a real key
+            resolved_key = "not-needed"
+
         self._client = OpenAI(
-            api_key=api_key or settings.openai_api_key or "not-needed",
+            api_key=resolved_key,
             base_url=base_url or settings.active_base_url,
         )
 
@@ -171,6 +205,14 @@ class OpenAIClient(LLMClient):
 def get_client() -> LLMClient:
     """Return the appropriate LLM client based on settings.llm_backend."""
     backend = settings.llm_backend
+    log.info(
+        "[model] get_client  backend=%s  active_model=%s  "
+        "pydantic_openai_key=%s  env_openai_key=%s",
+        backend,
+        settings.active_model,
+        bool(settings.openai_api_key),
+        bool(os.environ.get("OPENAI_API_KEY")),
+    )
     if backend == Backend.ollama:
         return OllamaClient()
     elif backend in (Backend.openai, Backend.lmstudio):

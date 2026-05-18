@@ -135,8 +135,9 @@ def summarize_items(
     if not items:
         return SummarizeResult(0, 0, 0, 0)
 
-    model = model_name or settings.ollama_model
-    settings.ollama_model = model
+    # model_name is informational only when LLM_BACKEND=openai; get_client() uses
+    # settings.active_model (openai_model) regardless of what's passed here.
+    _ = model_name  # accepted for API compat; backend determines actual model
 
     to_summarize = items[:max_items]
     skipped      = max(0, len(items) - max_items)
@@ -284,8 +285,7 @@ def analyze_item_deep(
         changed, why_care, who_wins, watch = _DEEP_CACHE[key]
         return DeepAnalysis(changed, why_care, who_wins, watch)
 
-    model = model_name or settings.ollama_model
-    settings.ollama_model = model
+    _ = model_name  # informational only; backend determines actual model
 
     user_text = f"Headline: {title}"
     if snippet:
@@ -383,7 +383,6 @@ def generate_market_take(
         log.info("[take] cache hit  chars=%d  preview=%.80r", len(cached), cached)
         return cached
 
-    model = model_name or settings.ollama_model
     lines = [
         f"{n}. {(i.summary or i.title)[:120]}"
         for n, i in enumerate(candidates, 1)
@@ -392,11 +391,13 @@ def generate_market_take(
         Message.system(_TAKE_SYSTEM),
         Message.user("Top headlines today:\n" + "\n".join(lines)),
     ]
-    log.info("[take] calling LLM  backend=%s  candidates=%d", settings.llm_backend, len(candidates))
+    log.info(
+        "[take] calling LLM  backend=%s  model=%s  candidates=%d",
+        settings.llm_backend, settings.active_model, len(candidates),
+    )
 
     try:
         client = get_client()
-        settings.ollama_model = model
         # stream=False — simpler error propagation; market take is short (2 sentences)
         raw = client.chat(messages, stream=False, temperature=0.3)
         take = (raw or "").strip()
