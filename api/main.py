@@ -10,6 +10,7 @@ Run:
 
 from __future__ import annotations
 
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,10 +44,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ALLOWED_ORIGINS — comma-separated list of allowed frontend origins.
+# Set this on the Railway backend service to include the deployed frontend URL,
+# e.g. https://argus-frontend.up.railway.app
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
+)
+_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",
-                   "http://localhost:3001", "http://127.0.0.1:3001"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
