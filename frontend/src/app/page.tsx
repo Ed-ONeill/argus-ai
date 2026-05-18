@@ -27,17 +27,13 @@ const PAGE_SIZE = 20;
 export default function HomePage() {
   const [drawerOpen,   setDrawerOpen]   = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelName,    setModelName]    = useState("gemma3:12b");
   const [activeCategory, setActiveCategory] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isFetching, error, params, refresh, updateParams } = useFeed({
-    use_ai: true,
-    model_name: modelName,
-  });
+  const { data, isLoading, isFetching, error, params, refresh, updateParams } = useFeed();
   const { savedIds, toggleSave } = useSaved();
   const { hasNew, cacheAgeSeconds } = useFeedFreshness({
     currentGeneratedAt: data?.generated_at,
@@ -117,8 +113,8 @@ useEffect(() => {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        modelName={modelName}
-        onChange={m => { setModelName(m); updateParams({ model_name: m }); }}
+        modelName=""
+        onChange={() => {}}
       />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7">

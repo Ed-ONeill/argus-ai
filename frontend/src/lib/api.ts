@@ -48,8 +48,6 @@ export async function fetchFeed(params: FeedParams = {}): Promise<FeedResponse> 
     sources:       params.sources       ?? "",
     fresh_only:    params.fresh_only    ?? false,
     force_refresh: params.force_refresh ?? false,
-    use_ai:        params.use_ai        ?? true,
-    model_name:    params.model_name    ?? "",
   });
 }
 
