@@ -8,6 +8,8 @@ All backends expose the same interface:
 
 from __future__ import annotations
 
+# rebuild trigger
+
 import logging
 from abc import ABC, abstractmethod
 from typing import Generator, Iterator
@@ -121,16 +123,8 @@ class OpenAIClient(LLMClient):
             raise ImportError("Install openai: pip install openai")
 
         self._model = settings.active_model
-        resolved_key = api_key or settings.openai_api_key
-        if not resolved_key:
-            if settings.llm_backend == Backend.openai:
-                raise ValueError(
-                    "OPENAI_API_KEY is required when LLM_BACKEND=openai. "
-                    "Set the OPENAI_API_KEY environment variable."
-                )
-            resolved_key = "not-needed"  # local servers (lmstudio, llamacpp) don't need a real key
         self._client = OpenAI(
-            api_key=resolved_key,
+            api_key=api_key or settings.openai_api_key or "not-needed",
             base_url=base_url or settings.active_base_url,
         )
 
