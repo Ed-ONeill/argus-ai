@@ -19,33 +19,77 @@ export interface TickerData {
   history:       number[];   // up to 30 intraday 5-min close values, oldest → newest
 }
 
-async function fetchTicker(key: string, symbol: string, label: string): Promise<TickerData> {
-  // 5-min interval gives intraday history for sparklines + current price
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=5m&range=1d`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0" },
+// Yahoo Finance rotates between query1 and query2 — cloud IPs are often blocked
+// on query1 but accepted on query2. We try query1 first and fall back to query2
+// on any non-2xx or network error so Railway deploys stay resilient.
+const YF_HOSTS = [
+  "https://query1.finance.yahoo.com",
+  "https://query2.finance.yahoo.com",
+];
+
+// Headers that Yahoo Finance accepts from server environments.
+// A bare "Mozilla/5.0" UA is frequently rate-limited; a fuller UA with Accept
+// and Referer headers passes through reliably on cloud IPs.
+const YF_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept":          "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Origin":          "https://finance.yahoo.com",
+  "Referer":         "https://finance.yahoo.com/",
+};
+
+async function fetchFromHost(host: string, symbol: string): Promise<Response> {
+  const url = `${host}/v8/finance/chart/${symbol}?interval=5m&range=1d`;
+  return fetch(url, {
+    headers: YF_HEADERS,
     next: { revalidate: 300 },
   });
+}
 
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+async function fetchTicker(key: string, symbol: string, label: string): Promise<TickerData> {
+  let lastError: Error = new Error("no hosts tried");
 
-  const json   = await res.json();
-  const result = json?.chart?.result?.[0];
-  if (!result) throw new Error("No result");
+  for (const host of YF_HOSTS) {
+    let res: Response;
+    try {
+      res = await fetchFromHost(host, symbol);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(`[market-data] ${key} network error on ${host}:`, lastError.message);
+      continue;
+    }
 
-  const meta          = result.meta;
-  const price         = meta.regularMarketPrice as number;
-  const previousClose = (meta.chartPreviousClose ?? meta.previousClose) as number;
-  const change        = price - previousClose;
-  const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
+    if (!res.ok) {
+      lastError = new Error(`HTTP ${res.status}`);
+      console.error(`[market-data] ${key} ${lastError.message} from ${host}`);
+      continue;
+    }
 
-  // Extract sparkline: last 30 non-null intraday close prices
-  const rawCloses = (result.indicators?.quote?.[0]?.close ?? []) as (number | null)[];
-  const history   = rawCloses
-    .filter((v): v is number => v !== null && isFinite(v))
-    .slice(-30);
+    const json   = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) {
+      lastError = new Error("no chart result in response");
+      console.error(`[market-data] ${key} ${lastError.message} from ${host}`);
+      continue;
+    }
 
-  return { key, label, price, change, changePercent, history };
+    const meta          = result.meta;
+    const price         = meta.regularMarketPrice as number;
+    const previousClose = (meta.chartPreviousClose ?? meta.previousClose) as number;
+    const change        = price - previousClose;
+    const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
+
+    const rawCloses = (result.indicators?.quote?.[0]?.close ?? []) as (number | null)[];
+    const history   = rawCloses
+      .filter((v): v is number => v !== null && isFinite(v))
+      .slice(-30);
+
+    return { key, label, price, change, changePercent, history };
+  }
+
+  throw lastError;
 }
 
 export async function GET() {
@@ -56,6 +100,9 @@ export async function GET() {
   const data: Record<string, TickerData | null> = {};
   for (let i = 0; i < TICKERS.length; i++) {
     const r = results[i];
+    if (r.status === "rejected") {
+      console.error(`[market-data] ${TICKERS[i].key} failed all hosts:`, r.reason);
+    }
     data[TICKERS[i].key] = r.status === "fulfilled" ? r.value : null;
   }
 

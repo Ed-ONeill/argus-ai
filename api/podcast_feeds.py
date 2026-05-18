@@ -315,8 +315,8 @@ _MIN_SIGNAL_FOR_DEFAULT_TOPIC: dict[int, int] = {
 #  Age bracket edges (hours):
 _FRESH_STRONG_H   =  24   # ≤ 24h   → strong boost
 _FRESH_MODERATE_H =  48   # ≤ 48h   → moderate boost
-_FRESH_NEUTRAL_H  =  96   # ≤ 4d    → neutral — "current" window (extended from 72h/3d)
-_FRESH_WEAK_H     = 240   # ≤ 10d   → mild penalty (extended from 168h/7d)
+_FRESH_NEUTRAL_H  =  72   # ≤ 3d    → neutral — "current" window (tightened from 96h/4d)
+_FRESH_WEAK_H     = 168   # ≤ 7d    → mild penalty (tightened from 240h/10d)
 #                          # > 10d   → stale multiplier
 #
 #  Multipliers applied at each bracket:
@@ -398,10 +398,10 @@ _MIN_SCORE_BY_TOPIC: dict[str, int] = {
 # hard wall so stale episodes never appear in time-sensitive sections.
 SECTION_FRESHNESS_CAPS: dict[str, int] = {
     "featured":  72,    # Featured hero: hard 72h max (unchanged)
-    "trending":  96,    # Trending Now: 4 days (loosened from 72h)
-    "quick":     96,    # Quick Listens: 4 days (loosened from 72h)
+    "trending":  72,    # Trending Now: 3 days (tightened from 96h — keeps rail actually fresh)
+    "quick":     96,    # Quick Listens: 4 days (unchanged)
     "deep":     168,    # Deep Dives: 7 days (unchanged)
-    "latest":   168,    # Latest Episodes: 7 days (loosened from 4d)
+    "latest":   168,    # Latest Episodes: 7 days (unchanged)
 }
 
 # ── Category balancing for the All-tab pool ───────────────────────────────────
@@ -421,7 +421,7 @@ MAX_PER_TOPIC_ALL: dict[str, int] = {
 # ── Show diversity cap ────────────────────────────────────────────────────────
 # Max episodes from the same show in a single All-tab API response.
 # Prevents one prolific daily show (e.g. WSJ What's News) from dominating.
-MAX_PER_SHOW = 3    # raised from 2
+MAX_PER_SHOW = 2    # 2 per show prevents daily briefing shows from taking 3 slots each
 
 # ── Fallback behavior ─────────────────────────────────────────────────────────
 # When the live API returns nothing, the frontend may fall back to mock data.

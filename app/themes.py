@@ -94,6 +94,11 @@ def select_what_matters_now(
     """
     Score all clusters, sort descending, return the top-n as WhatMattersNowItems.
     Mutates cluster.cluster_score in-place for downstream use by the API layer.
+
+    Duplicate-label guard: if two clusters would produce the same wmn_label (e.g.
+    both fall back to "Market Volatility" when the LLM is unavailable), the lower-
+    ranked duplicate is skipped and the next distinct cluster is used instead.
+    This prevents visually identical cards in the What Matters Now row.
     """
     if not clusters:
         return []
@@ -106,16 +111,28 @@ def select_what_matters_now(
     ]
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    result: list[WhatMattersNowItem] = []
-    for rank, (s, cluster) in enumerate(scored[:n], start=1):
+    result:      list[WhatMattersNowItem] = []
+    seen_labels: set[str]                 = set()
+    rank = 1
+
+    for s, cluster in scored:
+        if len(result) >= n:
+            break
         cluster.cluster_score = round(s, 4)
+        label = _generate_wmn_label(cluster)
+        if label in seen_labels:
+            log.debug("[wmn] skipping duplicate label %r (cluster %s)", label, cluster.id)
+            continue
+        seen_labels.add(label)
         result.append(WhatMattersNowItem(
             rank=rank,
             cluster=cluster,
             reason=_make_reason(cluster),
             thesis=_make_thesis(cluster),
-            wmn_label=_generate_wmn_label(cluster),
+            wmn_label=label,
         ))
+        rank += 1
+
     return result
 
 
@@ -267,24 +284,31 @@ def _is_valid_wmn_label(label: str) -> bool:
 def _fallback_wmn_label(cluster: StoryCluster) -> str:
     """
     Category/asset-aware heuristic fallback — produces a clean market-facing label
-    without relying on the template generator that can produce article fragments.
+    without relying on the LLM when it is unavailable.
+
+    For Markets clusters the generic "Market Volatility" is used only as a last
+    resort. We first try to derive a specific label from the primary story's
+    entities and title nouns, producing labels like "Yield Surge", "Oil Pressure",
+    or "Dollar Shift" that distinguish otherwise similar clusters.
     """
     p   = cluster.primary
     cat = getattr(p, "category", "")
 
-    # Look for an asset-class entity that signals the market area
+    # Priority 1: asset-class entity (rates/FX/commodities) paired with a
+    # financial noun from the title — most specific possible fallback.
     asset_ents = [
         e for e in getattr(p, "affected_entities", [])
         if e in (_FX | _RATES | _COMMODITIES)
     ]
     lead_asset = asset_ents[0] if asset_ents else ""
 
-    # Look for a high-value financial noun in the title
     title_lower = (getattr(p, "title", "") or "").lower()
     noun = ""
-    for candidate in ("Risk", "Outlook", "Demand", "Supply", "Pressure",
+    for candidate in ("Surge", "Rally", "Selloff", "Crash", "Correction",
+                       "Risk", "Outlook", "Demand", "Supply", "Pressure",
                        "Contagion", "Crisis", "Pivot", "Shift", "Volatility",
-                       "Default", "Inflation", "Tariff", "Sanctions", "Rally"):
+                       "Default", "Inflation", "Tariff", "Sanctions", "Squeeze",
+                       "Widening", "Tightening", "Reversal", "Breakout"):
         if candidate.lower() in title_lower:
             noun = candidate
             break
@@ -292,9 +316,28 @@ def _fallback_wmn_label(cluster: StoryCluster) -> str:
     if lead_asset and noun:
         return f"{lead_asset} {noun}"
     if lead_asset and cat:
-        return f"{lead_asset} {cat}"
+        return f"{lead_asset} {_FALLBACK_DYNAMICS.get(cat, cat)}"
     if noun and cat:
         return f"{cat} {noun}"
+
+    # Priority 2: for Markets clusters, try to extract a leading subject noun
+    # from the title (oil/stocks/yields etc.) so sibling Markets clusters get
+    # distinct labels rather than all landing on "Market Volatility".
+    if cat == "Markets":
+        _MARKET_SUBJECTS = [
+            ("oil", "Oil Move"), ("brent", "Oil Move"), ("crude", "Oil Move"),
+            ("gold", "Gold Move"), ("copper", "Copper Move"),
+            ("bitcoin", "Crypto Move"), ("crypto", "Crypto Move"),
+            ("yield", "Yield Move"), ("treasury", "Treasury Move"),
+            ("bond", "Bond Move"), ("dollar", "Dollar Move"),
+            ("nasdaq", "Nasdaq Move"), ("s&p", "Equity Move"),
+            ("stock", "Equity Move"), ("equit", "Equity Move"),
+        ]
+        for keyword, label in _MARKET_SUBJECTS:
+            if keyword in title_lower:
+                return label
+        # Only use the generic fallback when no subject can be identified
+        return "Market Volatility"
 
     return _FALLBACK_DYNAMICS.get(cat, "Market Development")
 

@@ -56,6 +56,49 @@ WARM_TARGETS: list[tuple[str, str, bool]] = [
 ]
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _cap_category(
+    items: list,
+    category: str,
+    cap: int,
+    multiplier: float,
+) -> list:
+    """
+    Soft-cap the number of items in `category`.
+
+    The ceiling is max(cap, multiplier × mean_count_of_other_categories).
+    Items are already sorted strongest-first; the cap drops the tail only.
+    """
+    other_counts = {}
+    for i in items:
+        c = i.category
+        if c != category:
+            other_counts[c] = other_counts.get(c, 0) + 1
+
+    if other_counts:
+        mean_other = sum(other_counts.values()) / len(other_counts)
+        ceiling    = max(cap, int(multiplier * mean_other))
+    else:
+        ceiling = cap
+
+    result:   list = []
+    cat_seen: int  = 0
+    for i in items:
+        if i.category == category:
+            if cat_seen >= ceiling:
+                continue
+            cat_seen += 1
+        result.append(i)
+
+    if cat_seen > ceiling:   # shouldn't happen, but log if it does
+        log.debug("[bg] _cap_category: trimmed %s from %d → %d", category, cat_seen, ceiling)
+    else:
+        log.debug("[bg] _cap_category: %s kept %d / ceiling %d", category, cat_seen, ceiling)
+
+    return result
+
+
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
 def run_pipeline(
@@ -106,6 +149,14 @@ def run_pipeline(
         for src, msg in errors.items():
             log.debug("[bg] source error [%s]: %s", src, msg)
 
+    # ── 2b. Markets soft cap ──────────────────────────────────────────────────
+    # 4 of 11 sources are Markets-tier, so Markets items often outnumber every
+    # other category combined.  We cap Markets at max(25, 2× the average count
+    # of every non-Markets category) so the pool fed into top_stories and WMN
+    # selection stays balanced.  Items are already sorted strongest-first, so
+    # the cap drops the weakest Markets items only.
+    items = _cap_category(items, "Markets", cap=25, multiplier=2.0)
+
     # ── 3. Summarise new items (cached items return instantly) ─────────────────
     model = settings.ollama_model
     result = summarize_items(items, model_name=model)
@@ -142,26 +193,64 @@ def run_pipeline(
     debug_log: list[str] = []
     top = _select_top_stories(items, debug_log=debug_log)
 
-    # Audit header (mirrors api/routes/feed.py)
-    from app.feeds import source_breakdown as _sb
+    # ── Audit block ────────────────────────────────────────────────────────────
+    from app.feeds import category_breakdown as _cb, source_breakdown as _sb
+    from datetime  import timezone as _tz
+
+    _now      = datetime.now(timezone.utc)
     _min_q    = 40
-    ma_total  = sum(1 for i in items if i.category == "M&A")
-    co_total  = sum(1 for i in items if i.category == "Company")
-    ma_qual   = sum(1 for i in items if i.category == "M&A"     and i.signal_score >= _min_q)
-    co_qual   = sum(1 for i in items if i.category == "Company" and i.signal_score >= _min_q)
-    src_cnts  = _sb(items)
-    debug_log.insert(0,
+    _cat_cnts = _cb(items)   # {category: count} sorted by count desc
+    _src_cnts = _sb(items)
+
+    # Age histogram — buckets: 0–6h, 6–24h, 24–48h, 48h+
+    _age_hist: dict[str, int] = {"0-6h": 0, "6-24h": 0, "24-48h": 0, "48h+": 0}
+    for _i in items:
+        if _i.published_dt:
+            _ah = (_now - _i.published_dt).total_seconds() / 3600
+            if   _ah <=  6: _age_hist["0-6h"]   += 1
+            elif _ah <= 24: _age_hist["6-24h"]   += 1
+            elif _ah <= 48: _age_hist["24-48h"]  += 1
+            else:           _age_hist["48h+"]    += 1
+
+    # Per-category qualified count (signal_score >= _min_q)
+    _qual = {c: sum(1 for i in items if i.category == c and i.signal_score >= _min_q)
+             for c in _cat_cnts}
+
+    # WMN labels
+    _wmn_labels = [w.wmn_label for w in wmn]
+
+    # Top-stories slot summary
+    _slot_map = {
+        "Top Deal":          "top_deal",
+        "Top Macro Story":   "top_macro",
+        "Top Single Name":   "top_single",
+        "Top Price Move":    "top_price",
+        "Top Policy / Risk": "top_policy",
+    }
+    _slots = {
+        abbr: (top[slot].title[:45] if top.get(slot) else "EMPTY")
+        for slot, abbr in _slot_map.items()
+    }
+
+    debug_log.insert(0, (
         f"AUDIT | total={len(items)} promo_excluded={promo_excluded} | "
-        f"M&A total={ma_total} qualified={ma_qual} | "
-        f"Company total={co_total} qualified={co_qual} | "
-        f"sources: {', '.join(f'{s}={sum(src_cnts[s].values())}' for s in sorted(src_cnts))}"
-    )
+        f"age={_age_hist} | "
+        f"categories={_cat_cnts} | "
+        f"qualified(≥{_min_q})={_qual} | "
+        f"wmn={_wmn_labels} | "
+        f"slots={_slots} | "
+        f"sources: {', '.join(f'{s}={sum(_src_cnts[s].values())}' for s in sorted(_src_cnts))}"
+    ))
 
     t_end = time.perf_counter()
     log.info(
         "[bg] pipeline DONE in %.2fs  top_stories=%s",
         t_end - t0,
         {k: (v.title[:50] if v else None) for k, v in top.items()},
+    )
+    log.info(
+        "[bg] AUDIT categories=%s  age=%s  wmn=%s",
+        _cat_cnts, _age_hist, _wmn_labels,
     )
 
     return ProcessedFeed(
