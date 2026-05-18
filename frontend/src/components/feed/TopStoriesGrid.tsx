@@ -89,9 +89,7 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      initial={{ opacity: 0, y: 12, boxShadow: slotShadow(index, color) }}
+           initial={{ opacity: 0, y: 12, boxShadow: slotShadow(index, color) }}
       animate={{ opacity: 1,  y: 0,  boxShadow: slotShadow(index, color),
                  transition: { delay: index * 0.07, duration: 0.28, ease: "easeOut" } }}
       whileHover={{ y: -2, boxShadow: `0 6px 20px ${color}22, 0 2px 6px rgba(0,0,0,0.07)`,

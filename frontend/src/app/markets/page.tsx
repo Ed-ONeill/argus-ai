@@ -184,7 +184,7 @@ function deriveKeyAssets(
     if (!t) continue;
 
     const isRelevant =
-      def.forCats.includes(p.category) ||
+      (def.forCats as readonly string[]).includes(p.category) ||
       def.keywords.some(k => haystack.includes(k));
     if (!isRelevant) continue;
 

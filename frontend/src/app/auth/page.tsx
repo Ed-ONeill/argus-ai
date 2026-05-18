@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -11,6 +11,14 @@ import { useAuth } from "@/context/AuthContext";
 type Tab = "signin" | "signup";
 
 export default function AuthPage() {
+  return (
+    <Suspense>
+      <AuthPageInner />
+    </Suspense>
+  );
+}
+
+function AuthPageInner() {
   const [tab,      setTab]      = useState<Tab>("signin");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
