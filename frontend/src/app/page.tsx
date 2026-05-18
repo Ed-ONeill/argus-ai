@@ -81,6 +81,12 @@ useEffect(() => {
       "| visible:", allClusters.length,
     );
   }
+  // Today's Take diagnostic — log the exact value so we can confirm it arrives
+  console.log(
+    "[feed page] market_take:",
+    data === undefined ? "(no data yet)" : JSON.stringify(data.market_take),
+    "| isLoading:", isLoading,
+  );
 }, [data, error, isLoading, activeCategory, allClusters.length]);
 
   const visibleClusters = allClusters.slice(0, visibleCount);
@@ -119,7 +125,7 @@ useEffect(() => {
 
         {/* ── Today's Take hero ──────────────────────────────────── */}
         <TodaysTake
-          text={data?.market_take ?? ""}
+          text={data?.market_take}
           isLoading={isLoading}
         />
 

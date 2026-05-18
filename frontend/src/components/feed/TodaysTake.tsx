@@ -4,12 +4,20 @@ import { Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface TodaysTakeProps {
-  text:      string;
+  // undefined  → data not yet received (API call in flight or no data at all)
+  // ""         → data received but market_take is empty (backend still generating)
+  // string     → ready to render
+  text:      string | undefined;
   isLoading: boolean;
 }
 
 export function TodaysTake({ text, isLoading }: TodaysTakeProps) {
-  if (!text && !isLoading) return null;
+  console.log("[TodaysTake] text:", JSON.stringify(text), "| isLoading:", isLoading);
+
+  // Only bail out when we have NO data at all and are not loading.
+  // An empty string means the backend responded but the take isn't ready yet —
+  // keep the section mounted so it appears as soon as the content arrives.
+  if (text === undefined && !isLoading) return null;
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric",
@@ -52,12 +60,19 @@ export function TodaysTake({ text, isLoading }: TodaysTakeProps) {
 
         {/* ── Body — constrained to readable width ─────── */}
         <div className="max-w-[640px]">
-          {isLoading ? (
+          {isLoading || text === undefined ? (
             <div className="space-y-2 py-0.5">
               <div className="h-[15px] bg-white/10 rounded animate-pulse w-full" />
               <div className="h-[15px] bg-white/10 rounded animate-pulse w-5/6" />
               <div className="h-[15px] bg-white/10 rounded animate-pulse w-2/3" />
             </div>
+          ) : text === "" ? (
+            <p
+              className="text-[14.5px] text-white/50 italic"
+              style={{ lineHeight: "1.58" }}
+            >
+              Generating today&apos;s brief…
+            </p>
           ) : (
             <p
               className="text-[14.5px] text-white"
