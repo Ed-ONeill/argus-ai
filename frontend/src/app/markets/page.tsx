@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  BarChart2, TrendingUp, TrendingDown, Minus, AlertCircle,
+  BarChart2, TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle,
   Activity, Zap, ArrowUpRight, ArrowDownRight, X, Target,
 } from "lucide-react";
 import { cn, catColor } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useMarketData } from "@/hooks/useMarketData";
 import { ClusterStream } from "@/components/feed/ClusterStream";
-import type { StoryCluster, FeedItem, WhatMattersNowItem } from "@/lib/types";
+import type { StoryCluster, FeedItem, WhatMattersNowItem, MarketBrief } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
 
 
@@ -809,6 +809,45 @@ function TopMovers({
 }
 
 
+// ── Regime banner ─────────────────────────────────────────────────────────────
+
+const REGIME_PILLS: Record<string, { label: string; cls: string; Icon: React.FC<{ size?: number }> }> = {
+  "Risk-Off Hawkish":    { label: "Risk-Off · Hawkish",    cls: "bg-red-50 text-red-700 border-red-200",        Icon: TrendingDown  },
+  "Risk-Off Neutral":    { label: "Risk-Off · Neutral",    cls: "bg-orange-50 text-orange-700 border-orange-200", Icon: TrendingDown  },
+  "Risk-On Dovish":      { label: "Risk-On · Dovish",      cls: "bg-emerald-50 text-emerald-700 border-emerald-200", Icon: TrendingUp },
+  "Risk-On Neutral":     { label: "Risk-On · Neutral",     cls: "bg-blue-50 text-blue-700 border-blue-200",      Icon: TrendingUp    },
+  "Stagflationary":      { label: "Stagflationary",        cls: "bg-amber-50 text-amber-700 border-amber-200",   Icon: AlertTriangle },
+  "Neutral/Consolidating": { label: "Neutral",             cls: "bg-slate-50 text-slate-600 border-slate-200",   Icon: Minus         },
+};
+
+function RegimeBanner({ brief }: { brief: MarketBrief }) {
+  const cfg = REGIME_PILLS[brief.market_regime] ?? REGIME_PILLS["Neutral/Consolidating"];
+  const { Icon } = cfg;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="flex items-center gap-3 rounded-xl border border-edge bg-surface px-4 py-2.5 mb-5"
+    >
+      <span className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] font-bold border shrink-0",
+        cfg.cls,
+      )}>
+        <Icon size={10} />
+        {cfg.label}
+      </span>
+      <p className="text-[12px] text-ink-secondary leading-snug flex-1 min-w-0 line-clamp-1">
+        {brief.primary_driver}
+      </p>
+      <span className="text-[10px] font-medium text-ink-muted tabular-nums shrink-0">
+        {brief.confidence}% confidence
+      </span>
+    </motion.div>
+  );
+}
+
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function SectionHeader({ label, icon }: { label: string; icon?: React.ReactNode }) {
@@ -914,9 +953,14 @@ export default function MarketsPage() {
           </span>
         )}
       </div>
-      <p className="text-sm text-ink-secondary mb-5">
+      <p className="text-sm text-ink-secondary mb-4">
         Macro, equities, rates, and global market moves.
       </p>
+
+      {/* Regime banner — shown when structured brief is available */}
+      {data?.market_brief && !isLoading && (
+        <RegimeBanner brief={data.market_brief} />
+      )}
 
       {/* 1. Market Snapshot */}
       <div className="mb-0">

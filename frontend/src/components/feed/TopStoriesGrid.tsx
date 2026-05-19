@@ -137,16 +137,28 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
         href={item.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="block text-[12.5px] font-semibold text-ink leading-snug mb-auto
-                   hover:text-accent transition-colors line-clamp-3 pb-2.5"
+        className="block text-[12.5px] font-semibold text-ink leading-snug mb-1.5
+                   hover:text-accent transition-colors line-clamp-2"
       >
         {item.title}
       </a>
+
+      {/* Why it matters — investment thesis visible without clicking */}
+      {item.why_it_matters ? (
+        <p className="text-2xs text-ink-secondary/70 leading-relaxed line-clamp-2 mb-auto pb-2">
+          {item.why_it_matters}
+        </p>
+      ) : (
+        <div className="mb-auto pb-2.5" />
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 pt-2 border-t border-edge/50">
         <span className="text-2xs text-ink-secondary/70 truncate leading-none">
           {item.source}
+          {item.published && (
+            <span className="text-ink-muted/60 ml-1">· {item.published}</span>
+          )}
         </span>
         <div className="flex items-center gap-1 shrink-0">
           {impact && (

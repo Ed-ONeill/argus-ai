@@ -21,6 +21,8 @@ from pathlib import Path
 
 from app.feeds import FeedItem
 from app.clustering import StoryCluster, WhatMattersNowItem
+from app.summarizer import MarketBrief
+from app.sectors import SectorData
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +47,10 @@ class ProcessedFeed:
     # old pickle files deserialise without error)
     clusters:         list[StoryCluster]       = field(default_factory=list)
     what_matters_now: list[WhatMattersNowItem] = field(default_factory=list)
+    # Structured brief (added in Phase 1 upgrade — None means not yet generated)
+    market_brief:     MarketBrief | None       = None
+    # Sector intelligence (added in Sectors phase — None until first pipeline run)
+    sector_data:      SectorData | None        = None
 
 
 class ProcessedFeedCache:
@@ -110,6 +116,10 @@ class ProcessedFeedCache:
                         feed.clusters = []
                     if not hasattr(feed, "what_matters_now"):
                         feed.what_matters_now = []
+                    if not hasattr(feed, "market_brief"):
+                        feed.market_brief = None
+                    if not hasattr(feed, "sector_data"):
+                        feed.sector_data = None
                     self._store[key] = feed
                     age = (datetime.now(timezone.utc) - feed.generated_at).total_seconds()
                     log.info(

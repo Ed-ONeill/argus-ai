@@ -122,6 +122,7 @@ useEffect(() => {
         {/* ── Today's Take hero ──────────────────────────────────── */}
         <TodaysTake
           text={data?.market_take}
+          brief={data?.market_brief}
           isLoading={isLoading}
         />
 

@@ -15,8 +15,10 @@ All results are cached in-memory so repeat refreshes within a session are instan
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from app.config import settings
@@ -47,12 +49,12 @@ _DEEP_CACHE: dict[str, tuple[str, str, str, str]] = {}
 _TAKE_CACHE: dict[str, str] = {}
 
 _TAKE_SYSTEM = """\
-You are a market analyst writing for institutional investors. Write exactly 2 sentences. No preamble, no labels.
+You are the head of macro strategy at a top-tier multi-strategy hedge fund. Write exactly 2 sentences. No labels, no headers.
 
-Sentence 1: State the dominant market catalyst right now and its direct effect on prices or credit.
-Sentence 2: State the clearest near-term risk or opportunity this creates, and for which asset class.
+Sentence 1: Name the single dominant catalyst, state what instrument or rate it moved and by how much (if available), and explain the transmission mechanism in one clause.
+Sentence 2: State the clearest near-term positioning implication — direction, specific instrument, and the one event that would invalidate the thesis.
 
-Rules: Name specifics — instruments, sectors, figures. Cut all filler ("as investors digest", "amid uncertainty", "it is worth noting", "market participants"). Plain declarative sentences only.\
+Banned words and phrases: "as investors digest", "amid uncertainty", "it is worth noting", "market participants", "could", "may", "might", "suggests", "indicates", "potential", "appears to", "faces headwinds". Write declarative sentences only. Name instruments, sectors, and figures.\
 """
 
 
@@ -74,38 +76,59 @@ def summary_cache_size() -> int:
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
-You are a concise financial news analyst serving private equity and investment professionals.
-
+You are a sell-side analyst on a cross-asset macro desk writing flash notes for institutional portfolio managers.
 For each numbered news item, write exactly three labelled lines:
 
 ITEM <n>
-SUMMARY: <2 sentences — factual account of what happened>
-WHY IT MATTERS: <1 sentence — the key investment or market implication>
-IMPACT: <directional label — e.g. "Bullish for PE dealmaking", "Bearish for credit spreads", "Neutral — macro uncertainty">
+SUMMARY: <2 sentences — subject + verb + object. Sentence 1: what happened and to which entity. Sentence 2: immediate financial or market consequence.>
+WHY IT MATTERS: <1 sentence — the direct transmission: what this forces, triggers, or compels in a named instrument, sector, or credit market>
+IMPACT: <directional label — start with Bullish/Bearish/Neutral, then "for" + the specific asset class or sector>
 
-Rules:
-- Base everything strictly on the headline and snippet provided.
-- Do not invent facts, statistics, or names not present in the source.
-- Keep each field tight: SUMMARY ≤ 40 words, WHY IT MATTERS ≤ 20 words, IMPACT ≤ 10 words.
-- WHY IT MATTERS must use active, market-driving language. Use verbs like: signals, drives, pressures, forces, triggers, lifts, weighs on, reflects, tightens, widens.
-- Avoid ALL soft or hedging language in WHY IT MATTERS: never use "indicates", "suggests", "potential", "could", "may", "might", "possibly", "faces difficulties", "amid uncertainty", "it is worth noting", or "as investors digest".
-- Name the specific asset class, sector, or instrument that moves — not just "markets" or "investors".
-- Output ITEM blocks only — no preamble, commentary, or closing remarks.\
+Good vs. bad examples (always write like the GOOD column):
+  GOOD SUMMARY: "Apple cut iPhone production guidance 10% citing weak China demand. The revision forces consensus EPS cuts across the semiconductor supply chain."
+  BAD SUMMARY: "Apple announced changes to its production amid challenging market conditions. This could affect the company and related sectors."
+
+  GOOD WHY IT MATTERS: "Forces 10Y UST yields higher, pressuring duration-heavy bond funds and lifting USD against EM currencies."
+  BAD WHY IT MATTERS: "This could indicate potential uncertainty for markets and investors may face difficulties."
+
+  GOOD IMPACT: "Bearish for US investment-grade credit spreads"
+  BAD IMPACT: "Mixed for markets overall"
+
+Hard rules:
+- SUMMARY <= 40 words. Lead with subject. No passive voice. No filler phrases.
+- WHY IT MATTERS <= 20 words. Name one instrument or sector. Active verbs only: forces, pressures, triggers, lifts, weighs on, tightens, widens, drives, signals, compels, reprices.
+- NEVER use: "indicates", "suggests", "potential", "could", "may", "might", "possibly", "faces difficulties", "amid uncertainty", "as investors digest", "market participants", "it is worth noting".
+- IMPACT <= 10 words. Bullish/Bearish/Neutral/Mixed + "for" + specific asset class (not just "markets").
+- Base everything strictly on the headline and snippet. Do not invent facts.
+- Output ITEM blocks only — no preamble, no commentary, no closing remarks.\
 """
 
 _DEEP_SYSTEM_PROMPT = """\
-You are a sell-side analyst writing a desk note for an equity trader.
+You are a sell-side analyst writing a flash desk note for an equity and credit trader.
 Given a news headline and snippet, output EXACTLY these four labelled lines:
 
-WHAT CHANGED: <the specific event, announcement, or development — 1 sentence>
-WHY MARKETS CARE: <how this flows into prices or changes expectations — 1 sentence>
-WHO WINS / LOSES: <specific companies, sectors, or asset classes with directional view — 1 sentence>
-WHAT TO WATCH: <the next data point, event, or threshold that resolves uncertainty — 1 sentence>
+WHAT CHANGED: <the specific event, announcement, or development — 1 sentence, lead with subject>
+WHY MARKETS CARE: <how this reprices a specific asset or changes positioning — name the instrument and the direction>
+WHO WINS / LOSES: <name specific tickers, sectors, or asset classes with directional view, both sides if possible>
+WHAT TO WATCH: <the next scheduled event, data release, or price level that resolves uncertainty — be specific>
 
-Rules:
-- Be specific: name tickers, sectors, instruments, or figures where relevant.
+Good vs. bad examples:
+  GOOD WHAT CHANGED: "TSMC cut 2025 revenue guidance 8% citing weaker-than-expected AI server demand in H2."
+  BAD WHAT CHANGED: "TSMC announced updates to its revenue expectations for the year ahead."
+
+  GOOD WHY MARKETS CARE: "Forces consensus cuts to semiconductor earnings, widening HY credit spreads and pressuring AI capex cycle stocks."
+  BAD WHY MARKETS CARE: "This could impact technology companies and investors may need to reconsider their positions."
+
+  GOOD WHO WINS / LOSES: "Long: AMD, Intel (beneficiaries of TSMC share loss). Short: ASML, NVDA supply-chain names."
+  BAD WHO WINS / LOSES: "Various companies in the technology sector could be affected in different ways."
+
+  GOOD WHAT TO WATCH: "Q3 earnings call Oct 17; NVDA quarterly guidance Nov 20; ASML order book as leading indicator."
+  BAD WHAT TO WATCH: "Future developments in the market and company announcements going forward."
+
+Hard rules:
+- Name tickers (AAPL), sectors (IG credit, EM equities), instruments (10Y UST, WTI crude), or spreads (HY-IG).
+- Each line <= 30 words. No passive constructions. No hedging language.
 - Base everything strictly on the provided headline and snippet — no invented facts.
-- Each line ≤ 30 words.
 - Output the four labelled lines only — no preamble, no closing remarks.\
 """
 
@@ -416,3 +439,113 @@ def generate_market_take(
 def clear_take_cache() -> None:
     """Clear the Today's Take cache (e.g. for testing)."""
     _TAKE_CACHE.clear()
+
+
+# ── Structured Market Brief ───────────────────────────────────────────────────
+
+@dataclass
+class MarketBrief:
+    """Structured macro intelligence brief — replaces the plain market_take string."""
+    primary_driver:    str
+    market_regime:     str
+    assets_impacted:   list[str] = field(default_factory=list)
+    narrative_shift:   str       = ""
+    trade_implication: str       = ""
+    risk_scenario:     str       = ""
+    confidence:        int       = 65   # 50–95
+
+
+_BRIEF_SYSTEM = """\
+You are the head of cross-asset strategy at a top-tier hedge fund, writing a structured brief for the CIO and portfolio managers.
+From the market headlines provided, produce a structured brief. Output ONLY valid JSON — no markdown fences, no preamble, no explanation.
+
+Required schema:
+{
+  "primary_driver":    "1 sentence — name the catalyst, what instrument or rate it moved (with magnitude if available), and the direct market effect",
+  "market_regime":     "exactly one of: Risk-Off Hawkish | Risk-Off Neutral | Risk-On Dovish | Risk-On Neutral | Stagflationary | Neutral/Consolidating",
+  "assets_impacted":   ["2–4 specific instruments or sectors, e.g. 10Y UST, EM equities, WTI crude, Nvidia"],
+  "narrative_shift":   "1 sentence — how today's flow overturns or reinforces the prior consensus",
+  "trade_implication": "1 sentence starting with long / short / overweight / underweight — name the exact instrument and the reason in one clause",
+  "risk_scenario":     "1 sentence — name the specific event, data print, or policy move that would reverse this thesis",
+  "confidence":        <integer 50–95>
+}
+
+Confidence: 50 = contradictory data, 65 = moderate conviction, 80 = strong consensus, 90–95 = overwhelming alignment.
+Hard rules: Be specific — name instruments, figures, sectors. No hedging language. No filler. No "could", "may", "might", "suggests".\
+"""
+
+_BRIEF_CACHE: dict[str, MarketBrief] = {}
+
+
+def _parse_market_brief(text: str) -> "MarketBrief | None":
+    """Extract and validate JSON from LLM response."""
+    m = re.search(r'\{.*\}', text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+        return MarketBrief(
+            primary_driver    = str(data.get("primary_driver", "")).strip(),
+            market_regime     = str(data.get("market_regime", "Neutral/Consolidating")).strip(),
+            assets_impacted   = [str(a).strip() for a in data.get("assets_impacted", [])[:4]],
+            narrative_shift   = str(data.get("narrative_shift", "")).strip(),
+            trade_implication = str(data.get("trade_implication", "")).strip(),
+            risk_scenario     = str(data.get("risk_scenario", "")).strip(),
+            confidence        = max(50, min(95, int(data.get("confidence", 65)))),
+        )
+    except Exception:
+        return None
+
+
+def generate_market_brief(
+    items: list[FeedItem],
+    top_n: int = 8,
+) -> "MarketBrief | None":
+    """
+    Generate a structured macro intelligence brief from top-scored stories.
+
+    Returns None on failure or when there are fewer than 2 summarised items.
+    Cached by content hash — repeat refreshes with same stories return instantly.
+    """
+    candidates = [i for i in items if i.summary][:top_n]
+    if len(candidates) < 2:
+        log.info("[brief] not enough summarised items (%d) — skipping", len(candidates))
+        return None
+
+    key = _take_cache_key(candidates)   # reuse same hash logic as market take
+    if key in _BRIEF_CACHE:
+        log.info("[brief] cache hit  regime=%s  confidence=%d",
+                 _BRIEF_CACHE[key].market_regime, _BRIEF_CACHE[key].confidence)
+        return _BRIEF_CACHE[key]
+
+    lines = [
+        f"{n}. {(i.summary or i.title)[:120]}"
+        for n, i in enumerate(candidates, 1)
+    ]
+    messages = [
+        Message.system(_BRIEF_SYSTEM),
+        Message.user("Top market headlines today:\n" + "\n".join(lines)),
+    ]
+    log.info(
+        "[brief] calling LLM  backend=%s  model=%s  candidates=%d",
+        settings.llm_backend, settings.active_model, len(candidates),
+    )
+
+    try:
+        client = get_client()
+        raw = client.chat(messages, stream=False, temperature=0.2)
+        brief = _parse_market_brief(raw or "")
+        if brief and brief.primary_driver:
+            _BRIEF_CACHE[key] = brief
+            log.info("[brief] done  regime=%s  confidence=%d  assets=%s",
+                     brief.market_regime, brief.confidence, brief.assets_impacted)
+            return brief
+        log.warning("[brief] parse failed or empty primary_driver  raw=%.120r", raw)
+        return None
+    except Exception:
+        log.exception("[brief] generation failed")
+        return None
+
+
+def clear_brief_cache() -> None:
+    _BRIEF_CACHE.clear()

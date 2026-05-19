@@ -22,9 +22,16 @@ export function ClusterStream({
     <section>
       {/* Section header */}
       <div className="flex items-center gap-3 mb-4">
-        <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink">
-          Live Market Stream
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <motion.span
+            className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"
+            animate={{ opacity: [1, 0.35, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink">
+            Live Market Stream
+          </span>
+        </div>
         {!isLoading && clusters.length > 0 && (
           <span className="text-2xs font-medium text-ink-secondary bg-raised px-2 py-0.5 rounded-full">
             {clusters.length}
@@ -57,24 +64,32 @@ export function ClusterStream({
           className="space-y-2.5"
           initial="hidden"
           animate="visible"
-          variants={{ visible: { transition: { staggerChildren: 0.04 } } }}
+          variants={{ visible: { transition: { staggerChildren: 0.045 } } }}
         >
-          {clusters.map(cluster => (
-            <ClusterCard
+          {clusters.map((cluster, i) => (
+            <motion.div
               key={cluster.id}
-              cluster={cluster}
-              isSaved={savedIds.includes(cluster.id)}
-              onSave={() => onSave(cluster.primary)}
-              isNew={newIds?.has(cluster.id)}
-              isWatched={
-                watchedEntities
-                  ? cluster.primary.affected_entities.some(
-                      e => watchedEntities.has(e.toLowerCase()),
-                    )
-                  : false
-              }
-              watchedEntities={watchedEntities}
-            />
+              custom={i}
+              variants={{
+                hidden:  { opacity: 0, y: 10 },
+                visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" } },
+              }}
+            >
+              <ClusterCard
+                cluster={cluster}
+                isSaved={savedIds.includes(cluster.id)}
+                onSave={() => onSave(cluster.primary)}
+                isNew={newIds?.has(cluster.id)}
+                isWatched={
+                  watchedEntities
+                    ? cluster.primary.affected_entities.some(
+                        e => watchedEntities.has(e.toLowerCase()),
+                      )
+                    : false
+                }
+                watchedEntities={watchedEntities}
+              />
+            </motion.div>
           ))}
         </motion.div>
       )}

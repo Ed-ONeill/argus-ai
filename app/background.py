@@ -32,7 +32,7 @@ def _import_deps():
     """Return all pipeline dependencies (imported lazily to avoid circular imports)."""
     from app.feeds           import FEED_REGISTRY, feed_manager, source_breakdown
     from app.processed_cache import ProcessedFeed, feed_cache, make_cache_key
-    from app.summarizer      import generate_market_take, summarize_items
+    from app.summarizer      import generate_market_take, generate_market_brief, summarize_items
     from app.config          import settings
     from app.top_stories     import _select_top_stories
 
@@ -193,10 +193,24 @@ def run_pipeline(
     t_wmn = time.perf_counter()
     log.info("[bg] WMN done in %.3fs  themes=%d", t_wmn - t_cluster, len(wmn))
 
-    # ── 6. Market take ────────────────────────────────────────────────────────
-    take = generate_market_take(items, model_name=model)
+    # ── 6. Market take + structured brief ────────────────────────────────────
+    take  = generate_market_take(items, model_name=model)
+    brief = generate_market_brief(items)
     t_take = time.perf_counter()
-    log.info("[bg] market take done in %.2fs", t_take - t_wmn)
+    log.info("[bg] market take done in %.2fs  brief=%s", t_take - t_wmn,
+             "OK" if brief else "None")
+
+    # ── 6b. Sector intelligence ───────────────────────────────────────────────
+    from app.sectors import aggregate_sector_intelligence
+    sector_data = aggregate_sector_intelligence(clusters, brief)
+    t_sector = time.perf_counter()
+    log.info(
+        "[bg] sectors done in %.3fs  sectors=%d  industries=%d  rotations=%d",
+        t_sector - t_take,
+        len(sector_data.sectors),
+        len(sector_data.industries),
+        len(sector_data.rotation_signals),
+    )
 
     # ── 7. Top story selection ─────────────────────────────────────────────────
     debug_log: list[str] = []
@@ -266,12 +280,14 @@ def run_pipeline(
         items=items,
         top_stories=top,
         market_take=take,
+        market_brief=brief,
         errors=errors,
         promo_excluded=promo_excluded,
         debug_log=debug_log,
         generated_at=datetime.now(timezone.utc),
         clusters=clusters,
         what_matters_now=wmn,
+        sector_data=sector_data,
     )
 
 

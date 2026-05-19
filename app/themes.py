@@ -152,10 +152,13 @@ def score_cluster(cluster: StoryCluster, now: datetime | None = None) -> float:
         now = datetime.now(timezone.utc)
     p = cluster.primary
 
-    # 1. Recency
+    # 1. Recency — half-life varies by signal strength so breaking strong-signal
+    # stories (major M&A, Fed decisions) stay prominent for longer than opinion pieces.
+    sig = getattr(p, "signal_strength", "medium")
+    half_life = 6.0 if sig == "strong" else 3.0 if sig == "medium" else 2.0
     if getattr(p, "published_dt", None):
         age_h   = (now - p.published_dt).total_seconds() / 3600
-        recency = math.exp(-age_h / 3.0)
+        recency = math.exp(-age_h / half_life)
     else:
         recency = 0.08  # no timestamp → heavily deprioritised
 
@@ -203,7 +206,9 @@ def _cross_asset_score(cluster: StoryCluster) -> float:
         score += 0.20   # deal can ripple across sectors
     # Company defaults to 0 — needs entity breadth to lift score
 
-    # Count distinct asset classes represented in affected entities
+    # Count distinct asset classes — check both extracted entities AND title text
+    # so stories like "Dollar slides as yields fall" get full cross-asset credit
+    # even when the entity extractor missed the asset-class tokens.
     asset_types: set[str] = set()
     for e in getattr(p, "affected_entities", []):
         if e in _FX:
@@ -214,6 +219,28 @@ def _cross_asset_score(cluster: StoryCluster) -> float:
             asset_types.add("commodities")
         elif e.startswith("$") or (len(e) <= 5 and e.isupper() and e not in _BROAD):
             asset_types.add("equity")
+
+    title_lower = (getattr(p, "title", "") or "").lower()
+    if "fx" not in asset_types and re.search(
+        r"\b(dollar|yen|yuan|euro|sterling|pound|fx|currency|forex|dxy|usdx)\b", title_lower
+    ):
+        asset_types.add("fx")
+    if "rates" not in asset_types and re.search(
+        r"\b(yield|yields|rate\s+hike|rate\s+cut|bond|treasury|bund|gilt|duration|credit\s+spread)\b",
+        title_lower,
+    ):
+        asset_types.add("rates")
+    if "commodities" not in asset_types and re.search(
+        r"\b(oil|brent|wti|crude|gold|silver|copper|gas|commodity|commodities|wheat|corn)\b",
+        title_lower,
+    ):
+        asset_types.add("commodities")
+    if "equity" not in asset_types and re.search(
+        r"\b(stock|stocks|equit|nasdaq|s&p|dow|shares|sharemarket|index|indices|earnings)\b",
+        title_lower,
+    ):
+        asset_types.add("equity")
+
     score += min(len(asset_types) * 0.15, 0.30)
 
     # Mixed-category cluster = confirmed multi-asset spillover (e.g. tariff story

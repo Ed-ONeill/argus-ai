@@ -24,10 +24,23 @@ export interface TopStories {
   top_policy_risk:   FeedItem | null;
 }
 
+// ── Structured market brief (Today's Take 2.0) ───────────────────────────────
+
+export interface MarketBrief {
+  primary_driver:    string;
+  market_regime:     string;   // "Risk-Off Hawkish" | "Risk-On Dovish" | etc.
+  assets_impacted:   string[];
+  narrative_shift:   string;
+  trade_implication: string;
+  risk_scenario:     string;
+  confidence:        number;   // 50–95
+}
+
 export interface FeedResponse {
   items:              FeedItem[];
   top_stories:        TopStories;
   market_take:        string;
+  market_brief:       MarketBrief | null;
   total:              number;
   sources:            string[];
   errors:             Record<string, string>;
@@ -35,6 +48,8 @@ export interface FeedResponse {
   // Clustering layer
   clusters:           StoryCluster[];
   what_matters_now:   WhatMattersNowItem[];
+  // Sector intelligence
+  sector_data:        SectorData | null;
   // Cache metadata
   is_stale:           boolean;
   generated_at:       string;   // ISO-8601
@@ -75,6 +90,43 @@ export interface WhatMattersNowItem {
   reason:    string;
   thesis:    string;
   wmn_label: string;
+}
+
+// ── Sector intelligence ───────────────────────────────────────────────────────
+
+export interface SectorIntelligence {
+  name:             string;
+  signal_score:     number;
+  signal_count:     number;
+  impact_sentiment: "bullish" | "bearish" | "neutral" | "mixed";
+  top_entity:       string | null;
+  top_story_title:  string | null;
+  top_story_url:    string | null;
+  regime_alignment: "tailwind" | "headwind" | "neutral";
+}
+
+export interface IndustrySignal {
+  name:         string;
+  sector:       string;
+  signal_score: number;
+  signal_count: number;
+  top_entity:   string | null;
+}
+
+export interface RotationSignal {
+  from_sector: string;
+  to_sector:   string;
+  confidence:  number;
+  reason:      string;
+  pattern:     "risk-off" | "growth-to-value" | "defensive" | "commodity" | "ai-cycle" | string;
+}
+
+export interface SectorData {
+  sectors:          SectorIntelligence[];
+  industries:       IndustrySignal[];
+  rotation_signals: RotationSignal[];
+  dominant_sector:  string | null;
+  generated_at:     string;   // ISO-8601
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────────

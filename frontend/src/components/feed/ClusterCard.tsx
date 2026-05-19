@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ExternalLink, Bookmark, BookmarkCheck, Zap,
-  ChevronDown, Loader2, ChevronRight, Clock,
+  ChevronDown, Loader2, ChevronRight, Clock, Radio,
 } from "lucide-react";
 import { cn, impactStyle, catColor } from "@/lib/utils";
 import { analyzeItemDeep } from "@/lib/api";
@@ -73,6 +73,14 @@ export function ClusterCard({
   const color       = catColor(item.category);
   const score       = Math.round(item.signal_score);
 
+  // Breaking: strong signal + published within last 90 minutes
+  const isBreaking = item.signal_strength === "strong" && (() => {
+    const m = item.published?.match(/^(\d+)(m|h)/);
+    if (!m) return false;
+    const mins = m[2] === "h" ? parseInt(m[1]) * 60 : parseInt(m[1]);
+    return mins <= 90;
+  })();
+
   async function handleAnalyzeToggle() {
     if (analyzed) { setAnalyzed(false); return; }
     setAnalyzed(true);
@@ -110,16 +118,25 @@ export function ClusterCard({
       whileHover={{ y: -1.5, transition: { duration: 0.14, ease: "easeOut" } }}
       className={cn(
         "group bg-surface rounded-xl border transition-all duration-200",
-        item.signal_strength === "strong"
-          ? "border-edge-strong shadow-card-hover hover:shadow-lg"
-          : "border-edge hover:border-edge-strong shadow-card hover:shadow-card-hover",
+        isBreaking
+          ? "border-red-200/70 shadow-card-hover hover:shadow-lg"
+          : item.signal_strength === "strong"
+            ? "border-edge-strong shadow-card-hover hover:shadow-lg"
+            : "border-edge hover:border-edge-strong shadow-card hover:shadow-card-hover",
         item.signal_strength === "weak" && "opacity-90",
         // Watchlist ring
         isWatched && "ring-1 ring-accent/40",
       )}
     >
-      {/* Accent bar */}
-      <div className="h-[2.5px] rounded-t-xl" style={{ background: color }} />
+      {/* Accent bar — thickness signals importance */}
+      <div
+        className={cn(
+          "rounded-t-xl",
+          item.signal_strength === "strong" ? "h-[4px]" :
+          item.signal_strength === "medium" ? "h-[3px]" : "h-[2px]",
+        )}
+        style={{ background: color }}
+      />
 
       <div className="px-4 pt-3.5 pb-4">
 
@@ -142,7 +159,23 @@ export function ClusterCard({
             >
               {item.category}
             </span>
-            {isNew && (
+            {isBreaking && (
+              <motion.span
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full
+                           bg-red-50 text-red-600 border border-red-100"
+              >
+                <motion.span
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  <Radio size={8} />
+                </motion.span>
+                LIVE
+              </motion.span>
+            )}
+            {isNew && !isBreaking && (
               <motion.span
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -154,23 +187,28 @@ export function ClusterCard({
             )}
           </div>
 
-          {/* Signal dot + numeric score + source + time */}
+          {/* Animated score bar + source + time */}
           <div className="flex items-center gap-1.5 ml-auto shrink-0 mt-0.5">
-            <span
-              className={cn(
-                "w-1.5 h-1.5 rounded-full shrink-0",
-                item.signal_strength === "strong" ? "bg-emerald-400" :
-                item.signal_strength === "medium"  ? "bg-amber-400"  : "bg-edge-strong",
-              )}
-              title={`Signal: ${item.signal_strength}`}
-            />
-            <span className={cn(
-              "text-2xs font-bold tabular-nums leading-none",
-              score >= 80 ? "text-emerald-600" :
-              score >= 50 ? "text-amber-600"   : "text-ink-muted",
-            )}>
-              {score}
-            </span>
+            <div className="flex items-center gap-1" title={`Signal: ${item.signal_strength} · ${score}/100`}>
+              <div className="w-10 h-[3px] rounded-full bg-raised overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{
+                    background: score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8",
+                  }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${score}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
+                />
+              </div>
+              <span className={cn(
+                "text-2xs font-bold tabular-nums leading-none",
+                score >= 80 ? "text-emerald-600" :
+                score >= 50 ? "text-amber-600"   : "text-ink-muted",
+              )}>
+                {score}
+              </span>
+            </div>
             <span className="text-2xs text-ink-secondary/75">{item.source}</span>
             <span className="text-2xs text-ink-muted">· {item.published}</span>
           </div>
@@ -229,9 +267,19 @@ export function ClusterCard({
         {/* ── AI summary + expandable desk-note ─────────────────────────────── */}
         {hasSummary && (
           <>
-            <p className="text-xs text-ink-secondary leading-relaxed mb-3">
+            <p className="text-xs text-ink-secondary leading-relaxed mb-2">
               {item.summary}
             </p>
+
+            {/* Why it matters — always visible below summary; hidden inside panel when analysis is open */}
+            {item.why_it_matters && !analyzed && (
+              <p
+                className="text-[11.5px] text-ink-secondary/75 leading-relaxed mb-3 pl-2.5 italic"
+                style={{ borderLeft: `2px solid ${color}30` }}
+              >
+                {item.why_it_matters}
+              </p>
+            )}
 
             {/* Inline desk-note panel */}
             <AnimatePresence initial={false}>

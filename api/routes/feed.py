@@ -25,6 +25,7 @@ from app.config          import settings
 from app.processed_cache import ProcessedFeed, feed_cache, make_cache_key
 from app.background      import refresher, run_pipeline, WARM_TARGETS
 from app.clustering      import StoryCluster, WhatMattersNowItem as _WMNItem
+from app.summarizer      import MarketBrief
 
 from app.top_stories import _select_top_stories
 
@@ -34,6 +35,15 @@ router = APIRouter()
 
 
 # ── Response models ───────────────────────────────────────────────────────────
+
+class MarketBriefSchema(BaseModel):
+    primary_driver:    str
+    market_regime:     str
+    assets_impacted:   list[str]
+    narrative_shift:   str
+    trade_implication: str
+    risk_scenario:     str
+    confidence:        int
 
 class FeedItemSchema(BaseModel):
     id:                str
@@ -95,6 +105,10 @@ class FeedResponse(BaseModel):
     # Clustering layer
     clusters:           list[StoryClusterSchema]
     what_matters_now:   list[WhatMattersNowItemSchema]
+    # Structured intelligence brief (None while being generated for the first time)
+    market_brief:       MarketBriefSchema | None = None
+    # Sector intelligence (None until first pipeline run completes)
+    sector_data:        SectorDataSchema | None = None
     # Cache metadata
     is_stale:           bool
     generated_at:       str
@@ -140,6 +154,41 @@ class WhatMattersNowItemSchema(BaseModel):
     reason:    str
     thesis:    str
     wmn_label: str
+
+
+class SectorIntelligenceSchema(BaseModel):
+    name:             str
+    signal_score:     float
+    signal_count:     int
+    impact_sentiment: str
+    top_entity:       str | None
+    top_story_title:  str | None
+    top_story_url:    str | None
+    regime_alignment: str
+
+
+class IndustrySignalSchema(BaseModel):
+    name:         str
+    sector:       str
+    signal_score: float
+    signal_count: int
+    top_entity:   str | None
+
+
+class RotationSignalSchema(BaseModel):
+    from_sector: str
+    to_sector:   str
+    confidence:  float
+    reason:      str
+    pattern:     str
+
+
+class SectorDataSchema(BaseModel):
+    sectors:          list[SectorIntelligenceSchema]
+    industries:       list[IndustrySignalSchema]
+    rotation_signals: list[RotationSignalSchema]
+    dominant_sector:  str | None
+    generated_at:     str    # ISO-8601
 
 
 class FeedStatusResponse(BaseModel):
@@ -195,10 +244,63 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
     ]
 
     log.info(
-        "[feed] _build_response  market_take=%s  chars=%d",
+        "[feed] _build_response  market_take=%s  market_brief=%s",
         "EMPTY" if not entry.market_take else "OK",
-        len(entry.market_take),
+        "OK" if getattr(entry, "market_brief", None) else "None",
     )
+
+    brief = getattr(entry, "market_brief", None)
+    brief_schema = MarketBriefSchema(
+        primary_driver    = brief.primary_driver,
+        market_regime     = brief.market_regime,
+        assets_impacted   = brief.assets_impacted,
+        narrative_shift   = brief.narrative_shift,
+        trade_implication = brief.trade_implication,
+        risk_scenario     = brief.risk_scenario,
+        confidence        = brief.confidence,
+    ) if brief else None
+
+    sd = getattr(entry, "sector_data", None)
+    sector_schema: SectorDataSchema | None = None
+    if sd is not None:
+        sector_schema = SectorDataSchema(
+            sectors=[
+                SectorIntelligenceSchema(
+                    name             = s.name,
+                    signal_score     = s.signal_score,
+                    signal_count     = s.signal_count,
+                    impact_sentiment = s.impact_sentiment,
+                    top_entity       = s.top_entity,
+                    top_story_title  = s.top_story_title,
+                    top_story_url    = s.top_story_url,
+                    regime_alignment = s.regime_alignment,
+                )
+                for s in sd.sectors
+            ],
+            industries=[
+                IndustrySignalSchema(
+                    name         = i.name,
+                    sector       = i.sector,
+                    signal_score = i.signal_score,
+                    signal_count = i.signal_count,
+                    top_entity   = i.top_entity,
+                )
+                for i in sd.industries
+            ],
+            rotation_signals=[
+                RotationSignalSchema(
+                    from_sector = r.from_sector,
+                    to_sector   = r.to_sector,
+                    confidence  = r.confidence,
+                    reason      = r.reason,
+                    pattern     = r.pattern,
+                )
+                for r in sd.rotation_signals
+            ],
+            dominant_sector = sd.dominant_sector,
+            generated_at    = sd.generated_at.isoformat(),
+        )
+
     return FeedResponse(
         items=schemas,
         top_stories=TopStoriesSchema(
@@ -209,6 +311,8 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             top_policy_risk=_s("Top Policy / Risk"),
         ),
         market_take=entry.market_take,
+        market_brief=brief_schema,
+        sector_data=sector_schema,
         total=len(items),
         sources=sorted({i.source for i in items}),
         category_breakdown=category_breakdown(items),

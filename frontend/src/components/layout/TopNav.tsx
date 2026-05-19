@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   RefreshCw, Settings, Bookmark, BarChart2,
-  Newspaper, Brain, LogIn, LogOut, User, Headphones,
+  Newspaper, Layers, LogIn, LogOut, User, Headphones,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 const NAV_LINKS = [
   { href: "/",        label: "Feed",    icon: Newspaper  },
   { href: "/markets", label: "Markets", icon: BarChart2   },
-  { href: "/analyze", label: "Analyze", icon: Brain       },
+  { href: "/sectors", label: "Sectors", icon: Layers      },
   { href: "/listen",  label: "Listen",  icon: Headphones  },
   { href: "/saved",   label: "Saved",   icon: Bookmark    },
 ] as const;

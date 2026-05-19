@@ -20,6 +20,8 @@ export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  const [primary, ...rest] = items;
+
   return (
     <section className="mb-7">
       {/* Section header */}
@@ -31,8 +33,8 @@ export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
         <span className="h-px flex-1 bg-edge" />
       </div>
 
-      {/* Card row — horizontal scroll on mobile, grid on md+ */}
-      <div className="flex gap-2.5 overflow-x-auto pb-2 md:grid md:grid-cols-3 lg:grid-cols-5 md:overflow-visible md:pb-0 snap-x snap-mandatory">
+      {/* Mobile: horizontal scroll with all cards */}
+      <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden">
         {items.map((item, idx) => (
           <WMNCard
             key={item.cluster.id}
@@ -42,18 +44,123 @@ export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
           />
         ))}
       </div>
+
+      {/* Desktop: primary driver banner + 4-card grid */}
+      <div className="hidden md:flex md:flex-col gap-2.5">
+        {primary && (
+          <PrimaryDriverCard
+            item={primary}
+            onClick={() => scrollToCluster(primary.cluster.id)}
+          />
+        )}
+        {rest.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {rest.map((item, idx) => (
+              <WMNCard
+                key={item.cluster.id}
+                item={item}
+                index={idx + 1}
+                onClick={() => scrollToCluster(item.cluster.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
 
-// ── Theme card ────────────────────────────────────────────────────────────────
+// ── Shared constants ──────────────────────────────────────────────────────────
 
 const DIRECTION_CONFIG = {
   bullish: { label: "↑ Bullish", color: "#10b981" },
   bearish: { label: "↓ Bearish", color: "#ef4444" },
   mixed:   { label: "⟷ Mixed",  color: "#f59e0b" },
 } as const;
+
+function scoreBarColor(score: number): string {
+  return score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8";
+}
+
+
+// ── Primary driver banner (desktop rank-1 card) ───────────────────────────────
+
+function PrimaryDriverCard({
+  item, onClick,
+}: { item: WhatMattersNowItem; onClick: () => void }) {
+  const { cluster, thesis, wmn_label } = item;
+  const p          = cluster.primary;
+  const color      = catColor(p.category);
+  const score      = Math.round(p.signal_score ?? 0);
+  const barColor   = scoreBarColor(score);
+  const sentiment  = classifyImpact(p.impact ?? "");
+  const dirConfig  = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
+  const storyLabel = cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      whileHover={{ y: -1, transition: { duration: 0.14 } }}
+      onClick={onClick}
+      className="w-full bg-surface rounded-xl border border-edge-strong shadow-card-hover text-left overflow-hidden"
+    >
+      <div className="h-[4px] rounded-t-xl" style={{ background: color }} />
+
+      <div className="px-4 pt-3 pb-3 flex flex-col gap-2">
+        {/* Badge row */}
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-bold uppercase tracking-[0.2em] px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20 shrink-0">
+            Primary Driver
+          </span>
+          {dirConfig && (
+            <span className="text-[10px] font-semibold shrink-0" style={{ color: dirConfig.color }}>
+              {dirConfig.label}
+            </span>
+          )}
+          <span className="ml-auto text-[10.5px] text-ink-muted shrink-0">
+            {storyLabel}
+            <span className="mx-1 opacity-40">·</span>
+            <span style={{ color }}>{p.category}</span>
+          </span>
+        </div>
+
+        {/* Title */}
+        <p className="text-[14px] font-bold text-ink leading-snug">
+          {wmn_label || cluster.theme_label}
+        </p>
+
+        {/* Thesis */}
+        {thesis && (
+          <p className="text-[12.5px] text-ink-secondary leading-relaxed line-clamp-2">
+            {thesis}
+          </p>
+        )}
+
+        {/* Score bar */}
+        <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: barColor }}
+              initial={{ width: 0 }}
+              animate={{ width: `${score}%` }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+            />
+          </div>
+          <span className="text-[11px] font-bold tabular-nums leading-none" style={{ color: barColor }}>
+            {score}
+          </span>
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+
+// ── Theme card (ranks 2-5) ────────────────────────────────────────────────────
 
 function WMNCard({
   item, index, onClick,
@@ -63,11 +170,7 @@ function WMNCard({
   const color    = catColor(p.category);
   const score    = Math.round(p.signal_score ?? 0);
   const isTop    = rank <= 2;
-
-  const barColor =
-    score >= 80 ? "#10b981" :
-    score >= 50 ? "#f59e0b" :
-                  "#94a3b8";
+  const barColor = scoreBarColor(score);
 
   const storyLabel = cluster.story_count === 1
     ? "1 story"
@@ -93,7 +196,7 @@ function WMNCard({
           : "border-edge hover:border-edge-strong",
       )}
     >
-      {/* Category accent bar — thicker for top themes */}
+      {/* Category accent bar */}
       <div
         className={isTop ? "h-[4px] rounded-t-xl" : "h-[3px] rounded-t-xl"}
         style={{ background: color }}
@@ -101,29 +204,32 @@ function WMNCard({
 
       <div className="px-3.5 pt-3 pb-3 flex flex-col flex-1 gap-1.5">
 
-        {/* ── Title ──────────────────────────────────────────────────────── */}
+        {/* Title */}
         <p className={cn(
           "font-bold text-ink leading-snug line-clamp-2",
-          isTop ? "text-[13.5px]" : "text-[12.5px]",
+          isTop ? "text-[13px]" : "text-[12px]",
         )}>
           {wmn_label || cluster.theme_label}
         </p>
 
-        {/* ── Thesis — investment implication ────────────────────────────── */}
+        {/* Thesis */}
         {thesis ? (
-          <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2 flex-1">
+          <p className="text-[11px] text-ink-secondary leading-relaxed line-clamp-2 flex-1">
             {thesis}
           </p>
         ) : (
           <div className="flex-1" />
         )}
 
-        {/* ── Score bar ─────────────────────────────────────────────────── */}
+        {/* Score bar */}
         <div className="flex items-center gap-2 mt-1">
           <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
-            <div
+            <motion.div
               className="h-full rounded-full"
-              style={{ width: `${score}%`, background: barColor }}
+              style={{ background: barColor }}
+              initial={{ width: 0 }}
+              animate={{ width: `${score}%` }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: index * 0.06 + 0.2 }}
             />
           </div>
           <span
@@ -134,9 +240,9 @@ function WMNCard({
           </span>
         </div>
 
-        {/* ── Metadata row ──────────────────────────────────────────────── */}
+        {/* Metadata row */}
         <div className="flex items-center gap-1.5 mt-0.5">
-          <p className="text-[10.5px] text-ink-muted leading-none flex-1 min-w-0 truncate">
+          <p className="text-[10px] text-ink-muted leading-none flex-1 min-w-0 truncate">
             <span>{storyLabel}</span>
             <span className="mx-1 opacity-40">·</span>
             <span style={{ color }}>{p.category}</span>
@@ -173,23 +279,42 @@ function WhatMattersNowSkeleton() {
         <div className="h-3 w-36 bg-raised rounded animate-pulse" />
         <span className="h-px flex-1 bg-edge" />
       </div>
-      <div className="flex gap-2.5 overflow-x-auto md:grid md:grid-cols-3 lg:grid-cols-5">
+      {/* Mobile skeleton */}
+      <div className="flex gap-2.5 overflow-x-auto md:hidden">
         {[...Array(5)].map((_, i) => (
-          <div
-            key={i}
-            className="flex-shrink-0 w-[220px] md:w-auto bg-surface border border-edge rounded-xl overflow-hidden"
-          >
-            <div className="h-[3px] bg-raised animate-pulse" />
-            <div className="p-3.5 space-y-2.5">
-              <div className="h-4 w-full bg-raised rounded animate-pulse" />
-              <div className="h-3.5 w-4/5 bg-raised rounded animate-pulse" />
-              <div className="h-3 w-3/5 bg-raised rounded animate-pulse" />
-              <div className="h-[3px] w-full bg-raised rounded-full animate-pulse" />
-              <div className="h-2.5 w-3/4 bg-raised rounded animate-pulse" />
-            </div>
-          </div>
+          <SkeletonCard key={i} />
         ))}
       </div>
+      {/* Desktop skeleton */}
+      <div className="hidden md:flex md:flex-col gap-2.5">
+        <div className="bg-surface border border-edge rounded-xl overflow-hidden">
+          <div className="h-[4px] bg-raised animate-pulse" />
+          <div className="px-4 py-3 space-y-2.5">
+            <div className="h-3 w-24 bg-raised rounded-full animate-pulse" />
+            <div className="h-4 w-3/4 bg-raised rounded animate-pulse" />
+            <div className="h-3 w-full bg-raised rounded animate-pulse" />
+            <div className="h-[3px] w-full bg-raised rounded-full animate-pulse" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      </div>
     </section>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="flex-shrink-0 w-[220px] md:w-auto bg-surface border border-edge rounded-xl overflow-hidden">
+      <div className="h-[3px] bg-raised animate-pulse" />
+      <div className="p-3.5 space-y-2.5">
+        <div className="h-4 w-full bg-raised rounded animate-pulse" />
+        <div className="h-3.5 w-4/5 bg-raised rounded animate-pulse" />
+        <div className="h-3 w-3/5 bg-raised rounded animate-pulse" />
+        <div className="h-[3px] w-full bg-raised rounded-full animate-pulse" />
+        <div className="h-2.5 w-3/4 bg-raised rounded animate-pulse" />
+      </div>
+    </div>
   );
 }
