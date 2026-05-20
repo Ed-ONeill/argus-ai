@@ -1,12 +1,13 @@
-# Force Node.js-only detection so Nixpacks never tries to resolve
-# $NIXPACKS_PATH across multiple language providers.
 providers = ["node"]
 
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --no-audit --no-fund"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["rm -rf node_modules/.cache .next tsconfig.tsbuildinfo && npm run build"]
 
 [start]
 cmd = "npm start"
