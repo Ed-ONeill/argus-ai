@@ -6,18 +6,18 @@ import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   RefreshCw, Settings, Bookmark, BarChart2,
-  Newspaper, Layers, LogIn, LogOut, User, Headphones,
+  Newspaper, Building2, LogIn, LogOut, User, Headphones,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 
 const NAV_LINKS = [
-  { href: "/",        label: "Feed",    icon: Newspaper  },
-  { href: "/markets", label: "Markets", icon: BarChart2   },
-  { href: "/sectors", label: "Sectors", icon: Layers      },
-  { href: "/listen",  label: "Listen",  icon: Headphones  },
-  { href: "/saved",   label: "Saved",   icon: Bookmark    },
+  { href: "/",           label: "Feed",       icon: Newspaper  },
+  { href: "/markets",    label: "Markets",    icon: BarChart2  },
+  { href: "/industries", label: "Industries", icon: Building2  },
+  { href: "/listen",     label: "Listen",     icon: Headphones },
+  { href: "/saved",      label: "Saved",      icon: Bookmark   },
 ] as const;
 
 interface TopNavProps {
