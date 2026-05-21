@@ -217,6 +217,7 @@ export default function IndustryDetailPage() {
   const industry = getIndustryBySlug(slug);
 
   const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
+  const derivedRegime = sectorData?.derived_regime ?? "";
   const { data: feedData } = useFeed({});
   const whatMattersNow = feedData?.what_matters_now ?? [];
 
@@ -328,6 +329,11 @@ export default function IndustryDetailPage() {
                 regimeMeta.cls,
               )}>
                 {regimeMeta.label}
+              </span>
+            )}
+            {derivedRegime && (
+              <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-[3px] rounded-full border bg-white/10 text-white/50 border-white/15">
+                {derivedRegime}
               </span>
             )}
             {isFetching && !isLoading && (
@@ -632,25 +638,70 @@ export default function IndustryDetailPage() {
                 className="bg-surface rounded-xl border border-edge p-4"
               >
                 <SectionHeader icon={Network}>Active Themes</SectionHeader>
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                   {activeThemes.map((t: ThemeIntelligence) => {
+                    const barColor =
+                      t.signal_strength === "strong" ? "#10b981" :
+                      t.signal_strength === "medium" ? "#f59e0b" : "#94a3b8";
                     const strengthCls =
                       t.signal_strength === "strong" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
                       t.signal_strength === "medium" ? "bg-amber-500/10  text-amber-400  border-amber-500/20"   :
                                                        "bg-edge          text-ink-muted  border-edge";
+                    // Relationship weight for this specific industry
+                    const rel = (t.relationship_weights ?? {})[industry.name];
+                    const relWeight = rel ? Math.round(rel.weight * 100) : null;
+                    const relDir    = rel?.direction ?? null;
+                    // Momentum pill
+                    const momLabel = t.momentum_label ?? "emerging";
+                    const momCls =
+                      momLabel === "accelerating" || momLabel === "strengthening"
+                        ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
+                      momLabel === "cooling" || momLabel === "reversing"
+                        ? "text-red-400 bg-red-500/10 border-red-500/20"
+                        : "text-ink-muted bg-edge border-edge";
+
                     return (
-                      <div key={t.id} className="space-y-1">
+                      <div key={t.id} className="space-y-1.5">
+                        {/* Name + badges */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
                             {t.name}
                           </span>
                           <span className={cn(
-                            "text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
+                            "text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
+                            momCls,
+                          )}>
+                            {momLabel}
+                          </span>
+                          <span className={cn(
+                            "text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
                             strengthCls,
                           )}>
                             {t.signal_strength}
                           </span>
                         </div>
+                        {/* Confidence bar */}
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex-1 h-[2px] rounded-full bg-raised overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${t.confidence}%`, background: barColor }}
+                            />
+                          </div>
+                          {relWeight !== null && (
+                            <span
+                              className="text-[9px] font-bold tabular-nums shrink-0"
+                              style={{
+                                color: relDir === "positive" ? "#10b981" :
+                                       relDir === "negative" ? "#ef4444" : "#94a3b8",
+                              }}
+                            >
+                              {relDir === "positive" ? "↑" : relDir === "negative" ? "↓" : "→"}
+                              {relWeight}% impact
+                            </span>
+                          )}
+                        </div>
+                        {/* Second-order effect */}
                         {t.second_order_effects[0] && (
                           <p className="text-[10px] text-ink-muted leading-snug">
                             → {t.second_order_effects[0]}

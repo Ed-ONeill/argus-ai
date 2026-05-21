@@ -851,16 +851,31 @@ function RegimeBanner({ brief }: { brief: MarketBrief }) {
 // ── Intelligence Themes ───────────────────────────────────────────────────────
 
 const STRENGTH_CFG = {
-  strong: { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-400" },
-  medium: { cls: "bg-amber-50  text-amber-700  border-amber-200",     dot: "bg-amber-400"   },
-  weak:   { cls: "bg-slate-50  text-slate-500  border-slate-200",     dot: "bg-slate-300"   },
+  strong: { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-400", bar: "#10b981" },
+  medium: { cls: "bg-amber-50  text-amber-700  border-amber-200",     dot: "bg-amber-400",   bar: "#f59e0b" },
+  weak:   { cls: "bg-slate-50  text-slate-500  border-slate-200",     dot: "bg-slate-300",   bar: "#94a3b8" },
 } as const;
 
-const MOMENTUM_COLOR = {
+const MOMENTUM_COLOR: Record<string, string> = {
   bullish: "#10b981",
   bearish: "#ef4444",
   neutral: "#94a3b8",
-} as const;
+};
+
+const MOMENTUM_LABEL_CFG: Record<string, { icon: string; cls: string }> = {
+  accelerating:  { icon: "↑↑", cls: "text-emerald-600 bg-emerald-50 border-emerald-200" },
+  strengthening: { icon: "↑",  cls: "text-emerald-600 bg-emerald-50 border-emerald-200" },
+  stable:        { icon: "→",  cls: "text-ink-muted   bg-raised     border-edge"        },
+  cooling:       { icon: "↓",  cls: "text-amber-600   bg-amber-50   border-amber-200"   },
+  reversing:     { icon: "↓↓", cls: "text-red-600     bg-red-50     border-red-200"     },
+  emerging:      { icon: "✦",  cls: "text-blue-600    bg-blue-50    border-blue-200"    },
+};
+
+const QUALITY_CFG: Record<string, { label: string; cls: string }> = {
+  confirmed:   { label: "Confirmed",   cls: "text-emerald-600" },
+  developing:  { label: "Developing",  cls: "text-amber-600"   },
+  speculative: { label: "Speculative", cls: "text-ink-muted"   },
+};
 
 function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
   const visible = themes
@@ -876,28 +891,51 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
       />
       <div className="space-y-2.5">
         {visible.map(t => {
-          const cfg   = STRENGTH_CFG[t.signal_strength] ?? STRENGTH_CFG.weak;
-          const mColor = MOMENTUM_COLOR[t.momentum_direction as keyof typeof MOMENTUM_COLOR] ?? MOMENTUM_COLOR.neutral;
+          const cfg      = STRENGTH_CFG[t.signal_strength] ?? STRENGTH_CFG.weak;
+          const mColor   = MOMENTUM_COLOR[t.momentum_direction] ?? MOMENTUM_COLOR.neutral;
+          const momCfg   = MOMENTUM_LABEL_CFG[t.momentum_label ?? "emerging"] ?? MOMENTUM_LABEL_CFG.emerging;
+          const qualCfg  = QUALITY_CFG[t.signal_quality ?? "speculative"] ?? QUALITY_CFG.speculative;
+          const relCount = Object.keys(t.relationship_weights ?? {}).length;
+
           return (
             <div
               key={t.id}
-              className="bg-surface rounded-xl border border-edge px-4 py-3 space-y-2"
+              className="bg-surface rounded-xl border border-edge px-4 py-3 space-y-2.5"
             >
               {/* Header row */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-start gap-2 flex-wrap">
                 <span className="text-[13px] font-bold text-ink leading-tight flex-1 min-w-0">
                   {t.name}
                 </span>
-                <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
-                  <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
-                  {t.signal_strength}
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                  {/* Momentum pill */}
+                  <span className={cn(
+                    "text-[9px] font-bold px-1.5 py-px rounded border",
+                    momCfg.cls,
+                  )}>
+                    {momCfg.icon} {t.momentum_label ?? "emerging"}
+                  </span>
+                  {/* Signal strength */}
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
+                    <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
+                    {t.signal_strength}
+                  </span>
+                </div>
+              </div>
+
+              {/* Confidence bar row */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${t.confidence}%`, background: cfg.bar }}
+                  />
+                </div>
+                <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: cfg.bar }}>
+                  {t.confidence_label || `${t.confidence}%`}
                 </span>
-                <span
-                  className="text-[10px] font-semibold tabular-nums shrink-0"
-                  style={{ color: mColor }}
-                >
-                  {t.momentum_direction === "bullish" ? "↑" : t.momentum_direction === "bearish" ? "↓" : "→"}
-                  {" "}{t.confidence}%
+                <span className={cn("text-[9.5px] font-medium shrink-0", qualCfg.cls)}>
+                  {qualCfg.label}
                 </span>
               </div>
 
@@ -906,27 +944,49 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
                 {t.description}
               </p>
 
-              {/* Related industries chips */}
+              {/* Related industries with relationship weights */}
               {t.related_industries.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[9.5px] text-ink-muted shrink-0">Industries:</span>
-                  {t.related_industries.slice(0, 4).map(ind => (
-                    <span
-                      key={ind}
-                      className="text-[9.5px] font-medium px-2 py-px rounded-full bg-raised text-ink-secondary border border-edge"
-                    >
-                      {ind}
-                    </span>
-                  ))}
+                  <span className="text-[9.5px] text-ink-muted shrink-0">Affected:</span>
+                  {t.related_industries.slice(0, 4).map(ind => {
+                    const rel = (t.relationship_weights ?? {})[ind];
+                    const dir = rel?.direction;
+                    return (
+                      <span
+                        key={ind}
+                        className="text-[9.5px] font-medium px-2 py-px rounded-full border"
+                        style={
+                          dir === "positive"
+                            ? { background: "#10b98110", color: "#059669", borderColor: "#10b98130" }
+                            : dir === "negative"
+                            ? { background: "#ef444410", color: "#dc2626", borderColor: "#ef444430" }
+                            : { background: "var(--color-raised)", color: "var(--color-ink-secondary)", borderColor: "var(--color-edge)" }
+                        }
+                      >
+                        {dir === "positive" ? "↑ " : dir === "negative" ? "↓ " : ""}{ind}
+                        {rel && ` ${Math.round(rel.weight * 100)}%`}
+                      </span>
+                    );
+                  })}
+                  {relCount > 4 && (
+                    <span className="text-[9.5px] text-ink-muted">+{relCount - 4} more</span>
+                  )}
                 </div>
               )}
 
-              {/* First second-order effect */}
+              {/* Footer: second-order effect + evidence count */}
               {t.second_order_effects[0] && (
-                <p className="text-[10.5px] text-ink-muted leading-snug border-t border-edge/40 pt-1.5">
-                  <span className="font-semibold text-ink-secondary">Second-order:</span>{" "}
-                  {t.second_order_effects[0]}
-                </p>
+                <div className="flex items-start gap-2 border-t border-edge/40 pt-1.5">
+                  <p className="text-[10.5px] text-ink-muted leading-snug flex-1">
+                    <span className="font-semibold text-ink-secondary">→ </span>
+                    {t.second_order_effects[0]}
+                  </p>
+                  {t.evidence_count > 0 && (
+                    <span className="text-[9px] text-ink-muted shrink-0 tabular-nums">
+                      {t.evidence_count} source{t.evidence_count !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           );
@@ -960,11 +1020,12 @@ export default function MarketsPage() {
   const { data, isLoading }      = useFeed({ use_ai: true });
   const { savedIds, toggleSave } = useSaved();
 
-  const clusters = data?.clusters           ?? [];
-  const wmn      = data?.what_matters_now   ?? [];
-  const themes   = data?.theme_intelligence ?? [];
-  const cacheAge = data?.cache_age_seconds;
-  const allItems = data?.items              ?? [];
+  const clusters      = data?.clusters              ?? [];
+  const wmn           = data?.what_matters_now      ?? [];
+  const themes        = data?.theme_intelligence    ?? [];
+  const cacheAge      = data?.cache_age_seconds;
+  const allItems      = data?.items                 ?? [];
+  const derivedRegime = data?.sector_data?.derived_regime ?? "";
 
   // Primary Driver: WMN item most aligned with *current* market moves
   // Prefers macro/geo themes that explain live price action; falls back to
@@ -1050,6 +1111,17 @@ export default function MarketsPage() {
       {/* Regime banner — shown when structured brief is available */}
       {data?.market_brief && !isLoading && (
         <RegimeBanner brief={data.market_brief} />
+      )}
+      {/* Derived regime chip — deterministic extended label from themes + sectors */}
+      {derivedRegime && !isLoading && (
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-ink-muted shrink-0">
+            Regime Signal
+          </span>
+          <span className="text-[10.5px] font-bold px-2.5 py-1 rounded-full bg-accent/10 text-accent border border-accent/20">
+            {derivedRegime}
+          </span>
+        </div>
       )}
 
       {/* 1. Market Snapshot */}

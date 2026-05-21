@@ -125,8 +125,15 @@ class ProcessedFeedCache:
                         feed.sector_data = None
                     if not hasattr(feed, "theme_intelligence"):
                         feed.theme_intelligence = []
+                    # Phase 5: ThemeIntelligence objects gained new fields.
+                    # Clear stale pickled theme data so the first pipeline run
+                    # recomputes them cleanly (they regenerate every 5 min anyway).
+                    if feed.theme_intelligence and not hasattr(feed.theme_intelligence[0], "relationship_weights"):
+                        feed.theme_intelligence = []
                     # Patch IndustrySignal fields added in Phase 3
                     if feed.sector_data is not None:
+                        if not hasattr(feed.sector_data, "derived_regime"):
+                            feed.sector_data.derived_regime = ""
                         for ind in (feed.sector_data.industries or []):
                             if not hasattr(ind, "momentum_direction"):
                                 ind.momentum_direction = "neutral"

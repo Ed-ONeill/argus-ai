@@ -198,6 +198,7 @@ class SectorDataSchema(BaseModel):
     rotation_signals: list[RotationSignalSchema]
     dominant_sector:  str | None
     generated_at:     str    # ISO-8601
+    derived_regime:   str    = ""  # Phase 5: deterministic extended regime label
 
 
 class ThemeIntelligenceSchema(BaseModel):
@@ -207,14 +208,25 @@ class ThemeIntelligenceSchema(BaseModel):
     signal_strength:          str
     confidence:               int
     momentum_direction:       str
-    related_industries:       list[str] = []
-    related_assets:           list[str] = []
-    related_macro_factors:    list[str] = []
-    contributing_cluster_ids: list[str] = []
-    contributing_story_count: int       = 0
-    second_order_effects:     list[str] = []
-    podcast_topics:           list[str] = []
-    last_updated:             str       = ""
+    related_industries:       list[str]       = []
+    related_assets:           list[str]       = []
+    related_macro_factors:    list[str]       = []
+    contributing_cluster_ids: list[str]       = []
+    contributing_story_count: int             = 0
+    second_order_effects:     list[str]       = []
+    podcast_topics:           list[str]       = []
+    last_updated:             str             = ""
+    # Phase 5: weighted relationship graph + confidence + momentum
+    relationship_weights:     dict[str, dict] = {}
+    confidence_label:         str             = ""
+    signal_quality:           str             = "speculative"
+    evidence_count:           int             = 0
+    persistence_score:        int             = 0
+    volatility_score:         int             = 0
+    cross_category_confirmed: bool            = False
+    momentum_label:           str             = "emerging"
+    momentum_delta:           int             = 0
+    persistence_cycles:       int             = 0
 
 
 class FeedStatusResponse(BaseModel):
@@ -331,6 +343,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             ],
             dominant_sector = sd.dominant_sector,
             generated_at    = sd.generated_at.isoformat(),
+            derived_regime  = getattr(sd, "derived_regime", ""),
         )
 
     raw_themes = getattr(entry, "theme_intelligence", []) or []
@@ -350,6 +363,17 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             second_order_effects     = t.second_order_effects,
             podcast_topics           = t.podcast_topics,
             last_updated             = t.last_updated,
+            # Phase 5 fields (getattr with defaults for old pickled objects)
+            relationship_weights     = getattr(t, "relationship_weights",     {}),
+            confidence_label         = getattr(t, "confidence_label",         ""),
+            signal_quality           = getattr(t, "signal_quality",           "speculative"),
+            evidence_count           = getattr(t, "evidence_count",           0),
+            persistence_score        = getattr(t, "persistence_score",        0),
+            volatility_score         = getattr(t, "volatility_score",         0),
+            cross_category_confirmed = getattr(t, "cross_category_confirmed", False),
+            momentum_label           = getattr(t, "momentum_label",           "emerging"),
+            momentum_delta           = getattr(t, "momentum_delta",           0),
+            persistence_cycles       = getattr(t, "persistence_cycles",       0),
         )
         for t in raw_themes
     ]

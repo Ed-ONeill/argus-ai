@@ -223,6 +223,16 @@ def run_pipeline(
         sum(1 for t in theme_intelligence if t.signal_strength == "strong"),
     )
 
+    # ── 6d. Extended market regime ────────────────────────────────────────────
+    from app.sectors import derive_extended_regime as _derive_regime
+    _base_regime = getattr(brief, "market_regime", "Neutral/Consolidating") if brief else "Neutral/Consolidating"
+    sector_data.derived_regime = _derive_regime(
+        sector_data.sectors,
+        [t.id for t in theme_intelligence],
+        _base_regime,
+    )
+    log.debug("[bg] derived_regime=%s  (base=%s)", sector_data.derived_regime, _base_regime)
+
     # ── 7. Top story selection ─────────────────────────────────────────────────
     debug_log: list[str] = []
     top = _select_top_stories(items, debug_log=debug_log)

@@ -1,11 +1,19 @@
 """
 app/theme_graph.py — Cross-market theme intelligence graph.
 
-Extracts active macro/thematic themes from the current cluster stream using
-deterministic entity + keyword matching.  Zero LLM calls.
+Phase 5 upgrade: weighted relationship graph, enhanced confidence scoring,
+ThemeMomentumTracker for temporal persistence, and signal quality classification.
+Zero LLM calls.
 
 Each ThemeIntelligence object maps:
   story → theme → industry → asset → macro factor → second-order effect
+
+Phase 5 additions:
+  - relationship_graph per theme (direct/indirect/macro_overlap/narrative + weight + direction)
+  - ThemeMomentumTracker: rolling cycle snapshots, momentum label, persistence
+  - Confidence formula extended with source diversity, cross-category, and recency bonuses
+  - Signal quality classification: "confirmed" | "developing" | "speculative"
+  - confidence_label, evidence_count, persistence_score, volatility_score
 """
 
 from __future__ import annotations
@@ -62,12 +70,120 @@ class ThemeIntelligence:
     second_order_effects:     list[str]      = field(default_factory=list)
     podcast_topics:           list[str]      = field(default_factory=list)
     last_updated:             str            = ""
+    # Phase 5: weighted relationship graph
+    # Maps industry/sector name → {weight: float, type: str, direction: str}
+    relationship_weights:     dict[str, dict] = field(default_factory=dict)
+    # Phase 5: enhanced confidence signals
+    confidence_label:         str            = ""           # "High Conviction" | "Elevated" | "Moderate" | "Developing" | "Speculative"
+    signal_quality:           str            = "speculative" # "confirmed" | "developing" | "speculative"
+    evidence_count:           int            = 0            # unique contributing sources
+    persistence_score:        int            = 0            # 0-100 based on cycle history
+    volatility_score:         int            = 0            # 0-100 based on confidence variance
+    cross_category_confirmed: bool           = False        # true if 2+ news categories contributing
+    # Phase 5: momentum tracking
+    momentum_label:           str            = "emerging"   # "accelerating"|"strengthening"|"stable"|"cooling"|"reversing"|"emerging"
+    momentum_delta:           int            = 0            # confidence change vs previous cycle
+    persistence_cycles:       int            = 0            # consecutive cycles theme was active
+
+
+# ── Momentum tracker ──────────────────────────────────────────────────────────
+
+@dataclass
+class _ThemeSnapshot:
+    confidence:      int
+    signal_strength: str
+    timestamp:       datetime
+
+
+class ThemeMomentumTracker:
+    """
+    In-memory rolling tracker for theme confidence across pipeline cycles.
+
+    Holds at most max_history snapshots per theme (default 12 = ~1 hour at
+    5-minute refresh intervals).  Lives as a module-level singleton so state
+    persists across background pipeline runs within the same process lifetime.
+
+    Momentum labels:
+      "emerging"      — fewer than 2 snapshots (brand-new theme)
+      "accelerating"  — confidence up ≥12 pts over window
+      "strengthening" — confidence up 4–11 pts over window
+      "stable"        — confidence flat (±3 pts)
+      "cooling"       — confidence down 4–11 pts
+      "reversing"     — confidence down ≥12 pts (may be fading)
+    """
+
+    def __init__(self, max_history: int = 12) -> None:
+        self._history: dict[str, list[_ThemeSnapshot]] = {}
+        self._max = max_history
+
+    def record(self, theme_id: str, confidence: int, strength: str, now: datetime) -> None:
+        snaps = self._history.setdefault(theme_id, [])
+        snaps.append(_ThemeSnapshot(confidence=confidence, signal_strength=strength, timestamp=now))
+        if len(snaps) > self._max:
+            snaps.pop(0)
+
+    def momentum_label(self, theme_id: str) -> str:
+        snaps = self._history.get(theme_id, [])
+        if len(snaps) < 2:
+            return "emerging"
+        window = snaps[-min(4, len(snaps)):]
+        delta  = snaps[-1].confidence - window[0].confidence
+        if delta >= 12:  return "accelerating"
+        if delta >= 4:   return "strengthening"
+        if delta <= -12: return "reversing"
+        if delta <= -4:  return "cooling"
+        return "stable"
+
+    def prev_delta(self, theme_id: str) -> int:
+        """Confidence delta between the last two recorded snapshots."""
+        snaps = self._history.get(theme_id, [])
+        if len(snaps) < 2:
+            return 0
+        return snaps[-1].confidence - snaps[-2].confidence
+
+    def persistence_cycles(self, theme_id: str) -> int:
+        return len(self._history.get(theme_id, []))
+
+    def volatility_score(self, theme_id: str) -> int:
+        """Standard-deviation-based volatility of recent confidence, scaled 0-100."""
+        snaps = self._history.get(theme_id, [])
+        if len(snaps) < 3:
+            return 0
+        vals = [s.confidence for s in snaps[-6:]]
+        mean = sum(vals) / len(vals)
+        var  = sum((v - mean) ** 2 for v in vals) / len(vals)
+        return min(100, int(var ** 0.5 * 3))
+
+    def persistence_score(self, theme_id: str) -> int:
+        """0-100 persistence score based on how many consecutive cycles the theme has been active."""
+        n = self.persistence_cycles(theme_id)
+        if n <= 0:   return 0
+        if n <= 2:   return 20
+        if n <= 5:   return 45
+        if n <= 10:  return 70
+        if n <= 20:  return 85
+        return 95
+
+
+# Module-level singleton — accumulates history across background refresh cycles
+_momentum_tracker = ThemeMomentumTracker()
 
 
 # ── Theme catalog ─────────────────────────────────────────────────────────────
-# Each entry defines the matching signals and static relationship graph for one
-# macro/thematic theme.  Keywords are matched against normalised title + snippet.
-# Entities are matched against item.affected_entities (uppercase comparison).
+# Each entry defines: keywords, entities, static relationship graph (industries,
+# assets, macro factors), second-order effects, podcast topics, and Phase 5
+# weighted relationship_graph mapping impacted industries/sectors to
+# {weight, type, direction}.
+#
+# relationship_graph types:
+#   "direct"       — primary causal mechanism
+#   "indirect"     — flows through an intermediate channel
+#   "macro_overlap"— shares a common macro driver
+#   "narrative"    — thematic/sentiment correlation
+#
+# relationship_graph directions:
+#   "positive" — theme is bullish for this industry/sector
+#   "negative" — theme is bearish for this industry/sector
 
 THEME_CATALOG: dict[str, dict] = {
     "ai-energy-demand": {
@@ -93,6 +209,15 @@ THEME_CATALOG: dict[str, dict] = {
             "Grid infrastructure equipment makers benefit from accelerated capex cycle",
         ],
         "podcast_topics": ["Tech / AI", "Markets"],
+        "relationship_graph": {
+            "AI Infrastructure": {"weight": 0.95, "type": "direct",        "direction": "positive"},
+            "Data Centers":      {"weight": 0.92, "type": "direct",        "direction": "positive"},
+            "Utilities":         {"weight": 0.88, "type": "indirect",      "direction": "positive"},
+            "Nuclear":           {"weight": 0.71, "type": "indirect",      "direction": "positive"},
+            "Semiconductors":    {"weight": 0.67, "type": "indirect",      "direction": "positive"},
+            "LNG":               {"weight": 0.54, "type": "macro_overlap", "direction": "positive"},
+            "Energy Transition": {"weight": 0.41, "type": "narrative",     "direction": "positive"},
+        },
     },
     "treasury-yield-pressure": {
         "name":        "Treasury Yield Pressure",
@@ -117,6 +242,14 @@ THEME_CATALOG: dict[str, dict] = {
             "EM currencies face depreciation pressure from USD strength at higher yields",
         ],
         "podcast_topics": ["Markets", "Macro"],
+        "relationship_graph": {
+            "Cloud Software":  {"weight": 0.84, "type": "direct",        "direction": "negative"},
+            "Real Estate":     {"weight": 0.79, "type": "direct",        "direction": "negative"},
+            "Financials":      {"weight": 0.73, "type": "direct",        "direction": "positive"},
+            "Private Credit":  {"weight": 0.52, "type": "indirect",      "direction": "negative"},
+            "Utilities":       {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
+            "Consumer":        {"weight": 0.35, "type": "narrative",     "direction": "negative"},
+        },
     },
     "defense-reindustrialization": {
         "name":        "Defense Reindustrialization",
@@ -139,6 +272,12 @@ THEME_CATALOG: dict[str, dict] = {
             "Dual-use technology in semiconductors and drones benefits civil and defense sectors",
         ],
         "podcast_topics": ["Geopolitical", "Markets"],
+        "relationship_graph": {
+            "Defense":     {"weight": 0.97, "type": "direct",        "direction": "positive"},
+            "Industrials": {"weight": 0.85, "type": "direct",        "direction": "positive"},
+            "Semiconductors": {"weight": 0.54, "type": "indirect",   "direction": "positive"},
+            "Energy":      {"weight": 0.38, "type": "macro_overlap", "direction": "positive"},
+        },
     },
     "private-credit-expansion": {
         "name":        "Private Credit Expansion",
@@ -161,6 +300,11 @@ THEME_CATALOG: dict[str, dict] = {
             "BDC NAV pressure can signal systemic middle-market credit quality deterioration",
         ],
         "podcast_topics": ["Private Markets", "Markets"],
+        "relationship_graph": {
+            "Private Credit": {"weight": 0.97, "type": "direct",        "direction": "positive"},
+            "Financials":     {"weight": 0.68, "type": "indirect",      "direction": "positive"},
+            "Real Estate":    {"weight": 0.45, "type": "macro_overlap", "direction": "negative"},
+        },
     },
     "glp1-healthcare-revolution": {
         "name":        "GLP-1 Healthcare Revolution",
@@ -183,6 +327,11 @@ THEME_CATALOG: dict[str, dict] = {
             "AI drug discovery investment accelerates as GLP-1 success validates large-molecule platforms",
         ],
         "podcast_topics": ["Company", "Markets"],
+        "relationship_graph": {
+            "Healthcare":  {"weight": 0.95, "type": "direct",   "direction": "positive"},
+            "Consumer":    {"weight": 0.41, "type": "indirect", "direction": "negative"},
+            "Financials":  {"weight": 0.28, "type": "narrative","direction": "positive"},
+        },
     },
     "china-stimulus-rotation": {
         "name":        "China Stimulus Rotation",
@@ -205,6 +354,13 @@ THEME_CATALOG: dict[str, dict] = {
             "CNY appreciation creates EM currency tailwind and reduces dollar-debt servicing costs",
         ],
         "podcast_topics": ["Macro", "Markets", "Geopolitical"],
+        "relationship_graph": {
+            "Materials":      {"weight": 0.78, "type": "direct",        "direction": "positive"},
+            "Energy":         {"weight": 0.72, "type": "direct",        "direction": "positive"},
+            "Semiconductors": {"weight": 0.55, "type": "indirect",      "direction": "positive"},
+            "Industrials":    {"weight": 0.48, "type": "macro_overlap", "direction": "positive"},
+            "Consumer":       {"weight": 0.35, "type": "narrative",     "direction": "positive"},
+        },
     },
     "energy-security": {
         "name":        "Energy Security",
@@ -227,6 +383,14 @@ THEME_CATALOG: dict[str, dict] = {
             "Consumer discretionary spending faces headwinds from higher energy bills and fuel costs",
         ],
         "podcast_topics": ["Markets", "Geopolitical", "Macro"],
+        "relationship_graph": {
+            "Energy":            {"weight": 0.95, "type": "direct",        "direction": "positive"},
+            "LNG":               {"weight": 0.88, "type": "direct",        "direction": "positive"},
+            "Utilities":         {"weight": 0.58, "type": "indirect",      "direction": "positive"},
+            "Energy Transition": {"weight": 0.52, "type": "narrative",     "direction": "positive"},
+            "Consumer":          {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
+            "Defense":           {"weight": 0.36, "type": "narrative",     "direction": "positive"},
+        },
     },
     "liquidity-tightening": {
         "name":        "Liquidity Tightening",
@@ -250,6 +414,13 @@ THEME_CATALOG: dict[str, dict] = {
             "Private credit spreads widen as risk-free rises raising the overall leverage hurdle",
         ],
         "podcast_topics": ["Markets", "Macro"],
+        "relationship_graph": {
+            "Real Estate":    {"weight": 0.88, "type": "direct",        "direction": "negative"},
+            "Financials":     {"weight": 0.81, "type": "direct",        "direction": "negative"},
+            "Private Credit": {"weight": 0.72, "type": "indirect",      "direction": "negative"},
+            "Consumer":       {"weight": 0.55, "type": "macro_overlap", "direction": "negative"},
+            "Industrials":    {"weight": 0.32, "type": "narrative",     "direction": "negative"},
+        },
     },
     "semiconductor-capex-cycle": {
         "name":        "Semiconductor Capex Cycle",
@@ -273,6 +444,13 @@ THEME_CATALOG: dict[str, dict] = {
             "Advanced packaging demand creates incremental revenue for substrate and materials suppliers",
         ],
         "podcast_topics": ["Tech / AI", "Company"],
+        "relationship_graph": {
+            "Semiconductors":    {"weight": 0.97, "type": "direct",        "direction": "positive"},
+            "AI Infrastructure": {"weight": 0.89, "type": "direct",        "direction": "positive"},
+            "Data Centers":      {"weight": 0.71, "type": "indirect",      "direction": "positive"},
+            "Materials":         {"weight": 0.44, "type": "indirect",      "direction": "positive"},
+            "Energy":            {"weight": 0.38, "type": "macro_overlap", "direction": "positive"},
+        },
     },
     "digital-asset-institutionalization": {
         "name":        "Digital Asset Institutionalization",
@@ -296,6 +474,11 @@ THEME_CATALOG: dict[str, dict] = {
             "Exchange consolidation accelerates as regulatory costs favor scaled operators",
         ],
         "podcast_topics": ["Markets", "Tech / AI"],
+        "relationship_graph": {
+            "Crypto Infrastructure": {"weight": 0.97, "type": "direct",        "direction": "positive"},
+            "Financials":            {"weight": 0.52, "type": "indirect",      "direction": "positive"},
+            "Cloud Software":        {"weight": 0.28, "type": "narrative",     "direction": "positive"},
+        },
     },
     "nuclear-power-renaissance": {
         "name":        "Nuclear Power Renaissance",
@@ -318,6 +501,13 @@ THEME_CATALOG: dict[str, dict] = {
             "Nuclear baseload competes with LNG peaker capacity for data center anchor power contracts",
         ],
         "podcast_topics": ["Markets", "Tech / AI"],
+        "relationship_graph": {
+            "Nuclear":           {"weight": 0.97, "type": "direct",    "direction": "positive"},
+            "Utilities":         {"weight": 0.82, "type": "direct",    "direction": "positive"},
+            "AI Infrastructure": {"weight": 0.61, "type": "narrative", "direction": "positive"},
+            "Data Centers":      {"weight": 0.55, "type": "indirect",  "direction": "positive"},
+            "Energy":            {"weight": 0.44, "type": "narrative", "direction": "positive"},
+        },
     },
     "consumer-stress": {
         "name":        "Consumer Stress",
@@ -341,6 +531,12 @@ THEME_CATALOG: dict[str, dict] = {
             "Auto delinquency acceleration historically leads broader consumer credit quality deterioration",
         ],
         "podcast_topics": ["Macro", "Markets", "Company"],
+        "relationship_graph": {
+            "Consumer":     {"weight": 0.92, "type": "direct",        "direction": "negative"},
+            "Financials":   {"weight": 0.71, "type": "direct",        "direction": "negative"},
+            "Real Estate":  {"weight": 0.44, "type": "narrative",     "direction": "negative"},
+            "Industrials":  {"weight": 0.35, "type": "macro_overlap", "direction": "negative"},
+        },
     },
 }
 
@@ -352,12 +548,18 @@ def extract_themes(
     now:      datetime | None = None,
 ) -> list[ThemeIntelligence]:
     """
-    Score all clusters against each theme in THEME_CATALOG.
+    Phase 5: Score all clusters against each theme in THEME_CATALOG.
     Returns active themes sorted by confidence descending.
 
-    Matching uses entity overlap (+3 per matching entity, capped at 9) and
-    keyword presence in normalised title (+2) or snippet (+1).
-    Theme score is weighted by cluster.cluster_score to prioritise WMN-ranked stories.
+    Confidence formula:
+      base     = total_score × 2.0 + n_clusters × 4
+      bonus_1  = source diversity  (up to +10)
+      bonus_2  = cross-category    (+8 if 2+ news categories)
+      bonus_3  = recency           (up to +9 for stories < 6h old)
+      final    = min(95, base + bonuses)
+
+    Momentum tracking uses ThemeMomentumTracker singleton; record() is called
+    before deriving labels so all metrics reflect the just-completed cycle.
     """
     if now is None:
         now = datetime.now(timezone.utc)
@@ -366,17 +568,20 @@ def extract_themes(
     results: list[ThemeIntelligence] = []
 
     for theme_id, cfg in THEME_CATALOG.items():
-        theme_keywords  = cfg["keywords"]
-        theme_entities  = cfg["entities"]   # frozenset[str]
-        contributing    = []                 # (cluster, raw_score)
-        sentiments: list[str] = []
-        total_score     = 0.0
+        theme_keywords = cfg["keywords"]
+        theme_entities = cfg["entities"]   # frozenset[str]
+        contributing: list[tuple[object, float]] = []
+        sentiments:  list[str] = []
+        sources:     set[str]  = set()
+        categories:  set[str]  = set()
+        total_score  = 0.0
+        recent_count = 0
 
         for cluster in clusters:
-            item       = cluster.primary
-            title_n    = _norm(getattr(item, "title",   "") or "")
-            snippet_n  = _norm(getattr(item, "snippet", "") or "")
-            entities   = {e.upper() for e in (getattr(item, "affected_entities", None) or [])}
+            item      = cluster.primary
+            title_n   = _norm(getattr(item, "title",   "") or "")
+            snippet_n = _norm(getattr(item, "snippet", "") or "")
+            entities  = {e.upper() for e in (getattr(item, "affected_entities", None) or [])}
 
             raw = 0.0
 
@@ -384,7 +589,7 @@ def extract_themes(
             entity_hits = sum(1 for e in theme_entities if e in entities)
             raw += min(entity_hits * 3.0, 9.0)
 
-            # Keyword match (title is worth more than snippet)
+            # Keyword match (title worth more than snippet)
             for kw in theme_keywords:
                 kw_p = f" {kw} "
                 if kw_p in title_n:
@@ -397,19 +602,26 @@ def extract_themes(
             if raw <= 0:
                 continue
 
-            # Weight by cluster importance (cluster_score is 0-∞; typical range 0-2)
-            weight  = 1.0 + min(getattr(cluster, "cluster_score", 0.0), 2.0) * 0.4
+            # Weight by cluster importance (cluster_score typical range 0-2)
+            weight   = 1.0 + min(getattr(cluster, "cluster_score", 0.0), 2.0) * 0.4
             weighted = raw * weight
             total_score += weighted
             contributing.append((cluster, weighted))
             sentiments.append(_item_sentiment(item))
+            sources.add(getattr(item, "source", "") or "")
+            categories.add(getattr(item, "category", "") or "")
 
-        # Require meaningful signal before creating a theme entry
+            # Count stories published within the last 6 hours
+            pub = getattr(item, "published_dt", None)
+            if pub and (now - pub).total_seconds() < 21600:
+                recent_count += 1
+
         if total_score < 4.0 or not contributing:
             continue
 
-        # Signal strength
         n_clusters = len(contributing)
+
+        # ── Signal strength ───────────────────────────────────────────────────
         if total_score >= 18 or n_clusters >= 5:
             sig = "strong"
         elif total_score >= 7 or n_clusters >= 2:
@@ -417,13 +629,47 @@ def extract_themes(
         else:
             sig = "weak"
 
-        # Confidence 0-100
-        confidence = min(95, int(total_score * 2.5 + n_clusters * 5))
+        # ── Confidence: base + diversity bonuses ──────────────────────────────
+        source_bonus  = min(len(sources) * 2, 10)
+        cross_cat     = len(categories) >= 2
+        cross_bonus   = 8 if cross_cat else 0
+        recency_bonus = min(recent_count * 3, 9)
 
-        # Momentum from majority sentiment across contributing stories
+        confidence = min(95, int(
+            total_score * 2.0
+            + n_clusters * 4
+            + source_bonus
+            + cross_bonus
+            + recency_bonus
+        ))
+
+        # ── Confidence label ──────────────────────────────────────────────────
+        if confidence >= 80:   conf_label = "High Conviction"
+        elif confidence >= 60: conf_label = "Elevated"
+        elif confidence >= 40: conf_label = "Moderate"
+        elif confidence >= 20: conf_label = "Developing"
+        else:                  conf_label = "Speculative"
+
+        # ── Signal quality ────────────────────────────────────────────────────
+        if cross_cat and len(sources) >= 3 and n_clusters >= 3:
+            quality = "confirmed"
+        elif len(sources) >= 2 or cross_cat:
+            quality = "developing"
+        else:
+            quality = "speculative"
+
+        # ── Momentum ──────────────────────────────────────────────────────────
         momentum = _majority_sentiment(sentiments)
 
-        # Top contributing cluster IDs (by weighted score, capped at 5)
+        # ── Tracker: record first, then derive all momentum metrics ───────────
+        _momentum_tracker.record(theme_id, confidence, sig, now)
+        mom_label  = _momentum_tracker.momentum_label(theme_id)
+        mom_delta  = _momentum_tracker.prev_delta(theme_id)
+        n_cycles   = _momentum_tracker.persistence_cycles(theme_id)
+        persist_sc = _momentum_tracker.persistence_score(theme_id)
+        volat_sc   = _momentum_tracker.volatility_score(theme_id)
+
+        # ── Top contributing clusters (by weighted score, capped at 5) ────────
         contributing.sort(key=lambda x: x[1], reverse=True)
         top_clusters  = [c for c, _ in contributing[:5]]
         cluster_ids   = [c.id for c in top_clusters]
@@ -444,6 +690,17 @@ def extract_themes(
             second_order_effects     = list(cfg["second_order_effects"]),
             podcast_topics           = list(cfg["podcast_topics"]),
             last_updated             = now_iso,
+            # Phase 5 fields
+            relationship_weights     = dict(cfg.get("relationship_graph", {})),
+            confidence_label         = conf_label,
+            signal_quality           = quality,
+            evidence_count           = len(sources),
+            persistence_score        = persist_sc,
+            volatility_score         = volat_sc,
+            cross_category_confirmed = cross_cat,
+            momentum_label           = mom_label,
+            momentum_delta           = mom_delta,
+            persistence_cycles       = n_cycles,
         ))
 
     results.sort(key=lambda t: t.confidence, reverse=True)

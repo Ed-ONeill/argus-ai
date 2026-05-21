@@ -302,6 +302,7 @@ class SectorData:
     rotation_signals: list[RotationSignal]
     dominant_sector:  str | None
     generated_at:     datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    derived_regime:   str      = ""  # Phase 5: deterministic extended regime label
 
 
 # ── Classification ────────────────────────────────────────────────────────────
@@ -365,17 +366,63 @@ _INDUSTRY_DESCRIPTOR: dict[str, str] = {
     "LNG":                   "LNG export volumes and global natural gas demand",
 }
 
-_NARRATIVE_TEMPLATE: dict[tuple[str, str], str] = {
-    ("bullish", "tailwind"): "{d} is accelerating with macro conditions providing additional institutional lift.",
-    ("bullish", "headwind"): "{d} is pressing higher on fundamental strength despite broad sector headwinds.",
-    ("bullish", "neutral"):  "{d} is advancing on company-specific catalysts and improving fundamentals.",
-    ("bearish", "tailwind"): "{d} is retreating despite supportive macro conditions — watch for a reversal setup.",
-    ("bearish", "headwind"): "{d} faces compounding pressure as macro headwinds reinforce deteriorating fundamentals.",
-    ("bearish", "neutral"):  "{d} is pulling back on profit-taking and softening near-term outlook.",
-    ("neutral", "tailwind"): "{d} is consolidating within a constructive macro backdrop — awaiting a catalyst.",
-    ("neutral", "headwind"): "{d} is navigating macro headwinds with limited directional conviction.",
-    ("neutral", "neutral"):  "{d} shows mixed signals with no clear institutional positioning bias.",
+# Phase 5: 3 variants per (momentum, alignment) combination.
+# Variant selected deterministically by hashing the industry name so the same
+# industry always gets the same template, but different industries read differently.
+_NARRATIVE_VARIANTS: dict[tuple[str, str], list[str]] = {
+    ("bullish", "tailwind"): [
+        "{d} is accelerating — macro tailwinds and fundamental signals are converging to lift institutional positioning.",
+        "Capital continues rotating into {d} as regime conditions align with strengthening underlying catalysts.",
+        "Positioning in {d} is gaining momentum with cross-asset confirmation reinforcing the primary thesis.",
+    ],
+    ("bullish", "headwind"): [
+        "{d} is pressing higher on fundamental strength despite macro headwinds weighing on broader sector sentiment.",
+        "Forward expectations for {d} remain constructive — structural demand is overriding current cycle friction.",
+        "Markets are increasingly pricing in a {d} re-rating, with underlying drivers outpacing regime concerns.",
+    ],
+    ("bullish", "neutral"): [
+        "{d} is advancing on company-specific catalysts and improving fundamental signals.",
+        "Incremental data flow in {d} continues to support an upside thesis without requiring macro confirmation.",
+        "Positioning suggests {d} is attracting institutional attention on bottom-up fundamental strength.",
+    ],
+    ("bearish", "tailwind"): [
+        "{d} is retreating despite supportive macro conditions — a mean-reversion setup is developing.",
+        "Cross-asset behavior implies {d} weakness is idiosyncratic — regime tailwinds make a reversal more likely.",
+        "Despite a constructive macro backdrop, {d} is facing profit-taking and near-term sentiment deterioration.",
+    ],
+    ("bearish", "headwind"): [
+        "{d} faces compounding pressure as macro headwinds reinforce deteriorating fundamental signals.",
+        "The narrative is reinforcing against {d} — regime and sector signals are aligned to the downside.",
+        "Forward expectations remain sensitive to further {d} weakness as both macro and fundamental pressures build.",
+    ],
+    ("bearish", "neutral"): [
+        "{d} is pulling back on profit-taking and a softening near-term outlook.",
+        "Positioning in {d} is consolidating lower — the near-term thesis is under review without macro conviction.",
+        "{d} is encountering distribution pressure as sentiment softens ahead of catalyst clarity.",
+    ],
+    ("neutral", "tailwind"): [
+        "{d} is consolidating within a constructive macro backdrop — awaiting a specific catalyst to catalyse flow.",
+        "Macro tailwinds are present but {d} lacks the directional conviction to attract incremental capital.",
+        "Forward flows into {d} are pausing — the structural thesis is intact but near-term triggers are absent.",
+    ],
+    ("neutral", "headwind"): [
+        "{d} is navigating macro headwinds with limited directional conviction from institutional positioning.",
+        "Cross-asset pressure is weighing on {d} sentiment, but no decisive breakdown has emerged.",
+        "Markets are pricing in {d} uncertainty — positioning is defensive and the risk/reward is unclear.",
+    ],
+    ("neutral", "neutral"): [
+        "{d} shows mixed signals with no clear institutional positioning bias at current levels.",
+        "The {d} narrative is fragmented — no dominant macro or fundamental theme is driving capital allocation.",
+        "Forward expectations for {d} are balanced — investors are awaiting clearer signal confirmation.",
+    ],
 }
+
+_FALLBACK_VARIANT = "{d} shows mixed signals with no clear institutional positioning bias at current levels."
+
+
+def _select_narrative_variant(industry_name: str, variants: list[str]) -> str:
+    """Deterministic variant selection: same industry always gets the same template."""
+    return variants[hash(industry_name) % len(variants)]
 
 
 def _generate_industry_narrative(
@@ -385,8 +432,12 @@ def _generate_industry_narrative(
     top_entity:    str | None,
 ) -> str:
     descriptor = _INDUSTRY_DESCRIPTOR.get(industry_name, industry_name.lower())
-    template   = _NARRATIVE_TEMPLATE.get((momentum, alignment), _NARRATIVE_TEMPLATE[("neutral", "neutral")])
-    base       = template.format(d=descriptor)
+    variants   = _NARRATIVE_VARIANTS.get((momentum, alignment))
+    template   = (
+        _select_narrative_variant(industry_name, variants) if variants
+        else _FALLBACK_VARIANT
+    )
+    base = template.format(d=descriptor)
     if top_entity:
         base = base.rstrip(".") + f", with {top_entity} as a key focal point."
     return base
@@ -608,6 +659,79 @@ def _detect_rotation(
         ))
 
     return signals
+
+
+# ── Extended regime derivation (Phase 5) ─────────────────────────────────────
+
+# Mapping from base LLM regime to extended label (used as fallback)
+_BASE_TO_EXTENDED: dict[str, str] = {
+    "Risk-Off Hawkish":      "Yield Shock",
+    "Risk-Off Neutral":      "Defensive Rotation",
+    "Risk-On Dovish":        "Risk-On Expansion",
+    "Risk-On Neutral":       "Risk-On Expansion",
+    "Stagflationary":        "Inflation Pressure",
+    "Neutral/Consolidating": "Macro Stabilization",
+}
+
+
+def derive_extended_regime(
+    sectors:       list[SectorIntelligence],
+    active_themes: list[str],       # theme IDs from extract_themes()
+    base_regime:   str = "Neutral/Consolidating",
+) -> str:
+    """
+    Derive a granular market regime label from sector scores + active theme IDs.
+    Called in background.py after both sectors and themes are computed.
+
+    Returns one of:
+      AI Capex Expansion | Energy Supply Risk | Yield Shock | Liquidity Tightening
+      Defensive Rotation | Commodity Expansion | Risk-On Expansion
+      Geopolitical Premium | Energy Infrastructure Cycle | Inflation Pressure
+      Macro Stabilization
+    """
+    sc = {s.name: s.signal_score for s in sectors}
+    tech = sc.get("Technology",  0.0)
+    fin  = sc.get("Financials",  0.0)
+    ene  = sc.get("Energy",      0.0)
+    hc   = sc.get("Healthcare",  0.0)
+    util = sc.get("Utilities",   0.0)
+    mat  = sc.get("Materials",   0.0)
+    cons = sc.get("Consumer",    0.0)
+    ind  = sc.get("Industrials", 0.0)
+
+    has_ai      = "ai-energy-demand"                  in active_themes or "semiconductor-capex-cycle" in active_themes
+    has_yield   = "treasury-yield-pressure"           in active_themes or "liquidity-tightening"       in active_themes
+    has_energy  = "energy-security"                   in active_themes
+    has_defense = "defense-reindustrialization"       in active_themes
+    has_nuclear = "nuclear-power-renaissance"         in active_themes
+    has_consumer = "consumer-stress"                  in active_themes
+    has_credit  = "liquidity-tightening"              in active_themes
+
+    # Ranked checks — most specific conditions evaluated first
+    if tech > 50 and has_ai:
+        return "AI Capex Expansion"
+    if ene > 45 and has_energy:
+        return "Energy Supply Risk"
+    if has_yield and has_credit:
+        return "Liquidity Tightening"
+    if has_yield and fin > 35:
+        return "Yield Shock"
+    if (hc + util) > (tech + cons) * 0.9 and hc > 20:
+        return "Defensive Rotation"
+    if ene > 38 and mat > 32:
+        return "Commodity Expansion"
+    if has_defense and ene > 28:
+        return "Geopolitical Premium"
+    if has_nuclear and tech > 30:
+        return "Energy Infrastructure Cycle"
+    if has_consumer and cons > 25:
+        return "Inflation Pressure"
+    if tech > 40 and has_ai and not has_yield:
+        return "Risk-On Expansion"
+    if ind > 35 and not has_yield:
+        return "Risk-On Expansion"
+
+    return _BASE_TO_EXTENDED.get(base_regime, "Macro Stabilization")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

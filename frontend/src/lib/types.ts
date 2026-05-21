@@ -135,9 +135,16 @@ export interface SectorData {
   rotation_signals: RotationSignal[];
   dominant_sector:  string | null;
   generated_at:     string;   // ISO-8601
+  derived_regime:   string;   // Phase 5: e.g. "AI Capex Expansion" | "Yield Shock" | "Defensive Rotation"
 }
 
 // ── Theme intelligence graph ──────────────────────────────────────────────────
+
+export interface ThemeRelationship {
+  weight:    number;  // 0–1 impact strength
+  type:      "direct" | "indirect" | "macro_overlap" | "narrative";
+  direction: "positive" | "negative" | "mixed";
+}
 
 export interface ThemeIntelligence {
   id:                       string;
@@ -154,6 +161,17 @@ export interface ThemeIntelligence {
   second_order_effects:     string[];
   podcast_topics:           string[];
   last_updated:             string;
+  // Phase 5: weighted relationship graph + confidence + momentum
+  relationship_weights:     Record<string, ThemeRelationship>;
+  confidence_label:         string;   // "High Conviction" | "Elevated" | "Moderate" | "Developing" | "Speculative"
+  signal_quality:           "confirmed" | "developing" | "speculative";
+  evidence_count:           number;
+  persistence_score:        number;   // 0–100
+  volatility_score:         number;   // 0–100
+  cross_category_confirmed: boolean;
+  momentum_label:           "accelerating" | "strengthening" | "stable" | "cooling" | "reversing" | "emerging";
+  momentum_delta:           number;   // confidence change vs previous cycle
+  persistence_cycles:       number;
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────────
