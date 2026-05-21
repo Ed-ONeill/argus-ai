@@ -880,8 +880,16 @@ const QUALITY_CFG: Record<string, { label: string; cls: string }> = {
 function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
   const visible = themes
     .filter(t => t.signal_strength === "strong" || t.signal_strength === "medium")
-    .slice(0, 3);
-  if (visible.length === 0) return null;
+    .slice(0, 5);
+  if (visible.length === 0) return (
+    <div className="mb-5">
+      <SectionHeader
+        label="Intelligence Themes"
+        icon={<Network size={13} className="text-accent shrink-0" />}
+      />
+      <p className="text-[11px] text-ink-muted italic">Theme graph warming up…</p>
+    </div>
+  );
 
   return (
     <div className="mb-5">
@@ -1112,17 +1120,50 @@ export default function MarketsPage() {
       {data?.market_brief && !isLoading && (
         <RegimeBanner brief={data.market_brief} />
       )}
-      {/* Derived regime chip — deterministic extended label from themes + sectors */}
-      {derivedRegime && !isLoading && (
-        <div className="flex items-center gap-2 mb-5">
-          <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-ink-muted shrink-0">
-            Regime Signal
-          </span>
-          <span className="text-[10.5px] font-bold px-2.5 py-1 rounded-full bg-accent/10 text-accent border border-accent/20">
-            {derivedRegime}
-          </span>
-        </div>
-      )}
+      {/* Derived regime panel — deterministic extended label from themes + sectors */}
+      {derivedRegime && !isLoading && (() => {
+        const topTheme = themes.filter(t => t.signal_strength !== "weak")[0] ?? null;
+        return (
+          <div className="mb-5">
+            <SectionHeader
+              label="Market Regime"
+              icon={<Activity size={13} className="text-accent shrink-0" />}
+            />
+            <div className="bg-surface border border-accent/20 rounded-xl px-4 py-3 flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-accent leading-tight mb-1.5">
+                  {derivedRegime}
+                </p>
+                {topTheme && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9.5px] text-ink-muted shrink-0">Confirmed by</span>
+                    <span className="text-[9.5px] font-semibold text-ink">{topTheme.name}</span>
+                    {topTheme.related_assets[0] && (
+                      <>
+                        <span className="text-ink-muted/40 text-[9px]">·</span>
+                        <span
+                          className="text-[9px] font-bold font-mono px-1.5 py-px rounded"
+                          style={{ color: "#2563EB", background: "#2563EB14" }}
+                        >
+                          {topTheme.related_assets[0]}
+                        </span>
+                      </>
+                    )}
+                    {topTheme.confidence_label && (
+                      <span className="text-[9px] text-ink-muted ml-1">
+                        · {topTheme.confidence_label}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <span className="text-[8.5px] font-bold uppercase tracking-widest px-2 py-1 rounded-full bg-accent/10 text-accent border border-accent/20 shrink-0 self-center">
+                Live
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 1. Market Snapshot */}
       <div className="mb-0">

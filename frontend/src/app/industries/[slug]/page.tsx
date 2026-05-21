@@ -630,15 +630,15 @@ export default function IndustryDetailPage() {
             </motion.section>
 
             {/* Active Intelligence Themes */}
-            {activeThemes.length > 0 && (
-              <motion.section
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.19, duration: 0.25, ease: "easeOut" }}
-                className="bg-surface rounded-xl border border-edge p-4"
-              >
-                <SectionHeader icon={Network}>Active Themes</SectionHeader>
-                <div className="space-y-3.5">
+            <motion.section
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.19, duration: 0.25, ease: "easeOut" }}
+              className="bg-surface rounded-xl border border-edge p-4"
+            >
+              <SectionHeader icon={Network}>Active Themes</SectionHeader>
+              {activeThemes.length > 0 ? (
+                <div className="space-y-4">
                   {activeThemes.map((t: ThemeIntelligence) => {
                     const barColor =
                       t.signal_strength === "strong" ? "#10b981" :
@@ -647,12 +647,11 @@ export default function IndustryDetailPage() {
                       t.signal_strength === "strong" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
                       t.signal_strength === "medium" ? "bg-amber-500/10  text-amber-400  border-amber-500/20"   :
                                                        "bg-edge          text-ink-muted  border-edge";
-                    // Relationship weight for this specific industry
-                    const rel = (t.relationship_weights ?? {})[industry.name];
+                    const rel       = (t.relationship_weights ?? {})[industry.name];
                     const relWeight = rel ? Math.round(rel.weight * 100) : null;
                     const relDir    = rel?.direction ?? null;
-                    // Momentum pill
-                    const momLabel = t.momentum_label ?? "emerging";
+                    const relType   = rel?.type ?? null;
+                    const momLabel  = t.momentum_label ?? "emerging";
                     const momCls =
                       momLabel === "accelerating" || momLabel === "strengthening"
                         ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
@@ -661,8 +660,8 @@ export default function IndustryDetailPage() {
                         : "text-ink-muted bg-edge border-edge";
 
                     return (
-                      <div key={t.id} className="space-y-1.5">
-                        {/* Name + badges */}
+                      <div key={t.id} className="space-y-1.5 pb-4 last:pb-0 last:border-0 border-b border-edge/40">
+                        {/* Name + momentum + strength */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
                             {t.name}
@@ -680,7 +679,8 @@ export default function IndustryDetailPage() {
                             {t.signal_strength}
                           </span>
                         </div>
-                        {/* Confidence bar */}
+
+                        {/* Confidence bar + impact */}
                         <div className="flex items-center gap-1.5">
                           <div className="flex-1 h-[2px] rounded-full bg-raised overflow-hidden">
                             <div
@@ -688,6 +688,9 @@ export default function IndustryDetailPage() {
                               style={{ width: `${t.confidence}%`, background: barColor }}
                             />
                           </div>
+                          <span className="text-[9px] tabular-nums text-ink-muted shrink-0">
+                            {t.confidence_label || `${t.confidence}%`}
+                          </span>
                           {relWeight !== null && (
                             <span
                               className="text-[9px] font-bold tabular-nums shrink-0"
@@ -697,22 +700,55 @@ export default function IndustryDetailPage() {
                               }}
                             >
                               {relDir === "positive" ? "↑" : relDir === "negative" ? "↓" : "→"}
-                              {relWeight}% impact
+                              {relWeight}%
                             </span>
                           )}
                         </div>
-                        {/* Second-order effect */}
+
+                        {/* Relationship type + evidence + assets */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {relType && (
+                            <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border border-edge text-ink-muted/70 bg-raised shrink-0">
+                              {relType.replace(/_/g, " ")}
+                            </span>
+                          )}
+                          {t.related_assets.slice(0, 4).map(a => (
+                            <span
+                              key={a}
+                              className="text-[8.5px] font-bold font-mono px-[5px] py-[2px] rounded leading-none shrink-0"
+                              style={{ color: industry.color, background: `${industry.color}14` }}
+                            >
+                              {a}
+                            </span>
+                          ))}
+                          {t.evidence_count > 0 && (
+                            <span className="text-[8.5px] text-ink-muted/60 ml-auto shrink-0 tabular-nums">
+                              {t.evidence_count} src
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Second-order effect + persistence */}
                         {t.second_order_effects[0] && (
                           <p className="text-[10px] text-ink-muted leading-snug">
                             → {t.second_order_effects[0]}
+                          </p>
+                        )}
+                        {(t.persistence_cycles ?? 0) > 1 && (
+                          <p className="text-[9px] text-ink-muted/50">
+                            Persistent · {t.persistence_cycles} cycle{t.persistence_cycles !== 1 ? "s" : ""}
                           </p>
                         )}
                       </div>
                     );
                   })}
                 </div>
-              </motion.section>
-            )}
+              ) : (
+                <p className="text-[11px] text-ink-muted/60 italic text-center py-3">
+                  {feedData ? "No theme matches for this industry" : "Theme graph warming up…"}
+                </p>
+              )}
+            </motion.section>
 
             {/* Bullish / Bearish Positioning */}
             {sectorIntel && (

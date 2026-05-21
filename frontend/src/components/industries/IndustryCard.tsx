@@ -18,37 +18,58 @@ const SENTIMENT = {
 
 // ── IndustryCard ──────────────────────────────────────────────────────────────
 
+export interface ThemeSignalFallback {
+  score:         number;
+  sentiment:     "bullish" | "bearish" | "neutral";
+  storyCount:    number;
+  narrative:     string;
+  chips:         string[];
+  themeName:     string;
+  momentumLabel: string;
+}
+
 interface IndustryCardProps {
   industry:       IndustryConfig;
   sectorData:     SectorIntelligence | null;
   industrySignal: IndustrySignal | null;
   topTheme:       string | null;
+  themeSignal:    ThemeSignalFallback | null;
   index:          number;
 }
 
-export function IndustryCard({ industry, sectorData, industrySignal, topTheme, index }: IndustryCardProps) {
-  const score     = sectorData?.signal_score     ?? 0;
+export function IndustryCard({ industry, sectorData, industrySignal, topTheme, themeSignal, index }: IndustryCardProps) {
+  const score     = sectorData?.signal_score ?? 0;
+  const count     = sectorData?.signal_count ?? 0;
+  const alignment = industrySignal?.regime_alignment ?? sectorData?.regime_alignment ?? "neutral";
+  const hasData   = sectorData !== null && score > 0;
+  const hasTheme  = !hasData && themeSignal !== null && (themeSignal?.score ?? 0) > 0;
+
   const sentiment = (
     industrySignal?.momentum_direction ??
     sectorData?.impact_sentiment       ??
+    (hasTheme ? themeSignal!.sentiment : null) ??
     "neutral"
   ) as keyof typeof SENTIMENT;
-  const count     = sectorData?.signal_count     ?? 0;
-  const alignment = industrySignal?.regime_alignment ?? sectorData?.regime_alignment ?? "neutral";
-  const hasData   = sectorData !== null && score > 0;
 
-  const displayText   = industrySignal?.narrative || topTheme || industry.macroDrivers[0];
+  const effectiveScore = hasData ? score : (themeSignal?.score ?? 0);
+  const effectiveCount = count > 0 ? count : (themeSignal?.storyCount ?? 0);
+
+  const displayText   = industrySignal?.narrative || topTheme || themeSignal?.narrative || industry.macroDrivers[0];
   const displayChips  = industrySignal?.primary_drivers?.length
     ? industrySignal.primary_drivers.slice(0, 5)
+    : (hasTheme && themeSignal!.chips.length)
+    ? themeSignal!.chips.slice(0, 5)
     : industry.keyAssets.slice(0, 5);
 
   const sc    = SENTIMENT[sentiment] ?? SENTIMENT.neutral;
   const SIcon = sc.Icon;
 
   const scoreColor =
-    score >= 70 ? "#10b981" :
-    score >= 40 ? "#f59e0b" :
-    score > 0   ? industry.color : "#C2CBD8";
+    effectiveScore >= 70 ? "#10b981" :
+    effectiveScore >= 40 ? "#f59e0b" :
+    hasData && effectiveScore > 0 ? industry.color :
+    hasTheme ? "#8b5cf6" :
+    "#C2CBD8";
 
   return (
     <Link href={`/industries/${industry.slug}`} className="block group outline-none">
@@ -98,7 +119,7 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, i
               className="text-[20px] font-black tabular-nums leading-none"
               style={{ color: scoreColor }}
             >
-              {hasData ? score.toFixed(0) : "—"}
+              {(hasData || hasTheme) ? effectiveScore.toFixed(0) : "—"}
             </span>
           </div>
 
@@ -108,7 +129,7 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, i
               className="h-full rounded-full"
               style={{ background: scoreColor }}
               initial={{ width: 0 }}
-              animate={{ width: hasData ? `${Math.min(score, 100)}%` : "0%" }}
+              animate={{ width: (hasData || hasTheme) ? `${Math.min(effectiveScore, 100)}%` : "0%" }}
               transition={{ duration: 0.7, ease: "easeOut", delay: index * 0.035 + 0.15 }}
             />
           </div>
@@ -122,7 +143,11 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, i
               {displayText}
             </p>
             <span className="text-[9px] font-medium text-ink-muted tabular-nums shrink-0 mt-px">
-              {hasData ? `${count} ${count === 1 ? "story" : "stories"}` : "No data"}
+              {hasData
+                ? `${count} ${count === 1 ? "story" : "stories"}`
+                : hasTheme
+                ? `${effectiveCount} via theme`
+                : "No data"}
             </span>
           </div>
 
@@ -139,17 +164,30 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, i
             ))}
           </div>
 
-          {/* Regime alignment footer */}
-          <div className="pt-2.5 border-t border-edge/60">
+          {/* Regime alignment / theme momentum footer */}
+          <div className="pt-2.5 border-t border-edge/60 flex items-center gap-2">
             <span className={cn(
-              "text-[8.5px] font-bold uppercase tracking-widest",
+              "text-[8.5px] font-bold uppercase tracking-widest flex-1 min-w-0 truncate",
               alignment === "tailwind" ? "text-emerald-600" :
-              alignment === "headwind" ? "text-red-600"     : "text-ink-muted/60",
+              alignment === "headwind" ? "text-red-600"     :
+              (hasTheme && (themeSignal?.momentumLabel === "accelerating" || themeSignal?.momentumLabel === "strengthening"))
+                ? "text-emerald-600"
+              : (hasTheme && (themeSignal?.momentumLabel === "cooling" || themeSignal?.momentumLabel === "reversing"))
+                ? "text-red-600"
+              : "text-ink-muted/60",
             )}>
-              {alignment === "tailwind" ? "↑ Regime Tailwind" :
-               alignment === "headwind" ? "↓ Regime Headwind" :
-               "→ Regime Neutral"}
+              {hasData
+                ? (alignment === "tailwind" ? "↑ Regime Tailwind" :
+                   alignment === "headwind" ? "↓ Regime Headwind" : "→ Regime Neutral")
+                : hasTheme && themeSignal
+                ? `✦ ${themeSignal.momentumLabel}`
+                : "→ Regime Neutral"}
             </span>
+            {hasTheme && themeSignal && (
+              <span className="text-[8px] text-ink-muted/50 shrink-0 truncate max-w-[80px]" title={themeSignal.themeName}>
+                {themeSignal.themeName}
+              </span>
+            )}
           </div>
         </div>
       </motion.div>

@@ -4,16 +4,35 @@ import { motion } from "framer-motion";
 import { TrendingUp } from "lucide-react";
 import { cn, catColor } from "@/lib/utils";
 import { classifyImpact } from "@/lib/types";
-import type { WhatMattersNowItem } from "@/lib/types";
+import type { WhatMattersNowItem, ThemeIntelligence } from "@/lib/types";
 
 interface WhatMattersNowProps {
   items:     WhatMattersNowItem[];
   isLoading: boolean;
+  themes?:   ThemeIntelligence[];
 }
 
-export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
+function buildThemeMap(
+  items:  WhatMattersNowItem[],
+  themes: ThemeIntelligence[],
+): Record<string, ThemeIntelligence> {
+  const map: Record<string, ThemeIntelligence> = {};
+  if (!themes.length) return map;
+  for (const item of items) {
+    const id = item.cluster.id;
+    const matched = themes
+      .filter(t => t.contributing_cluster_ids.includes(id))
+      .sort((a, b) => b.confidence - a.confidence);
+    if (matched.length > 0) map[id] = matched[0];
+  }
+  return map;
+}
+
+export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps) {
   if (isLoading) return <WhatMattersNowSkeleton />;
   if (!items.length) return null;
+
+  const themeMap = buildThemeMap(items, themes ?? []);
 
   function scrollToCluster(clusterId: string) {
     const el = document.querySelector(`[data-cluster-id="${clusterId}"]`);
@@ -40,6 +59,7 @@ export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
             key={item.cluster.id}
             item={item}
             index={idx}
+            matchedTheme={themeMap[item.cluster.id]}
             onClick={() => scrollToCluster(item.cluster.id)}
           />
         ))}
@@ -50,6 +70,7 @@ export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
         {primary && (
           <PrimaryDriverCard
             item={primary}
+            matchedTheme={themeMap[primary.cluster.id]}
             onClick={() => scrollToCluster(primary.cluster.id)}
           />
         )}
@@ -60,6 +81,7 @@ export function WhatMattersNow({ items, isLoading }: WhatMattersNowProps) {
                 key={item.cluster.id}
                 item={item}
                 index={idx + 1}
+                matchedTheme={themeMap[item.cluster.id]}
                 onClick={() => scrollToCluster(item.cluster.id)}
               />
             ))}
@@ -87,8 +109,8 @@ function scoreBarColor(score: number): string {
 // ── Primary driver banner (desktop rank-1 card) ───────────────────────────────
 
 function PrimaryDriverCard({
-  item, onClick,
-}: { item: WhatMattersNowItem; onClick: () => void }) {
+  item, onClick, matchedTheme,
+}: { item: WhatMattersNowItem; onClick: () => void; matchedTheme?: ThemeIntelligence }) {
   const { cluster, thesis, wmn_label } = item;
   const p          = cluster.primary;
   const color      = catColor(p.category);
@@ -154,6 +176,21 @@ function PrimaryDriverCard({
             {score}
           </span>
         </div>
+
+        {/* Intelligence theme tag */}
+        {matchedTheme && (
+          <div className="flex items-center gap-1.5 pt-1 border-t border-edge/40 mt-0.5">
+            <span className="text-[9px] text-ink-muted shrink-0">Theme:</span>
+            <span className="text-[9px] font-bold px-1.5 py-px rounded bg-accent/10 text-accent border border-accent/20 truncate max-w-[180px]">
+              {matchedTheme.name}
+            </span>
+            {matchedTheme.confidence_label && (
+              <span className="text-[9px] text-ink-muted shrink-0">
+                · {matchedTheme.confidence_label}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </motion.button>
   );
@@ -163,8 +200,8 @@ function PrimaryDriverCard({
 // ── Theme card (ranks 2-5) ────────────────────────────────────────────────────
 
 function WMNCard({
-  item, index, onClick,
-}: { item: WhatMattersNowItem; index: number; onClick: () => void }) {
+  item, index, onClick, matchedTheme,
+}: { item: WhatMattersNowItem; index: number; onClick: () => void; matchedTheme?: ThemeIntelligence }) {
   const { cluster, thesis, wmn_label, rank } = item;
   const p        = cluster.primary;
   const color    = catColor(p.category);
@@ -262,6 +299,18 @@ function WMNCard({
             </span>
           )}
         </div>
+
+        {/* Intelligence theme tag */}
+        {matchedTheme && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <span
+              className="text-[8.5px] font-bold px-1.5 py-px rounded bg-accent/10 text-accent/80 border border-accent/15 truncate max-w-full"
+              title={matchedTheme.name}
+            >
+              ✦ {matchedTheme.name}
+            </span>
+          </div>
+        )}
 
       </div>
     </motion.button>

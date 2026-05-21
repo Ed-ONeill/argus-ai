@@ -130,6 +130,7 @@ useEffect(() => {
         <WhatMattersNow
           items={data?.what_matters_now ?? []}
           isLoading={isLoading}
+          themes={data?.theme_intelligence ?? []}
         />
 
         {/* ── Top Stories 5-card grid ─────────────────────────────── */}

@@ -5,13 +5,14 @@ import { Globe2, RefreshCw, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
-import { IndustryCard, IndustryCardSkeleton } from "@/components/industries/IndustryCard";
+import { IndustryCard, IndustryCardSkeleton, type ThemeSignalFallback } from "@/components/industries/IndustryCard";
 import {
   INDUSTRIES,
   getSectorIntelligence,
   getIndustrySignals,
   getTopTheme,
 } from "@/lib/industryConfig";
+import type { ThemeIntelligence } from "@/lib/types";
 
 // ── Regime badge config (dark-hero variant) ───────────────────────────────────
 
@@ -30,6 +31,31 @@ function formatAge(s: number): string {
   return `${Math.floor(s / 3600)}h ago`;
 }
 
+function deriveThemeSignal(
+  industryName: string,
+  themes: ThemeIntelligence[],
+): ThemeSignalFallback | null {
+  const matching = themes.filter(t => t.related_industries.includes(industryName));
+  if (!matching.length) return null;
+  const best = [...matching].sort((a, b) => b.confidence - a.confidence)[0];
+  const rel   = (best.relationship_weights ?? {})[industryName];
+  const weight = rel?.weight ?? 0.5;
+  const score  = Math.round(best.confidence * weight);
+  if (score <= 0) return null;
+  const direction = rel?.direction;
+  return {
+    score,
+    sentiment: direction === "positive" ? "bullish"
+             : direction === "negative" ? "bearish"
+             : "neutral",
+    storyCount:    best.contributing_story_count,
+    narrative:     best.description,
+    chips:         best.related_assets.slice(0, 5),
+    themeName:     best.name,
+    momentumLabel: best.momentum_label ?? "emerging",
+  };
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function IndustriesPage() {
@@ -37,11 +63,20 @@ export default function IndustriesPage() {
   const { data: feedData } = useFeed({});
 
   const whatMattersNow = feedData?.what_matters_now ?? [];
+  const allThemes      = feedData?.theme_intelligence ?? [];
   const regimeMeta     = regime ? (REGIME_META[regime] ?? null) : null;
 
-  const activeCount  = (sectorData?.sectors ?? []).filter(s => s.signal_score > 0).length;
-  const totalStories = (sectorData?.sectors ?? []).reduce((n, s) => n + s.signal_count, 0);
-  const dominant     = sectorData?.dominant_sector ?? null;
+  const hasSectorData  = (sectorData?.sectors?.length ?? 0) > 0;
+  const activeThemes   = allThemes.filter(t => t.signal_strength !== "weak");
+
+  const activeCount  = hasSectorData
+    ? (sectorData!.sectors.filter(s => s.signal_score > 0).length)
+    : activeThemes.length;
+  const totalStories = hasSectorData
+    ? sectorData!.sectors.reduce((n, s) => n + s.signal_count, 0)
+    : allThemes.reduce((n, t) => n + t.contributing_story_count, 0);
+  const dominant     = sectorData?.dominant_sector
+    ?? (activeThemes[0]?.name ?? null);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -181,6 +216,9 @@ export default function IndustriesPage() {
                 const sectorIntel    = getSectorIntelligence(industry, sectorData?.sectors ?? []);
                 const industrySignal = getIndustrySignals(industry, sectorData?.industries ?? [])[0] ?? null;
                 const topTheme       = getTopTheme(industry, clusters, whatMattersNow);
+                const themeSignal    = industrySignal === null
+                  ? deriveThemeSignal(industry.name, allThemes)
+                  : null;
                 return (
                   <IndustryCard
                     key={industry.slug}
@@ -188,6 +226,7 @@ export default function IndustriesPage() {
                     sectorData={sectorIntel}
                     industrySignal={industrySignal}
                     topTheme={topTheme}
+                    themeSignal={themeSignal}
                     index={i}
                   />
                 );
