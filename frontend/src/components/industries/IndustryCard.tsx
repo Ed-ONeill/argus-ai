@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { IndustryConfig } from "@/lib/industryConfig";
-import type { SectorIntelligence } from "@/lib/types";
+import type { SectorIntelligence, IndustrySignal } from "@/lib/types";
 
 // ── Sentiment config ──────────────────────────────────────────────────────────
 
@@ -19,18 +19,28 @@ const SENTIMENT = {
 // ── IndustryCard ──────────────────────────────────────────────────────────────
 
 interface IndustryCardProps {
-  industry:   IndustryConfig;
-  sectorData: SectorIntelligence | null;
-  topTheme:   string | null;
-  index:      number;
+  industry:       IndustryConfig;
+  sectorData:     SectorIntelligence | null;
+  industrySignal: IndustrySignal | null;
+  topTheme:       string | null;
+  index:          number;
 }
 
-export function IndustryCard({ industry, sectorData, topTheme, index }: IndustryCardProps) {
+export function IndustryCard({ industry, sectorData, industrySignal, topTheme, index }: IndustryCardProps) {
   const score     = sectorData?.signal_score     ?? 0;
-  const sentiment = (sectorData?.impact_sentiment ?? "neutral") as keyof typeof SENTIMENT;
+  const sentiment = (
+    industrySignal?.momentum_direction ??
+    sectorData?.impact_sentiment       ??
+    "neutral"
+  ) as keyof typeof SENTIMENT;
   const count     = sectorData?.signal_count     ?? 0;
-  const alignment = sectorData?.regime_alignment ?? "neutral";
+  const alignment = industrySignal?.regime_alignment ?? sectorData?.regime_alignment ?? "neutral";
   const hasData   = sectorData !== null && score > 0;
+
+  const displayText   = industrySignal?.narrative || topTheme || industry.macroDrivers[0];
+  const displayChips  = industrySignal?.primary_drivers?.length
+    ? industrySignal.primary_drivers.slice(0, 5)
+    : industry.keyAssets.slice(0, 5);
 
   const sc    = SENTIMENT[sentiment] ?? SENTIMENT.neutral;
   const SIcon = sc.Icon;
@@ -103,22 +113,22 @@ export function IndustryCard({ industry, sectorData, topTheme, index }: Industry
             />
           </div>
 
-          {/* Top theme + story count */}
-          <div className="flex items-center justify-between gap-2 mb-3">
+          {/* Narrative / top theme + story count */}
+          <div className="flex items-start justify-between gap-2 mb-3">
             <p
-              className="text-[10px] text-ink-secondary truncate flex-1 leading-tight"
-              title={topTheme ?? industry.macroDrivers[0]}
+              className="text-[10px] text-ink-secondary flex-1 leading-snug line-clamp-2"
+              title={displayText}
             >
-              {topTheme ?? industry.macroDrivers[0]}
+              {displayText}
             </p>
-            <span className="text-[9px] font-medium text-ink-muted tabular-nums shrink-0">
+            <span className="text-[9px] font-medium text-ink-muted tabular-nums shrink-0 mt-px">
               {hasData ? `${count} ${count === 1 ? "story" : "stories"}` : "No data"}
             </span>
           </div>
 
-          {/* Key asset chips */}
+          {/* Driver chips */}
           <div className="flex flex-wrap gap-1 mb-3">
-            {industry.keyAssets.slice(0, 5).map(ticker => (
+            {displayChips.map(ticker => (
               <span
                 key={ticker}
                 className="text-[8.5px] font-bold font-mono px-[5px] py-[2px] rounded leading-none"

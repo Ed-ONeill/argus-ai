@@ -239,9 +239,10 @@ export default function IndustryDetailPage() {
   if (isLoading) return <DetailSkeleton color={industry.color} />;
 
   // ── Derived data ────────────────────────────────────────────────────────────
-  const sectorIntel  = getSectorIntelligence(industry, sectorData?.sectors ?? []);
-  const indSignals   = getIndustrySignals(industry, sectorData?.industries ?? []);
-  const topClusters  = filterIndustryClusters(industry, clusters, 8);
+  const sectorIntel    = getSectorIntelligence(industry, sectorData?.sectors ?? []);
+  const indSignals     = getIndustrySignals(industry, sectorData?.industries ?? []);
+  const bestIndSignal  = indSignals[0] ?? null;
+  const topClusters    = filterIndustryClusters(industry, clusters, 8);
 
   const thesis  = sectorIntel ? generateThesis(sectorIntel, indSignals, regime) : null;
   const [cxA, cxB] = sectorIntel ? getCrossAssetEffects(industry.sector, regime) : ["", ""];
@@ -256,9 +257,13 @@ export default function IndustryDetailPage() {
   const topTheme      = getTopTheme(industry, clusters, whatMattersNow);
 
   const score     = sectorIntel?.signal_score     ?? 0;
-  const sentiment = (sectorIntel?.impact_sentiment ?? "neutral") as keyof typeof SENTIMENT;
+  const sentiment = (
+    bestIndSignal?.momentum_direction ??
+    sectorIntel?.impact_sentiment     ??
+    "neutral"
+  ) as keyof typeof SENTIMENT;
   const count     = sectorIntel?.signal_count     ?? 0;
-  const alignment = sectorIntel?.regime_alignment ?? "neutral";
+  const alignment = bestIndSignal?.regime_alignment ?? sectorIntel?.regime_alignment ?? "neutral";
   const hasData   = sectorIntel !== null && score > 0;
 
   const sc         = SENTIMENT[sentiment] ?? SENTIMENT.neutral;
@@ -266,6 +271,11 @@ export default function IndustryDetailPage() {
   const scoreColor = score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : score > 0 ? industry.color : "#C2CBD8";
   const regimeMeta = regime ? (REGIME_DARK[regime] ?? null) : null;
   const maxInd     = indSignals[0]?.signal_score ?? 1;
+
+  // Live narrative from best industry signal
+  const heroNarrative = bestIndSignal?.narrative ?? null;
+  const topStoryTitle = bestIndSignal?.top_story_title ?? null;
+  const topStoryUrl   = bestIndSignal?.top_story_url   ?? null;
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -337,9 +347,22 @@ export default function IndustryDetailPage() {
           >
             {industry.name}
           </motion.h1>
-          <p className="text-sm text-white/45 mb-7 leading-relaxed">
+          <p className="text-sm text-white/45 mb-4 leading-relaxed">
             {industry.description}
           </p>
+
+          {/* Live narrative */}
+          {heroNarrative && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              className="text-[13px] text-white/65 mb-7 leading-relaxed max-w-2xl italic"
+            >
+              {heroNarrative}
+            </motion.p>
+          )}
+          {!heroNarrative && <div className="mb-7" />}
 
           {/* Live metrics row */}
           <div className="flex flex-wrap items-end gap-6 mb-7">
@@ -408,7 +431,7 @@ export default function IndustryDetailPage() {
           </div>
 
           {/* Key asset chips */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 mb-4">
             {industry.keyAssets.map(ticker => (
               <span
                 key={ticker}
@@ -419,6 +442,24 @@ export default function IndustryDetailPage() {
               </span>
             ))}
           </div>
+
+          {/* Top story link */}
+          {topStoryTitle && topStoryUrl && (
+            <a
+              href={topStoryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 group"
+            >
+              <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-white/30">
+                Top Story
+              </span>
+              <span className="text-[11px] font-medium text-white/50 group-hover:text-white/80 transition-colors truncate max-w-md leading-tight">
+                {topStoryTitle}
+              </span>
+              <ArrowUpRight size={10} className="text-white/25 group-hover:text-white/60 transition-colors shrink-0" />
+            </a>
+          )}
         </div>
       </div>
 

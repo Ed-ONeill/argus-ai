@@ -9,6 +9,7 @@ import { IndustryCard, IndustryCardSkeleton } from "@/components/industries/Indu
 import {
   INDUSTRIES,
   getSectorIntelligence,
+  getIndustrySignals,
   getTopTheme,
 } from "@/lib/industryConfig";
 
@@ -177,15 +178,15 @@ export default function IndustriesPage() {
                 <IndustryCardSkeleton key={i} />
               ))
             : INDUSTRIES.map((industry, i) => {
-                const sectorIntel = getSectorIntelligence(
-                  industry, sectorData?.sectors ?? [],
-                );
-                const topTheme = getTopTheme(industry, clusters, whatMattersNow);
+                const sectorIntel    = getSectorIntelligence(industry, sectorData?.sectors ?? []);
+                const industrySignal = getIndustrySignals(industry, sectorData?.industries ?? [])[0] ?? null;
+                const topTheme       = getTopTheme(industry, clusters, whatMattersNow);
                 return (
                   <IndustryCard
                     key={industry.slug}
                     industry={industry}
                     sectorData={sectorIntel}
+                    industrySignal={industrySignal}
                     topTheme={topTheme}
                     index={i}
                   />

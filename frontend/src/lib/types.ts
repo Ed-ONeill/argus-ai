@@ -106,11 +106,17 @@ export interface SectorIntelligence {
 }
 
 export interface IndustrySignal {
-  name:         string;
-  sector:       string;
-  signal_score: number;
-  signal_count: number;
-  top_entity:   string | null;
+  name:               string;
+  sector:             string;
+  signal_score:       number;
+  signal_count:       number;
+  top_entity:         string | null;
+  momentum_direction: "bullish" | "bearish" | "neutral";
+  primary_drivers:    string[];
+  narrative:          string;
+  regime_alignment:   "tailwind" | "headwind" | "neutral";
+  top_story_title:    string | null;
+  top_story_url:      string | null;
 }
 
 export interface RotationSignal {

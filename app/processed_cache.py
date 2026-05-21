@@ -120,6 +120,16 @@ class ProcessedFeedCache:
                         feed.market_brief = None
                     if not hasattr(feed, "sector_data"):
                         feed.sector_data = None
+                    # Patch IndustrySignal fields added in Phase 3
+                    if feed.sector_data is not None:
+                        for ind in (feed.sector_data.industries or []):
+                            if not hasattr(ind, "momentum_direction"):
+                                ind.momentum_direction = "neutral"
+                                ind.primary_drivers    = []
+                                ind.narrative          = ""
+                                ind.regime_alignment   = "neutral"
+                                ind.top_story_title    = None
+                                ind.top_story_url      = None
                     self._store[key] = feed
                     age = (datetime.now(timezone.utc) - feed.generated_at).total_seconds()
                     log.info(

@@ -273,11 +273,17 @@ class SectorIntelligence:
 
 @dataclass
 class IndustrySignal:
-    name:         str
-    sector:       str          # parent GICS sector
-    signal_score: float
-    signal_count: int
-    top_entity:   str | None
+    name:               str
+    sector:             str          # parent GICS sector
+    signal_score:       float
+    signal_count:       int
+    top_entity:         str | None
+    momentum_direction: str          = "neutral"           # "bullish" | "bearish" | "neutral"
+    primary_drivers:    list[str]    = field(default_factory=list)
+    narrative:          str          = ""
+    regime_alignment:   str          = "neutral"           # "tailwind" | "headwind" | "neutral"
+    top_story_title:    str | None   = None
+    top_story_url:      str | None   = None
 
 
 @dataclass
@@ -342,6 +348,50 @@ def classify_item(item: object) -> tuple[dict[str, float], dict[str, float]]:
     return sector_scores, industry_scores
 
 
+# ── Industry narrative generation (pure, zero-LLM) ───────────────────────────
+
+_INDUSTRY_DESCRIPTOR: dict[str, str] = {
+    "AI Infrastructure":     "AI infrastructure and compute spending",
+    "Semiconductors":        "Semiconductor demand and chip pricing",
+    "Defense":               "Defense procurement and geopolitical risk premium",
+    "Cybersecurity":         "Cybersecurity spending and the threat landscape",
+    "Data Centers":          "Data center capacity and hyperscaler capex",
+    "Nuclear":               "Nuclear power and uranium supply dynamics",
+    "Private Credit":        "Private credit flows and direct lending",
+    "Cloud Software":        "Cloud software adoption and SaaS revenue growth",
+    "Energy Transition":     "Clean energy deployment and policy support",
+    "Robotics":              "Industrial automation and robotics adoption",
+    "Crypto Infrastructure": "Crypto market structure and digital asset flows",
+    "LNG":                   "LNG export volumes and global natural gas demand",
+}
+
+_NARRATIVE_TEMPLATE: dict[tuple[str, str], str] = {
+    ("bullish", "tailwind"): "{d} is accelerating with macro conditions providing additional institutional lift.",
+    ("bullish", "headwind"): "{d} is pressing higher on fundamental strength despite broad sector headwinds.",
+    ("bullish", "neutral"):  "{d} is advancing on company-specific catalysts and improving fundamentals.",
+    ("bearish", "tailwind"): "{d} is retreating despite supportive macro conditions — watch for a reversal setup.",
+    ("bearish", "headwind"): "{d} faces compounding pressure as macro headwinds reinforce deteriorating fundamentals.",
+    ("bearish", "neutral"):  "{d} is pulling back on profit-taking and softening near-term outlook.",
+    ("neutral", "tailwind"): "{d} is consolidating within a constructive macro backdrop — awaiting a catalyst.",
+    ("neutral", "headwind"): "{d} is navigating macro headwinds with limited directional conviction.",
+    ("neutral", "neutral"):  "{d} shows mixed signals with no clear institutional positioning bias.",
+}
+
+
+def _generate_industry_narrative(
+    industry_name: str,
+    momentum:      str,         # "bullish" | "bearish" | "neutral"
+    alignment:     str,         # "tailwind" | "headwind" | "neutral"
+    top_entity:    str | None,
+) -> str:
+    descriptor = _INDUSTRY_DESCRIPTOR.get(industry_name, industry_name.lower())
+    template   = _NARRATIVE_TEMPLATE.get((momentum, alignment), _NARRATIVE_TEMPLATE[("neutral", "neutral")])
+    base       = template.format(d=descriptor)
+    if top_entity:
+        base = base.rstrip(".") + f", with {top_entity} as a key focal point."
+    return base
+
+
 # ── Aggregation ───────────────────────────────────────────────────────────────
 
 def aggregate_sector_intelligence(
@@ -366,7 +416,10 @@ def aggregate_sector_intelligence(
         for s in SECTOR_MAP
     }
     ind_acc: dict[str, dict] = {
-        ind: {"score": 0.0, "count": 0, "entities": {}}
+        ind: {
+            "score": 0.0, "count": 0, "entities": {},
+            "sentiments": [], "top_story": None, "top_score": 0.0,
+        }
         for ind in INDUSTRY_MAP
     }
 
@@ -396,9 +449,13 @@ def aggregate_sector_intelligence(
             weight = min(match_sc / 6.0, 1.0)
             acc["score"] += combined * weight
             acc["count"] += 1
+            acc["sentiments"].append(_item_sentiment(item))
             for e in (getattr(item, "affected_entities", None) or []):
                 eu = e.upper()
                 acc["entities"][eu] = acc["entities"].get(eu, 0) + 1
+            if combined > acc["top_score"]:
+                acc["top_score"] = combined
+                acc["top_story"] = item
 
     max_sec       = max((v["score"] for v in sec_acc.values()), default=1.0) or 1.0
     alignment_cfg = REGIME_SECTOR_MAP.get(regime, REGIME_SECTOR_MAP["Neutral/Consolidating"])
@@ -434,14 +491,32 @@ def aggregate_sector_intelligence(
     for name, acc in ind_acc.items():
         if acc["count"] == 0:
             continue
-        norm  = round(min(100.0, acc["score"] / max_ind * 100), 1)
-        top_e = max(acc["entities"], key=acc["entities"].get) if acc["entities"] else None
+        norm         = round(min(100.0, acc["score"] / max_ind * 100), 1)
+        sorted_ents  = sorted(acc["entities"].items(), key=lambda kv: kv[1], reverse=True)
+        top_e        = sorted_ents[0][0] if sorted_ents else None
+        drivers      = [e for e, _ in sorted_ents[:3]]
+        momentum     = _majority_sentiment(acc["sentiments"])
+        if momentum == "mixed":
+            momentum = "neutral"
+        parent_sector = INDUSTRY_MAP[name]["sector"]
+        align = (
+            "tailwind" if parent_sector in alignment_cfg["tailwind"]
+            else "headwind" if parent_sector in alignment_cfg["headwind"]
+            else "neutral"
+        )
+        ts = acc["top_story"]
         industries.append(IndustrySignal(
-            name         = name,
-            sector       = INDUSTRY_MAP[name]["sector"],
-            signal_score = norm,
-            signal_count = acc["count"],
-            top_entity   = top_e,
+            name               = name,
+            sector             = parent_sector,
+            signal_score       = norm,
+            signal_count       = acc["count"],
+            top_entity         = top_e,
+            momentum_direction = momentum,
+            primary_drivers    = drivers,
+            narrative          = _generate_industry_narrative(name, momentum, align, top_e),
+            regime_alignment   = align,
+            top_story_title    = getattr(ts, "title", None) if ts else None,
+            top_story_url      = getattr(ts, "url",   None) if ts else None,
         ))
     industries.sort(key=lambda i: i.signal_score, reverse=True)
 

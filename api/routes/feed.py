@@ -168,11 +168,17 @@ class SectorIntelligenceSchema(BaseModel):
 
 
 class IndustrySignalSchema(BaseModel):
-    name:         str
-    sector:       str
-    signal_score: float
-    signal_count: int
-    top_entity:   str | None
+    name:               str
+    sector:             str
+    signal_score:       float
+    signal_count:       int
+    top_entity:         str | None
+    momentum_direction: str       = "neutral"
+    primary_drivers:    list[str] = []
+    narrative:          str       = ""
+    regime_alignment:   str       = "neutral"
+    top_story_title:    str | None = None
+    top_story_url:      str | None = None
 
 
 class RotationSignalSchema(BaseModel):
