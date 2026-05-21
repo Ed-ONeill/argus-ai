@@ -28,6 +28,7 @@ from app.clustering      import StoryCluster, WhatMattersNowItem as _WMNItem
 from app.summarizer      import MarketBrief
 
 from app.top_stories import _select_top_stories
+from app.theme_graph import ThemeIntelligence as _ThemeIntelligence
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +110,8 @@ class FeedResponse(BaseModel):
     market_brief:       MarketBriefSchema | None = None
     # Sector intelligence (None until first pipeline run completes)
     sector_data:        SectorDataSchema | None = None
+    # Theme intelligence graph (empty until first pipeline run)
+    theme_intelligence: list[ThemeIntelligenceSchema] = []
     # Cache metadata
     is_stale:           bool
     generated_at:       str
@@ -195,6 +198,23 @@ class SectorDataSchema(BaseModel):
     rotation_signals: list[RotationSignalSchema]
     dominant_sector:  str | None
     generated_at:     str    # ISO-8601
+
+
+class ThemeIntelligenceSchema(BaseModel):
+    id:                       str
+    name:                     str
+    description:              str
+    signal_strength:          str
+    confidence:               int
+    momentum_direction:       str
+    related_industries:       list[str] = []
+    related_assets:           list[str] = []
+    related_macro_factors:    list[str] = []
+    contributing_cluster_ids: list[str] = []
+    contributing_story_count: int       = 0
+    second_order_effects:     list[str] = []
+    podcast_topics:           list[str] = []
+    last_updated:             str       = ""
 
 
 class FeedStatusResponse(BaseModel):
@@ -285,11 +305,17 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             ],
             industries=[
                 IndustrySignalSchema(
-                    name         = i.name,
-                    sector       = i.sector,
-                    signal_score = i.signal_score,
-                    signal_count = i.signal_count,
-                    top_entity   = i.top_entity,
+                    name               = i.name,
+                    sector             = i.sector,
+                    signal_score       = i.signal_score,
+                    signal_count       = i.signal_count,
+                    top_entity         = i.top_entity,
+                    momentum_direction = getattr(i, "momentum_direction", "neutral"),
+                    primary_drivers    = getattr(i, "primary_drivers",    []),
+                    narrative          = getattr(i, "narrative",          ""),
+                    regime_alignment   = getattr(i, "regime_alignment",   "neutral"),
+                    top_story_title    = getattr(i, "top_story_title",    None),
+                    top_story_url      = getattr(i, "top_story_url",      None),
                 )
                 for i in sd.industries
             ],
@@ -307,6 +333,27 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             generated_at    = sd.generated_at.isoformat(),
         )
 
+    raw_themes = getattr(entry, "theme_intelligence", []) or []
+    theme_schemas = [
+        ThemeIntelligenceSchema(
+            id                       = t.id,
+            name                     = t.name,
+            description              = t.description,
+            signal_strength          = t.signal_strength,
+            confidence               = t.confidence,
+            momentum_direction       = t.momentum_direction,
+            related_industries       = t.related_industries,
+            related_assets           = t.related_assets,
+            related_macro_factors    = t.related_macro_factors,
+            contributing_cluster_ids = t.contributing_cluster_ids,
+            contributing_story_count = t.contributing_story_count,
+            second_order_effects     = t.second_order_effects,
+            podcast_topics           = t.podcast_topics,
+            last_updated             = t.last_updated,
+        )
+        for t in raw_themes
+    ]
+
     return FeedResponse(
         items=schemas,
         top_stories=TopStoriesSchema(
@@ -319,6 +366,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         market_take=entry.market_take,
         market_brief=brief_schema,
         sector_data=sector_schema,
+        theme_intelligence=theme_schemas,
         total=len(items),
         sources=sorted({i.source for i in items}),
         category_breakdown=category_breakdown(items),

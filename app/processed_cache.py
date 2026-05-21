@@ -23,6 +23,7 @@ from app.feeds import FeedItem
 from app.clustering import StoryCluster, WhatMattersNowItem
 from app.summarizer import MarketBrief
 from app.sectors import SectorData
+from app.theme_graph import ThemeIntelligence
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class ProcessedFeed:
     market_brief:     MarketBrief | None       = None
     # Sector intelligence (added in Sectors phase — None until first pipeline run)
     sector_data:      SectorData | None        = None
+    # Theme intelligence graph (added in Phase 4 — empty list until first pipeline run)
+    theme_intelligence: list[ThemeIntelligence] = field(default_factory=list)
 
 
 class ProcessedFeedCache:
@@ -120,6 +123,8 @@ class ProcessedFeedCache:
                         feed.market_brief = None
                     if not hasattr(feed, "sector_data"):
                         feed.sector_data = None
+                    if not hasattr(feed, "theme_intelligence"):
+                        feed.theme_intelligence = []
                     # Patch IndustrySignal fields added in Phase 3
                     if feed.sector_data is not None:
                         for ind in (feed.sector_data.industries or []):

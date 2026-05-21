@@ -212,6 +212,17 @@ def run_pipeline(
         len(sector_data.rotation_signals),
     )
 
+    # ── 6c. Theme intelligence graph ──────────────────────────────────────────
+    from app.theme_graph import extract_themes
+    theme_intelligence = extract_themes(clusters)
+    t_themes = time.perf_counter()
+    log.info(
+        "[bg] themes done in %.3fs  active=%d  strong=%d",
+        t_themes - t_sector,
+        len(theme_intelligence),
+        sum(1 for t in theme_intelligence if t.signal_strength == "strong"),
+    )
+
     # ── 7. Top story selection ─────────────────────────────────────────────────
     debug_log: list[str] = []
     top = _select_top_stories(items, debug_log=debug_log)
@@ -288,6 +299,7 @@ def run_pipeline(
         clusters=clusters,
         what_matters_now=wmn,
         sector_data=sector_data,
+        theme_intelligence=theme_intelligence,
     )
 
 
