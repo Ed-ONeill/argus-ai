@@ -4,14 +4,14 @@ import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart2, TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle,
-  Activity, Zap, ArrowUpRight, ArrowDownRight, X, Target,
+  Activity, Zap, ArrowUpRight, ArrowDownRight, X, Target, Network,
 } from "lucide-react";
 import { cn, catColor } from "@/lib/utils";
 import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useMarketData } from "@/hooks/useMarketData";
 import { ClusterStream } from "@/components/feed/ClusterStream";
-import type { StoryCluster, FeedItem, WhatMattersNowItem, MarketBrief } from "@/lib/types";
+import type { StoryCluster, FeedItem, WhatMattersNowItem, MarketBrief, ThemeIntelligence } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
 
 
@@ -848,6 +848,95 @@ function RegimeBanner({ brief }: { brief: MarketBrief }) {
 }
 
 
+// ── Intelligence Themes ───────────────────────────────────────────────────────
+
+const STRENGTH_CFG = {
+  strong: { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-400" },
+  medium: { cls: "bg-amber-50  text-amber-700  border-amber-200",     dot: "bg-amber-400"   },
+  weak:   { cls: "bg-slate-50  text-slate-500  border-slate-200",     dot: "bg-slate-300"   },
+} as const;
+
+const MOMENTUM_COLOR = {
+  bullish: "#10b981",
+  bearish: "#ef4444",
+  neutral: "#94a3b8",
+} as const;
+
+function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
+  const visible = themes
+    .filter(t => t.signal_strength === "strong" || t.signal_strength === "medium")
+    .slice(0, 3);
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="mb-5">
+      <SectionHeader
+        label="Intelligence Themes"
+        icon={<Network size={13} className="text-accent shrink-0" />}
+      />
+      <div className="space-y-2.5">
+        {visible.map(t => {
+          const cfg   = STRENGTH_CFG[t.signal_strength] ?? STRENGTH_CFG.weak;
+          const mColor = MOMENTUM_COLOR[t.momentum_direction as keyof typeof MOMENTUM_COLOR] ?? MOMENTUM_COLOR.neutral;
+          return (
+            <div
+              key={t.id}
+              className="bg-surface rounded-xl border border-edge px-4 py-3 space-y-2"
+            >
+              {/* Header row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[13px] font-bold text-ink leading-tight flex-1 min-w-0">
+                  {t.name}
+                </span>
+                <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
+                  <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
+                  {t.signal_strength}
+                </span>
+                <span
+                  className="text-[10px] font-semibold tabular-nums shrink-0"
+                  style={{ color: mColor }}
+                >
+                  {t.momentum_direction === "bullish" ? "↑" : t.momentum_direction === "bearish" ? "↓" : "→"}
+                  {" "}{t.confidence}%
+                </span>
+              </div>
+
+              {/* Description */}
+              <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2">
+                {t.description}
+              </p>
+
+              {/* Related industries chips */}
+              {t.related_industries.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9.5px] text-ink-muted shrink-0">Industries:</span>
+                  {t.related_industries.slice(0, 4).map(ind => (
+                    <span
+                      key={ind}
+                      className="text-[9.5px] font-medium px-2 py-px rounded-full bg-raised text-ink-secondary border border-edge"
+                    >
+                      {ind}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* First second-order effect */}
+              {t.second_order_effects[0] && (
+                <p className="text-[10.5px] text-ink-muted leading-snug border-t border-edge/40 pt-1.5">
+                  <span className="font-semibold text-ink-secondary">Second-order:</span>{" "}
+                  {t.second_order_effects[0]}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function SectionHeader({ label, icon }: { label: string; icon?: React.ReactNode }) {
@@ -871,10 +960,11 @@ export default function MarketsPage() {
   const { data, isLoading }      = useFeed({ use_ai: true });
   const { savedIds, toggleSave } = useSaved();
 
-  const clusters = data?.clusters         ?? [];
-  const wmn      = data?.what_matters_now ?? [];
+  const clusters = data?.clusters           ?? [];
+  const wmn      = data?.what_matters_now   ?? [];
+  const themes   = data?.theme_intelligence ?? [];
   const cacheAge = data?.cache_age_seconds;
-  const allItems = data?.items            ?? [];
+  const allItems = data?.items              ?? [];
 
   // Primary Driver: WMN item most aligned with *current* market moves
   // Prefers macro/geo themes that explain live price action; falls back to
@@ -990,6 +1080,9 @@ export default function MarketsPage() {
 
       {/* 4. Primary Driver */}
       {primaryDriver && <PrimaryDriver item={primaryDriver} marketData={marketData} />}
+
+      {/* 4b. Intelligence Themes */}
+      <IntelligenceThemes themes={themes} />
 
       {/* 5. Clustered themes */}
       <div ref={clusterRef}>

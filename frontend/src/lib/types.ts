@@ -50,6 +50,8 @@ export interface FeedResponse {
   what_matters_now:   WhatMattersNowItem[];
   // Sector intelligence
   sector_data:        SectorData | null;
+  // Theme intelligence graph
+  theme_intelligence: ThemeIntelligence[];
   // Cache metadata
   is_stale:           boolean;
   generated_at:       string;   // ISO-8601
@@ -133,6 +135,25 @@ export interface SectorData {
   rotation_signals: RotationSignal[];
   dominant_sector:  string | null;
   generated_at:     string;   // ISO-8601
+}
+
+// ── Theme intelligence graph ──────────────────────────────────────────────────
+
+export interface ThemeIntelligence {
+  id:                       string;
+  name:                     string;
+  description:              string;
+  signal_strength:          "strong" | "medium" | "weak";
+  confidence:               number;
+  momentum_direction:       "bullish" | "bearish" | "neutral";
+  related_industries:       string[];
+  related_assets:           string[];
+  related_macro_factors:    string[];
+  contributing_cluster_ids: string[];
+  contributing_story_count: number;
+  second_order_effects:     string[];
+  podcast_topics:           string[];
+  last_updated:             string;
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────────

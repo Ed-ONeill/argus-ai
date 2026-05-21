@@ -7,7 +7,7 @@ import {
   ChevronLeft, TrendingUp, TrendingDown, Minus,
   AlertTriangle, Globe, BarChart3, Zap,
   Radio, ShieldAlert, Target, Shuffle, RefreshCw,
-  Headphones, ArrowUpRight, Activity,
+  Headphones, ArrowUpRight, Activity, Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
@@ -26,7 +26,8 @@ import {
   getRiskFactors,
   getKeyDrivers,
 } from "@/lib/sectorIntelligence";
-import type { SectorIntelligence, IndustrySignal, StoryCluster } from "@/lib/types";
+import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
+import { getThemesForIndustry } from "@/lib/themeGraph";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -250,6 +251,8 @@ export default function IndustryDetailPage() {
   const drivers = sectorIntel
     ? getKeyDrivers(sectorIntel, indSignals, topClusters)
     : industry.macroDrivers.slice(0, 6);
+
+  const activeThemes  = getThemesForIndustry(industry.name, feedData?.theme_intelligence ?? []).slice(0, 3);
 
   const maClusters    = topClusters.filter(c => c.primary.category === "M&A").slice(0, 3);
   const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 5);
@@ -619,6 +622,46 @@ export default function IndustryDetailPage() {
                 ))}
               </div>
             </motion.section>
+
+            {/* Active Intelligence Themes */}
+            {activeThemes.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.19, duration: 0.25, ease: "easeOut" }}
+                className="bg-surface rounded-xl border border-edge p-4"
+              >
+                <SectionHeader icon={Network}>Active Themes</SectionHeader>
+                <div className="space-y-3">
+                  {activeThemes.map((t: ThemeIntelligence) => {
+                    const strengthCls =
+                      t.signal_strength === "strong" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                      t.signal_strength === "medium" ? "bg-amber-500/10  text-amber-400  border-amber-500/20"   :
+                                                       "bg-edge          text-ink-muted  border-edge";
+                    return (
+                      <div key={t.id} className="space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
+                            {t.name}
+                          </span>
+                          <span className={cn(
+                            "text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
+                            strengthCls,
+                          )}>
+                            {t.signal_strength}
+                          </span>
+                        </div>
+                        {t.second_order_effects[0] && (
+                          <p className="text-[10px] text-ink-muted leading-snug">
+                            → {t.second_order_effects[0]}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.section>
+            )}
 
             {/* Bullish / Bearish Positioning */}
             {sectorIntel && (
