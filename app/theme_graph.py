@@ -353,15 +353,18 @@ def extract_themes(
         ))
 
         # ── Phase 8: generic keyword penalty ─────────────────────────────────
+        # Only apply when confidence is already solid (≥30) to avoid
+        # pushing borderline themes below a usable level.
         generic_ratio = generic_kw_hits_total / max(all_kw_hits_total, 1)
-        if generic_ratio > 0.6:
+        if generic_ratio > 0.6 and confidence >= 30:
             confidence = max(1, int(confidence * 0.88))
             log.debug("[theme] generic_penalty  %s  ratio=%.2f  conf→%d", theme_id, generic_ratio, confidence)
 
-        # ── Phase 8: confidence_floor gate ────────────────────────────────────
+        # NOTE: confidence_floor from the ontology is kept as metadata (logged
+        # below for visibility) but does NOT gate theme inclusion.  The
+        # total_score ≥ 1.0 threshold above is the real admission gate.
         if confidence < conf_floor:
-            log.debug("[theme] floor_suppressed  %s  conf=%d < floor=%d", theme_id, confidence, conf_floor)
-            continue
+            log.debug("[theme] floor_note  %s  conf=%d < floor=%d (not suppressed)", theme_id, confidence, conf_floor)
 
         # ── Confidence label ──────────────────────────────────────────────────
         if confidence >= 80:   conf_label = "High Conviction"

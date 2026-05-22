@@ -75,15 +75,29 @@ async function fetchTicker(key: string, symbol: string, label: string): Promise<
       continue;
     }
 
-    const meta          = result.meta;
-    const price         = meta.regularMarketPrice as number;
-    const previousClose = (meta.chartPreviousClose ?? meta.previousClose) as number;
+    const meta = result.meta;
+
+    // Try regularMarketPrice first, then fall back to pre/post-market and
+    // last close so we always have a valid non-zero number.
+    const rawPrice =
+      (meta.regularMarketPrice as number | undefined) ||
+      (meta.regularMarketPreviousClose as number | undefined) ||
+      (meta.chartPreviousClose as number | undefined) ||
+      (meta.previousClose as number | undefined) ||
+      0;
+
+    if (!rawPrice || !isFinite(rawPrice)) {
+      throw new Error(`invalid price data for ${key}: ${rawPrice}`);
+    }
+
+    const price         = rawPrice;
+    const previousClose = ((meta.chartPreviousClose ?? meta.previousClose) as number | undefined) ?? price;
     const change        = price - previousClose;
     const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
 
     const rawCloses = (result.indicators?.quote?.[0]?.close ?? []) as (number | null)[];
     const history   = rawCloses
-      .filter((v): v is number => v !== null && isFinite(v))
+      .filter((v): v is number => v !== null && isFinite(v) && v > 0)
       .slice(-30);
 
     return { key, label, price, change, changePercent, history };

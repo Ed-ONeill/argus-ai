@@ -84,22 +84,32 @@ export default function IndustriesPage() {
 
   const hasSectorData    = (sectorData?.sectors?.length ?? 0) > 0;
   const hasActivations   = activations.some(ia => ia.score > 0);
+  // Themes with any signal (not just non-weak) as last-resort count
   const activeThemes     = allThemes.filter(t => t.signal_strength !== "weak");
+  const anyThemes        = allThemes.filter(t => t.contributing_story_count > 0);
 
+  // activeCount: prefer sector data → scored activations → any theme → industries with activations
   const activeCount  = hasSectorData
     ? (sectorData!.sectors.filter(s => s.signal_score > 0).length)
     : hasActivations
     ? activations.filter(ia => ia.score > 0).length
-    : activeThemes.length;
+    : activeThemes.length > 0
+    ? activeThemes.length
+    : activations.filter(ia => ia.related_theme_ids.length > 0).length;
+
+  // totalStories: same cascade
   const totalStories = hasSectorData
     ? sectorData!.sectors.reduce((n, s) => n + s.signal_count, 0)
     : hasActivations
     ? activations.reduce((n, ia) => n + ia.active_story_count, 0)
-    : allThemes.reduce((n, t) => n + t.contributing_story_count, 0);
+    : anyThemes.reduce((n, t) => n + t.contributing_story_count, 0);
+
+  // dominant sector: prefer structured data → highest-scored activation → top theme
+  const sortedActivations = [...activations].sort((a, b) => b.score - a.score);
   const dominant     = sectorData?.dominant_sector
     ?? (hasActivations
-      ? (activations.sort((a, b) => b.score - a.score)[0]?.industry ?? null)
-      : (activeThemes[0]?.name ?? null));
+      ? (sortedActivations[0]?.industry ?? null)
+      : (activeThemes[0]?.name ?? anyThemes[0]?.name ?? null));
 
   return (
     <div className="min-h-screen bg-canvas">

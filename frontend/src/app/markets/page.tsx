@@ -459,7 +459,7 @@ function derivePulse(d: Record<string, TickerData | null> | undefined): {
         color: "#6B7280", dir: "flat" };
 
   // ── Volatility ────────────────────────────────────────────────────────────
-  const vixLvl  = vix?.price ?? 0;
+  const vixLvl  = (vix?.price && vix.price > 0) ? vix.price : 0;
   const vixChg  = vix?.changePercent ?? 0;
   const vixTier = vixLvl < 15 ? "Low" : vixLvl < 20 ? "Moderate" : vixLvl < 25 ? "Elevated" : "High";
   const vixDir  = vixChg > 5 ? "up" : vixChg < -5 ? "down" : "flat";
@@ -472,9 +472,9 @@ function derivePulse(d: Record<string, TickerData | null> | undefined): {
     : vixTier === "Moderate" ? `VIX ${vixLvl.toFixed(1)} — some risk-off positioning`
     : vixTier === "Elevated" ? `VIX ${vixLvl.toFixed(1)} — elevated, watch for spikes`
     :                          `VIX ${vixLvl.toFixed(1)} — high, flight-to-quality likely`;
-  const volatility: PulseIndicator = {
-    label: `VIX ${vixTier}`, reason: vixReason, color: vixColor, dir: vixDir as PulseIndicator["dir"],
-  };
+  const volatility: PulseIndicator = !vix || vixLvl === 0
+    ? { label: "Unknown", reason: "VIX data unavailable", color: "#6B7280", dir: "flat" }
+    : { label: `VIX ${vixTier}`, reason: vixReason, color: vixColor, dir: vixDir as PulseIndicator["dir"] };
 
   return { sentiment, rates, commodities, volatility };
 }
