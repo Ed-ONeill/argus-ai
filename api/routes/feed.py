@@ -229,6 +229,11 @@ class ThemeIntelligenceSchema(BaseModel):
     momentum_label:           str             = "emerging"
     momentum_delta:           int             = 0
     persistence_cycles:       int             = 0
+    # Phase 8: competition, causal reasoning, breadth
+    competition_penalty:      float           = 0.0
+    causal_narrative:         str             = ""
+    breadth_score:            int             = 0
+    persistence_days:         float           = 0.0
 
 
 class IndustryActivationSchema(BaseModel):
@@ -388,6 +393,11 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             momentum_label           = getattr(t, "momentum_label",           "emerging"),
             momentum_delta           = getattr(t, "momentum_delta",           0),
             persistence_cycles       = getattr(t, "persistence_cycles",       0),
+            # Phase 8
+            competition_penalty      = getattr(t, "competition_penalty",      0.0),
+            causal_narrative         = getattr(t, "causal_narrative",         ""),
+            breadth_score            = getattr(t, "breadth_score",            0),
+            persistence_days         = getattr(t, "persistence_days",         0.0),
         )
         for t in raw_themes
     ]

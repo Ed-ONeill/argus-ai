@@ -135,12 +135,16 @@ class ProcessedFeedCache:
                     if feed.theme_intelligence and not hasattr(feed.theme_intelligence[0], "relationship_weights"):
                         feed.theme_intelligence = []
                     # Phase 7: IndustryActivation gained confidence_label field.
-                    # Clear stale objects so the pipeline recomputes on next cycle.
                     if feed.industry_activation and not hasattr(feed.industry_activation[0], "confidence_label"):
                         log.info("ProcessedFeedCache: cleared stale industry_activation (pre-Phase-7)  key=%s", key)
                         feed.industry_activation = []
                     if not feed.industry_activation:
                         log.info("ProcessedFeedCache: industry_activation empty on load  key=%s — pipeline will recompute", key)
+                    # Phase 8: ThemeIntelligence gained competition_penalty/causal_narrative/breadth_score/persistence_days.
+                    if feed.theme_intelligence and not hasattr(feed.theme_intelligence[0], "competition_penalty"):
+                        log.info("ProcessedFeedCache: cleared stale theme_intelligence (pre-Phase-8)  key=%s", key)
+                        feed.theme_intelligence  = []
+                        feed.industry_activation = []
                     # Patch IndustrySignal fields added in Phase 3
                     if feed.sector_data is not None:
                         if not hasattr(feed.sector_data, "derived_regime"):
