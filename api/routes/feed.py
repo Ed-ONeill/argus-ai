@@ -28,7 +28,7 @@ from app.clustering      import StoryCluster, WhatMattersNowItem as _WMNItem
 from app.summarizer      import MarketBrief
 
 from app.top_stories import _select_top_stories
-from app.theme_graph import ThemeIntelligence as _ThemeIntelligence
+from app.theme_graph import ThemeIntelligence as _ThemeIntelligence, IndustryActivation as _IndustryActivation
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +112,8 @@ class FeedResponse(BaseModel):
     sector_data:        SectorDataSchema | None = None
     # Theme intelligence graph (empty until first pipeline run)
     theme_intelligence: list[ThemeIntelligenceSchema] = []
+    # Industry activation signals (empty until first pipeline run)
+    industry_activation: list[IndustryActivationSchema] = []
     # Cache metadata
     is_stale:           bool
     generated_at:       str
@@ -227,6 +229,18 @@ class ThemeIntelligenceSchema(BaseModel):
     momentum_label:           str             = "emerging"
     momentum_delta:           int             = 0
     persistence_cycles:       int             = 0
+
+
+class IndustryActivationSchema(BaseModel):
+    industry:            str
+    score:               int
+    sentiment:           str
+    active_story_count:  int
+    related_theme_ids:   list[str] = []
+    related_theme_names: list[str] = []
+    related_assets:      list[str] = []
+    momentum_label:      str       = "emerging"
+    confidence_label:    str       = "Developing"
 
 
 class FeedStatusResponse(BaseModel):
@@ -378,6 +392,22 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         for t in raw_themes
     ]
 
+    raw_activations = getattr(entry, "industry_activation", []) or []
+    activation_schemas = [
+        IndustryActivationSchema(
+            industry            = ia.industry,
+            score               = ia.score,
+            sentiment           = ia.sentiment,
+            active_story_count  = ia.active_story_count,
+            related_theme_ids   = ia.related_theme_ids,
+            related_theme_names = ia.related_theme_names,
+            related_assets      = ia.related_assets,
+            momentum_label      = ia.momentum_label,
+            confidence_label    = ia.confidence_label,
+        )
+        for ia in raw_activations
+    ]
+
     return FeedResponse(
         items=schemas,
         top_stories=TopStoriesSchema(
@@ -391,6 +421,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         market_brief=brief_schema,
         sector_data=sector_schema,
         theme_intelligence=theme_schemas,
+        industry_activation=activation_schemas,
         total=len(items),
         sources=sorted({i.source for i in items}),
         category_breakdown=category_breakdown(items),

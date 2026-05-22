@@ -18,10 +18,13 @@ Phase 5 additions:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.clustering import StoryCluster
@@ -190,15 +193,25 @@ THEME_CATALOG: dict[str, dict] = {
         "name":        "AI Energy Demand",
         "description": "AI data center buildout driving a structural step-change in power demand",
         "keywords": [
+            # Original
             "power demand", "data center", "ai infrastructure", "electricity demand",
             "grid load", "nuclear ppa", "power grid", "hyperscaler power",
             "ai power", "data center power", "gpu cluster", "compute power",
+            # Broadened: company names & common phrasings
+            "hyperscaler", "ai capex", "data centre", "ai compute", "power consumption",
+            "energy demand", "electricity costs", "power contract", "capacity expansion",
+            "nvidia ai", "microsoft ai", "google ai", "amazon ai", "meta ai",
+            "ai model training", "inference demand", "ai spending", "ai investment",
+            "renewable ppa", "grid capacity", "power grid upgrade", "electricity grid",
         ],
         "entities": frozenset({
             "NVDA", "MSFT", "GOOGL", "AMZN", "META", "CEG", "VST",
             "NEE", "EQIX", "DLR", "AEP", "EXC",
+            # Full names for text-scan entity matching
+            "Nvidia", "Microsoft", "Google", "Alphabet", "Amazon", "Meta",
+            "Constellation", "Vistra", "NextEra", "OpenAI", "Anthropic",
         }),
-        "related_industries":    ["AI Infrastructure", "Data Centers", "Nuclear", "Utilities"],
+        "related_industries":    ["Semiconductors", "Software", "Utilities", "Energy", "Real Estate"],
         "related_assets":        ["NVDA", "CEG", "VST", "NEE", "EQIX"],
         "related_macro_factors": ["Power Load Growth", "AI Capex", "Grid Capex", "Nuclear PPA"],
         "second_order_effects": [
@@ -210,28 +223,37 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Tech / AI", "Markets"],
         "relationship_graph": {
-            "AI Infrastructure": {"weight": 0.95, "type": "direct",        "direction": "positive"},
-            "Data Centers":      {"weight": 0.92, "type": "direct",        "direction": "positive"},
-            "Utilities":         {"weight": 0.88, "type": "indirect",      "direction": "positive"},
-            "Nuclear":           {"weight": 0.71, "type": "indirect",      "direction": "positive"},
-            "Semiconductors":    {"weight": 0.67, "type": "indirect",      "direction": "positive"},
-            "LNG":               {"weight": 0.54, "type": "macro_overlap", "direction": "positive"},
-            "Energy Transition": {"weight": 0.41, "type": "narrative",     "direction": "positive"},
+            "Semiconductors": {"weight": 0.95, "type": "direct",        "direction": "positive"},
+            "Software":       {"weight": 0.88, "type": "direct",        "direction": "positive"},
+            "Utilities":      {"weight": 0.85, "type": "indirect",      "direction": "positive"},
+            "Energy":         {"weight": 0.58, "type": "macro_overlap", "direction": "positive"},
+            "Real Estate":    {"weight": 0.48, "type": "indirect",      "direction": "positive"},
         },
     },
     "treasury-yield-pressure": {
         "name":        "Treasury Yield Pressure",
         "description": "Elevated or rising yields compressing duration assets and driving cross-asset rotation",
         "keywords": [
+            # Original
             "treasury yield", "10-year yield", "yield curve", "rate hike", "fed rate",
             "bond selloff", "yield spike", "inflation data", "cpi print",
             "fomc", "higher for longer", "term premium", "duration risk",
+            # Broadened
+            "interest rates", "yields rise", "yields climb", "yields surge",
+            "rate cut", "rate cuts", "rate decision", "fed decision",
+            "federal reserve", "inflation report", "cpi data", "cpi reading",
+            "bond market", "treasury market", "yield inversion", "10 year treasury",
+            "rate expectations", "monetary policy", "fed pivot", "fed pause",
+            "rate outlook", "bond yields", "yield pressure", "rate hikes",
         ],
         "entities": frozenset({
             "Treasury", "Treasuries", "10Y", "2Y", "30Y", "Fed", "FOMC",
             "Bonds", "Yields",
+            # Extended
+            "Federal Reserve", "Powell", "TLT", "TNX", "Inflation",
+            "JPM", "BAC", "GS", "MS",
         }),
-        "related_industries":    ["Cloud Software", "Real Estate", "Private Credit", "Financials"],
+        "related_industries":    ["Software", "Real Estate", "Financials", "Utilities", "Consumer"],
         "related_assets":        ["TNX", "TLT", "JPM", "BAC", "EQIX"],
         "related_macro_factors": ["10Y Yield", "Yield Curve", "Fed Funds Rate", "Inflation"],
         "second_order_effects": [
@@ -243,26 +265,34 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Markets", "Macro"],
         "relationship_graph": {
-            "Cloud Software":  {"weight": 0.84, "type": "direct",        "direction": "negative"},
-            "Real Estate":     {"weight": 0.79, "type": "direct",        "direction": "negative"},
-            "Financials":      {"weight": 0.73, "type": "direct",        "direction": "positive"},
-            "Private Credit":  {"weight": 0.52, "type": "indirect",      "direction": "negative"},
-            "Utilities":       {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
-            "Consumer":        {"weight": 0.35, "type": "narrative",     "direction": "negative"},
+            "Software":    {"weight": 0.84, "type": "direct",        "direction": "negative"},
+            "Real Estate": {"weight": 0.79, "type": "direct",        "direction": "negative"},
+            "Financials":  {"weight": 0.73, "type": "direct",        "direction": "positive"},
+            "Utilities":   {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
+            "Consumer":    {"weight": 0.35, "type": "narrative",     "direction": "negative"},
         },
     },
     "defense-reindustrialization": {
         "name":        "Defense Reindustrialization",
         "description": "Geopolitical escalation and NATO commitments driving multi-year defense procurement expansion",
         "keywords": [
+            # Original
             "defense spending", "military budget", "nato", "pentagon", "defense procurement",
             "weapons system", "fighter jet", "defense contract", "ndaa",
             "defense backlog", "rearmament", "military aid", "drone warfare",
+            # Broadened
+            "lockheed", "raytheon", "northrop", "general dynamics", "boeing defense",
+            "military spending", "defense budget", "ukraine war", "taiwan strait",
+            "geopolitical tension", "nato spending", "defense stocks", "defense order",
+            "missile system", "stealth fighter", "naval vessel", "troop deployment",
+            "arms deal", "weapons contract", "military contract",
         ],
         "entities": frozenset({
             "LMT", "RTX", "NOC", "GD", "BA", "GE", "HII", "KTOS",
+            # Full names
+            "Lockheed", "Raytheon", "Northrop", "Boeing", "General Dynamics",
         }),
-        "related_industries":    ["Defense", "Aerospace & Defense", "Industrials"],
+        "related_industries":    ["Aerospace & Defense", "Industrials", "Semiconductors", "Energy"],
         "related_assets":        ["LMT", "RTX", "NOC", "GD"],
         "related_macro_factors": ["NATO Budgets", "Defense Backlog", "NDAA", "Geopolitical Risk"],
         "second_order_effects": [
@@ -273,24 +303,31 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Geopolitical", "Markets"],
         "relationship_graph": {
-            "Defense":     {"weight": 0.97, "type": "direct",        "direction": "positive"},
-            "Industrials": {"weight": 0.85, "type": "direct",        "direction": "positive"},
-            "Semiconductors": {"weight": 0.54, "type": "indirect",   "direction": "positive"},
-            "Energy":      {"weight": 0.38, "type": "macro_overlap", "direction": "positive"},
+            "Aerospace & Defense": {"weight": 0.97, "type": "direct",        "direction": "positive"},
+            "Industrials":         {"weight": 0.82, "type": "direct",        "direction": "positive"},
+            "Semiconductors":      {"weight": 0.54, "type": "indirect",      "direction": "positive"},
+            "Energy":              {"weight": 0.38, "type": "macro_overlap", "direction": "positive"},
         },
     },
     "private-credit-expansion": {
         "name":        "Private Credit Expansion",
         "description": "Alternative lenders capturing market share as banks retreat under capital constraints",
         "keywords": [
+            # Original
             "private credit", "direct lending", "leveraged loan", "bdc",
             "clo", "middle market", "nav loan", "private debt", "alternative lending",
             "shadow banking", "non-bank lender", "credit facility", "capital solutions",
+            # Broadened
+            "blackstone", "apollo", "ares", "kkr", "credit manager",
+            "private equity", "credit market", "loan market", "debt deal",
+            "alternative credit", "leveraged finance", "high yield", "credit spread",
         ],
         "entities": frozenset({
             "BX", "KKR", "ARES", "APO", "OWL",
+            # Full names
+            "Blackstone", "Apollo", "KKR", "Carlyle",
         }),
-        "related_industries":    ["Private Credit", "Financials"],
+        "related_industries":    ["Financials", "Real Estate"],
         "related_assets":        ["ARES", "APO", "BX", "KKR", "OWL"],
         "related_macro_factors": ["Credit Spreads", "Yield Curve", "NIM", "M&A Flow"],
         "second_order_effects": [
@@ -301,23 +338,29 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Private Markets", "Markets"],
         "relationship_graph": {
-            "Private Credit": {"weight": 0.97, "type": "direct",        "direction": "positive"},
-            "Financials":     {"weight": 0.68, "type": "indirect",      "direction": "positive"},
-            "Real Estate":    {"weight": 0.45, "type": "macro_overlap", "direction": "negative"},
+            "Financials":  {"weight": 0.90, "type": "direct",        "direction": "positive"},
+            "Real Estate": {"weight": 0.45, "type": "macro_overlap", "direction": "negative"},
         },
     },
     "glp1-healthcare-revolution": {
         "name":        "GLP-1 Healthcare Revolution",
         "description": "Obesity drug pipeline reshaping pharmaceutical, food, medical device, and healthcare sectors",
         "keywords": [
+            # Original
             "glp-1", "ozempic", "wegovy", "mounjaro", "obesity drug", "weight loss drug",
             "semaglutide", "tirzepatide", "metabolic disease", "diabetes drug",
             "anti-obesity", "eli lilly", "novo nordisk", "glp1",
+            # Broadened
+            "weight loss", "obesity treatment", "diabetes treatment", "lilly",
+            "pharmaceutical earnings", "drug approval", "fda approval", "clinical trial",
+            "drug pipeline", "biotech drug", "healthcare earnings", "pharma earnings",
         ],
         "entities": frozenset({
             "LLY", "NVO", "PFE", "ABBV", "BMY", "JNJ", "ISRG", "UNH",
+            # Full names
+            "Lilly", "Novo Nordisk", "Pfizer", "AbbVie", "Johnson", "UnitedHealth",
         }),
-        "related_industries":    ["Healthcare"],
+        "related_industries":    ["Healthcare", "Consumer"],
         "related_assets":        ["LLY", "NVO", "UNH", "ABBV"],
         "related_macro_factors": ["FDA Calendar", "GLP-1 Pipeline", "Drug Pricing Policy", "IRA Impact"],
         "second_order_effects": [
@@ -328,23 +371,31 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Company", "Markets"],
         "relationship_graph": {
-            "Healthcare":  {"weight": 0.95, "type": "direct",   "direction": "positive"},
-            "Consumer":    {"weight": 0.41, "type": "indirect", "direction": "negative"},
-            "Financials":  {"weight": 0.28, "type": "narrative","direction": "positive"},
+            "Healthcare":  {"weight": 0.95, "type": "direct",        "direction": "positive"},
+            "Consumer":    {"weight": 0.41, "type": "indirect",      "direction": "negative"},
+            "Financials":  {"weight": 0.28, "type": "narrative",     "direction": "positive"},
         },
     },
     "china-stimulus-rotation": {
         "name":        "China Stimulus Rotation",
         "description": "China policy support and demand recovery driving EM, commodities, and industrial rotation",
         "keywords": [
+            # Original
             "china stimulus", "pboc", "beijing stimulus", "chinese economy", "china pmi",
             "china demand", "property sector", "china growth", "yuan stimulus",
             "renminbi", "china policy easing", "china infrastructure",
+            # Broadened
+            "china economy", "china market", "chinese stocks", "china trade",
+            "beijing policy", "pboc rate", "china recovery", "china slowdown",
+            "china gdp", "china exports", "china imports", "copper demand",
+            "iron ore", "commodity demand", "emerging market",
         ],
         "entities": frozenset({
             "BABA", "JD", "PDD", "NIO", "BYD", "FCX", "VALE", "BHP", "AA", "ALB",
+            # Extended
+            "Alibaba", "China", "PBOC",
         }),
-        "related_industries":    ["Energy", "Semiconductors", "Industrials"],
+        "related_industries":    ["Energy", "Semiconductors", "Industrials", "Consumer"],
         "related_assets":        ["FCX", "VALE", "BHP", "AA"],
         "related_macro_factors": ["China PMI", "USD/CNY", "Copper Price", "Iron Ore"],
         "second_order_effects": [
@@ -355,10 +406,9 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Macro", "Markets", "Geopolitical"],
         "relationship_graph": {
-            "Materials":      {"weight": 0.78, "type": "direct",        "direction": "positive"},
             "Energy":         {"weight": 0.72, "type": "direct",        "direction": "positive"},
+            "Industrials":    {"weight": 0.65, "type": "macro_overlap", "direction": "positive"},
             "Semiconductors": {"weight": 0.55, "type": "indirect",      "direction": "positive"},
-            "Industrials":    {"weight": 0.48, "type": "macro_overlap", "direction": "positive"},
             "Consumer":       {"weight": 0.35, "type": "narrative",     "direction": "positive"},
         },
     },
@@ -366,14 +416,22 @@ THEME_CATALOG: dict[str, dict] = {
         "name":        "Energy Security",
         "description": "Geopolitical supply disruptions and strategic reserves driving energy price volatility",
         "keywords": [
+            # Original
             "opec", "oil supply", "lng export", "energy security", "pipeline disruption",
             "oil embargo", "natural gas shortage", "energy crisis", "oil price spike",
             "opec cut", "opec production", "oil sanction", "gas supply",
+            # Broadened
+            "oil prices", "crude prices", "oil price", "crude oil", "brent crude",
+            "wti crude", "opec meeting", "energy supply", "natural gas prices",
+            "gasoline prices", "oil output", "oil demand", "energy market",
+            "exxon", "chevron", "shell", "energy earnings", "oil company",
         ],
         "entities": frozenset({
             "XOM", "CVX", "COP", "SLB", "HAL", "OXY", "VLO", "LNG", "CQP",
+            # Full names
+            "Exxon", "Chevron", "ConocoPhillips", "Shell", "BP", "OPEC",
         }),
-        "related_industries":    ["Energy", "LNG", "Energy Transition"],
+        "related_industries":    ["Energy", "Utilities", "Consumer", "Aerospace & Defense"],
         "related_assets":        ["XOM", "CVX", "COP", "LNG"],
         "related_macro_factors": ["WTI Price", "OPEC+ Quota", "NG Inventory", "LNG Demand"],
         "second_order_effects": [
@@ -384,27 +442,34 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Markets", "Geopolitical", "Macro"],
         "relationship_graph": {
-            "Energy":            {"weight": 0.95, "type": "direct",        "direction": "positive"},
-            "LNG":               {"weight": 0.88, "type": "direct",        "direction": "positive"},
-            "Utilities":         {"weight": 0.58, "type": "indirect",      "direction": "positive"},
-            "Energy Transition": {"weight": 0.52, "type": "narrative",     "direction": "positive"},
-            "Consumer":          {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
-            "Defense":           {"weight": 0.36, "type": "narrative",     "direction": "positive"},
+            "Energy":              {"weight": 0.95, "type": "direct",        "direction": "positive"},
+            "Utilities":           {"weight": 0.58, "type": "indirect",      "direction": "positive"},
+            "Consumer":            {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
+            "Aerospace & Defense": {"weight": 0.36, "type": "narrative",     "direction": "positive"},
+            "Industrials":         {"weight": 0.32, "type": "narrative",     "direction": "positive"},
         },
     },
     "liquidity-tightening": {
         "name":        "Liquidity Tightening",
         "description": "Credit availability reduction and balance sheet stress transmitting through leveraged sectors",
         "keywords": [
+            # Original
             "credit tightening", "bank lending standards", "commercial real estate loan",
             "bank stress", "regional bank", "credit crunch", "liquidity risk",
             "cre default", "office vacancy", "cmbs spread", "loan refinancing",
             "credit conditions", "capital requirements", "bank capital",
+            # Broadened
+            "bank earnings", "loan loss", "credit quality", "default rate",
+            "mortgage delinquency", "office market", "real estate stress",
+            "financial stress", "credit access", "lending tightens",
+            "jpmorgan", "bank of america", "wells fargo", "citigroup",
         ],
         "entities": frozenset({
             "BAC", "C", "WFC", "JPM", "SPG", "VNO", "SLG", "PLD", "DLR",
+            # Full names
+            "Bank of America", "JPMorgan", "Wells Fargo", "Citigroup",
         }),
-        "related_industries":    ["Financials", "Real Estate", "Private Credit"],
+        "related_industries":    ["Financials", "Real Estate", "Consumer", "Industrials"],
         "related_assets":        ["BAC", "C", "SPG", "VNO"],
         "related_macro_factors": ["Credit Spreads", "CRE Vacancy", "10Y Yield", "CMBS Spreads"],
         "second_order_effects": [
@@ -415,26 +480,34 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Markets", "Macro"],
         "relationship_graph": {
-            "Real Estate":    {"weight": 0.88, "type": "direct",        "direction": "negative"},
-            "Financials":     {"weight": 0.81, "type": "direct",        "direction": "negative"},
-            "Private Credit": {"weight": 0.72, "type": "indirect",      "direction": "negative"},
-            "Consumer":       {"weight": 0.55, "type": "macro_overlap", "direction": "negative"},
-            "Industrials":    {"weight": 0.32, "type": "narrative",     "direction": "negative"},
+            "Financials":  {"weight": 0.81, "type": "direct",        "direction": "negative"},
+            "Real Estate": {"weight": 0.88, "type": "direct",        "direction": "negative"},
+            "Consumer":    {"weight": 0.55, "type": "macro_overlap", "direction": "negative"},
+            "Industrials": {"weight": 0.32, "type": "narrative",     "direction": "negative"},
         },
     },
     "semiconductor-capex-cycle": {
         "name":        "Semiconductor Capex Cycle",
         "description": "AI-driven chip demand sustaining elevated equipment, memory, and foundry investment cycles",
         "keywords": [
+            # Original
             "semiconductor capex", "chip demand", "fab investment", "gpu supply",
             "wafer production", "memory demand", "hbm memory", "advanced packaging",
             "export control chip", "chips act", "tsmc capacity", "samsung fab",
             "intel foundry", "chip shortage", "chip oversupply",
+            # Broadened
+            "nvidia earnings", "amd earnings", "chip stocks", "semiconductor stocks",
+            "gpu demand", "ai chip", "chip exports", "chip ban", "chip tariff",
+            "nvidia revenue", "semiconductor revenue", "chip sales", "chip revenue",
+            "tsmc earnings", "amd results", "nvidia results", "gpu shortage",
+            "chips", "semiconductor", "chipmaker",
         ],
         "entities": frozenset({
             "NVDA", "AMD", "INTC", "TSMC", "ASML", "AMAT", "LRCX", "KLAC", "MU", "AVGO", "QCOM",
+            # Full names
+            "Nvidia", "AMD", "Intel", "TSMC", "Broadcom", "Qualcomm", "Micron",
         }),
-        "related_industries":    ["Semiconductors", "AI Infrastructure"],
+        "related_industries":    ["Semiconductors", "Software", "Energy", "Real Estate"],
         "related_assets":        ["NVDA", "AMD", "ASML", "MU", "AMAT"],
         "related_macro_factors": ["AI Capex", "Export Controls", "GPU Supply", "TSMC Yield"],
         "second_order_effects": [
@@ -445,26 +518,33 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Tech / AI", "Company"],
         "relationship_graph": {
-            "Semiconductors":    {"weight": 0.97, "type": "direct",        "direction": "positive"},
-            "AI Infrastructure": {"weight": 0.89, "type": "direct",        "direction": "positive"},
-            "Data Centers":      {"weight": 0.71, "type": "indirect",      "direction": "positive"},
-            "Materials":         {"weight": 0.44, "type": "indirect",      "direction": "positive"},
-            "Energy":            {"weight": 0.38, "type": "macro_overlap", "direction": "positive"},
+            "Semiconductors": {"weight": 0.97, "type": "direct",        "direction": "positive"},
+            "Software":       {"weight": 0.75, "type": "direct",        "direction": "positive"},
+            "Real Estate":    {"weight": 0.50, "type": "indirect",      "direction": "positive"},
+            "Energy":         {"weight": 0.38, "type": "macro_overlap", "direction": "positive"},
         },
     },
     "digital-asset-institutionalization": {
         "name":        "Digital Asset Institutionalization",
         "description": "Institutional adoption and regulatory clarity driving structural demand for digital assets",
         "keywords": [
+            # Original
             "bitcoin", "btc", "crypto", "digital asset", "spot bitcoin etf",
             "ethereum", "blockchain", "stablecoin", "crypto regulation",
             "sec crypto", "microstrategy", "institutional crypto", "crypto adoption",
             "bitcoin etf", "crypto market",
+            # Broadened
+            "bitcoin price", "crypto price", "btc price", "eth price", "ethereum price",
+            "crypto rally", "crypto selloff", "bitcoin rally", "bitcoin drop",
+            "coinbase earnings", "coinbase revenue", "crypto exchange",
+            "digital assets", "crypto assets", "bitcoin halving",
         ],
         "entities": frozenset({
             "COIN", "MSTR", "MARA", "RIOT", "SQ", "PYPL",
+            # Full names and tokens
+            "Bitcoin", "Ethereum", "BTC", "ETH", "Coinbase", "MicroStrategy",
         }),
-        "related_industries":    ["Crypto Infrastructure", "Financials"],
+        "related_industries":    ["Crypto & Digital Assets", "Financials", "Software"],
         "related_assets":        ["COIN", "MSTR", "MARA", "BTC"],
         "related_macro_factors": ["BTC ETF Flows", "Fed Policy", "Stablecoin Regulation", "Halving Cycle"],
         "second_order_effects": [
@@ -475,23 +555,30 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Markets", "Tech / AI"],
         "relationship_graph": {
-            "Crypto Infrastructure": {"weight": 0.97, "type": "direct",        "direction": "positive"},
-            "Financials":            {"weight": 0.52, "type": "indirect",      "direction": "positive"},
-            "Cloud Software":        {"weight": 0.28, "type": "narrative",     "direction": "positive"},
+            "Crypto & Digital Assets": {"weight": 0.97, "type": "direct",    "direction": "positive"},
+            "Financials":              {"weight": 0.52, "type": "indirect",  "direction": "positive"},
+            "Software":                {"weight": 0.28, "type": "narrative", "direction": "positive"},
         },
     },
     "nuclear-power-renaissance": {
         "name":        "Nuclear Power Renaissance",
         "description": "Data center power demand and energy security driving nuclear capacity revival",
         "keywords": [
+            # Original
             "nuclear power", "uranium", "smr", "small modular reactor", "nuclear plant",
             "nuclear reactor", "enrichment", "nuclear energy", "nuclear ppa",
             "nuclear capacity", "nuclear license", "nuclear revival",
+            # Broadened
+            "nuclear deal", "nuclear agreement", "constellation energy", "vistra",
+            "cameco", "uranium prices", "uranium demand", "nuclear electricity",
+            "nuclear plant restart", "nuclear capacity factor", "clean energy nuclear",
         ],
         "entities": frozenset({
             "CEG", "VST", "CCJ", "UEC",
+            # Full names
+            "Constellation", "Vistra", "Cameco",
         }),
-        "related_industries":    ["Nuclear", "Utilities", "Energy Security"],
+        "related_industries":    ["Utilities", "Energy", "Semiconductors", "Real Estate"],
         "related_assets":        ["CEG", "VST", "CCJ", "UEC"],
         "related_macro_factors": ["Nuclear PPA", "Power Load Growth", "Uranium Price", "AI Power Demand"],
         "second_order_effects": [
@@ -502,26 +589,33 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Markets", "Tech / AI"],
         "relationship_graph": {
-            "Nuclear":           {"weight": 0.97, "type": "direct",    "direction": "positive"},
-            "Utilities":         {"weight": 0.82, "type": "direct",    "direction": "positive"},
-            "AI Infrastructure": {"weight": 0.61, "type": "narrative", "direction": "positive"},
-            "Data Centers":      {"weight": 0.55, "type": "indirect",  "direction": "positive"},
-            "Energy":            {"weight": 0.44, "type": "narrative", "direction": "positive"},
+            "Utilities":      {"weight": 0.97, "type": "direct",    "direction": "positive"},
+            "Energy":         {"weight": 0.55, "type": "narrative", "direction": "positive"},
+            "Semiconductors": {"weight": 0.45, "type": "narrative", "direction": "positive"},
+            "Real Estate":    {"weight": 0.40, "type": "indirect",  "direction": "positive"},
         },
     },
     "consumer-stress": {
         "name":        "Consumer Stress",
         "description": "Credit tightening, real wage pressure, and delinquency acceleration weighing on household spending",
         "keywords": [
+            # Original
             "consumer spending", "retail sales", "credit card delinquency", "consumer credit",
             "real wages", "consumer confidence", "spending slowdown",
             "delinquency rate", "household debt", "consumer sentiment",
             "retail slowdown", "discretionary spending",
+            # Broadened
+            "walmart earnings", "target earnings", "amazon consumer", "retail earnings",
+            "consumer data", "spending data", "household spending", "consumer demand",
+            "credit card spending", "consumer delinquency", "retail traffic",
+            "consumer weakness", "spending cuts", "consumer stress",
         ],
         "entities": frozenset({
             "WMT", "TGT", "COST", "MCD", "SBUX", "HD", "NKE", "AMZN",
+            # Full names
+            "Walmart", "Target", "Costco", "McDonald", "Starbucks", "Amazon",
         }),
-        "related_industries":    ["Consumer", "Financials"],
+        "related_industries":    ["Consumer", "Financials", "Real Estate", "Industrials"],
         "related_assets":        ["WMT", "TGT", "HD", "AMZN"],
         "related_macro_factors": ["Real Wages", "CPI Delta", "Credit Utilization", "Savings Rate"],
         "second_order_effects": [
@@ -532,10 +626,10 @@ THEME_CATALOG: dict[str, dict] = {
         ],
         "podcast_topics": ["Macro", "Markets", "Company"],
         "relationship_graph": {
-            "Consumer":     {"weight": 0.92, "type": "direct",        "direction": "negative"},
-            "Financials":   {"weight": 0.71, "type": "direct",        "direction": "negative"},
-            "Real Estate":  {"weight": 0.44, "type": "narrative",     "direction": "negative"},
-            "Industrials":  {"weight": 0.35, "type": "macro_overlap", "direction": "negative"},
+            "Consumer":    {"weight": 0.92, "type": "direct",        "direction": "negative"},
+            "Financials":  {"weight": 0.71, "type": "direct",        "direction": "negative"},
+            "Real Estate": {"weight": 0.44, "type": "narrative",     "direction": "negative"},
+            "Industrials": {"weight": 0.35, "type": "macro_overlap", "direction": "negative"},
         },
     },
 }
@@ -587,6 +681,12 @@ def extract_themes(
 
             # Entity overlap (capped so one super-story can't inflate alone)
             entity_hits = sum(1 for e in theme_entities if e in entities)
+            # Secondary: scan title/snippet text for entity name mentions
+            if entity_hits == 0:
+                for tkr in theme_entities:
+                    tkr_n = f" {tkr.lower()} "
+                    if tkr_n in title_n or tkr_n in snippet_n:
+                        entity_hits += 1
             raw += min(entity_hits * 3.0, 9.0)
 
             # Keyword match (title worth more than snippet)
@@ -616,7 +716,7 @@ def extract_themes(
             if pub and (now - pub).total_seconds() < 21600:
                 recent_count += 1
 
-        if total_score < 4.0 or not contributing:
+        if total_score < 2.5 or not contributing:
             continue
 
         n_clusters = len(contributing)
@@ -704,4 +804,115 @@ def extract_themes(
         ))
 
     results.sort(key=lambda t: t.confidence, reverse=True)
+    log.debug(
+        "extract_themes: %d active themes from %d clusters",
+        len(results), len(clusters),
+    )
+    for t in results:
+        log.debug(
+            "  theme=%s  conf=%d  strength=%s  industries=%s  clusters=%d",
+            t.id, t.confidence, t.signal_strength,
+            t.related_industries, len(t.contributing_cluster_ids),
+        )
+    return results
+
+
+# ── Industry Activation ───────────────────────────────────────────────────────
+
+FRONTEND_INDUSTRY_NAMES: list[str] = [
+    "Semiconductors",
+    "Software",
+    "Aerospace & Defense",
+    "Energy",
+    "Financials",
+    "Industrials",
+    "Consumer",
+    "Healthcare",
+    "Real Estate",
+    "Crypto & Digital Assets",
+    "Utilities",
+    "Media & Telecom",
+]
+
+
+@dataclass
+class IndustryActivation:
+    """Server-side aggregated activation signal for one frontend industry."""
+    industry:           str
+    score:              int            # 0–100
+    sentiment:          str            # "bullish" | "bearish" | "neutral"
+    active_story_count: int
+    related_theme_ids:  list[str]      = field(default_factory=list)
+    related_theme_names: list[str]     = field(default_factory=list)
+    related_assets:     list[str]      = field(default_factory=list)
+    momentum_label:     str            = "emerging"
+    confidence_label:   str            = "Developing"
+
+
+def compute_industry_activation(
+    themes: list[ThemeIntelligence],
+) -> list[IndustryActivation]:
+    """
+    For each frontend industry, aggregate signal from matching themes.
+    Returns a list of IndustryActivation objects (all industries, even score=0).
+    """
+    results: list[IndustryActivation] = []
+
+    for industry in FRONTEND_INDUSTRY_NAMES:
+        matched = [t for t in themes if industry in t.related_industries]
+        if not matched:
+            results.append(IndustryActivation(
+                industry=industry, score=0, sentiment="neutral",
+                active_story_count=0,
+            ))
+            continue
+
+        # Weighted score: confidence × relationship weight, take best
+        best_score = 0
+        best_sentiment = "neutral"
+        best_momentum = "emerging"
+        best_conf_label = "Developing"
+        total_stories = 0
+        theme_ids: list[str] = []
+        theme_names: list[str] = []
+        assets: list[str] = []
+
+        for t in matched:
+            rel = (t.relationship_weights or {}).get(industry, {})
+            weight = rel.get("weight", 0.5)
+            score = int(t.confidence * weight)
+            if score > best_score:
+                best_score = score
+                direction = rel.get("direction", "")
+                best_sentiment = (
+                    "bullish" if direction == "positive" else
+                    "bearish" if direction == "negative" else
+                    "neutral"
+                )
+                best_momentum = t.momentum_label
+                best_conf_label = t.confidence_label
+            total_stories += t.contributing_story_count
+            theme_ids.append(t.id)
+            theme_names.append(t.name)
+            for a in t.related_assets:
+                if a not in assets:
+                    assets.append(a)
+
+        log.debug(
+            "compute_industry_activation: %s  score=%d  themes=%d  sentiment=%s",
+            industry, best_score, len(matched), best_sentiment,
+        )
+
+        results.append(IndustryActivation(
+            industry           = industry,
+            score              = min(best_score, 100),
+            sentiment          = best_sentiment,
+            active_story_count = total_stories,
+            related_theme_ids  = theme_ids,
+            related_theme_names= theme_names,
+            related_assets     = assets[:8],
+            momentum_label     = best_momentum,
+            confidence_label   = best_conf_label,
+        ))
+
     return results

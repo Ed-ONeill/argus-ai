@@ -233,6 +233,16 @@ def run_pipeline(
     )
     log.debug("[bg] derived_regime=%s  (base=%s)", sector_data.derived_regime, _base_regime)
 
+    # ── 6e. Industry activation (server-side per-industry signal aggregation) ──
+    from app.theme_graph import compute_industry_activation
+    industry_activation = compute_industry_activation(theme_intelligence)
+    t_activ = time.perf_counter()
+    active_industries = sum(1 for ia in industry_activation if ia.score > 0)
+    log.info(
+        "[bg] industry_activation done in %.3fs  active=%d / %d",
+        t_activ - t_themes, active_industries, len(industry_activation),
+    )
+
     # ── 7. Top story selection ─────────────────────────────────────────────────
     debug_log: list[str] = []
     top = _select_top_stories(items, debug_log=debug_log)
@@ -310,6 +320,7 @@ def run_pipeline(
         what_matters_now=wmn,
         sector_data=sector_data,
         theme_intelligence=theme_intelligence,
+        industry_activation=industry_activation,
     )
 
 
