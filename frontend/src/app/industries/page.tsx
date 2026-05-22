@@ -12,7 +12,7 @@ import {
   getIndustrySignals,
   getTopTheme,
 } from "@/lib/industryConfig";
-import type { ThemeIntelligence } from "@/lib/types";
+import type { ThemeIntelligence, IndustryActivation } from "@/lib/types";
 
 // ── Regime badge config (dark-hero variant) ───────────────────────────────────
 
@@ -29,6 +29,21 @@ function formatAge(s: number): string {
   if (s < 60)   return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   return `${Math.floor(s / 3600)}h ago`;
+}
+
+function activationToSignal(
+  ia: IndustryActivation,
+): ThemeSignalFallback | null {
+  if (ia.score <= 0) return null;
+  return {
+    score:         ia.score,
+    sentiment:     ia.sentiment,
+    storyCount:    ia.active_story_count,
+    narrative:     ia.related_theme_names[0] ?? ia.industry,
+    chips:         ia.related_assets.slice(0, 5),
+    themeName:     ia.related_theme_names[0] ?? "",
+    momentumLabel: ia.momentum_label,
+  };
 }
 
 function deriveThemeSignal(
@@ -62,21 +77,29 @@ export default function IndustriesPage() {
   const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
   const { data: feedData } = useFeed({});
 
-  const whatMattersNow = feedData?.what_matters_now ?? [];
-  const allThemes      = feedData?.theme_intelligence ?? [];
-  const regimeMeta     = regime ? (REGIME_META[regime] ?? null) : null;
+  const whatMattersNow   = feedData?.what_matters_now ?? [];
+  const allThemes        = feedData?.theme_intelligence ?? [];
+  const activations      = feedData?.industry_activation ?? [];
+  const regimeMeta       = regime ? (REGIME_META[regime] ?? null) : null;
 
-  const hasSectorData  = (sectorData?.sectors?.length ?? 0) > 0;
-  const activeThemes   = allThemes.filter(t => t.signal_strength !== "weak");
+  const hasSectorData    = (sectorData?.sectors?.length ?? 0) > 0;
+  const hasActivations   = activations.some(ia => ia.score > 0);
+  const activeThemes     = allThemes.filter(t => t.signal_strength !== "weak");
 
   const activeCount  = hasSectorData
     ? (sectorData!.sectors.filter(s => s.signal_score > 0).length)
+    : hasActivations
+    ? activations.filter(ia => ia.score > 0).length
     : activeThemes.length;
   const totalStories = hasSectorData
     ? sectorData!.sectors.reduce((n, s) => n + s.signal_count, 0)
+    : hasActivations
+    ? activations.reduce((n, ia) => n + ia.active_story_count, 0)
     : allThemes.reduce((n, t) => n + t.contributing_story_count, 0);
   const dominant     = sectorData?.dominant_sector
-    ?? (activeThemes[0]?.name ?? null);
+    ?? (hasActivations
+      ? (activations.sort((a, b) => b.score - a.score)[0]?.industry ?? null)
+      : (activeThemes[0]?.name ?? null));
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -216,8 +239,9 @@ export default function IndustriesPage() {
                 const sectorIntel    = getSectorIntelligence(industry, sectorData?.sectors ?? []);
                 const industrySignal = getIndustrySignals(industry, sectorData?.industries ?? [])[0] ?? null;
                 const topTheme       = getTopTheme(industry, clusters, whatMattersNow);
+                const activation     = activations.find(ia => ia.industry === industry.name) ?? null;
                 const themeSignal    = industrySignal === null
-                  ? deriveThemeSignal(industry.name, allThemes)
+                  ? (activation ? activationToSignal(activation) : deriveThemeSignal(industry.name, allThemes))
                   : null;
                 return (
                   <IndustryCard

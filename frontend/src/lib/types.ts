@@ -52,6 +52,8 @@ export interface FeedResponse {
   sector_data:        SectorData | null;
   // Theme intelligence graph
   theme_intelligence: ThemeIntelligence[];
+  // Industry activation signals
+  industry_activation: IndustryActivation[];
   // Cache metadata
   is_stale:           boolean;
   generated_at:       string;   // ISO-8601
@@ -136,6 +138,20 @@ export interface SectorData {
   dominant_sector:  string | null;
   generated_at:     string;   // ISO-8601
   derived_regime:   string;   // Phase 5: e.g. "AI Capex Expansion" | "Yield Shock" | "Defensive Rotation"
+}
+
+// ── Industry activation ───────────────────────────────────────────────────────
+
+export interface IndustryActivation {
+  industry:            string;
+  score:               number;
+  sentiment:           "bullish" | "bearish" | "neutral";
+  active_story_count:  number;
+  related_theme_ids:   string[];
+  related_theme_names: string[];
+  related_assets:      string[];
+  momentum_label:      string;
+  confidence_label:    string;
 }
 
 // ── Theme intelligence graph ──────────────────────────────────────────────────
