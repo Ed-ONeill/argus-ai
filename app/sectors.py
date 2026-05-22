@@ -8,6 +8,7 @@ stream to produce SectorData for the /api/feed response.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -16,6 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.clustering import StoryCluster
     from app.summarizer import MarketBrief
+
+log = logging.getLogger(__name__)
 
 _PUNCT_RE = re.compile(r"[^\w\s]+")
 
@@ -34,10 +37,16 @@ SECTOR_MAP: dict[str, dict] = {
             "CRM", "ORCL", "SAP", "IBM", "DELL", "HPQ", "QCOM", "AVGO", "MU", "AMAT",
             "KLAC", "LRCX", "ASML", "SNOW", "NOW", "WDAY", "ADBE", "INTU",
         },
+        # Full company names for text-scan matching
+        "names": [
+            "nvidia", "apple", "microsoft", "google", "alphabet", "meta", "amazon",
+            "amd", "intel", "tsmc", "broadcom", "qualcomm", "micron", "asml",
+            "openai", "anthropic", "salesforce", "oracle",
+        ],
         "keywords": [
-            "software", "semiconductor", "chip", "cloud", "artificial intelligence",
-            "data center", "cybersecurity", "technology", "silicon", "computing",
-            "saas", "platform", "digital",
+            "software", "semiconductor", "chip", "chips", "cloud", "ai ", "artificial intelligence",
+            "data center", "data centre", "cybersecurity", "technology", "silicon", "computing",
+            "saas", "platform", "digital", "gpu", "chipmaker", "foundry",
         ],
     },
     "Financials": {
@@ -45,10 +54,16 @@ SECTOR_MAP: dict[str, dict] = {
             "JPM", "BAC", "GS", "MS", "C", "WFC", "BLK", "BX", "KKR", "AXP",
             "V", "MA", "PYPL", "SCHW", "ICE", "CME", "ARES", "APO", "OWL",
         },
+        "names": [
+            "jpmorgan", "bank of america", "goldman sachs", "morgan stanley",
+            "wells fargo", "blackrock", "blackstone", "apollo", "ares",
+            "federal reserve", "powell", "fed ", "fomc",
+        ],
         "keywords": [
             "bank", "banking", "financial", "credit", "lending", "monetary policy",
             "federal reserve", "bond", "treasury", "yield", "spread", "ipo",
             "private equity", "hedge fund", "asset management", "insurance",
+            "interest rate", "rate cut", "rate hike", "rate decision",
         ],
     },
     "Energy": {
@@ -56,9 +71,13 @@ SECTOR_MAP: dict[str, dict] = {
             "XOM", "CVX", "BP", "SHEL", "COP", "SLB", "HAL", "OXY",
             "PXD", "VLO", "PSX", "MPC", "LNG", "CQP",
         },
+        "names": [
+            "exxon", "chevron", "shell", "conocophillips", "opec", "bp ",
+        ],
         "keywords": [
             "oil", "gas", "crude", "lng", "opec", "energy", "petroleum",
             "refinery", "pipeline", "offshore", "shale", "brent", "wti", "barrel",
+            "oil price", "crude price", "oil supply", "energy supply",
         ],
     },
     "Industrials": {
@@ -66,10 +85,14 @@ SECTOR_MAP: dict[str, dict] = {
             "GE", "RTX", "HON", "CAT", "DE", "LMT", "NOC", "BA", "GD",
             "UPS", "FDX", "CSX", "UNP", "ABB",
         },
+        "names": [
+            "lockheed", "raytheon", "northrop", "boeing", "general dynamics",
+            "honeywell", "caterpillar", "general electric",
+        ],
         "keywords": [
             "industrial", "manufacturing", "aerospace", "defense", "logistics",
             "supply chain", "freight", "railroad", "construction", "infrastructure",
-            "automation",
+            "automation", "military", "nato", "pentagon", "weapons",
         ],
     },
     "Healthcare": {
@@ -77,10 +100,14 @@ SECTOR_MAP: dict[str, dict] = {
             "JNJ", "PFE", "MRK", "LLY", "ABBV", "BMY", "UNH", "CVS", "CI",
             "AMGN", "GILD", "BIIB", "REGN", "MRNA", "ISRG",
         },
+        "names": [
+            "lilly", "eli lilly", "pfizer", "merck", "abbvie", "johnson",
+            "novo nordisk", "unitedhealth", "moderna",
+        ],
         "keywords": [
             "pharmaceutical", "pharma", "drug", "fda", "clinical trial", "biotech",
             "healthcare", "hospital", "medical", "vaccine", "therapy", "cancer",
-            "biosimilar",
+            "biosimilar", "glp-1", "obesity", "drug approval",
         ],
     },
     "Consumer": {
@@ -88,37 +115,49 @@ SECTOR_MAP: dict[str, dict] = {
             "WMT", "TGT", "COST", "HD", "LOW", "MCD", "SBUX", "NKE",
             "PG", "KO", "PEP", "PM", "MO", "TSLA",
         },
+        "names": [
+            "walmart", "target", "costco", "amazon", "mcdonald", "starbucks",
+            "nike", "tesla",
+        ],
         "keywords": [
             "consumer", "retail", "spending", "sales", "cpi",
             "discretionary", "staples", "restaurant", "brand", "e-commerce",
-            "luxury", "household",
+            "luxury", "household", "tariff", "tariffs", "trade war",
         ],
     },
     "Utilities": {
         "entities": {"NEE", "DUK", "SO", "D", "AEP", "EXC", "SRE", "PCG", "ED", "CEG", "VST"},
+        "names": [
+            "constellation", "vistra", "nextera", "duke energy", "southern company",
+        ],
         "keywords": [
             "utility", "utilities", "electricity", "power grid",
             "solar", "wind", "nuclear", "rate case", "ferc", "transmission",
+            "power demand", "power plant", "energy demand",
         ],
     },
     "Materials": {
         "entities": {"FCX", "NEM", "APD", "LIN", "DD", "NUE", "X", "CLF", "AA", "ALB", "CCJ"},
+        "names": ["freeport", "newmont", "cameco", "alcoa"],
         "keywords": [
             "materials", "mining", "metals", "steel", "copper", "gold", "silver",
             "aluminum", "lithium", "chemicals", "fertilizer", "potash", "uranium",
+            "iron ore", "commodity",
         ],
     },
     "Real Estate": {
         "entities": {"AMT", "PLD", "EQIX", "SPG", "PSA", "AVB", "EQR", "VTR", "ARE", "DLR"},
+        "names": ["prologis", "equinix", "simon property"],
         "keywords": [
             "real estate", "reit", "property", "commercial real estate", "office",
-            "housing", "mortgage", "cap rate", "occupancy",
+            "housing", "mortgage", "cap rate", "occupancy", "data center",
         ],
     },
     "Communications": {
         "entities": {
             "GOOGL", "META", "NFLX", "DIS", "CMCSA", "CHTR", "T", "VZ", "TMUS",
         },
+        "names": ["netflix", "disney", "comcast", "at&t", "verizon", "t-mobile"],
         "keywords": [
             "media", "streaming", "telecom", "communications", "social media",
             "advertising", "content", "broadband", "wireless", "cable",
@@ -311,6 +350,12 @@ def classify_item(item: object) -> tuple[dict[str, float], dict[str, float]]:
     """
     Score item against SECTOR_MAP and INDUSTRY_MAP.
     Returns (sector_scores, industry_scores) — only entries with score > 0.
+
+    Scoring layers (all additive, per sector/industry):
+      - Ticker entity match in affected_entities : +3.0 per hit
+      - Company name text-scan in title/snippet  : +3.0 (one hit max)
+      - Keyword in title                         : +2.0 per match (cap 3)
+      - Keyword in snippet                       : +1.0 per match (cap 3)
     """
     title_n   = _norm(getattr(item, "title",   "") or "")
     snippet_n = _norm(getattr(item, "snippet", "") or "")
@@ -319,15 +364,28 @@ def classify_item(item: object) -> tuple[dict[str, float], dict[str, float]]:
     sector_scores: dict[str, float] = {}
     for sector, cfg in SECTOR_MAP.items():
         score = 0.0
+        # Layer 1: ticker entities
         for e in cfg["entities"]:
             if e in entities:
                 score += 3.0
+        # Layer 2: company name text-scan
+        for name in cfg.get("names", []):
+            name_p = f" {name} "
+            if name_p in title_n or name_p in snippet_n:
+                score += 3.0
+                break
+        # Layer 3: keyword matching (up to 3 hits)
+        kw_hits = 0
         for kw in cfg["keywords"]:
+            if kw_hits >= 3:
+                break
             kw_padded = f" {kw} "
             if kw_padded in title_n:
-                score += 2.0
+                score  += 2.0
+                kw_hits += 1
             elif kw_padded in snippet_n:
-                score += 1.0
+                score  += 1.0
+                kw_hits += 1
         if score > 0:
             sector_scores[sector] = score
 
@@ -536,6 +594,16 @@ def aggregate_sector_intelligence(
 
     sectors.sort(key=lambda s: s.signal_score, reverse=True)
     dominant = sectors[0].name if sectors else None
+
+    log.info(
+        "[sector] aggregate done  clusters=%d  sectors_active=%d  dominant=%s",
+        len(clusters), len(sectors), dominant,
+    )
+    for s in sectors:
+        log.info(
+            "[sector]  %-14s  score=%5.1f  count=%d  sentiment=%-8s  align=%s",
+            s.name, s.signal_score, s.signal_count, s.impact_sentiment, s.regime_alignment,
+        )
 
     max_ind    = max((v["score"] for v in ind_acc.values()), default=1.0) or 1.0
     industries: list[IndustrySignal] = []

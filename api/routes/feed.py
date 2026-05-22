@@ -565,3 +565,104 @@ def feed_freshness(
         cache_age_seconds=round(age, 1),
         item_count=len(entry.items),
     )
+
+
+# ── Activation debug endpoint ─────────────────────────────────────────────────
+
+@router.get("/activation-debug")
+def activation_debug() -> dict:
+    """
+    Returns raw theme + industry activation data from the live cache.
+    Use this to diagnose why sectors/industries show zero scores.
+
+    Response shape:
+      cluster_count       — total clusters fed into theme extraction
+      theme_count         — themes that passed the activation threshold
+      themes[]            — per-theme: id, confidence, strength, industries, clusters, story_count
+      industry_count      — number of industries in the activation list
+      active_industry_count — industries with score > 0
+      industries[]        — per-industry: name, score, sentiment, themes, assets, stories
+      sector_count        — sectors from the SectorData path
+      sectors[]           — per-sector: name, score, count, sentiment
+      sample_clusters[]   — first 10 clusters (title, entities, category, signal_score)
+    """
+    from app.processed_cache import feed_cache, make_cache_key
+    key   = make_cache_key("", "", False)
+    entry = feed_cache.get(key)
+    if entry is None:
+        return {"error": "cache cold — pipeline has not run yet"}
+
+    themes = getattr(entry, "theme_intelligence", []) or []
+    activations = getattr(entry, "industry_activation", []) or []
+    clusters = getattr(entry, "clusters", []) or []
+    sector_data = getattr(entry, "sector_data", None)
+
+    theme_list = [
+        {
+            "id":          t.id,
+            "name":        t.name,
+            "confidence":  t.confidence,
+            "strength":    t.signal_strength,
+            "industries":  t.related_industries,
+            "cluster_count": len(t.contributing_cluster_ids),
+            "story_count": t.contributing_story_count,
+            "momentum":    t.momentum_label,
+        }
+        for t in themes
+    ]
+
+    industry_list = [
+        {
+            "industry":     ia.industry,
+            "score":        ia.score,
+            "sentiment":    ia.sentiment,
+            "stories":      ia.active_story_count,
+            "themes":       ia.related_theme_names,
+            "assets":       ia.related_assets,
+            "momentum":     ia.momentum_label,
+            "confidence":   ia.confidence_label,
+        }
+        for ia in activations
+    ]
+
+    sector_list = [
+        {
+            "name":      s.name,
+            "score":     s.signal_score,
+            "count":     s.signal_count,
+            "sentiment": s.impact_sentiment,
+            "align":     s.regime_alignment,
+        }
+        for s in (sector_data.sectors if sector_data else [])
+    ]
+
+    sample_clusters = []
+    for c in clusters[:10]:
+        p = c.primary
+        sample_clusters.append({
+            "id":           c.id,
+            "title":        getattr(p, "title", "")[:120],
+            "source":       getattr(p, "source", ""),
+            "category":     getattr(p, "category", ""),
+            "signal_score": getattr(p, "signal_score", 0),
+            "signal_strength": getattr(p, "signal_strength", ""),
+            "entities":     getattr(p, "affected_entities", []),
+            "cluster_score": c.cluster_score,
+            "story_count":  c.story_count,
+        })
+
+    return {
+        "generated_at":          entry.generated_at.isoformat(),
+        "cluster_count":         len(clusters),
+        "item_count":            len(entry.items),
+        "theme_count":           len(themes),
+        "themes":                theme_list,
+        "industry_count":        len(activations),
+        "active_industry_count": sum(1 for ia in activations if ia.score > 0),
+        "industries":            industry_list,
+        "sector_count":          len(sector_list),
+        "active_sector_count":   sum(1 for s in sector_list if s["score"] > 0),
+        "sectors":               sector_list,
+        "sample_clusters":       sample_clusters,
+        "regime":                getattr(sector_data, "derived_regime", "") if sector_data else "",
+    }

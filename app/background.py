@@ -239,9 +239,22 @@ def run_pipeline(
     t_activ = time.perf_counter()
     active_industries = sum(1 for ia in industry_activation if ia.score > 0)
     log.info(
-        "[bg] industry_activation done in %.3fs  active=%d / %d",
+        "[bg] industry_activation done in %.3fs  active=%d / %d  themes_in=%d",
         t_activ - t_themes, active_industries, len(industry_activation),
+        len(theme_intelligence),
     )
+    if not theme_intelligence:
+        log.warning(
+            "[bg] WARNING: extract_themes returned 0 active themes — "
+            "check cluster count (%d) and keyword/entity matches in [theme] log lines above",
+            len(clusters),
+        )
+    for ia in industry_activation:
+        if ia.score > 0:
+            log.info(
+                "[bg]   ✓ %-24s  score=%3d  sentiment=%-8s  stories=%d",
+                ia.industry, ia.score, ia.sentiment, ia.active_story_count,
+            )
 
     # ── 7. Top story selection ─────────────────────────────────────────────────
     debug_log: list[str] = []

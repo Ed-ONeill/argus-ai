@@ -679,25 +679,32 @@ def extract_themes(
 
             raw = 0.0
 
-            # Entity overlap (capped so one super-story can't inflate alone)
-            entity_hits = sum(1 for e in theme_entities if e in entities)
+            # Entity overlap — compare uppercased so "Nvidia" matches "NVIDIA"
+            entity_hits = sum(1 for e in theme_entities if e.upper() in entities)
             # Secondary: scan title/snippet text for entity name mentions
-            if entity_hits == 0:
-                for tkr in theme_entities:
-                    tkr_n = f" {tkr.lower()} "
-                    if tkr_n in title_n or tkr_n in snippet_n:
-                        entity_hits += 1
+            # Always run so multi-name stories accumulate correctly
+            for tkr in theme_entities:
+                tkr_n = f" {tkr.lower()} "
+                if tkr_n in title_n or tkr_n in snippet_n:
+                    entity_hits += 1
+                    break  # one text-scan hit per cluster is enough
             raw += min(entity_hits * 3.0, 9.0)
 
-            # Keyword match (title worth more than snippet)
+            # Keyword match — accumulate up to 3 matches (6 pts title / 3 pts snippet)
+            # Separate title pass and snippet pass so title points aren't skipped
+            kw_score = 0.0
+            kw_hits  = 0
             for kw in theme_keywords:
+                if kw_hits >= 3:
+                    break
                 kw_p = f" {kw} "
                 if kw_p in title_n:
-                    raw += 2.0
-                    break
+                    kw_score += 2.0
+                    kw_hits  += 1
                 elif kw_p in snippet_n:
-                    raw += 1.0
-                    break
+                    kw_score += 1.0
+                    kw_hits  += 1
+            raw += kw_score
 
             if raw <= 0:
                 continue
@@ -716,7 +723,11 @@ def extract_themes(
             if pub and (now - pub).total_seconds() < 21600:
                 recent_count += 1
 
-        if total_score < 2.5 or not contributing:
+        log.info(
+            "[theme] %-36s  raw_total=%.1f  clusters=%d",
+            theme_id, total_score, len(contributing),
+        )
+        if total_score < 1.5 or not contributing:
             continue
 
         n_clusters = len(contributing)
@@ -804,15 +815,16 @@ def extract_themes(
         ))
 
     results.sort(key=lambda t: t.confidence, reverse=True)
-    log.debug(
-        "extract_themes: %d active themes from %d clusters",
-        len(results), len(clusters),
+    log.info(
+        "[theme] extract_themes DONE: %d active / %d themes  clusters_in=%d",
+        len(results), len(THEME_CATALOG), len(clusters),
     )
     for t in results:
-        log.debug(
-            "  theme=%s  conf=%d  strength=%s  industries=%s  clusters=%d",
+        log.info(
+            "[theme]  ✓ %-36s  conf=%d  strength=%-6s  clusters=%d  stories=%d  industries=%s",
             t.id, t.confidence, t.signal_strength,
-            t.related_industries, len(t.contributing_cluster_ids),
+            len(t.contributing_cluster_ids), t.contributing_story_count,
+            t.related_industries,
         )
     return results
 
@@ -898,9 +910,10 @@ def compute_industry_activation(
                 if a not in assets:
                     assets.append(a)
 
-        log.debug(
-            "compute_industry_activation: %s  score=%d  themes=%d  sentiment=%s",
-            industry, best_score, len(matched), best_sentiment,
+        log.info(
+            "[activ] %-24s  score=%3d  sentiment=%-8s  themes=%d  stories=%d  assets=%s",
+            industry, min(best_score, 100), best_sentiment,
+            len(matched), total_stories, assets[:4],
         )
 
         results.append(IndustryActivation(
