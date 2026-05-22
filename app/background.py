@@ -39,7 +39,7 @@ def _import_deps():
     return (
         FEED_REGISTRY, feed_manager, source_breakdown,
         ProcessedFeed, feed_cache, make_cache_key,
-        generate_market_take, summarize_items,
+        generate_market_take, generate_market_brief, summarize_items,
         settings, _select_top_stories,
     )
 
@@ -114,7 +114,7 @@ def run_pipeline(
     (
         FEED_REGISTRY, feed_manager, source_breakdown,
         ProcessedFeed, feed_cache, make_cache_key,
-        generate_market_take, summarize_items,
+        generate_market_take, generate_market_brief, summarize_items,
         settings, _select_top_stories,
     ) = _import_deps()
 
@@ -194,15 +194,30 @@ def run_pipeline(
     log.info("[bg] WMN done in %.3fs  themes=%d", t_wmn - t_cluster, len(wmn))
 
     # ── 6. Market take + structured brief ────────────────────────────────────
-    take  = generate_market_take(items, model_name=model)
-    brief = generate_market_brief(items)
+    try:
+        take  = generate_market_take(items, model_name=model)
+        brief = generate_market_brief(items)
+    except Exception:
+        log.exception("[bg] market take/brief FAILED — continuing with empty values")
+        take  = ""
+        brief = None
     t_take = time.perf_counter()
     log.info("[bg] market take done in %.2fs  brief=%s", t_take - t_wmn,
              "OK" if brief else "None")
 
     # ── 6b. Sector intelligence ───────────────────────────────────────────────
-    from app.sectors import aggregate_sector_intelligence
-    sector_data = aggregate_sector_intelligence(clusters, brief)
+    try:
+        from app.sectors import aggregate_sector_intelligence
+        sector_data = aggregate_sector_intelligence(clusters, brief)
+    except Exception:
+        log.exception("[bg] aggregate_sector_intelligence FAILED — using empty SectorData")
+        from app.sectors import SectorData
+        from datetime import datetime, timezone as _tz
+        sector_data = SectorData(
+            sectors=[], industries=[], rotation_signals=[],
+            dominant_sector=None,
+            generated_at=datetime.now(_tz.utc),
+        )
     t_sector = time.perf_counter()
     log.info(
         "[bg] sectors done in %.3fs  sectors=%d  industries=%d  rotations=%d",
@@ -228,14 +243,17 @@ def run_pipeline(
     )
 
     # ── 6d. Extended market regime ────────────────────────────────────────────
-    from app.sectors import derive_extended_regime as _derive_regime
-    _base_regime = getattr(brief, "market_regime", "Neutral/Consolidating") if brief else "Neutral/Consolidating"
-    sector_data.derived_regime = _derive_regime(
-        sector_data.sectors,
-        [t.id for t in theme_intelligence],
-        _base_regime,
-    )
-    log.debug("[bg] derived_regime=%s  (base=%s)", sector_data.derived_regime, _base_regime)
+    try:
+        from app.sectors import derive_extended_regime as _derive_regime
+        _base_regime = getattr(brief, "market_regime", "Neutral/Consolidating") if brief else "Neutral/Consolidating"
+        sector_data.derived_regime = _derive_regime(
+            sector_data.sectors,
+            [t.id for t in theme_intelligence],
+            _base_regime,
+        )
+        log.debug("[bg] derived_regime=%s  (base=%s)", sector_data.derived_regime, _base_regime)
+    except Exception:
+        log.exception("[bg] derive_extended_regime FAILED — skipping")
 
     # ── 6e. Industry activation (server-side per-industry signal aggregation) ──
     try:

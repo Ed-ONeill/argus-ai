@@ -684,6 +684,17 @@ def extract_themes(
         now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
 
+    log.info("[theme] extract_themes START  clusters=%d  themes_catalog=%d", len(clusters), len(THEME_CATALOG))
+    # Log first 5 cluster titles + entities so Railway logs show what content we're scoring
+    for _i, _c in enumerate(clusters[:5]):
+        _p = _c.primary
+        log.info(
+            "[theme]   cluster[%d] title=%r  entities=%s",
+            _i,
+            (getattr(_p, "title", "") or "")[:80],
+            getattr(_p, "affected_entities", []),
+        )
+
     results: list[ThemeIntelligence] = []
 
     for theme_id, cfg in THEME_CATALOG.items():

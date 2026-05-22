@@ -570,57 +570,94 @@ def feed_freshness(
 # ── Activation debug endpoint ─────────────────────────────────────────────────
 
 @router.get("/activation-debug")
-def activation_debug() -> dict:
+def activation_debug(
+    refresh: bool = Query(default=False, description="Re-run extraction synchronously on current clusters"),
+) -> dict:
     """
-    Returns raw theme + industry activation data from the live cache.
-    Use this to diagnose why sectors/industries show zero scores.
+    Returns raw theme + industry activation data.
 
-    Response shape:
-      cluster_count       — total clusters fed into theme extraction
+    ?refresh=true  — re-runs extract_themes + compute_industry_activation
+                     synchronously on the cached clusters and writes results
+                     back to cache. Use this when the background pipeline has
+                     stale or empty data.
+
+    Returned fields:
+      data_source         — "refreshed" | "cached"
+      cache_age_seconds   — age of the underlying cache entry
+      cluster_count       — total clusters available for extraction
       theme_count         — themes that passed the activation threshold
-      themes[]            — per-theme: id, confidence, strength, industries, clusters, story_count
-      industry_count      — number of industries in the activation list
+      industry_count      — all industries (12 total when pipeline runs)
       active_industry_count — industries with score > 0
-      industries[]        — per-industry: name, score, sentiment, themes, assets, stories
-      sector_count        — sectors from the SectorData path
-      sectors[]           — per-sector: name, score, count, sentiment
-      sample_clusters[]   — first 10 clusters (title, entities, category, signal_score)
+      scored_clusters[]   — first 5 clusters with per-theme scores (debug)
     """
+    import re as _re
+    from datetime import datetime, timezone as _tz
     from app.processed_cache import feed_cache, make_cache_key
+    from app.theme_graph import THEME_CATALOG, _PUNCT_RE
+
     key   = make_cache_key("", "", False)
     entry = feed_cache.get(key)
     if entry is None:
         return {"error": "cache cold — pipeline has not run yet"}
 
-    themes = getattr(entry, "theme_intelligence", []) or []
-    activations = getattr(entry, "industry_activation", []) or []
     clusters = getattr(entry, "clusters", []) or []
+    age_s = feed_cache.age_seconds(key) or 0.0
+    data_source = "cached"
+
+    if refresh:
+        # Run extraction synchronously on current clusters — bypasses background job
+        log.info(
+            "[api] activation-debug refresh=True  clusters=%d  cache_age=%.0fs",
+            len(clusters), age_s,
+        )
+        from app.theme_graph import extract_themes, compute_industry_activation
+        try:
+            themes = extract_themes(clusters)
+            log.info("[api] refresh extract_themes: %d active themes", len(themes))
+        except Exception:
+            log.exception("[api] refresh extract_themes FAILED")
+            themes = []
+        try:
+            activations = compute_industry_activation(themes)
+            log.info("[api] refresh compute_industry_activation: %d industries", len(activations))
+        except Exception:
+            log.exception("[api] refresh compute_industry_activation FAILED")
+            activations = []
+        # Persist back to cache so the main feed reflects these results
+        entry.theme_intelligence = themes
+        entry.industry_activation = activations
+        feed_cache.set(key, entry)
+        data_source = "refreshed"
+    else:
+        themes      = getattr(entry, "theme_intelligence", []) or []
+        activations = getattr(entry, "industry_activation", []) or []
+
     sector_data = getattr(entry, "sector_data", None)
 
     theme_list = [
         {
-            "id":          t.id,
-            "name":        t.name,
-            "confidence":  t.confidence,
-            "strength":    t.signal_strength,
-            "industries":  t.related_industries,
+            "id":            t.id,
+            "name":          t.name,
+            "confidence":    t.confidence,
+            "strength":      t.signal_strength,
+            "industries":    t.related_industries,
             "cluster_count": len(t.contributing_cluster_ids),
-            "story_count": t.contributing_story_count,
-            "momentum":    t.momentum_label,
+            "story_count":   t.contributing_story_count,
+            "momentum":      t.momentum_label,
         }
         for t in themes
     ]
 
     industry_list = [
         {
-            "industry":     ia.industry,
-            "score":        ia.score,
-            "sentiment":    ia.sentiment,
-            "stories":      ia.active_story_count,
-            "themes":       ia.related_theme_names,
-            "assets":       ia.related_assets,
-            "momentum":     ia.momentum_label,
-            "confidence":   ia.confidence_label,
+            "industry":   ia.industry,
+            "score":      ia.score,
+            "sentiment":  ia.sentiment,
+            "stories":    ia.active_story_count,
+            "themes":     ia.related_theme_names,
+            "assets":     ia.related_assets,
+            "momentum":   ia.momentum_label,
+            "confidence": ia.confidence_label,
         }
         for ia in activations
     ]
@@ -636,23 +673,73 @@ def activation_debug() -> dict:
         for s in (sector_data.sectors if sector_data else [])
     ]
 
+    # Per-cluster scoring breakdown for first 5 clusters — shows exactly
+    # what each cluster scores for each theme (entity hits + keyword hits).
+    scored_clusters = []
+    for c in clusters[:5]:
+        p         = c.primary
+        title     = (getattr(p, "title",   "") or "")
+        snippet   = (getattr(p, "snippet", "") or "")
+        entities  = getattr(p, "affected_entities", []) or []
+        ent_upper = {e.upper() for e in entities}
+        title_n   = " " + _PUNCT_RE.sub(" ", title.lower())   + " "
+        snippet_n = " " + _PUNCT_RE.sub(" ", snippet.lower()) + " "
+
+        theme_scores: dict[str, dict] = {}
+        for theme_id, cfg in THEME_CATALOG.items():
+            te  = cfg["entities"]
+            raw = 0.0
+            # Entity exact match
+            e_hits = sum(1 for e in te if e.upper() in ent_upper)
+            # Entity text-scan
+            for tkr in te:
+                if f" {tkr.lower()} " in title_n or f" {tkr.lower()} " in snippet_n:
+                    e_hits += 1
+                    break
+            raw += min(e_hits * 3.0, 9.0)
+            # Keyword match (normalized)
+            kw_hits = 0
+            kw_score = 0.0
+            matched_kws: list[str] = []
+            for kw in cfg["keywords"]:
+                if kw_hits >= 3:
+                    break
+                kw_p = f" {_PUNCT_RE.sub(' ', kw.lower())} "
+                if kw_p in title_n:
+                    kw_score += 2.0; kw_hits += 1; matched_kws.append(kw)
+                elif kw_p in snippet_n:
+                    kw_score += 1.0; kw_hits += 1; matched_kws.append(kw)
+            raw += kw_score
+            if raw > 0:
+                theme_scores[theme_id] = {"raw": round(raw, 1), "kws": matched_kws, "e_hits": e_hits}
+
+        scored_clusters.append({
+            "title":        title[:120],
+            "entities":     entities,
+            "title_norm":   title_n.strip()[:120],
+            "theme_scores": theme_scores,
+        })
+
+    # Sample clusters (non-scored) for items 6-10
     sample_clusters = []
     for c in clusters[:10]:
         p = c.primary
         sample_clusters.append({
-            "id":           c.id,
-            "title":        getattr(p, "title", "")[:120],
-            "source":       getattr(p, "source", ""),
-            "category":     getattr(p, "category", ""),
-            "signal_score": getattr(p, "signal_score", 0),
+            "id":              c.id,
+            "title":           (getattr(p, "title", "") or "")[:120],
+            "source":          getattr(p, "source", ""),
+            "category":        getattr(p, "category", ""),
+            "signal_score":    getattr(p, "signal_score", 0),
             "signal_strength": getattr(p, "signal_strength", ""),
-            "entities":     getattr(p, "affected_entities", []),
-            "cluster_score": c.cluster_score,
-            "story_count":  c.story_count,
+            "entities":        getattr(p, "affected_entities", []),
+            "cluster_score":   c.cluster_score,
+            "story_count":     c.story_count,
         })
 
     return {
+        "data_source":           data_source,
         "generated_at":          entry.generated_at.isoformat(),
+        "cache_age_seconds":     round(age_s, 1),
         "cluster_count":         len(clusters),
         "item_count":            len(entry.items),
         "theme_count":           len(themes),
@@ -664,5 +751,6 @@ def activation_debug() -> dict:
         "active_sector_count":   sum(1 for s in sector_list if s["score"] > 0),
         "sectors":               sector_list,
         "sample_clusters":       sample_clusters,
+        "scored_clusters":       scored_clusters,
         "regime":                getattr(sector_data, "derived_regime", "") if sector_data else "",
     }
