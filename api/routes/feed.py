@@ -522,15 +522,17 @@ def get_feed(
     categories:       str  = Query(default="",    description="Comma-separated category filter"),
     sources:          str  = Query(default="",    description="Comma-separated source filter"),
     fresh_only:       bool = Query(default=False, description="Only show items from last 48h"),
-    force_refresh:    bool = Query(default=False, description="Trigger an out-of-cycle background refresh"),
+    force_refresh:    bool = Query(default=False, description="Run pipeline synchronously and return fresh data"),
+    refresh:          bool = Query(default=False, description="Alias for force_refresh (?refresh=true)"),
     use_ai:           bool = Query(default=True,  description="(ignored — background job always uses AI)"),
     model_name:       str  = Query(default="",    description="(ignored — model set via settings)"),
 ) -> FeedResponse:
     """
     Return the fully-processed feed from cache.  Responses are instant.
 
-    If force_refresh=True the background job is woken immediately; the response
-    still comes from the current cache snapshot (stale-while-revalidate).
+    If force_refresh=True or refresh=True, the full pipeline runs synchronously
+    on this request and the fresh result is written to cache before returning.
+    The response will have is_stale=False and a current generated_at timestamp.
 
     For filter combos not pre-warmed, the pipeline runs inline on first call
     and is cached for all subsequent calls.
@@ -538,20 +540,38 @@ def get_feed(
     t0  = time.perf_counter()
     key = make_cache_key(categories, sources, fresh_only)
 
-    if force_refresh:
-        refresher.trigger()
-        log.info("[api] force-refresh triggered")
+    do_refresh = force_refresh or refresh
 
-    entry = feed_cache.get(key)
-    age   = feed_cache.age_seconds(key) or 0.0
+    if do_refresh:
+        # Run pipeline synchronously — do NOT serve from stale cache.
+        log.info("[feed] refresh=true forcing synchronous recompute  key=%s", key)
+        entry = run_pipeline(categories=categories, sources=sources, fresh_only=fresh_only)
+        feed_cache.set(key, entry)
+        age = 0.0
+        raw_themes      = getattr(entry, "theme_intelligence",  []) or []
+        raw_activations = getattr(entry, "industry_activation", []) or []
+        log.info(
+            "[feed] recomputed  themes=%d  activations=%d  active_industries=%d  is_stale=False",
+            len(raw_themes),
+            len(raw_activations),
+            sum(1 for ia in raw_activations if ia.score > 0),
+        )
+    else:
+        entry = feed_cache.get(key)
+        age   = feed_cache.age_seconds(key) or 0.0
 
-    if entry is None:
-        # Cold-start: run inline and cache (only happens for non-warm combos)
-        entry = _run_inline(categories, sources, fresh_only)
-        age   = 0.0
+        if entry is None:
+            # Cold-start: run inline and cache (only happens for non-warm combos)
+            entry = _run_inline(categories, sources, fresh_only)
+            age   = 0.0
+
+        log.info(
+            "[feed] returning cache  key=%s  age=%.0fs  stale=%s",
+            key, age, entry.is_refreshing,
+        )
 
     log.info(
-        "[api] GET /feed/ served in %.3fs  key=%s  items=%d  age=%.0fs  stale=%s",
+        "[feed] GET /feed/ served in %.3fs  key=%s  items=%d  age=%.0fs  stale=%s",
         time.perf_counter() - t0, key, len(entry.items), age, entry.is_refreshing,
     )
     return _build_response(entry, age)
