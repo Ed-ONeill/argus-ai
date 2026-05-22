@@ -213,8 +213,12 @@ def run_pipeline(
     )
 
     # ── 6c. Theme intelligence graph ──────────────────────────────────────────
-    from app.theme_graph import extract_themes
-    theme_intelligence = extract_themes(clusters)
+    try:
+        from app.theme_graph import extract_themes
+        theme_intelligence = extract_themes(clusters)
+    except Exception:
+        log.exception("[bg] extract_themes FAILED — falling back to empty list")
+        theme_intelligence = []
     t_themes = time.perf_counter()
     log.info(
         "[bg] themes done in %.3fs  active=%d  strong=%d",
@@ -234,8 +238,12 @@ def run_pipeline(
     log.debug("[bg] derived_regime=%s  (base=%s)", sector_data.derived_regime, _base_regime)
 
     # ── 6e. Industry activation (server-side per-industry signal aggregation) ──
-    from app.theme_graph import compute_industry_activation
-    industry_activation = compute_industry_activation(theme_intelligence)
+    try:
+        from app.theme_graph import compute_industry_activation
+        industry_activation = compute_industry_activation(theme_intelligence)
+    except Exception:
+        log.exception("[bg] compute_industry_activation FAILED — falling back to empty list")
+        industry_activation = []
     t_activ = time.perf_counter()
     active_industries = sum(1 for ia in industry_activation if ia.score > 0)
     log.info(

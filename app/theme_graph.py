@@ -203,6 +203,8 @@ THEME_CATALOG: dict[str, dict] = {
             "nvidia ai", "microsoft ai", "google ai", "amazon ai", "meta ai",
             "ai model training", "inference demand", "ai spending", "ai investment",
             "renewable ppa", "grid capacity", "power grid upgrade", "electricity grid",
+            # Single-word triggers
+            "ai", "openai", "anthropic",
         ],
         "entities": frozenset({
             "NVDA", "MSFT", "GOOGL", "AMZN", "META", "CEG", "VST",
@@ -245,6 +247,9 @@ THEME_CATALOG: dict[str, dict] = {
             "bond market", "treasury market", "yield inversion", "10 year treasury",
             "rate expectations", "monetary policy", "fed pivot", "fed pause",
             "rate outlook", "bond yields", "yield pressure", "rate hikes",
+            "treasury yields",
+            # Single-word triggers for common macro headlines
+            "inflation", "yields", "rates", "cpi", "treasury",
         ],
         "entities": frozenset({
             "Treasury", "Treasuries", "10Y", "2Y", "30Y", "Fed", "FOMC",
@@ -286,6 +291,8 @@ THEME_CATALOG: dict[str, dict] = {
             "geopolitical tension", "nato spending", "defense stocks", "defense order",
             "missile system", "stealth fighter", "naval vessel", "troop deployment",
             "arms deal", "weapons contract", "military contract",
+            # Single-word triggers
+            "defense", "military", "ukraine", "taiwan",
         ],
         "entities": frozenset({
             "LMT", "RTX", "NOC", "GD", "BA", "GE", "HII", "KTOS",
@@ -321,6 +328,8 @@ THEME_CATALOG: dict[str, dict] = {
             "blackstone", "apollo", "ares", "kkr", "credit manager",
             "private equity", "credit market", "loan market", "debt deal",
             "alternative credit", "leveraged finance", "high yield", "credit spread",
+            # Single-word triggers
+            "blackstone", "apollo", "ares", "buyout",
         ],
         "entities": frozenset({
             "BX", "KKR", "ARES", "APO", "OWL",
@@ -354,6 +363,8 @@ THEME_CATALOG: dict[str, dict] = {
             "weight loss", "obesity treatment", "diabetes treatment", "lilly",
             "pharmaceutical earnings", "drug approval", "fda approval", "clinical trial",
             "drug pipeline", "biotech drug", "healthcare earnings", "pharma earnings",
+            # Single-word triggers (glp-1 normalizes to "glp 1" via _PUNCT_RE — both covered now)
+            "fda", "lilly", "obesity", "biotech", "healthcare",
         ],
         "entities": frozenset({
             "LLY", "NVO", "PFE", "ABBV", "BMY", "JNJ", "ISRG", "UNH",
@@ -389,6 +400,8 @@ THEME_CATALOG: dict[str, dict] = {
             "beijing policy", "pboc rate", "china recovery", "china slowdown",
             "china gdp", "china exports", "china imports", "copper demand",
             "iron ore", "commodity demand", "emerging market",
+            # Single-word triggers
+            "china", "chinese", "beijing",
         ],
         "entities": frozenset({
             "BABA", "JD", "PDD", "NIO", "BYD", "FCX", "VALE", "BHP", "AA", "ALB",
@@ -425,6 +438,8 @@ THEME_CATALOG: dict[str, dict] = {
             "wti crude", "opec meeting", "energy supply", "natural gas prices",
             "gasoline prices", "oil output", "oil demand", "energy market",
             "exxon", "chevron", "shell", "energy earnings", "oil company",
+            # Single-word triggers
+            "oil", "crude", "opec", "brent", "wti",
         ],
         "entities": frozenset({
             "XOM", "CVX", "COP", "SLB", "HAL", "OXY", "VLO", "LNG", "CQP",
@@ -463,6 +478,8 @@ THEME_CATALOG: dict[str, dict] = {
             "mortgage delinquency", "office market", "real estate stress",
             "financial stress", "credit access", "lending tightens",
             "jpmorgan", "bank of america", "wells fargo", "citigroup",
+            # Single-word triggers
+            "delinquency", "defaults", "foreclosure",
         ],
         "entities": frozenset({
             "BAC", "C", "WFC", "JPM", "SPG", "VNO", "SLG", "PLD", "DLR",
@@ -501,6 +518,8 @@ THEME_CATALOG: dict[str, dict] = {
             "nvidia revenue", "semiconductor revenue", "chip sales", "chip revenue",
             "tsmc earnings", "amd results", "nvidia results", "gpu shortage",
             "chips", "semiconductor", "chipmaker",
+            # Single-word triggers
+            "nvidia", "amd", "tsmc", "broadcom", "qualcomm",
         ],
         "entities": frozenset({
             "NVDA", "AMD", "INTC", "TSMC", "ASML", "AMAT", "LRCX", "KLAC", "MU", "AVGO", "QCOM",
@@ -538,6 +557,8 @@ THEME_CATALOG: dict[str, dict] = {
             "crypto rally", "crypto selloff", "bitcoin rally", "bitcoin drop",
             "coinbase earnings", "coinbase revenue", "crypto exchange",
             "digital assets", "crypto assets", "bitcoin halving",
+            # Single-word triggers
+            "bitcoin", "crypto", "ethereum", "btc", "coinbase",
         ],
         "entities": frozenset({
             "COIN", "MSTR", "MARA", "RIOT", "SQ", "PYPL",
@@ -572,6 +593,8 @@ THEME_CATALOG: dict[str, dict] = {
             "nuclear deal", "nuclear agreement", "constellation energy", "vistra",
             "cameco", "uranium prices", "uranium demand", "nuclear electricity",
             "nuclear plant restart", "nuclear capacity factor", "clean energy nuclear",
+            # Single-word triggers
+            "nuclear", "uranium", "constellation", "vistra",
         ],
         "entities": frozenset({
             "CEG", "VST", "CCJ", "UEC",
@@ -609,6 +632,8 @@ THEME_CATALOG: dict[str, dict] = {
             "consumer data", "spending data", "household spending", "consumer demand",
             "credit card spending", "consumer delinquency", "retail traffic",
             "consumer weakness", "spending cuts", "consumer stress",
+            # Single-word triggers
+            "spending", "retail", "walmart", "delinquency",
         ],
         "entities": frozenset({
             "WMT", "TGT", "COST", "MCD", "SBUX", "HD", "NKE", "AMZN",
@@ -691,13 +716,14 @@ def extract_themes(
             raw += min(entity_hits * 3.0, 9.0)
 
             # Keyword match — accumulate up to 3 matches (6 pts title / 3 pts snippet)
-            # Separate title pass and snippet pass so title points aren't skipped
+            # Normalize keywords the same way titles are (strip punctuation like
+            # hyphens) so "glp-1" matches normalized title " glp 1 ".
             kw_score = 0.0
             kw_hits  = 0
             for kw in theme_keywords:
                 if kw_hits >= 3:
                     break
-                kw_p = f" {kw} "
+                kw_p = f" {_PUNCT_RE.sub(' ', kw.lower())} "
                 if kw_p in title_n:
                     kw_score += 2.0
                     kw_hits  += 1
@@ -719,15 +745,18 @@ def extract_themes(
             categories.add(getattr(item, "category", "") or "")
 
             # Count stories published within the last 6 hours
+            # Guard against naive datetimes crashing the subtraction
             pub = getattr(item, "published_dt", None)
-            if pub and (now - pub).total_seconds() < 21600:
-                recent_count += 1
+            if pub:
+                pub_cmp = pub if pub.tzinfo is not None else pub.replace(tzinfo=timezone.utc)
+                if (now - pub_cmp).total_seconds() < 21600:
+                    recent_count += 1
 
         log.info(
             "[theme] %-36s  raw_total=%.1f  clusters=%d",
             theme_id, total_score, len(contributing),
         )
-        if total_score < 1.5 or not contributing:
+        if total_score < 1.0 or not contributing:
             continue
 
         n_clusters = len(contributing)
