@@ -83,13 +83,18 @@ export default function IndustriesPage() {
   const regimeMeta       = regime ? (REGIME_META[regime] ?? null) : null;
 
   const hasSectorData    = (sectorData?.sectors?.length ?? 0) > 0;
+  // Distinguish between "has sector data" and "has scored sector data"
+  const hasSectorScores  = hasSectorData && sectorData!.sectors.some(s => s.signal_score > 0);
   const hasActivations   = activations.some(ia => ia.score > 0);
   // Themes with any signal (not just non-weak) as last-resort count
   const activeThemes     = allThemes.filter(t => t.signal_strength !== "weak");
   const anyThemes        = allThemes.filter(t => t.contributing_story_count > 0);
 
-  // activeCount: prefer sector data → scored activations → any theme → industries with activations
-  const activeCount  = hasSectorData
+  // Debug: log activation state to confirm pipeline data reaches frontend
+  console.log("[industries] activations:", activations.length, activations.filter(a => a.score > 0).map(a => `${a.industry}:${a.score}`));
+
+  // activeCount: prefer scored sector data → scored activations → any theme → industries with theme links
+  const activeCount  = hasSectorScores
     ? (sectorData!.sectors.filter(s => s.signal_score > 0).length)
     : hasActivations
     ? activations.filter(ia => ia.score > 0).length
@@ -98,7 +103,7 @@ export default function IndustriesPage() {
     : activations.filter(ia => ia.related_theme_ids.length > 0).length;
 
   // totalStories: same cascade
-  const totalStories = hasSectorData
+  const totalStories = hasSectorScores
     ? sectorData!.sectors.reduce((n, s) => n + s.signal_count, 0)
     : hasActivations
     ? activations.reduce((n, ia) => n + ia.active_story_count, 0)
@@ -250,8 +255,13 @@ export default function IndustriesPage() {
                 const industrySignal = getIndustrySignals(industry, sectorData?.industries ?? [])[0] ?? null;
                 const topTheme       = getTopTheme(industry, clusters, whatMattersNow);
                 const activation     = activations.find(ia => ia.industry === industry.name) ?? null;
-                const themeSignal    = industrySignal === null
-                  ? (activation ? activationToSignal(activation) : deriveThemeSignal(industry.name, allThemes))
+                // Prefer scored activation data regardless of whether industrySignal exists.
+                // Activation comes from the theme pipeline; industrySignal from sector keywords.
+                // When sectors have no keyword matches, activation is the only signal source.
+                const themeSignal    = activation && activation.score > 0
+                  ? activationToSignal(activation)
+                  : industrySignal === null
+                  ? deriveThemeSignal(industry.name, allThemes)
                   : null;
                 return (
                   <IndustryCard

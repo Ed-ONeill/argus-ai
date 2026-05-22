@@ -188,6 +188,11 @@ export interface ThemeIntelligence {
   momentum_label:           "accelerating" | "strengthening" | "stable" | "cooling" | "reversing" | "emerging";
   momentum_delta:           number;   // confidence change vs previous cycle
   persistence_cycles:       number;
+  // Phase 8: competition, causal reasoning, breadth
+  competition_penalty:      number;
+  causal_narrative:         string;
+  breadth_score:            number;
+  persistence_days:         number;
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────────

@@ -145,6 +145,12 @@ class ProcessedFeedCache:
                         log.info("ProcessedFeedCache: cleared stale theme_intelligence (pre-Phase-8)  key=%s", key)
                         feed.theme_intelligence  = []
                         feed.industry_activation = []
+                    # Ensure activations are cleared when there are no backing themes.
+                    # Prevents stale cross-phase activations from orphaning (e.g. themes cleared
+                    # by an earlier compat guard but activations not caught by Phase-8 guard).
+                    if not feed.theme_intelligence and feed.industry_activation:
+                        log.info("ProcessedFeedCache: clearing orphaned industry_activation (no theme backing)  key=%s", key)
+                        feed.industry_activation = []
                     # Patch IndustrySignal fields added in Phase 3
                     if feed.sector_data is not None:
                         if not hasattr(feed.sector_data, "derived_regime"):

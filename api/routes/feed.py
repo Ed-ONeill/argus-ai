@@ -418,6 +418,14 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         for ia in raw_activations
     ]
 
+    log.info(
+        "[feed] _build_response  themes=%d  activations=%d  active_industries=%d  scored_sectors=%d",
+        len(raw_themes),
+        len(raw_activations),
+        sum(1 for ia in raw_activations if ia.score > 0),
+        sum(1 for s in (sd.sectors if sd else []) if s.signal_score > 0),
+    )
+
     return FeedResponse(
         items=schemas,
         top_stories=TopStoriesSchema(
