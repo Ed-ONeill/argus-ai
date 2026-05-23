@@ -7,12 +7,14 @@ import { useNarrativeNetwork } from "@/hooks/useNarrativeNetwork";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
+// W/H define the SVG coordinate space. PAD_X is generous atmospheric dead-space
+// on each side — edge fog fills it so nodes feel like part of a larger unseen system.
 
-const W       = 1060;
-const H       = 480;
-const PAD_X   = 90;
-const PAD_Y   = 58;
-const LABEL_X = 78;
+const W       = 1120;
+const H       = 492;
+const PAD_X   = 68;
+const PAD_Y   = 64;
+const LABEL_X = 54;
 
 // ── Row config ────────────────────────────────────────────────────────────────
 
@@ -33,16 +35,18 @@ const LAYER_FILL_OPACITY: Record<string, number> = {
 // ── Ambient particle definitions (deterministic positions, no JS state) ────────
 
 const AMBIENT_PARTICLES = [
-  { cx: 115, cy: 95,  r: 0.9, dur: 24, tx:  28, ty:  18, begin: 0.0 },
-  { cx: 275, cy: 155, r: 1.0, dur: 21, tx: -22, ty:  32, begin: 3.2 },
-  { cx: 450, cy:  72, r: 0.8, dur: 27, tx:  35, ty: -18, begin: 6.5 },
-  { cx: 630, cy: 210, r: 1.1, dur: 19, tx: -28, ty:  24, begin: 1.8 },
-  { cx: 810, cy: 118, r: 0.9, dur: 25, tx:  30, ty:  28, begin: 4.9 },
-  { cx: 940, cy: 268, r: 1.0, dur: 22, tx: -18, ty: -26, begin: 0.7 },
-  { cx: 162, cy: 308, r: 0.8, dur: 28, tx:  22, ty:  35, begin: 7.8 },
-  { cx: 370, cy: 375, r: 1.1, dur: 18, tx: -32, ty:  18, begin: 3.6 },
-  { cx: 545, cy: 295, r: 0.9, dur: 23, tx:  26, ty: -22, begin: 5.3 },
-  { cx: 720, cy: 388, r: 1.0, dur: 20, tx: -24, ty:  28, begin: 2.1 },
+  { cx:  52, cy: 204, r: 0.8, dur: 29, tx:  18, ty:  24, begin: 9.2 },
+  { cx: 112, cy:  92, r: 0.9, dur: 24, tx:  28, ty:  18, begin: 0.0 },
+  { cx: 298, cy: 155, r: 1.0, dur: 21, tx: -22, ty:  32, begin: 3.2 },
+  { cx: 490, cy:  68, r: 0.8, dur: 27, tx:  35, ty: -18, begin: 6.5 },
+  { cx: 668, cy: 210, r: 1.1, dur: 19, tx: -28, ty:  24, begin: 1.8 },
+  { cx: 865, cy: 115, r: 0.9, dur: 25, tx:  30, ty:  28, begin: 4.9 },
+  { cx: 1042, cy: 265, r: 1.0, dur: 22, tx: -18, ty: -26, begin: 0.7 },
+  { cx: 175, cy: 320, r: 0.8, dur: 28, tx:  22, ty:  35, begin: 7.8 },
+  { cx: 415, cy: 390, r: 1.1, dur: 18, tx: -32, ty:  18, begin: 3.6 },
+  { cx: 598, cy: 302, r: 0.9, dur: 23, tx:  26, ty: -22, begin: 5.3 },
+  { cx: 790, cy: 408, r: 1.0, dur: 20, tx: -24, ty:  28, begin: 2.1 },
+  { cx: 1082, cy: 348, r: 0.9, dur: 26, tx:  20, ty: -30, begin: 5.8 },
 ];
 
 // ── Grain texture (precomputed SVG noise, rendered once as raster by browser) ──
@@ -146,11 +150,15 @@ function nodeRadius(n: GraphNode): number {
 
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   const dy = y2 - y1;
+  const dx = x2 - x1;
   if (Math.abs(dy) < 24) {
-    const h = Math.min(Math.abs(x2 - x1) * 0.28, 64);
+    // Near-horizontal — pronounced arc so it reads as a traversal, not a flat line
+    const h = Math.min(Math.abs(dx) * 0.40, 88);
     return `M ${x1} ${y1} Q ${(x1 + x2) / 2} ${y1 - h} ${x2} ${y2}`;
   }
-  return `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.44} ${x2} ${y2 - dy * 0.44} ${x2} ${y2}`;
+  // Cross-layer — deeper S-curve control points for systemic travel feel
+  const tension = 0.52 + Math.min(Math.abs(dx) / W, 0.12);
+  return `M ${x1} ${y1} C ${x1} ${y1 + dy * tension} ${x2} ${y2 - dy * tension} ${x2} ${y2}`;
 }
 
 function trunc(s: string, max: number): string {
@@ -563,8 +571,8 @@ export function MarketNarrativeNetwork() {
 
           <circle r={r} fill={fill} fillOpacity={depthFO}
             stroke={stroke}
-            strokeWidth={isActive || isFocus ? 2.8 : isHov ? 2.2 : 1.3}
-            strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.90 : 0.65}
+            strokeWidth={isActive || isFocus ? 2.8 : isHov ? 2.2 : 1.2}
+            strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.88 : isRegime ? 0.72 : 0.48}
             filter={isActive && !isRegime ? "url(#nodeActiveGlow)"
               : isHov && !isRegime ? "url(#hoverGlow)" : undefined}
             style={{ transition: "stroke-width 140ms, stroke-opacity 140ms" }} />
@@ -572,13 +580,18 @@ export function MarketNarrativeNetwork() {
           {r < 18 && <circle r={2.5} fill={stroke} fillOpacity={0.72} />}
 
           {showLabel && (
-            <text y={r + (isRegime ? 17 : 13)} textAnchor="middle"
+            <text y={r + (isRegime ? 18 : 14)} textAnchor="middle"
               fontSize={isRegime ? 12 : isFocus ? 11 : isTheme ? 9.5 : 10}
               fontWeight={isRegime ? 700 : isFocus || isActive ? 600 : 400}
               fontFamily="Inter, system-ui, sans-serif"
               fill={base.label}
-              fillOpacity={isHov || isFocus ? 1.0 : isActive ? 0.97 : 0.90}
-              filter={isActive || isHov || isFocus ? "url(#textGlow)" : "url(#textShadow)"}
+              stroke="#020508"
+              strokeWidth={isRegime ? 7 : 5}
+              strokeOpacity={0.85}
+              strokeLinejoin="round"
+              paintOrder="stroke"
+              fillOpacity={isHov || isFocus ? 1.0 : isActive ? 0.97 : isRegime ? 0.92 : 0.72}
+              filter={isActive || isHov || isFocus ? "url(#textGlow)" : undefined}
               className="pointer-events-none select-none"
               style={{ transition: "fill-opacity 140ms" }}>
               {trunc(node.label, labelMax)}
@@ -590,7 +603,7 @@ export function MarketNarrativeNetwork() {
   }
 
   return (
-    <section className="mb-3">
+    <section className="mb-4">
       {/* Section header */}
       <div className="flex items-center gap-3 mb-3">
         <Network size={12} className="text-ink-secondary shrink-0" />
@@ -605,15 +618,15 @@ export function MarketNarrativeNetwork() {
       </div>
 
       <div className="rounded-xl border overflow-hidden"
-        style={{ background: "#060c18", borderColor: "rgba(255,255,255,0.12)" }}>
+        style={{ background: "#050b18", borderColor: "rgba(255,255,255,0.065)" }}>
 
         {/* Top info bar */}
-        <div className="flex items-center justify-between px-5 py-2.5"
-          style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center justify-between px-6 py-3"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
           <p className="text-[8.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}>
             Live map of how today&apos;s dominant market regime is transmitting through macro drivers, themes, and sectors.
           </p>
-          <div className="flex items-center gap-5 shrink-0 ml-6">
+          <div className="flex items-center gap-5 shrink-0 ml-8">
             <div className="text-right">
               <p className="text-[7px] font-bold uppercase tracking-[0.18em] text-white/42 mb-0.5">
                 Dominant Regime
@@ -638,8 +651,8 @@ export function MarketNarrativeNetwork() {
         {(() => {
           const pulses = computeMarketPulse(data.dominant_regime, data.chains, data.nodes);
           return (
-            <div className="flex items-center gap-4 px-5 py-2"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div className="flex items-center gap-4 px-6 py-2.5"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.035)" }}>
               <span className="text-[7px] font-bold uppercase tracking-[0.22em] text-white/38 shrink-0">
                 Market Pulse
               </span>
@@ -665,7 +678,7 @@ export function MarketNarrativeNetwork() {
         })()}
 
         {/* Graph canvas */}
-        <div ref={wrapRef} className="relative" style={{ minHeight: 420 }}>
+        <div ref={wrapRef} className="relative" style={{ minHeight: 455 }}>
 
           {/* Atmospheric grain texture — precomputed, GPU-cached */}
           <div aria-hidden className="absolute inset-0 pointer-events-none"
@@ -739,16 +752,33 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
 
+              {/* Regime thermal concentration — tight hot-spot, always lit */}
+              <radialGradient id="regThermal" cx={regCx} cy={regCy} r="14%"
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%" stopColor="#2858b0" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="#030608" stopOpacity="0" />
+              </radialGradient>
+
+              {/* Edge fog — atmospheric boundary fade, left and right sides */}
+              <linearGradient id="edgeFog" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%"  stopColor="#030608" stopOpacity="0.70" />
+                <stop offset="7%"  stopColor="#030608" stopOpacity="0.12" />
+                <stop offset="11%" stopColor="#030608" stopOpacity="0" />
+                <stop offset="89%" stopColor="#030608" stopOpacity="0" />
+                <stop offset="93%" stopColor="#030608" stopOpacity="0.12" />
+                <stop offset="100%" stopColor="#030608" stopOpacity="0.70" />
+              </linearGradient>
+
               {/* Subtle grid pattern — institutional depth cue */}
               <pattern id="gridPat" width="60" height="60" patternUnits="userSpaceOnUse">
                 <path d="M 60 0 L 0 0 0 60" fill="none"
-                  stroke="rgba(255,255,255,0.022)" strokeWidth="0.5" />
+                  stroke="rgba(255,255,255,0.020)" strokeWidth="0.5" />
               </pattern>
 
-              {/* Corner vignette — pulls eye inward */}
-              <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+              {/* Corner + edge vignette — pulls eye inward and softens boundary */}
+              <radialGradient id="vignette" cx="50%" cy="50%" r="72%">
                 <stop offset="0%"   stopColor="#000000" stopOpacity="0" />
-                <stop offset="100%" stopColor="#000000" stopOpacity="0.48" />
+                <stop offset="100%" stopColor="#000000" stopOpacity="0.52" />
               </radialGradient>
 
               {/* Filters */}
@@ -774,14 +804,9 @@ export function MarketNarrativeNetwork() {
               <filter id="edgeAura" x="-40%" y="-200%" width="180%" height="500%">
                 <feGaussianBlur stdDeviation="12" />
               </filter>
-              {/* Text legibility — dark halo behind all node labels */}
-              <filter id="textShadow" x="-25%" y="-30%" width="150%" height="160%">
-                <feDropShadow dx="0" dy="0" stdDeviation="2.5"
-                  floodColor="#000000" floodOpacity="0.88" />
-              </filter>
-              {/* Active label glow — applied to highlighted nodes */}
+              {/* Active/hovered label glow — subtle luminance bloom */}
               <filter id="textGlow" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="1.8" result="blur" />
+                <feGaussianBlur stdDeviation="1.6" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               {/* Propagation particle glow */}
@@ -796,6 +821,7 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#gridPat)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#ambLight2)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#regEnvGrad)" />
+            <rect width={W} height={H} fill="url(#regThermal)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)" className="pointer-events-none" />
 
             {/* Ambient drifting particles — very slow, barely visible */}
@@ -817,24 +843,23 @@ export function MarketNarrativeNetwork() {
               ))}
             </g>
 
-            {/* Lane separators — brightness varies by depth (regime brightest) */}
+            {/* Lane separators — extend into fog zone so they fade naturally */}
             {rowEntries.map(([row, y]) => {
-              const laneOp = row === 0 ? 0.10 : row === 1 ? 0.068 : row === 2 ? 0.054 : row === 3 ? 0.044 : 0.036;
+              const laneOp = row === 0 ? 0.09 : row === 1 ? 0.062 : row === 2 ? 0.050 : row === 3 ? 0.040 : 0.032;
               return (
-                <line key={row} x1={PAD_X - 20} y1={y} x2={W - PAD_X + 20} y2={y}
+                <line key={row} x1={0} y1={y} x2={W} y2={y}
                   stroke={`rgba(255,255,255,${laneOp})`} strokeWidth="1" />
               );
             })}
 
-            {/* Row lane labels */}
+            {/* Row lane labels — Tier 4: recede significantly */}
             {rowEntries.map(([row, y]) => {
-              const labelOp = row === 0 ? 0.42 : row === 1 ? 0.32 : row === 2 ? 0.26 : 0.22;
+              const labelOp = row === 0 ? 0.36 : row === 1 ? 0.26 : 0.18;
               return (
                 <text key={row} x={LABEL_X} y={y + 4} textAnchor="end"
-                  fontSize={7} fontWeight={700} letterSpacing={1.8}
+                  fontSize={6.5} fontWeight={700} letterSpacing={1.8}
                   fontFamily="Inter, system-ui, sans-serif"
                   fill={`rgba(255,255,255,${labelOp})`}
-                  filter="url(#textShadow)"
                   className="pointer-events-none select-none">
                   {ROW_LABELS[row] ?? ""}
                 </text>
@@ -844,15 +869,21 @@ export function MarketNarrativeNetwork() {
             {data.edges.map(renderEdge)}
             {data.nodes.map(renderNode)}
 
+            {/* Edge fog — applied over nodes so boundaries dissolve into atmospheric space */}
+            <rect width={W} height={H} fill="url(#edgeFog)" className="pointer-events-none" />
             {/* Corner vignette — on top of everything */}
             <rect width={W} height={H} fill="url(#vignette)" className="pointer-events-none" />
           </svg>
 
           {tooltip && <NodeTooltip t={tooltip} />}
+
+          {/* Bottom atmospheric bleed — softens graph-to-panel hard cut */}
+          <div aria-hidden className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none"
+            style={{ background: "linear-gradient(to bottom, transparent, rgba(5,11,24,0.75))" }} />
         </div>
 
         {/* Active path / chain tabs */}
-        <div className="px-5 py-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="px-6 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[7px] font-bold uppercase tracking-[0.22em] text-white/45
                              shrink-0 mr-1 self-center">
@@ -897,7 +928,7 @@ export function MarketNarrativeNetwork() {
 
           {/* Causal transmission sequence */}
           {activeChain && chainHighlight.sequence.length >= 2 && (
-            <div className="mt-2.5 pl-14">
+            <div className="mt-3 pl-14">
               <p className="text-[6.5px] font-bold uppercase tracking-[0.22em] text-white/28 mb-1.5">
                 Transmission Path
               </p>
@@ -921,14 +952,14 @@ export function MarketNarrativeNetwork() {
           )}
 
           {activeChain && (
-            <p className="text-[8.5px] mt-2 leading-relaxed pl-14"
-              style={{ color: "rgba(255,255,255,0.68)" }}>
+            <p className="text-[8.5px] mt-3 leading-relaxed pl-14"
+              style={{ color: "rgba(255,255,255,0.66)" }}>
               {data.chains.find(c => c.id === activeChain)?.summary ?? ""}
             </p>
           )}
 
           {!hasInteracted && (
-            <p className="text-[7.5px] text-white/40 mt-1.5 pl-14 italic">
+            <p className="text-[7.5px] text-white/35 mt-2 pl-14 italic">
               Click any node to open the intelligence panel · hover to preview connections
             </p>
           )}
@@ -945,14 +976,14 @@ export function MarketNarrativeNetwork() {
               transition={{ duration: 0.30, ease: [0.25, 0, 0.25, 1] }}
               className="relative"
               style={{
-                borderTop: "1px solid rgba(255,255,255,0.16)",
-                background: "rgba(5,10,24,0.99)",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(4,9,22,0.99)",
               }}>
               {/* Type-color left accent bar */}
               <div className="absolute left-0 top-0 bottom-0 w-[3px]"
                 style={{ background: focusedNodeStyle.label, opacity: 0.60 }} />
 
-              <div className="px-5 py-4 pl-7">
+              <div className="px-6 py-5 pl-8">
                 <div className="flex items-start justify-between gap-5">
                   <div className="min-w-0 flex-1 space-y-4">
 
@@ -1136,8 +1167,8 @@ export function MarketNarrativeNetwork() {
 
         {/* Legend */}
         {presentRelationships.length > 0 && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-2"
-            style={{ borderTop: "1px solid rgba(255,255,255,0.045)" }}>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-3"
+            style={{ borderTop: "1px solid rgba(255,255,255,0.03)" }}>
             {presentRelationships.map(rel => (
               <div key={rel} className="flex items-center gap-1.5">
                 <svg width="18" height="4" viewBox="0 0 18 4" aria-hidden>
