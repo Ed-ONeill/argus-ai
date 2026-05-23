@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Globe2, RefreshCw, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -74,8 +76,16 @@ function deriveThemeSignal(
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function IndustriesPage() {
+  const queryClient = useQueryClient();
   const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
   const { data: feedData } = useFeed({});
+
+  // On mount: invalidate the feed cache so the page always fetches fresh data.
+  // The backend's ProcessedFeedCache may have been updated since the TanStack
+  // client last fetched (staleTime could still be within its 5-min window).
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["feed"] });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const whatMattersNow   = feedData?.what_matters_now ?? [];
   const allThemes        = feedData?.theme_intelligence ?? [];
@@ -89,9 +99,6 @@ export default function IndustriesPage() {
   // Themes with any signal (not just non-weak) as last-resort count
   const activeThemes     = allThemes.filter(t => t.signal_strength !== "weak");
   const anyThemes        = allThemes.filter(t => t.contributing_story_count > 0);
-
-  // Debug: log activation state to confirm pipeline data reaches frontend
-  console.log("[industries] activations:", activations.length, activations.filter(a => a.score > 0).map(a => `${a.industry}:${a.score}`));
 
   // activeCount: prefer scored sector data → scored activations → any theme → industries with theme links
   const activeCount  = hasSectorScores
@@ -115,6 +122,18 @@ export default function IndustriesPage() {
     ?? (hasActivations
       ? (sortedActivations[0]?.industry ?? null)
       : (activeThemes[0]?.name ?? anyThemes[0]?.name ?? null));
+
+  // Debug: trace the exact API payload and all derived state — remove after confirmed working
+  console.log("[industries] payload:", {
+    themes:       allThemes.length,
+    activations:  activations.length,
+    sectors:      sectorData?.sectors?.length ?? 0,
+    industries:   sectorData?.industries?.length ?? 0,
+    is_stale:     feedData?.is_stale,
+    generated_at: feedData?.generated_at,
+  });
+  console.log("[industries] active activations:", activations.filter(a => a.score > 0).map(a => `${a.industry}:${a.score}`));
+  console.log("[industries] computed:", { hasSectorData, hasSectorScores, hasActivations, activeCount, totalStories, dominant });
 
   return (
     <div className="min-h-screen bg-canvas">
