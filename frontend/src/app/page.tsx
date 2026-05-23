@@ -118,6 +118,9 @@ useEffect(() => {
         onChange={() => {}}
       />
 
+      {/* ── Market Narrative Network — full-bleed hero ──────────── */}
+      <MarketNarrativeNetwork />
+
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 relative">
         {/* Atmospheric depth layer — tonal continuity from MNN graph downward */}
         <div className="absolute inset-x-0 top-0 pointer-events-none -z-10"
@@ -125,9 +128,6 @@ useEffect(() => {
             height: "65vh",
             background: "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(8,20,46,0.28) 0%, transparent 100%)",
           }} />
-
-        {/* ── Market Narrative Network graph ──────────────────────── */}
-        <MarketNarrativeNetwork />
 
         {/* ── Today's Take hero ──────────────────────────────────── */}
         <TodaysTake
