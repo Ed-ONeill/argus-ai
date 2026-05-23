@@ -70,8 +70,8 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
       {/* Section header — institutional MNN-matching style */}
       <div className="flex items-center gap-3 mb-3">
         <span
-          className="text-[10px] font-bold uppercase shrink-0"
-          style={{ letterSpacing: "0.14em", color: "rgba(255,255,255,0.38)" }}
+          className="text-[10px] font-medium uppercase shrink-0"
+          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.35)" }}
         >
           What Matters Now
         </span>
@@ -152,9 +152,8 @@ function PrimaryDriverCard({
       onClick={onClick}
       className="w-full text-left relative overflow-hidden"
       style={{
-        background:   "rgba(7,12,24,0.96)",
-        border:       "1px solid rgba(255,255,255,0.06)",
-        borderRadius: "14px",
+        background:   "rgba(7,12,24,0.94)",
+        borderRadius: "10px",
       }}
     >
       {/* Left ambient glow from category color */}
@@ -184,8 +183,8 @@ function PrimaryDriverCard({
         {/* Top row */}
         <div className="flex items-center gap-2">
           <span
-            className="text-[8.5px] font-bold uppercase shrink-0"
-            style={{ letterSpacing: "0.18em", color }}
+            className="text-[8.5px] font-medium uppercase shrink-0"
+            style={{ letterSpacing: "0.12em", color }}
           >
             Primary Driver
           </span>
@@ -281,9 +280,8 @@ function WMNCard({
       onClick={onClick}
       className="snap-start flex-shrink-0 w-[210px] md:w-auto text-left relative overflow-hidden flex flex-col"
       style={{
-        background:   "rgba(6,10,20,0.94)",
-        border:       "1px solid rgba(255,255,255,0.05)",
-        borderRadius: "12px",
+        background:   "rgba(6,10,20,0.88)",
+        borderRadius: "8px",
       }}
     >
       {/* Left vertical accent bar */}
@@ -394,7 +392,7 @@ function WhatMattersNowSkeleton() {
       <div className="hidden md:flex md:flex-col gap-2.5">
         <div
           className="relative overflow-hidden"
-          style={{ background: "rgba(7,12,24,0.96)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px" }}
+          style={{ background: "rgba(7,12,24,0.94)", borderRadius: "10px" }}
         >
           <div className="absolute left-0 top-0 bottom-0 w-[3px] animate-pulse" style={{ background: "rgba(74,120,184,0.4)" }} />
           <div className="pl-5 pr-4 py-3.5 space-y-2.5">
@@ -416,7 +414,7 @@ function SkeletonCard() {
   return (
     <div
       className="flex-shrink-0 w-[210px] md:w-auto relative overflow-hidden"
-      style={{ background: "rgba(6,10,20,0.94)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "12px" }}
+      style={{ background: "rgba(6,10,20,0.88)", borderRadius: "8px" }}
     >
       <div className="absolute left-0 top-0 bottom-0 w-[2px] animate-pulse" style={{ background: "rgba(74,120,184,0.3)" }} />
       <div className="pl-4 pr-4 py-3 space-y-2">

@@ -295,16 +295,18 @@ function NodeTooltip({ t }: { t: TooltipState }) {
 
 function Skeleton() {
   return (
-    <section className="mb-3">
+    <section className="mb-10">
       <div className="flex items-center gap-3 mb-3">
-        <Network size={12} className="text-ink-secondary" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">
+        <Network size={11} className="shrink-0" style={{ color: "rgba(255,255,255,0.32)" }} />
+        <span className="text-[10px] font-medium tracking-[0.05em]"
+          style={{ color: "rgba(255,255,255,0.40)" }}>
           Market Narrative Network
         </span>
-        <span className="h-px flex-1 bg-edge" />
+        <span className="h-px flex-1"
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
       </div>
-      <div className="rounded-xl border animate-pulse"
-        style={{ background: "#070d1a", borderColor: "rgba(255,255,255,0.06)", height: 520 }} />
+      <div className="rounded-xl animate-pulse"
+        style={{ background: "#070d1a", border: "1px solid rgba(255,255,255,0.06)", height: 520 }} />
     </section>
   );
 }
@@ -645,7 +647,7 @@ export function MarketNarrativeNetwork() {
         {/* Top info bar */}
         <div className="flex items-center justify-between px-6 py-3"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-          <p className="text-[8.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}>
+          <p className="text-[8.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>
             Live map of how today&apos;s dominant market regime is transmitting through macro drivers, themes, and sectors.
           </p>
           <div className="flex items-center gap-5 shrink-0 ml-8">
@@ -654,7 +656,7 @@ export function MarketNarrativeNetwork() {
                 style={{ color: "rgba(255,255,255,0.45)" }}>
                 Dominant Regime
               </p>
-              <p className="text-[12px] font-semibold leading-tight"
+              <p className="text-[12px] font-medium leading-tight"
                 style={{ color: regimeColor(data.dominant_regime) }}>
                 {data.dominant_regime}
               </p>
@@ -676,8 +678,8 @@ export function MarketNarrativeNetwork() {
           return (
             <div className="flex items-center gap-4 px-6 py-2.5"
               style={{ borderBottom: "1px solid rgba(255,255,255,0.035)" }}>
-              <span className="text-[7px] font-bold uppercase tracking-[0.22em] shrink-0"
-              style={{ color: "rgba(255,255,255,0.56)" }}>
+              <span className="text-[7px] font-medium uppercase tracking-[0.14em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.38)" }}>
                 Market Pulse
               </span>
               <div className="flex items-center gap-4 flex-wrap">
@@ -913,10 +915,10 @@ export function MarketNarrativeNetwork() {
         </div>
 
         {/* Active path / chain tabs */}
-        <div className="px-6 py-4">
+        <div className="px-6 py-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[7px] font-bold uppercase tracking-[0.22em] shrink-0 mr-1 self-center"
-              style={{ color: "rgba(255,255,255,0.65)" }}>
+            <span className="text-[7px] font-medium uppercase tracking-[0.14em] shrink-0 mr-1 self-center"
+              style={{ color: "rgba(255,255,255,0.38)" }}>
               Active Path
             </span>
             {sortedChains.slice(0, 5).map((chain: PropagationChain, idx: number) => {
@@ -966,9 +968,9 @@ export function MarketNarrativeNetwork() {
 
           {/* Causal transmission sequence */}
           {activeChain && chainHighlight.sequence.length >= 2 && (
-            <div className="mt-3 pl-14">
-              <p className="text-[6.5px] font-bold uppercase tracking-[0.22em] mb-1.5"
-                style={{ color: "rgba(255,255,255,0.55)" }}>
+            <div className="mt-2 pl-14">
+              <p className="text-[6.5px] font-medium uppercase tracking-[0.14em] mb-1.5"
+                style={{ color: "rgba(255,255,255,0.40)" }}>
                 Transmission Path
               </p>
               <div className="flex items-center flex-wrap gap-0">
@@ -988,7 +990,7 @@ export function MarketNarrativeNetwork() {
           )}
 
           {activeChain && (
-            <p className="text-[8.5px] mt-3 leading-relaxed pl-14"
+            <p className="text-[8.5px] mt-2 leading-relaxed pl-14"
               style={{ color: "rgba(255,255,255,0.66)" }}>
               {data.chains.find(c => c.id === activeChain)?.summary ?? ""}
             </p>
@@ -1019,13 +1021,13 @@ export function MarketNarrativeNetwork() {
               <div className="absolute left-0 top-0 bottom-0 w-[2px]"
                 style={{ background: focusedNodeStyle.label, opacity: 0.32 }} />
 
-              <div className="px-6 py-5 pl-8">
+              <div className="px-6 py-4 pl-8">
                 <div className="flex items-start justify-between gap-5">
-                  <div className="min-w-0 flex-1 space-y-4">
+                  <div className="min-w-0 flex-1 space-y-3">
 
                     {/* Identity header */}
                     <div>
-                      <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className="text-[7px] font-medium uppercase tracking-[0.12em]"
                           style={{ color: focusedNodeStyle.label }}>
                           {focusedNode.type}
@@ -1058,8 +1060,8 @@ export function MarketNarrativeNetwork() {
                         ? data.nodes.find(n => n.id === chain.nodes[chainPos + 1]) : null;
                       return (
                         <div className="pb-0">
-                          <p className="text-[7px] font-bold uppercase tracking-[0.2em] mb-2"
-                            style={{ color: "rgba(255,255,255,0.52)" }}>
+                          <p className="text-[7px] font-medium uppercase tracking-[0.14em] mb-1.5"
+                            style={{ color: "rgba(255,255,255,0.42)" }}>
                             Role in narrative · step {chainPos + 1} of {total}
                           </p>
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1092,7 +1094,7 @@ export function MarketNarrativeNetwork() {
                               </>
                             )}
                           </div>
-                          <div className="mt-3.5 h-px"
+                          <div className="mt-2.5 h-px"
                             style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.055) 20%, rgba(255,255,255,0.055) 80%, transparent)" }} />
                         </div>
                       );
@@ -1114,8 +1116,8 @@ export function MarketNarrativeNetwork() {
                     {/* Connections */}
                     {focusedConnections.length > 0 && (
                       <div className="pb-0">
-                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] mb-2.5"
-                          style={{ color: "rgba(255,255,255,0.52)" }}>
+                        <p className="text-[7px] font-medium uppercase tracking-[0.14em] mb-2"
+                          style={{ color: "rgba(255,255,255,0.42)" }}>
                           Connections
                           <span className="ml-1.5 font-normal normal-case tracking-normal"
                             style={{ color: "rgba(255,255,255,0.42)" }}>
@@ -1128,7 +1130,7 @@ export function MarketNarrativeNetwork() {
                             const isLast = idx === Math.min(focusedConnections.length, 7) - 1;
                             return (
                               <div key={c.node.id}
-                                className="flex items-center gap-2 py-1.5"
+                                className="flex items-center gap-2 py-1"
                                 style={!isLast ? { borderBottom: "1px solid rgba(255,255,255,0.04)" } : {}}
                                 title={c.desc}>
                                 <span className="text-[7px] shrink-0 w-3 text-right"
@@ -1147,7 +1149,7 @@ export function MarketNarrativeNetwork() {
                           })}
                         </div>
                         {focusedInChains.length > 0 && (
-                          <div className="mt-4 h-px"
+                          <div className="mt-3 h-px"
                             style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.050) 20%, rgba(255,255,255,0.050) 80%, transparent)" }} />
                         )}
                       </div>
@@ -1164,7 +1166,7 @@ export function MarketNarrativeNetwork() {
                           {focusedInChains.map((c, idx) => (
                             <button key={c.id}
                               onClick={() => handleChainClick(c.id, activeChain)}
-                              className="w-full flex items-center gap-2.5 py-1.5 text-left transition-colors"
+                              className="w-full flex items-center gap-2.5 py-1 text-left transition-colors"
                               style={{
                                 borderBottom: idx < focusedInChains.length - 1
                                   ? "1px solid rgba(255,255,255,0.04)" : "none",
@@ -1208,9 +1210,9 @@ export function MarketNarrativeNetwork() {
 
         {/* Legend */}
         {presentRelationships.length > 0 && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-3"
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-2"
             style={{ borderTop: "1px solid rgba(255,255,255,0.03)" }}>
-            {presentRelationships.map(rel => (
+            {presentRelationships.map((rel) => (
               <div key={rel} className="flex items-center gap-1.5">
                 <svg width="18" height="4" viewBox="0 0 18 4" aria-hidden>
                   <line x1="0" y1="2" x2="18" y2="2"

@@ -31,8 +31,8 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
   return (
     <section className="mb-8">
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[10px] font-medium tracking-[0.06em] shrink-0"
-          style={{ color: "rgba(255,255,255,0.35)" }}>
+        <span className="text-[10px] font-medium tracking-[0.05em] shrink-0"
+          style={{ color: "rgba(255,255,255,0.32)" }}>
           Top stories
         </span>
         <span className="h-px flex-1"
