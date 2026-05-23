@@ -49,7 +49,6 @@ const EDGE_STROKE: Record<string, string> = {
   rotates_into: "#706090",
 };
 
-// Significantly brightened for active chain edges
 const EDGE_STROKE_ACTIVE: Record<string, string> = {
   drives:       "#d4b060",
   pressures:    "#d06868",
@@ -103,8 +102,6 @@ function computeLayout(
         return avgX(a.id) - avgX(b.id);
       });
     }
-
-    // Stagger theme nodes vertically to reduce crowding and edge crossings
     const isThemeRow = rowKey === TYPE_ROW["theme"];
     const staggerAmt = isThemeRow && ordered.length > 3 ? 18 : 0;
     ordered.forEach((node, col) => {
@@ -119,8 +116,7 @@ function computeLayout(
 function nodeRadius(n: GraphNode): number {
   if (n.type === "regime") return 34;
   if (n.type === "macro")  return 18;
-  // Theme nodes capped smaller to reduce row crowding
-  if (n.type === "theme") return Math.min(10 + (n.confidence / 100) * 14, 22);
+  if (n.type === "theme")  return Math.min(10 + (n.confidence / 100) * 14, 22);
   return Math.min(10 + (n.confidence / 100) * 18, 26);
 }
 
@@ -164,23 +160,24 @@ function NodeTooltip({ t }: { t: TooltipState }) {
   const style = NODE_STYLE[t.node.type] ?? NODE_STYLE.theme;
   return (
     <div className="absolute z-20 pointer-events-none"
-      style={{ left: t.x + 16, top: Math.max(4, t.y - 68), width: 240 }}>
+      style={{ left: t.x + 16, top: Math.max(4, t.y - 68), width: 248 }}>
       <div className="rounded-lg border px-3 py-2.5"
-        style={{ background: "#070d1c", borderColor: "rgba(255,255,255,0.14)" }}>
+        style={{ background: "#050c1c", borderColor: "rgba(255,255,255,0.16)" }}>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[8px] font-bold uppercase tracking-widest"
+          <span className="text-[7.5px] font-bold uppercase tracking-widest"
             style={{ color: style.label }}>{t.node.type}</span>
-          <span className="text-[8px] text-white/40">{t.node.confidence.toFixed(0)}% conf</span>
+          <span className="text-[7.5px] text-white/38">{t.node.confidence.toFixed(0)}% conf
+            {t.node.source_count > 0 && ` · ${t.node.source_count} stories`}
+          </span>
         </div>
-        <p className="text-[11.5px] font-semibold text-white/90 leading-tight mb-1">
+        <p className="text-[12px] font-semibold leading-tight mb-1"
+          style={{ color: style.label }}>
           {t.node.label}
         </p>
-        <p className="text-[9.5px] text-white/58 leading-snug">
-          {trunc(t.node.description, 120)}
+        <p className="text-[9.5px] text-white/60 leading-snug">
+          {trunc(t.node.description, 130)}
         </p>
-        <p className="text-[8px] text-white/30 mt-1.5">
-          {t.node.source_count > 0 ? `${t.node.source_count} stories · ` : ""}click to focus
-        </p>
+        <p className="text-[7.5px] text-white/30 mt-1.5">click to open intelligence panel</p>
       </div>
     </div>
   );
@@ -190,7 +187,7 @@ function NodeTooltip({ t }: { t: TooltipState }) {
 
 function Skeleton() {
   return (
-    <section className="mb-4">
+    <section className="mb-3">
       <div className="flex items-center gap-3 mb-3">
         <Network size={12} className="text-ink-secondary" />
         <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">
@@ -219,7 +216,6 @@ export function MarketNarrativeNetwork() {
   const initialChainRef = useRef(false);
   const chains          = data?.chains;
 
-  // Auto-select highest-confidence chain on first data load
   useEffect(() => {
     if (initialChainRef.current || !chains?.length) return;
     initialChainRef.current = true;
@@ -232,24 +228,35 @@ export function MarketNarrativeNetwork() {
     [data],
   );
 
-  // Chain-path highlight
-  const chainHighlight = useMemo<{ nodeIds: Set<string>; edgeIds: Set<string> }>(() => {
-    if (!activeChain || !data) return { nodeIds: new Set(), edgeIds: new Set() };
+  // Chain highlight — includes edge order for staggered particle animation
+  const chainHighlight = useMemo<{
+    nodeIds:   Set<string>;
+    edgeIds:   Set<string>;
+    edgeOrder: Map<string, number>;
+    sequence:  GraphNode[];
+  }>(() => {
+    if (!activeChain || !data) return { nodeIds: new Set(), edgeIds: new Set(), edgeOrder: new Map(), sequence: [] };
     const chain = data.chains.find(c => c.id === activeChain);
-    if (!chain) return { nodeIds: new Set(), edgeIds: new Set() };
-    const nodeIds = new Set(chain.nodes);
-    const edgeIds = new Set<string>();
+    if (!chain) return { nodeIds: new Set(), edgeIds: new Set(), edgeOrder: new Map(), sequence: [] };
+    const nodeIds   = new Set(chain.nodes);
+    const edgeIds   = new Set<string>();
+    const edgeOrder = new Map<string, number>();
     for (let i = 0; i < chain.nodes.length - 1; i++) {
       const src = chain.nodes[i], tgt = chain.nodes[i + 1];
       data.edges.forEach(e => {
         if ((e.source === src && e.target === tgt) ||
-            (e.source === tgt && e.target === src)) edgeIds.add(e.id);
+            (e.source === tgt && e.target === src)) {
+          edgeIds.add(e.id);
+          edgeOrder.set(e.id, i);
+        }
       });
     }
-    return { nodeIds, edgeIds };
+    const sequence = chain.nodes
+      .map(id => data.nodes.find(n => n.id === id))
+      .filter((n): n is GraphNode => n != null);
+    return { nodeIds, edgeIds, edgeOrder, sequence };
   }, [activeChain, data]);
 
-  // Hover → connected edges + neighbors
   const hoveredHighlight = useMemo<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(() => {
     if (!hoveredId || !data) return null;
     const connected = data.edges.filter(e => e.source === hoveredId || e.target === hoveredId);
@@ -274,7 +281,9 @@ export function MarketNarrativeNetwork() {
         const isSource = e.source === focusedNodeId;
         const connId   = isSource ? e.target : e.source;
         const connNode = data.nodes.find(n => n.id === connId);
-        return connNode ? { node: connNode, rel: e.relationship, isSource } : null;
+        return connNode
+          ? { node: connNode, rel: e.relationship, isSource, desc: e.description }
+          : null;
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [focusedNodeId, data]);
@@ -316,13 +325,8 @@ export function MarketNarrativeNetwork() {
   const sortedChains         = [...data.chains].sort((a, b) => b.confidence - a.confidence);
   const presentRelationships = [...new Set(data.edges.map(e => e.relationship))];
   const anyFocusOrChain      = focusedNodeId !== null || activeChain !== null;
+  const focusedNodeStyle     = focusedNode ? (NODE_STYLE[focusedNode.type] ?? NODE_STYLE.theme) : null;
 
-  // Pre-compute focused node style to use in both panel sections
-  const focusedNodeStyle = focusedNode
-    ? (NODE_STYLE[focusedNode.type] ?? NODE_STYLE.theme)
-    : null;
-
-  // Row y-positions for lane labels
   const rowYMap = new Map<number, number>();
   for (const node of data.nodes) {
     const row = TYPE_ROW[node.type] ?? -1;
@@ -357,49 +361,53 @@ export function MarketNarrativeNetwork() {
     const baseStroke   = EDGE_STROKE[edge.relationship] ?? "#485a72";
     const activeStroke = EDGE_STROKE_ACTIVE[edge.relationship] ?? "#7898be";
     const stroke       = isChainEdge ? activeStroke : baseStroke;
-    const base         = Math.min(0.48 + edge.confidence * 0.40, 0.82);
-    const opacity      = isDim ? 0.025 : isChainEdge ? 1.0 : isHigh ? 0.88 : base;
-    const sw           = Math.max(1.2, edge.weight * 3.5);
+    const base         = Math.min(0.36 + edge.confidence * 0.36, 0.72);
+    const opacity      = isDim ? 0.02 : isChainEdge ? 1.0 : isHigh ? 0.85 : base;
+    const sw           = Math.max(1.0, edge.weight * 3.0);
     const d            = edgePath(sx, sy, ex, ey);
+    const particleDelay = `${(chainHighlight.edgeOrder.get(edge.id) ?? 0) * 0.55}s`;
 
     return (
       <g key={edge.id}>
-        {/* Wide soft aura behind active chain edges */}
+        {/* Wide soft aura */}
         {isChainEdge && (
-          <path d={d}
-            stroke={activeStroke}
-            strokeWidth={(sw + 2.0) * 6}
-            strokeOpacity={0.06}
-            fill="none"
-            filter="url(#edgeAura)"
-          />
+          <path d={d} stroke={activeStroke}
+            strokeWidth={(sw + 2.0) * 6} strokeOpacity={0.06}
+            fill="none" filter="url(#edgeAura)" />
         )}
-        {/* Tighter glow trail */}
+        {/* Tight glow halo */}
         {isChainEdge && (
-          <path d={d}
-            stroke={activeStroke}
-            strokeWidth={(sw + 2.0) * 2.8}
-            strokeOpacity={0.26}
-            fill="none"
-            filter="url(#edgeGlow)"
-          />
+          <path d={d} stroke={activeStroke}
+            strokeWidth={(sw + 2.0) * 2.6} strokeOpacity={0.24}
+            fill="none" filter="url(#edgeGlow)" />
         )}
-        {/* Main edge */}
+        {/* Main edge — solid, no dasharray */}
         <path
           d={d}
           stroke={stroke}
-          strokeWidth={isChainEdge ? sw + 2.0 : sw}
+          strokeWidth={isChainEdge ? sw + 1.8 : sw}
           strokeOpacity={opacity}
-          strokeDasharray={isChainEdge ? "9 4" : undefined}
           fill="none"
-          markerEnd={`url(#arr${isChainEdge ? "Active" : ""})`}
-          style={{ transition: "stroke-opacity 180ms" }}
-        >
-          {isChainEdge && (
-            <animate attributeName="stroke-dashoffset"
-              from="39" to="0" dur="1.6s" repeatCount="indefinite" />
-          )}
-        </path>
+          markerEnd={isChainEdge ? "url(#arrActive)" : undefined}
+          style={{ transition: "stroke-opacity 200ms" }}
+        />
+        {/* Signal propagation particle — animateMotion along active chain edges only */}
+        {isChainEdge && (
+          <circle r={2.8} fill={activeStroke}>
+            <animateMotion
+              path={d}
+              dur="2.2s"
+              begin={particleDelay}
+              repeatCount="indefinite"
+            />
+            <animate attributeName="fill-opacity"
+              values="0;0.88;0.88;0"
+              keyTimes="0;0.08;0.88;1"
+              dur="2.2s"
+              begin={particleDelay}
+              repeatCount="indefinite" />
+          </circle>
+        )}
       </g>
     );
   }
@@ -425,12 +433,10 @@ export function MarketNarrativeNetwork() {
     const fill     = isRegime ? "url(#regGrad)" : base.fill;
     const rc       = regimeColor(node.label);
 
-    // Stricter label threshold for theme nodes to reduce crowding
     const labelThreshold = isTheme ? 14 : 10;
     const showLabel = anyHighlightActive
       ? (isHigh || isHov || isFocus)
       : r >= labelThreshold;
-
     const labelMax = isRegime ? 30 : (isTheme && !isFocus) ? 15 : isFocus ? 28 : 20;
 
     return (
@@ -438,7 +444,7 @@ export function MarketNarrativeNetwork() {
         key={node.id}
         transform={`translate(${pos.x},${pos.y})`}
         className="cursor-pointer"
-        style={{ opacity: isDim ? 0.03 : 1, transition: "opacity 200ms" }}
+        style={{ opacity: isDim ? 0.025 : 1, transition: "opacity 200ms" }}
         onMouseEnter={e => handleNodeEnter(node, e)}
         onMouseLeave={handleNodeLeave}
         onClick={() => handleNodeClick(node)}
@@ -446,61 +452,45 @@ export function MarketNarrativeNetwork() {
         <g>
           {isRegime && (
             <animateTransform
-              attributeName="transform"
-              attributeType="XML"
-              type="scale"
-              values="1;1.022;1"
-              dur="6s"
-              repeatCount="indefinite"
+              attributeName="transform" attributeType="XML" type="scale"
+              values="1;1.022;1" dur="6s" repeatCount="indefinite"
               calcMode="spline"
               keySplines="0.4 0 0.6 1;0.4 0 0.6 1"
               keyTimes="0;0.5;1"
             />
           )}
 
-          {/* Regime: animated pulse ring */}
           {isRegime && (
             <circle r={r + 5} fill="none" stroke={rc} strokeWidth="1.5" strokeOpacity="0">
-              <animate attributeName="r"
-                values={`${r + 4};${r + 20};${r + 4}`}
+              <animate attributeName="r" values={`${r + 4};${r + 20};${r + 4}`}
                 dur="3.8s" repeatCount="indefinite" />
-              <animate attributeName="stroke-opacity"
-                values="0.45;0;0.45"
+              <animate attributeName="stroke-opacity" values="0.45;0;0.45"
                 dur="3.8s" repeatCount="indefinite" />
             </circle>
           )}
-          {/* Regime: blur glow halo */}
           {isRegime && (
             <circle r={r + 2} fill="none" stroke={rc}
-              strokeWidth="6" strokeOpacity="0.14"
-              filter="url(#regGlow)" />
+              strokeWidth="6" strokeOpacity="0.14" filter="url(#regGlow)" />
           )}
 
-          {/* Active chain node: wide outer glow ring */}
+          {/* Active chain: layered glow rings */}
           {isActive && !isRegime && (
-            <circle r={r + 8} fill="none" stroke={base.label}
-              strokeWidth="1" strokeOpacity="0.30"
-              filter="url(#activeGlow)" />
+            <circle r={r + 9} fill="none" stroke={base.label}
+              strokeWidth="1" strokeOpacity="0.22" filter="url(#activeGlow)" />
           )}
-          {/* Active chain node: inner emphasis ring */}
           {isActive && !isRegime && (
             <circle r={r + 5} fill="none" stroke={base.label}
-              strokeWidth="2.0" strokeOpacity="0.82"
-              filter="url(#activeGlow)" />
+              strokeWidth="2.0" strokeOpacity="0.82" filter="url(#activeGlow)" />
           )}
-          {/* Active chain node: inner fill glow */}
           {isActive && !isRegime && (
-            <circle r={r + 1} fill={base.label} fillOpacity="0.07"
-              filter="url(#activeGlow)" />
+            <circle r={r + 1} fill={base.label} fillOpacity="0.07" filter="url(#activeGlow)" />
           )}
 
-          {/* Focus indicator ring */}
           {isFocus && (
             <circle r={r + 7} fill="none" stroke={base.label}
               strokeWidth="1.5" strokeOpacity="0.65" strokeDasharray="4 3" />
           )}
 
-          {/* Main circle */}
           <circle
             r={r}
             fill={fill}
@@ -509,15 +499,12 @@ export function MarketNarrativeNetwork() {
             strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.90 : 0.65}
             filter={isActive && !isRegime
               ? "url(#nodeActiveGlow)"
-              : isHov && !isRegime
-              ? "url(#hoverGlow)"
-              : undefined}
+              : isHov && !isRegime ? "url(#hoverGlow)" : undefined}
             style={{ transition: "stroke-width 140ms, stroke-opacity 140ms" }}
           />
 
           {r < 18 && <circle r={2.5} fill={stroke} fillOpacity={0.72} />}
 
-          {/* Label — hidden when dimmed */}
           {showLabel && (
             <text
               y={r + (isRegime ? 16 : 13)}
@@ -539,7 +526,7 @@ export function MarketNarrativeNetwork() {
   }
 
   return (
-    <section className="mb-4">
+    <section className="mb-3">
       {/* Section header */}
       <div className="flex items-center gap-3 mb-3">
         <Network size={12} className="text-ink-secondary shrink-0" />
@@ -590,14 +577,15 @@ export function MarketNarrativeNetwork() {
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full block"
             style={{ overflow: "visible" }}>
             <defs>
-              {/* Arrow markers */}
-              <marker id="arr" markerWidth="6" markerHeight="6"
-                refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,6 L6,3 Z" fill="rgba(255,255,255,0.18)" />
+              {/* Passive arrow — very subtle, just barely implies direction */}
+              <marker id="arr" markerWidth="5" markerHeight="5"
+                refX="4" refY="2.5" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,5 L5,2.5 Z" fill="rgba(255,255,255,0.07)" />
               </marker>
+              {/* Active arrow — clear directional indicator */}
               <marker id="arrActive" markerWidth="7" markerHeight="7"
-                refX="5" refY="3.5" orient="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,7 L7,3.5 Z" fill="rgba(255,255,255,0.88)" />
+                refX="5.5" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,7 L7,3.5 Z" fill="rgba(255,255,255,0.80)" />
               </marker>
 
               {/* Regime gradient */}
@@ -607,14 +595,13 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="#060e1e" stopOpacity="1"    />
               </radialGradient>
 
-              {/* Atmospheric background — stronger depth from top */}
+              {/* Atmospheric depth gradient */}
               <radialGradient id="bgAtmo" cx="50%" cy="10%" r="72%">
                 <stop offset="0%"   stopColor="#0d2040" stopOpacity="0.85" />
                 <stop offset="55%"  stopColor="#060f22" stopOpacity="0.35" />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0"    />
               </radialGradient>
 
-              {/* Filters */}
               <filter id="regGlow" x="-70%" y="-70%" width="240%" height="240%">
                 <feGaussianBlur stdDeviation="8" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -623,7 +610,6 @@ export function MarketNarrativeNetwork() {
                 <feGaussianBlur stdDeviation="7" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              {/* Applied to active node's main circle for a subtle inner luminance */}
               <filter id="nodeActiveGlow" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3.5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -632,27 +618,22 @@ export function MarketNarrativeNetwork() {
                 <feGaussianBlur stdDeviation="3.5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              {/* Tight glow halo on active edges */}
               <filter id="edgeGlow" x="-20%" y="-100%" width="140%" height="300%">
                 <feGaussianBlur stdDeviation="3.5" />
               </filter>
-              {/* Wide soft aura behind active edges */}
               <filter id="edgeAura" x="-40%" y="-200%" width="180%" height="500%">
                 <feGaussianBlur stdDeviation="10" />
               </filter>
             </defs>
 
-            {/* Atmospheric background depth */}
             <rect width={W} height={H} fill="url(#bgAtmo)" />
 
-            {/* Lane separators */}
             {rowEntries.map(([row, y]) => (
               <line key={row}
                 x1={PAD_X - 20} y1={y} x2={W - PAD_X + 20} y2={y}
                 stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
             ))}
 
-            {/* Row lane labels */}
             {rowEntries.map(([row, y]) => (
               <text key={row}
                 x={LABEL_X} y={y + 4}
@@ -665,17 +646,14 @@ export function MarketNarrativeNetwork() {
               </text>
             ))}
 
-            {/* Edges (behind nodes) */}
             {data.edges.map(renderEdge)}
-
-            {/* Nodes */}
             {data.nodes.map(renderNode)}
           </svg>
 
           {tooltip && <NodeTooltip t={tooltip} />}
         </div>
 
-        {/* ── Bottom: active path chain tabs ────────────────────────────────── */}
+        {/* ── Active path / chain tabs ───────────────────────────────────────── */}
         <div className="px-5 py-3"
           style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <div className="flex items-center gap-2 flex-wrap">
@@ -690,17 +668,12 @@ export function MarketNarrativeNetwork() {
                 <button
                   key={chain.id}
                   onClick={() => handleChainClick(chain.id, activeChain)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
-                             transition-all duration-150"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-all duration-150"
                   style={{
                     background: sel
                       ? "rgba(50,100,180,0.20)"
-                      : isTop && !activeChain
-                      ? "rgba(255,255,255,0.05)"
-                      : "rgba(255,255,255,0.02)",
-                    border: `1px solid ${sel
-                      ? "rgba(100,160,240,0.38)"
-                      : "rgba(255,255,255,0.10)"}`,
+                      : isTop && !activeChain ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.02)",
+                    border: `1px solid ${sel ? "rgba(100,160,240,0.38)" : "rgba(255,255,255,0.10)"}`,
                   }}
                 >
                   <div className="rounded-full shrink-0"
@@ -711,8 +684,7 @@ export function MarketNarrativeNetwork() {
                         : `rgba(80,140,110,${sel ? 0.82 : 0.40})`,
                     }} />
                   <span style={{
-                    fontSize: 10,
-                    fontWeight: sel || isTop ? 500 : 400,
+                    fontSize: 10, fontWeight: sel || isTop ? 500 : 400,
                     color: sel ? "rgba(255,255,255,0.92)" : isTop
                       ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.55)",
                   }}>
@@ -730,6 +702,33 @@ export function MarketNarrativeNetwork() {
             </span>
           </div>
 
+          {/* Causal transmission sequence */}
+          {activeChain && chainHighlight.sequence.length >= 2 && (
+            <div className="mt-2.5 pl-14">
+              <p className="text-[6.5px] font-bold uppercase tracking-[0.22em] text-white/28 mb-1.5">
+                Transmission Path
+              </p>
+              <div className="flex items-center gap-0 flex-wrap">
+                {chainHighlight.sequence.map((n, i) => (
+                  <span key={n.id} className="flex items-center">
+                    <span
+                      className="text-[8.5px] font-medium px-1.5 py-0.5 rounded"
+                      style={{
+                        color: (NODE_STYLE[n.type] ?? NODE_STYLE.theme).label,
+                        background: `${(NODE_STYLE[n.type] ?? NODE_STYLE.theme).stroke}18`,
+                      }}
+                    >
+                      {trunc(n.label, 20)}
+                    </span>
+                    {i < chainHighlight.sequence.length - 1 && (
+                      <span className="text-white/22 text-[10px] px-1">→</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Chain summary */}
           {activeChain && (
             <p className="text-[8.5px] text-white/55 mt-2 leading-relaxed pl-14">
@@ -737,96 +736,159 @@ export function MarketNarrativeNetwork() {
             </p>
           )}
 
-          {/* Discoverability hint */}
           {!hasInteracted && (
             <p className="text-[7.5px] text-white/35 mt-1.5 pl-14 italic">
-              Click any node to explore · hover to see connections · select a path to trace transmission
+              Click any node to open the intelligence panel · hover to preview connections
             </p>
           )}
         </div>
 
-        {/* ── Focused node intelligence panel ───────────────────────────────── */}
+        {/* ── Intelligence drawer ────────────────────────────────────────────── */}
         {focusedNode && focusedNodeStyle && (
           <div className="relative"
             style={{
               borderTop: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(6,12,28,0.98)",
+              background: "rgba(5,10,24,0.99)",
             }}>
-            {/* Left type-colored accent bar */}
+            {/* Type-color left accent bar */}
             <div className="absolute left-0 top-0 bottom-0 w-[3px]"
-              style={{ background: focusedNodeStyle.label, opacity: 0.55 }} />
+              style={{ background: focusedNodeStyle.label, opacity: 0.60 }} />
 
             <div className="px-5 py-4 pl-7">
               <div className="flex items-start justify-between gap-5">
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-4">
 
-                  {/* Header: type badge + sentiment + confidence */}
-                  <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-                    <span className="text-[7px] font-bold uppercase tracking-[0.2em] px-1.5 py-0.5 rounded"
-                      style={{
-                        color: focusedNodeStyle.label,
-                        background: "rgba(255,255,255,0.07)",
-                        border: `1px solid ${focusedNodeStyle.stroke}55`,
-                      }}>
-                      {focusedNode.type}
-                    </span>
-                    <span className="text-[7px] font-medium px-1.5 py-0.5 rounded capitalize"
-                      style={{
-                        color: SENTIMENT_STROKE[focusedNode.sentiment] ?? "#507888",
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}>
-                      {focusedNode.sentiment}
-                    </span>
-                    <span className="ml-auto text-[7.5px] text-white/45 tabular-nums shrink-0">
-                      {focusedNode.confidence.toFixed(0)}% confidence
-                      {focusedNode.source_count > 0 && ` · ${focusedNode.source_count} stories`}
-                    </span>
+                  {/* Identity header */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-[7px] font-bold uppercase tracking-[0.22em] px-1.5 py-0.5 rounded"
+                        style={{
+                          color: focusedNodeStyle.label,
+                          background: "rgba(255,255,255,0.07)",
+                          border: `1px solid ${focusedNodeStyle.stroke}50`,
+                        }}>
+                        {focusedNode.type}
+                      </span>
+                      <span className="text-[7px] font-medium px-1.5 py-0.5 rounded capitalize"
+                        style={{
+                          color: SENTIMENT_STROKE[focusedNode.sentiment] ?? "#507888",
+                          background: "rgba(255,255,255,0.04)",
+                          border: "1px solid rgba(255,255,255,0.09)",
+                        }}>
+                        {focusedNode.sentiment}
+                      </span>
+                      <span className="ml-auto text-[7.5px] text-white/40 tabular-nums shrink-0">
+                        {focusedNode.confidence.toFixed(0)}% conf
+                        {focusedNode.source_count > 0 && ` · ${focusedNode.source_count} signals`}
+                      </span>
+                    </div>
+                    <p className="text-[16px] font-semibold leading-tight"
+                      style={{ color: focusedNodeStyle.label }}>
+                      {focusedNode.label}
+                    </p>
                   </div>
 
-                  {/* Node name */}
-                  <p className="text-[15px] font-semibold leading-snug mb-2.5"
-                    style={{ color: focusedNodeStyle.label }}>
-                    {focusedNode.label}
-                  </p>
+                  {/* Role in active narrative — only shown when node is in selected chain */}
+                  {activeChain && chainHighlight.nodeIds.has(focusedNode.id) && (() => {
+                    const chain = data.chains.find(c => c.id === activeChain);
+                    if (!chain) return null;
+                    const chainPos  = chain.nodes.indexOf(focusedNode.id);
+                    const total     = chain.nodes.length;
+                    const prevNode  = chainPos > 0
+                      ? data.nodes.find(n => n.id === chain.nodes[chainPos - 1])
+                      : null;
+                    const nextNode  = chainPos < total - 1
+                      ? data.nodes.find(n => n.id === chain.nodes[chainPos + 1])
+                      : null;
+                    return (
+                      <div className="pb-3.5"
+                        style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                          Role in active narrative · step {chainPos + 1} of {total}
+                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {prevNode && (
+                            <>
+                              <span className="text-[8px] font-medium px-1.5 py-0.5 rounded"
+                                style={{
+                                  color: (NODE_STYLE[prevNode.type] ?? NODE_STYLE.theme).label,
+                                  opacity: 0.65,
+                                  background: "rgba(255,255,255,0.04)",
+                                }}>
+                                {trunc(prevNode.label, 16)}
+                              </span>
+                              <span className="text-white/28 text-[10px]">→</span>
+                            </>
+                          )}
+                          <span className="text-[8.5px] font-semibold px-2 py-0.5 rounded"
+                            style={{
+                              color: focusedNodeStyle.label,
+                              background: `${focusedNodeStyle.stroke}28`,
+                              border: `1px solid ${focusedNodeStyle.stroke}55`,
+                            }}>
+                            {trunc(focusedNode.label, 18)}
+                          </span>
+                          {nextNode && (
+                            <>
+                              <span className="text-white/28 text-[10px]">→</span>
+                              <span className="text-[8px] font-medium px-1.5 py-0.5 rounded"
+                                style={{
+                                  color: (NODE_STYLE[nextNode.type] ?? NODE_STYLE.theme).label,
+                                  opacity: 0.65,
+                                  background: "rgba(255,255,255,0.04)",
+                                }}>
+                                {trunc(nextNode.label, 16)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Why it matters */}
-                  <div className="mb-4">
+                  <div className="pb-3.5"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                     <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-1.5">
                       Why it matters
                     </p>
-                    <p className="text-[10.5px] text-white/72 leading-relaxed">
+                    <p className="text-[11px] text-white/80 leading-relaxed">
                       {focusedNode.description}
                     </p>
                   </div>
 
                   {/* Connections */}
                   {focusedConnections.length > 0 && (
-                    <div className="mb-4">
+                    <div className="pb-3.5"
+                      style={{ borderBottom: focusedInChains.length > 0 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
                       <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
                         Connections
-                        <span className="ml-1.5 text-white/22 font-normal normal-case tracking-normal">
+                        <span className="ml-1.5 text-white/20 font-normal normal-case tracking-normal">
                           ({focusedConnections.length})
                         </span>
                       </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {focusedConnections.slice(0, 8).map(c => {
+                      <div className="space-y-1.5">
+                        {focusedConnections.slice(0, 7).map(c => {
                           const cs = NODE_STYLE[c.node.type] ?? NODE_STYLE.theme;
                           return (
-                            <span key={c.node.id}
-                              className="flex items-center gap-1.5 px-2 py-1 rounded-md"
+                            <div key={c.node.id}
+                              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md"
                               style={{
-                                background: "rgba(255,255,255,0.055)",
-                                border: `1px solid ${cs.stroke}40`,
-                              }}>
-                              <span className="text-[7.5px] text-white/40 shrink-0">
+                                background: "rgba(255,255,255,0.04)",
+                                border: `1px solid ${cs.stroke}30`,
+                              }}
+                              title={c.desc}>
+                              <span className="text-[7.5px] text-white/38 shrink-0 w-3 text-right">
+                                {c.isSource ? "→" : "←"}
+                              </span>
+                              <span className="text-[7.5px] text-white/40 shrink-0 capitalize min-w-[52px]">
                                 {c.rel.replace(/_/g, " ")}
                               </span>
-                              <span className="text-[9.5px] font-medium"
+                              <span className="text-[9.5px] font-medium truncate"
                                 style={{ color: cs.label }}>
-                                {trunc(c.node.label, 22)}
+                                {c.node.label}
                               </span>
-                            </span>
+                            </div>
                           );
                         })}
                       </div>
@@ -839,26 +901,39 @@ export function MarketNarrativeNetwork() {
                       <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
                         Narrative {focusedInChains.length === 1 ? "path" : `paths (${focusedInChains.length})`}
                       </p>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="space-y-1.5">
                         {focusedInChains.map(c => (
                           <button key={c.id}
                             onClick={() => handleChainClick(c.id, activeChain)}
-                            className="flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors"
+                            className="w-full flex items-center gap-3 px-2.5 py-1.5 rounded-md
+                                       text-left transition-colors"
                             style={{
                               background: activeChain === c.id
                                 ? "rgba(60,130,100,0.18)"
-                                : "rgba(255,255,255,0.05)",
-                              color: activeChain === c.id
-                                ? "rgba(100,210,150,0.92)"
-                                : "rgba(255,255,255,0.70)",
+                                : "rgba(255,255,255,0.04)",
                               border: `1px solid ${activeChain === c.id
                                 ? "rgba(80,180,120,0.35)"
-                                : "rgba(255,255,255,0.12)"}`,
+                                : "rgba(255,255,255,0.10)"}`,
                             }}>
-                            <span className="text-[9px] font-medium">
-                              {trunc(c.title, 30)}
+                            <div className="rounded-full shrink-0"
+                              style={{
+                                width: 6, height: 6,
+                                background: activeChain === c.id
+                                  ? "rgba(80,200,140,0.90)"
+                                  : "rgba(80,140,110,0.50)",
+                              }} />
+                            <span className="text-[9px] font-medium flex-1 truncate"
+                              style={{
+                                color: activeChain === c.id
+                                  ? "rgba(100,210,150,0.92)"
+                                  : "rgba(255,255,255,0.72)",
+                              }}>
+                              {trunc(c.title, 36)}
                             </span>
-                            <span className="text-[8px] tabular-nums opacity-55">
+                            <span className="text-[8px] tabular-nums shrink-0"
+                              style={{ color: activeChain === c.id
+                                ? "rgba(100,200,150,0.60)"
+                                : "rgba(255,255,255,0.35)" }}>
                               {c.confidence.toFixed(0)}%
                             </span>
                           </button>
@@ -866,6 +941,7 @@ export function MarketNarrativeNetwork() {
                       </div>
                     </div>
                   )}
+
                 </div>
 
                 <button onClick={() => setFocusedNodeId(null)}
