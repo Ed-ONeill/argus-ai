@@ -50,23 +50,31 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
   return (
     <header
       className={cn(
-        "fixed top-0 inset-x-0 z-50 nav-height bg-surface/95 backdrop-blur-md border-b border-edge",
-        "transition-shadow duration-200",
+        "fixed top-0 inset-x-0 z-50 nav-height backdrop-blur-md border-b",
+        "transition-all duration-300",
         scrolled ? "shadow-nav" : "shadow-none",
       )}
+      style={{
+        background: "rgba(5,8,18,0.90)",
+        borderBottomColor: "rgba(255,255,255,0.055)",
+      }}
     >
       <div className="max-w-7xl mx-auto h-full px-4 sm:px-6 flex items-center gap-5">
 
         {/* ── Logo ──────────────────────────────────────────────────────── */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0 link-reset group">
           <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center shadow-sm
+            className="w-7 h-7 rounded-lg flex items-center justify-center
                         transition-transform duration-200 group-hover:scale-105"
-            style={{ background: "linear-gradient(135deg, #1A2B5F 0%, #2563EB 100%)" }}
+            style={{
+              background: "linear-gradient(145deg, #1a3060 0%, #1e4888 100%)",
+              boxShadow: "0 1px 8px rgba(30,72,136,0.45), inset 0 1px 0 rgba(255,255,255,0.10)",
+            }}
           >
-            <span className="text-white font-bold text-[10px] tracking-wide">AI</span>
+            <span className="font-bold text-[9.5px] tracking-wider" style={{ color: "rgba(255,255,255,0.92)" }}>A</span>
           </div>
-          <span className="font-semibold text-sm text-ink tracking-tight hidden sm:block">
+          <span className="font-medium text-[13px] tracking-tight hidden sm:block"
+            style={{ color: "rgba(255,255,255,0.82)", letterSpacing: "-0.01em" }}>
             Argus
           </span>
         </Link>
@@ -74,10 +82,12 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
         {/* ── Live indicator ────────────────────────────────────────────── */}
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-55"
+              style={{ background: "#52b0c8" }} />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5"
+              style={{ background: "#3a98b0" }} />
           </span>
-          <span className="text-2xs font-medium text-emerald-600 hidden sm:inline">Live</span>
+          <span className="text-2xs font-medium hidden sm:inline" style={{ color: "#4898a8" }}>Live</span>
         </div>
 
         {/* ── Nav links ─────────────────────────────────────────────────── */}
@@ -154,11 +164,15 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
                   <button
                     className={cn(
                       "w-7 h-7 rounded-full flex items-center justify-center",
-                      "text-white text-[11px] font-bold shrink-0",
+                      "text-[11px] font-bold shrink-0",
                       "hover:opacity-90 active:scale-95 transition-all duration-150",
                       "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                     )}
-                    style={{ background: "linear-gradient(135deg, #1A2B5F 0%, #2563EB 100%)" }}
+                    style={{
+                      background: "linear-gradient(145deg, #1a3060 0%, #1e4888 100%)",
+                      color: "rgba(255,255,255,0.88)",
+                      boxShadow: "0 1px 6px rgba(30,72,136,0.40)",
+                    }}
                     aria-label="Account menu"
                   >
                     {initials}

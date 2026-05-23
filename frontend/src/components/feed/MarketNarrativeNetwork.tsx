@@ -85,6 +85,17 @@ const EDGE_STROKE_ACTIVE: Record<string, string> = {
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
+// Per-row horizontal drift — creates organic left/right bias per system layer.
+// Macro leans left (upstream pressure), sectors lean right (market effect land),
+// assets lean left (defensive/portfolio gravity). Regime stays centered.
+const ROW_DRIFT_X: Record<number, number> = {
+  0:  0,    // regime: gravitational anchor
+  1: -26,   // macro: upstream lean left
+  2: +18,   // themes: transmission lean right
+  3: +32,   // sectors: market effect pull right
+  4: -22,   // assets: safe-haven / portfolio lean left
+};
+
 function idHash(id: string): number {
   let h = 0x9e3779b9;
   for (let i = 0; i < id.length; i++) h = (Math.imul(h ^ id.charCodeAt(i), 0x85ebca6b)) >>> 0;
@@ -132,10 +143,14 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
     const staggerAmt = isThemeRow && ordered.length > 3 ? 18 : 0;
     ordered.forEach((node, col) => {
       const stagger = staggerAmt ? (col % 2 === 0 ? -staggerAmt : staggerAmt) : 0;
-      // Subtle organic Y jitter for lower layers — breaks the mechanical grid feel
       const jitterY = (node.type === "sector" || node.type === "asset")
         ? (idHash(node.id) % 13) - 6 : 0;
-      pos.set(node.id, { x: PAD_X + (usableW / (ordered.length + 1)) * (col + 1), y: y + stagger + jitterY });
+      const drift = ROW_DRIFT_X[rowKey] ?? 0;
+      const rawX  = PAD_X + (usableW / (ordered.length + 1)) * (col + 1) + drift;
+      pos.set(node.id, {
+        x: Math.max(PAD_X, Math.min(W - PAD_X, rawX)),
+        y: y + stagger + jitterY,
+      });
     });
   });
   return pos;
@@ -462,6 +477,11 @@ export function MarketNarrativeNetwork() {
 
     return (
       <g key={edge.id}>
+        {/* Residual pressure field — atmospheric density around active path */}
+        {isChainEdge && (
+          <path d={d} stroke={activeStroke} strokeWidth={(sw + 2.0) * 20}
+            strokeOpacity={0.014} fill="none" filter="url(#edgeAura)" />
+        )}
         {isChainEdge && (
           <path d={d} stroke={activeStroke} strokeWidth={(sw + 2.0) * 8}
             strokeOpacity={0.08} fill="none" filter="url(#edgeAura)" />
@@ -742,6 +762,14 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
 
+              {/* Thermal cold field — inverted spotlight, darkens inactive zones */}
+              <radialGradient id="coldField" cx={spotCx} cy={spotCy} r="70%"
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%"   stopColor="#020510" stopOpacity="0" />
+                <stop offset="100%" stopColor="#020510"
+                  stopOpacity={chainCentroid ? 0.20 : 0} />
+              </radialGradient>
+
               {/* Chain spotlight — illuminates active narrative centroid */}
               <radialGradient id="chainSpot" cx={spotCx} cy={spotCy} r="28%"
                 gradientUnits="objectBoundingBox">
@@ -822,7 +850,8 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#ambLight2)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#regEnvGrad)" />
             <rect width={W} height={H} fill="url(#regThermal)" className="pointer-events-none" />
-            <rect width={W} height={H} fill="url(#chainSpot)" className="pointer-events-none" />
+            <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
+            <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
 
             {/* Ambient drifting particles — very slow, barely visible */}
             <g className="pointer-events-none">
@@ -883,7 +912,7 @@ export function MarketNarrativeNetwork() {
         </div>
 
         {/* Active path / chain tabs */}
-        <div className="px-6 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+        <div className="px-6 py-4">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[7px] font-bold uppercase tracking-[0.22em] text-white/45
                              shrink-0 mr-1 self-center">
@@ -897,25 +926,35 @@ export function MarketNarrativeNetwork() {
                   onClick={() => handleChainClick(chain.id, activeChain)}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-all duration-150"
                   style={{
-                    background: sel ? "rgba(38,80,168,0.28)"
-                      : isTop && !activeChain ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.025)",
-                    border: `1px solid ${sel ? "rgba(90,148,235,0.55)" : "rgba(255,255,255,0.10)"}`,
-                    boxShadow: sel ? "0 0 14px rgba(60,110,220,0.18)" : "none",
+                    background: sel ? "rgba(38,80,168,0.30)"
+                      : isTop && !activeChain ? "rgba(255,255,255,0.055)" : "rgba(255,255,255,0.018)",
+                    border: `1px solid ${
+                      sel ? "rgba(90,148,235,0.60)"
+                      : (activeChain && !sel) ? "rgba(255,255,255,0.052)"
+                      : "rgba(255,255,255,0.09)"
+                    }`,
+                    boxShadow: sel
+                      ? "0 0 22px rgba(60,110,220,0.30), 0 0 8px rgba(70,120,240,0.14) inset"
+                      : "none",
+                    opacity: activeChain && !sel ? 0.48 : 1,
+                    transition: "opacity 200ms, box-shadow 200ms, border-color 200ms",
                   }}>
                   <div className="rounded-full shrink-0"
                     style={{
                       width: 6, height: 6,
                       background: sel
-                        ? "rgba(90,168,235,0.95)"
-                        : isTop ? "rgba(74,138,200,0.70)" : "rgba(60,100,160,0.45)",
+                        ? "rgba(90,168,235,0.96)"
+                        : (activeChain && !sel) ? "rgba(60,100,160,0.28)"
+                        : isTop ? "rgba(74,138,200,0.68)" : "rgba(60,100,160,0.42)",
                     }} />
                   <span style={{
-                    fontSize: 10, fontWeight: sel || isTop ? 500 : 400,
-                    color: sel ? "rgba(255,255,255,0.96)"
-                      : isTop ? "rgba(255,255,255,0.78)" : "rgba(255,255,255,0.55)",
+                    fontSize: 10, fontWeight: sel ? 500 : (activeChain ? 400 : (isTop ? 500 : 400)),
+                    color: sel ? "rgba(255,255,255,0.97)"
+                      : (activeChain && !sel) ? "rgba(255,255,255,0.40)"
+                      : isTop ? "rgba(255,255,255,0.76)" : "rgba(255,255,255,0.52)",
                   }}>{trunc(chain.title, 32)}</span>
                   <span className="text-[8px] tabular-nums shrink-0"
-                    style={{ color: sel ? "rgba(160,200,255,0.75)" : "rgba(255,255,255,0.38)" }}>
+                    style={{ color: sel ? "rgba(160,200,255,0.78)" : "rgba(255,255,255,0.28)" }}>
                     {chain.confidence.toFixed(0)}%
                   </span>
                 </button>
@@ -975,13 +1014,13 @@ export function MarketNarrativeNetwork() {
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.30, ease: [0.25, 0, 0.25, 1] }}
               className="relative"
-              style={{
-                borderTop: "1px solid rgba(255,255,255,0.08)",
-                background: "rgba(4,9,22,0.99)",
-              }}>
+              style={{ background: "rgba(4,9,22,0.99)" }}>
+              {/* Gradient top separator — atmospheric instead of hard ruled line */}
+              <div className="h-px"
+                style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.075) 20%, rgba(255,255,255,0.075) 80%, transparent)" }} />
               {/* Type-color left accent bar */}
               <div className="absolute left-0 top-0 bottom-0 w-[3px]"
-                style={{ background: focusedNodeStyle.label, opacity: 0.60 }} />
+                style={{ background: focusedNodeStyle.label, opacity: 0.55 }} />
 
               <div className="px-6 py-5 pl-8">
                 <div className="flex items-start justify-between gap-5">
@@ -989,29 +1028,30 @@ export function MarketNarrativeNetwork() {
 
                     {/* Identity header */}
                     <div>
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <div className="flex items-center gap-2 mb-3 flex-wrap">
                         <span className="text-[7px] font-bold uppercase tracking-[0.22em] px-1.5 py-0.5 rounded"
                           style={{
                             color: focusedNodeStyle.label,
-                            background: "rgba(255,255,255,0.07)",
-                            border: `1px solid ${focusedNodeStyle.stroke}50`,
+                            background: "rgba(255,255,255,0.06)",
+                            border: `1px solid ${focusedNodeStyle.stroke}40`,
                           }}>
                           {focusedNode.type}
                         </span>
                         <span className="text-[7px] font-medium px-1.5 py-0.5 rounded capitalize"
                           style={{
                             color: SENTIMENT_STROKE[focusedNode.sentiment] ?? "#507888",
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.09)",
+                            background: "rgba(255,255,255,0.03)",
+                            border: "1px solid rgba(255,255,255,0.07)",
                           }}>
                           {focusedNode.sentiment}
                         </span>
-                        <span className="ml-auto text-[7.5px] text-white/40 tabular-nums shrink-0">
-                          {focusedNode.confidence.toFixed(0)}% conf
+                        <span className="ml-auto text-[7px] tabular-nums shrink-0"
+                          style={{ color: "rgba(255,255,255,0.30)" }}>
+                          {focusedNode.confidence.toFixed(0)}%
                           {focusedNode.source_count > 0 && ` · ${focusedNode.source_count} signals`}
                         </span>
                       </div>
-                      <p className="text-[16px] font-semibold leading-tight"
+                      <p className="text-[18px] font-semibold leading-snug"
                         style={{ color: focusedNodeStyle.label }}>
                         {focusedNode.label}
                       </p>
@@ -1028,9 +1068,8 @@ export function MarketNarrativeNetwork() {
                       const nextNode = chainPos < total - 1
                         ? data.nodes.find(n => n.id === chain.nodes[chainPos + 1]) : null;
                       return (
-                        <div className="pb-3.5"
-                          style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                          <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                        <div className="pb-0">
+                          <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/28 mb-2">
                             Role in narrative · step {chainPos + 1} of {total}
                           </p>
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1067,43 +1106,48 @@ export function MarketNarrativeNetwork() {
                               </>
                             )}
                           </div>
+                          <div className="mt-3.5 h-px"
+                            style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.055) 20%, rgba(255,255,255,0.055) 80%, transparent)" }} />
                         </div>
                       );
                     })()}
 
                     {/* Why it matters */}
-                    <div className="pb-3.5"
-                      style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                      <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1.5">
+                    <div className="pb-0">
+                      <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
                         Why it matters
                       </p>
-                      <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.88)" }}>
+                      <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.86)" }}>
                         {focusedNode.description}
                       </p>
+                      <div className="mt-3.5 h-px"
+                        style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.050) 20%, rgba(255,255,255,0.050) 80%, transparent)" }} />
                     </div>
 
                     {/* Connections */}
                     {focusedConnections.length > 0 && (
-                      <div className={focusedInChains.length > 0 ? "pb-3.5" : ""}
-                        style={focusedInChains.length > 0 ? { borderBottom: "1px solid rgba(255,255,255,0.06)" } : {}}>
-                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                      <div className="pb-0">
+                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/30 mb-2.5">
                           Connections
-                          <span className="ml-1.5 text-white/20 font-normal normal-case tracking-normal">
-                            ({focusedConnections.length})
+                          <span className="ml-1.5 font-normal normal-case tracking-normal"
+                            style={{ color: "rgba(255,255,255,0.18)" }}>
+                            {focusedConnections.length}
                           </span>
                         </p>
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
                           {focusedConnections.slice(0, 7).map(c => {
                             const cs = NODE_STYLE[c.node.type] ?? NODE_STYLE.theme;
                             return (
                               <div key={c.node.id}
                                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-md"
-                                style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${cs.stroke}30` }}
+                                style={{ background: "rgba(255,255,255,0.022)", border: `1px solid ${cs.stroke}1a` }}
                                 title={c.desc}>
-                                <span className="text-[7.5px] text-white/38 shrink-0 w-3 text-right">
+                                <span className="text-[7px] shrink-0 w-3 text-right"
+                                  style={{ color: "rgba(255,255,255,0.30)" }}>
                                   {c.isSource ? "→" : "←"}
                                 </span>
-                                <span className="text-[7.5px] text-white/38 shrink-0 capitalize min-w-[52px]">
+                                <span className="text-[7px] shrink-0 capitalize min-w-[52px]"
+                                  style={{ color: "rgba(255,255,255,0.32)" }}>
                                   {c.rel.replace(/_/g, " ")}
                                 </span>
                                 <span className="text-[9.5px] font-medium truncate" style={{ color: cs.label }}>
@@ -1113,6 +1157,10 @@ export function MarketNarrativeNetwork() {
                             );
                           })}
                         </div>
+                        {focusedInChains.length > 0 && (
+                          <div className="mt-4 h-px"
+                            style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.050) 20%, rgba(255,255,255,0.050) 80%, transparent)" }} />
+                        )}
                       </div>
                     )}
 
