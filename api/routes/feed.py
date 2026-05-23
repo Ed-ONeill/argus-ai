@@ -543,19 +543,34 @@ def get_feed(
     do_refresh = force_refresh or refresh
 
     if do_refresh:
-        # Run pipeline synchronously — do NOT serve from stale cache.
         log.info("[feed] refresh=true forcing synchronous recompute  key=%s", key)
-        entry = run_pipeline(categories=categories, sources=sources, fresh_only=fresh_only)
-        feed_cache.set(key, entry)
-        age = 0.0
-        raw_themes      = getattr(entry, "theme_intelligence",  []) or []
-        raw_activations = getattr(entry, "industry_activation", []) or []
-        log.info(
-            "[feed] recomputed  themes=%d  activations=%d  active_industries=%d  is_stale=False",
-            len(raw_themes),
-            len(raw_activations),
-            sum(1 for ia in raw_activations if ia.score > 0),
-        )
+        try:
+            # _run_inline is the proven cold-start path: run_pipeline + feed_cache.set
+            entry = _run_inline(categories, sources, fresh_only)
+            age   = 0.0
+            raw_themes      = getattr(entry, "theme_intelligence",  []) or []
+            raw_activations = getattr(entry, "industry_activation", []) or []
+            log.info(
+                "[feed] recomputed  themes=%d  activations=%d  active_industries=%d  is_stale=False",
+                len(raw_themes),
+                len(raw_activations),
+                sum(1 for ia in raw_activations if ia.score > 0),
+            )
+        except Exception as exc:
+            log.exception(
+                "[feed] refresh pipeline FAILED  key=%s  error=%r — falling back to cache",
+                key, exc,
+            )
+            # Fall back to whatever is in cache rather than returning a bare 500.
+            entry = feed_cache.get(key)
+            if entry is None:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Refresh pipeline failed and no cached data available: {exc}",
+                )
+            age = feed_cache.age_seconds(key) or 0.0
+            log.info("[feed] serving stale cache after refresh failure  key=%s  age=%.0fs", key, age)
     else:
         entry = feed_cache.get(key)
         age   = feed_cache.age_seconds(key) or 0.0
