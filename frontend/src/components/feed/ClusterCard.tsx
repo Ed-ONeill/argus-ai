@@ -65,14 +65,14 @@ export function ClusterCard({
     return b.published_ts.localeCompare(a.published_ts);
   });
 
-  // Left border accent is the sole signal-strength indicator
+  // Left border: sole signal-strength indicator — tiers scale with signal
   const leftAccent = isBreaking
-    ? "rgba(150,48,48,0.65)"
+    ? "rgba(180,56,56,0.85)"
     : item.signal_strength === "strong"
-      ? `${color}60`
+      ? `${color}90`
       : item.signal_strength === "medium"
-        ? `${color}32`
-        : `${color}1a`;
+        ? `${color}55`
+        : `${color}38`;
 
   return (
     <motion.article
@@ -87,12 +87,15 @@ export function ClusterCard({
       whileHover={{ y: -0.5, transition: { duration: 0.20, ease: "easeOut" } }}
       className={cn(
         "group rounded-lg overflow-hidden",
-        item.signal_strength === "weak" && "opacity-80",
-        isWatched && "ring-1 ring-accent/25",
+        item.signal_strength === "weak" && "opacity-85",
+        isWatched && "ring-1 ring-accent/30",
       )}
       style={{
-        background: "rgba(5,9,20,0.55)",
-        borderLeft: `2px solid ${leftAccent}`,
+        background:   "rgba(7,12,28,0.94)",
+        borderTop:    "1px solid rgba(255,255,255,0.07)",
+        borderRight:  "1px solid rgba(255,255,255,0.05)",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        borderLeft:   `2px solid ${leftAccent}`,
       }}
     >
       <div className="px-3.5 pt-2.5 pb-3">
@@ -100,19 +103,19 @@ export function ClusterCard({
         {/* ── Theme label (multi-story clusters only) ─────────────────── */}
         {story_count > 1 && (
           <p className="text-[9.5px] font-medium uppercase tracking-[0.08em] mb-1.5 truncate"
-            style={{ color: `${color}90` }}>
+            style={{ color: `${color}c0` }}>
             {theme_label}
           </p>
         )}
 
         {/* ── Header row ──────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-medium" style={{ color }}>
+          <span className="text-[10px] font-semibold" style={{ color }}>
             {item.category}
           </span>
           {isBreaking && (
             <span className="inline-flex items-center gap-1 text-[9px] font-semibold"
-              style={{ color: "rgba(196,80,80,0.85)" }}>
+              style={{ color: "rgba(210,80,80,0.90)" }}>
               <motion.span
                 animate={{ opacity: [1, 0.3, 1] }}
                 transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
@@ -123,7 +126,7 @@ export function ClusterCard({
             </span>
           )}
           <span className="ml-auto text-[9px] tabular-nums font-mono"
-            style={{ color: "rgba(255,255,255,0.22)" }}>
+            style={{ color: "rgba(255,255,255,0.45)" }}>
             {score}
           </span>
         </div>
@@ -135,7 +138,7 @@ export function ClusterCard({
           rel="noopener noreferrer"
           className="block text-[13px] font-semibold leading-snug mb-2
                      hover:text-accent transition-colors"
-          style={{ color: "rgba(255,255,255,0.88)" }}
+          style={{ color: "rgba(255,255,255,0.93)" }}
         >
           {item.title}
           <ExternalLink
@@ -147,12 +150,12 @@ export function ClusterCard({
         {/* ── Affected entities — inline text, no pills ────────────────── */}
         {item.affected_entities.length > 0 && (
           <p className="text-[10px] mb-2 truncate"
-            style={{ color: "rgba(255,255,255,0.35)" }}>
+            style={{ color: "rgba(255,255,255,0.48)" }}>
             {item.affected_entities.slice(0, 4).map((e, i) => (
               <span key={e}>
                 {i > 0 && <span className="mx-1 opacity-50">·</span>}
                 <span style={watchedEntities?.has(e.toLowerCase())
-                  ? { color: "rgba(82,176,200,0.80)" } : {}}>
+                  ? { color: "rgba(82,176,200,0.88)" } : {}}>
                   {e}
                 </span>
               </span>
@@ -167,14 +170,14 @@ export function ClusterCard({
         {hasSummary && (
           <>
             <p className="text-[11.5px] leading-relaxed mb-2"
-              style={{ color: "rgba(255,255,255,0.68)" }}>
+              style={{ color: "rgba(255,255,255,0.76)" }}>
               {item.summary}
             </p>
 
             {item.why_it_matters && !analyzed && (
               <p
                 className="text-[11.5px] leading-relaxed mb-3 pl-2.5 italic"
-                style={{ color: "rgba(255,255,255,0.55)", borderLeft: `1px solid ${color}40` }}
+                style={{ color: "rgba(255,255,255,0.64)", borderLeft: `1px solid ${color}55` }}
               >
                 {item.why_it_matters}
               </p>
@@ -192,7 +195,7 @@ export function ClusterCard({
                 >
                   <div
                     className="rounded-md px-3 py-3 mb-3 space-y-3"
-                    style={{ background: `${color}08`, borderLeft: `1px solid ${color}30` }}
+                    style={{ background: `${color}0d`, borderLeft: `1px solid ${color}40` }}
                   >
                     {item.why_it_matters && (
                       <DeskNoteRow label="Why it matters" color={color}>
@@ -202,7 +205,7 @@ export function ClusterCard({
 
                     {deepLoading ? (
                       <div className="flex items-center gap-2 text-[10px]"
-                        style={{ color: "rgba(255,255,255,0.40)" }}>
+                        style={{ color: "rgba(255,255,255,0.45)" }}>
                         <Loader2 size={10} className="animate-spin" />
                         Analyzing…
                       </div>
@@ -243,13 +246,13 @@ export function ClusterCard({
 
             {/* ── Footer ──────────────────────────────────────────────── */}
             <div className="flex items-center gap-1 pt-2"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
 
               <span className="text-[10px] flex-1 truncate"
-                style={{ color: "rgba(255,255,255,0.38)" }}>
+                style={{ color: "rgba(255,255,255,0.48)" }}>
                 {item.source}
                 {item.published && (
-                  <span className="ml-1" style={{ color: "rgba(255,255,255,0.24)" }}>
+                  <span className="ml-1" style={{ color: "rgba(255,255,255,0.32)" }}>
                     · {item.published}
                   </span>
                 )}
@@ -261,7 +264,7 @@ export function ClusterCard({
                     onClick={() => setExpanded(e => !e)}
                     className="flex items-center gap-1 text-[10px] font-medium px-2 py-1
                                rounded transition-colors"
-                    style={{ color: expanded ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.38)" }}
+                    style={{ color: expanded ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.50)" }}
                   >
                     <Clock size={9} />
                     {expanded ? "Hide" : `+${story_count - 1}`}
@@ -280,8 +283,10 @@ export function ClusterCard({
                     onClick={handleAnalyzeToggle}
                     className={cn(
                       "flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded transition-colors",
-                      analyzed ? "text-accent" : "text-accent/55 hover:text-accent/80",
                     )}
+                    style={{
+                      color: analyzed ? "#52b0c8" : "rgba(82,176,200,0.78)",
+                    }}
                   >
                     <Zap size={9} />
                     {analyzed ? "Close" : "Analyze"}
@@ -293,8 +298,8 @@ export function ClusterCard({
                   onClick={onSave}
                   className="p-1.5 rounded transition-all"
                   style={{
-                    color:      isSaved ? "#52b0c8" : "rgba(255,255,255,0.30)",
-                    background: isSaved ? "rgba(82,176,200,0.08)" : "transparent",
+                    color:      isSaved ? "#52b0c8" : "rgba(255,255,255,0.42)",
+                    background: isSaved ? "rgba(82,176,200,0.10)" : "transparent",
                   }}
                   title={isSaved ? "Remove bookmark" : "Save"}
                 >
@@ -321,7 +326,7 @@ export function ClusterCard({
 
         {/* Snippet fallback (no AI yet) */}
         {!hasSummary && item.snippet && (
-          <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>
+          <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.60)" }}>
             {item.snippet.slice(0, 180)}
             {item.snippet.length > 180 ? "…" : ""}
           </p>
@@ -339,9 +344,9 @@ export function ClusterCard({
               className="overflow-hidden"
             >
               <div className="mt-3 pt-3"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
                 <p className="text-[9.5px] font-medium uppercase tracking-[0.10em] mb-2"
-                  style={{ color: "rgba(255,255,255,0.28)" }}>
+                  style={{ color: "rgba(255,255,255,0.42)" }}>
                   Related coverage
                 </p>
                 <div className="space-y-0">
@@ -368,14 +373,14 @@ export function ClusterCard({
 
 function RelatedStoryRow({ story, isLast }: { story: RelatedStory; isLast: boolean }) {
   const dotColor = story.signal_strength === "strong"
-    ? "rgba(52,160,120,0.80)"
+    ? "rgba(52,160,120,0.90)"
     : story.signal_strength === "medium"
-      ? "rgba(160,120,40,0.75)"
-      : "rgba(70,90,130,0.55)";
+      ? "rgba(160,120,40,0.85)"
+      : "rgba(70,90,130,0.65)";
 
   return (
     <div className="flex items-start gap-2.5 py-2"
-      style={!isLast ? { borderBottom: "1px solid rgba(255,255,255,0.04)" } : {}}>
+      style={!isLast ? { borderBottom: "1px solid rgba(255,255,255,0.05)" } : {}}>
       <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-[4px]"
         style={{ background: dotColor }} />
       <div className="min-w-0 flex-1">
@@ -385,17 +390,17 @@ function RelatedStoryRow({ story, isLast }: { story: RelatedStory; isLast: boole
           rel="noopener noreferrer"
           className="text-[11.5px] leading-snug line-clamp-2 font-medium
                      hover:text-accent transition-colors"
-          style={{ color: "rgba(255,255,255,0.62)" }}
+          style={{ color: "rgba(255,255,255,0.70)" }}
         >
           {story.title}
           <ExternalLink size={9} className="inline-block ml-1 opacity-0 group-hover:opacity-40" />
         </a>
-        <p className="text-[9.5px] mt-0.5" style={{ color: "rgba(255,255,255,0.32)" }}>
+        <p className="text-[9.5px] mt-0.5" style={{ color: "rgba(255,255,255,0.40)" }}>
           {story.source} · {story.published}
         </p>
       </div>
       <ChevronRight size={10} className="shrink-0 mt-[3px]"
-        style={{ color: "rgba(255,255,255,0.22)" }} />
+        style={{ color: "rgba(255,255,255,0.32)" }} />
     </div>
   );
 }
@@ -413,7 +418,7 @@ function DeskNoteRow({
         style={{ color }}>
         {label}
       </p>
-      <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
+      <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.72)" }}>
         {children}
       </p>
     </div>
