@@ -89,7 +89,7 @@ _TS_EXCLUDE_RE = re.compile(
     r"|\bhow\s+do\s+i\b"
     r"|\bwhat\s+should\s+i\b"
     r"|\bcan\s+i\s+trust\b"
-    r"|\bscam\b"
+    r"|\bscam\b|\bphishing\b|\bidentity\s+theft\b"
     r"|\bmy\s+(?:advisor|adviser|broker|accountant|financial\s+(?:advisor|adviser|planner))\b"
     r"|\bmy\s+friend\b"
     r"|\bshould\s+you\s+(?:invest|buy|sell|switch|open|trust|put|move|roll|use|hire)\b"
@@ -104,6 +104,18 @@ _TS_EXCLUDE_RE = re.compile(
     r"|\bmaking\s+sense\s+of\b"
     r"|\ba\s+(?:closer\s+)?look\s+at\b"
     r"|^(?:opinion|commentary|perspective|column)\s*:"
+    # ── Consumer topics that must never drive flagship story slots ────────────
+    # Medicare consumer advice (NOT Medicare reimbursement rate/policy stories)
+    r"|\bmedicare\b.{0,60}(?:tips?|advice|guide|enroll|supplement|advantage\s+plan|open\s+enrollment|mistakes?|when\s+to|should\s+you)\b"
+    r"|\b(?:hsa|fsa|health\s+savings\s+account)\b.{0,50}(?:tips?|advice|guide|how\s+to|maximize|should\s+you|open)\b"
+    r"|\b(?:realtor|buyer'?s?\s+agent)\b.{0,50}(?:commission|fee|pay|cost|new\s+rule|settlement)\b"
+    r"|\breal\s+estate\s+agent\s+(?:commission|fee)\b"
+    r"|\b(?:nar|national\s+association\s+of\s+realtors)\b.{0,50}(?:settlement|commission|rule|fee)\b"
+    r"|\bsocial\s+security\b.{0,60}(?:tips?|advice|how\s+to|when\s+to|should\s+i|should\s+you|claiming\s+strategy|mistake)\b"
+    r"|\b(?:when|how)\s+to\s+(?:claim|take|collect)\b.{0,25}\bsocial\s+security\b"
+    r"|\btax\s+credits?\b.{0,50}(?:you\s+(?:can|may|might)|eligible|qualify|claim\s+(?:on|for)|tips?|save\s+you|get\s+back)\b"
+    r"|\bclaim\s+(?:a\s+)?tax\s+credit\b"
+    r"|\b(?:slash|cut|reduce)\s+your\s+(?:bills?|expenses?|costs?|taxes?)\b"
     r")",
     re.IGNORECASE,
 )
@@ -260,6 +272,7 @@ def _select_top_stories(
         0 if i.summary else 1,
         1 if i.source == _PR_NEWSWIRE_SOURCE else 0,
         min(2, int(_age_hours(i) / 24)),
+        -getattr(i, "institutional_score", i.signal_score),  # prefer institutional content
         -i.signal_score,
     ))
 

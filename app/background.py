@@ -285,6 +285,42 @@ def run_pipeline(
     debug_log: list[str] = []
     top = _select_top_stories(items, debug_log=debug_log)
 
+    # ── 7b. Graph alignment audit ──────────────────────────────────────────────
+    # Log how well Today's Take candidates align with the narrative graph regime.
+    # graph_alignment_score: count of theme/sector keywords in candidate titles
+    # that match active theme_intelligence names.
+    _regime_name = sector_data.derived_regime or (
+        getattr(brief, "market_regime", "") if brief else ""
+    )
+    _active_theme_kw: set[str] = set()
+    for _t in theme_intelligence:
+        for _w in _t.name.lower().split():
+            if len(_w) > 3:
+                _active_theme_kw.add(_w)
+
+    def _graph_alignment(item_title: str) -> int:
+        tl = item_title.lower()
+        return sum(1 for kw in _active_theme_kw if kw in tl)
+
+    _summarised_sorted = sorted(
+        [i for i in items if i.summary],
+        key=lambda i: (-getattr(i, "institutional_score", i.signal_score), -i.signal_score),
+    )
+    debug_log.append(
+        f"GRAPH_ALIGN | regime={_regime_name!r}  active_themes={[t.name for t in theme_intelligence[:5]]}"
+    )
+    for _idx, _ci in enumerate(_summarised_sorted[:8], 1):
+        _ga = _graph_alignment(_ci.title)
+        debug_log.append(
+            f"  take_candidate #{_idx}: graph_align={_ga}"
+            f"  inst={getattr(_ci, 'institutional_score', 0.0):.1f}"
+            f"  qual={getattr(_ci, 'source_quality_score', 0.0):.1f}"
+            f"  noise={getattr(_ci, 'consumer_noise_penalty', 0.0):.1f}"
+            f"  score={_ci.signal_score:.1f}"
+            f"  source={_ci.source}"
+            f"  title={_ci.title[:55]!r}"
+        )
+
     # ── Audit block ────────────────────────────────────────────────────────────
     from app.feeds import category_breakdown as _cb, source_breakdown as _sb
     from datetime  import timezone as _tz

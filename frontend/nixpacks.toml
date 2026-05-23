@@ -7,7 +7,13 @@ NIXPACKS_NODE_VERSION = "22"
 cmds = ["npm ci --no-audit --no-fund"]
 
 [phases.build]
-cmds = ["rm -rf node_modules/.cache .next tsconfig.tsbuildinfo && npm run build"]
+# cacheDirectories overrides Nixpacks' auto-detection, which would otherwise
+# attempt to mount /app/tsconfig.tsbuildinfo (a file) as a Docker cache target —
+# Docker requires cache mount targets to be directories, so it fails.
+# We cache only node_modules/.cache (a valid directory) and let Next.js manage
+# its own .next/cache internally without a separate Docker cache mount.
+cacheDirectories = ["node_modules/.cache"]
+cmds = ["rm -rf node_modules/.cache tsconfig.tsbuildinfo && npm run build"]
 
 [start]
 cmd = "npm start"

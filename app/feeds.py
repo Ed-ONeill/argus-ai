@@ -481,12 +481,16 @@ class FeedItem:
     published_dt:   datetime | None = None   # UTC datetime for sorting/filtering
     published:      str             = ""     # display string e.g. "2h ago"
     snippet:        str             = ""     # stripped RSS description
-    signal_score:      float           = 0.0       # 0–100, higher = more relevant
-    signal_strength:   str            = "medium"  # "strong" | "medium" | "weak"
-    affected_entities: list[str]      = field(default_factory=list)  # tickers / sectors
-    summary:           str            = ""        # AI: what happened
-    why_it_matters:    str            = ""        # AI: investor implication
-    impact:            str            = ""        # AI: directional market impact label
+    signal_score:          float      = 0.0       # 0–100, higher = more relevant
+    signal_strength:       str        = "medium"  # "strong" | "medium" | "weak"
+    affected_entities:     list[str]  = field(default_factory=list)  # tickers / sectors
+    summary:               str        = ""        # AI: what happened
+    why_it_matters:        str        = ""        # AI: investor implication
+    impact:                str        = ""        # AI: directional market impact label
+    # Quality scoring debug fields (set by score_item)
+    source_quality_score:   float     = 0.0  # normalized source tier 0–100
+    consumer_noise_penalty: float     = 0.0  # penalty applied for consumer framing
+    institutional_score:    float     = 0.0  # composite institutional quality 0–120
 
 
 # ── Per-source audit statistics ───────────────────────────────────────────────
@@ -728,15 +732,85 @@ _NOISE_RE = re.compile(
 )
 
 
-def score_item(item: FeedItem) -> float:
+# ── Consumer topic soft penalty ────────────────────────────────────────────────
+# These patterns identify consumer/personal-finance content that should rank
+# lower but not be fully excluded.  Applied as a −30 penalty in score_item()
+# and also sets consumer_noise_penalty on the item for downstream filtering.
+#
+# Designed to avoid false positives on market-moving stories that merely mention
+# the same topic (e.g. "Medicare reimbursement cut hurts hospital stocks" is
+# NOT caught because it lacks the consumer-advice framing anchors).
+_CONSUMER_SOFT_RE = re.compile(
+    r"(?:"
+    # Medicare consumer tips / advice — NOT rate/reimbursement policy stories
+    r"\bmedicare\b.{0,60}(?:tips?|advice|guide|enroll|enrolment|supplement|advantage\s+plan|open\s+enrollment|coverage\s+options?|mistakes?|confus|eligib|when\s+to|how\s+to|what\s+you|should\s+you)\b"
+    r"|\b(?:tips?|guide|how\s+to|mistakes?\s+to\s+avoid)\b.{0,40}\bmedicare\b"
+    # HSA / FSA personal savings advice
+    r"|\b(?:hsa|fsa|health\s+savings\s+account)\b.{0,50}(?:tips?|advice|guide|benefit|how\s+to|use|spend|maximize|contribute|limit|worth\s+it|should\s+you|open)\b"
+    # Scam / fraud / phishing / identity theft consumer alerts
+    r"|\bscam\b|\bphishing\b|\bidentity\s+theft\b"
+    r"|\bwatch\s+out\s+for\b.{0,25}(?:scam|fraud|scheme)\b"
+    r"|\bfraud\s+alert\b.{0,30}(?:consumer|personal|you|your)\b"
+    # Realtor / buyer agent commission — consumer home-buying (not REIT/real estate market)
+    r"|\b(?:realtor|buyer'?s?\s+agent|listing\s+agent)\b.{0,50}(?:commission|fee|pay|cost|new\s+rule|settlement)\b"
+    r"|\breal\s+estate\s+agent\s+(?:commission|fee)\b"
+    r"|\b(?:nar|national\s+association\s+of\s+realtors)\b.{0,50}(?:settlement|commission|rule|fee|pay)\b"
+    # Social Security consumer tips — not reform/policy stories
+    r"|\bsocial\s+security\b.{0,60}(?:tips?|advice|how\s+to|when\s+to|should\s+i|should\s+you|check|benefit\s+you|claiming\s+strategy|mistake)\b"
+    r"|\b(?:when|how)\s+to\s+(?:claim|take|collect)\b.{0,25}\bsocial\s+security\b"
+    # Tax credit as personal savings advice — not legislative market-moving stories
+    r"|\btax\s+credits?\b.{0,50}(?:you\s+(?:can|may|might|could)|eligible|qualify|claim\s+(?:on|for)\b|how\s+to|tips?|save\s+you|get\s+back)\b"
+    r"|\bclaim\s+(?:a\s+)?tax\s+credit\b"
+    # Generic personal savings tips
+    r"|\bhow\s+(?:much\s+)?(?:you\s+)?(?:can\s+)?(?:save|saved?)\s+on\b"
+    r"|\b(?:slash|cut|reduce)\s+your\s+(?:bills?|expenses?|costs?|taxes?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# ── Institutional signal boost ─────────────────────────────────────────────────
+# Patterns that confirm market-moving institutional relevance — give +8 pts
+# beyond keyword matching.  Applied only when NOT already covered by keywords.
+_INSTITUTIONAL_BOOST_RE = re.compile(
+    r"(?:"
+    r"\b(?:capex|capital\s+expenditure)\b.{0,30}(?:ai|data\s+center|infrastructure|chips?)\b"
+    r"|\bsector\s+rotation\b"
+    r"|\b(?:credit\s+spread|cds\s+spread|high\s+yield\s+spread|ig\s+spread)\b"
+    r"|\b(?:private\s+credit|private\s+debt|direct\s+lending)\b"
+    r"|\bipo\s+(?:pricing|roadshow|debut|listing|market)\b"
+    r"|\b(?:rights?\s+issue|secondary\s+offering|follow.on)\b"
+    r"|\bcapital\s+markets\s+(?:activity|issuance|deal|window)\b"
+    r"|\byield\s+curve\s+(?:inversion|steepen|flatten|control)\b"
+    r"|\bterm\s+premium\b"
+    r"|\bbreak.?even\s+inflation\b|\btips\s+(?:yield|spread)\b"
+    r"|\bquantitative\s+(?:tightening|easing|qt|qe)\b"
+    r"|\b(?:reverse\s+repo|repurchase\s+agreement|repo\s+rate)\b"
+    r"|\benergy\s+(?:crisis|shock|transition\s+policy|sanctions?\s+impact)\b"
+    r"|\b(?:opec\+?|cartel\s+cut|production\s+quota)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Normalized source quality ceiling (0–100 scale, derived from _SOURCE_TIERS / 50 * 100)
+# Used for institutional_score computation and Today's Take candidate filtering.
+def _source_quality(source: str) -> float:
+    """Return source quality 0–100 (scaled from source tier 0–50)."""
+    return min(100.0, _SOURCE_TIERS.get(source, 20) * 2.0)
+
+
+def score_item(item: "FeedItem") -> float:
     """
     Score a FeedItem for signal quality on a 0–100 scale.
+    Also sets item.source_quality_score, item.consumer_noise_penalty,
+    and item.institutional_score as debug/ranking fields.
 
     Components:
       Source tier   : 0–50  (editorial quality of the source)
       Keywords      : 0–40  (finance relevance of title + snippet)
       Recency       : 0–20  (linear decay over 48h)
-      Noise penalty : –50   (PR boilerplate, personal finance, listicles)
+      Ticker bonus  : +8    (explicit stock ticker in title)
+      Noise penalty : −75   (PR boilerplate, hard exclusions)
+      Consumer soft : −30   (consumer/personal finance framing — soft penalty)
     """
     text = (item.title + " " + item.snippet).lower()
 
@@ -762,17 +836,47 @@ def score_item(item: FeedItem) -> float:
 
     # 4. Hard exclusions — newsletter CTAs, podcast promos, etc.
     if _HARD_EXCLUDE_RE.search(item.title):
+        item.source_quality_score    = 0.0
+        item.consumer_noise_penalty  = 0.0
+        item.institutional_score     = 0.0
         return 0.0
 
     # 5. Noise penalty (raised to 75 so that even high-tier editorial sources
     #    cannot rescue a noisy/commentary title above the minimum threshold)
     noise = 75.0 if _NOISE_RE.search(item.title) else 0.0
 
-    # 6. Ticker bonus — a stock ticker in the title is an unambiguous single-
+    # 6. Consumer soft penalty — down-ranks consumer/personal-finance content
+    #    without fully excluding it.  Applied after hard noise so a listicle
+    #    ("10 Medicare Tips to Save Money") already hit by _NOISE_RE isn't
+    #    double-counted.
+    consumer_penalty = 0.0
+    if noise == 0.0 and _CONSUMER_SOFT_RE.search(item.title + " " + item.snippet):
+        consumer_penalty = 30.0
+
+    # 7. Ticker bonus — a stock ticker in the title is an unambiguous single-
     #    company signal that improves relevance for company-news scoring.
     ticker_bonus = 8.0 if _TICKER_RE.search(item.title) else 0.0
 
-    return max(0.0, min(100.0, src_score + kw_score + rec_score + ticker_bonus - noise))
+    # 8. Institutional boost — explicit market-structure signals not covered by
+    #    keyword matching (capex cycles, credit spreads, IPO windows, etc.)
+    inst_boost = 8.0 if _INSTITUTIONAL_BOOST_RE.search(item.title + " " + item.snippet) else 0.0
+
+    signal = max(0.0, min(100.0,
+        src_score + kw_score + rec_score + ticker_bonus + inst_boost
+        - noise - consumer_penalty
+    ))
+
+    # ── Set debug/ranking fields on the item ──────────────────────────────────
+    src_quality = _source_quality(item.source)
+    # institutional_score: source quality + keyword strength − consumer penalty
+    # Used by downstream selectors (Today's Take, WMN) to prefer market-moving
+    # institutional content over consumer finance from the same source pool.
+    inst_score = max(0.0, src_quality + min(kw_score * 0.5, 20.0) + inst_boost - consumer_penalty)
+    item.source_quality_score   = round(src_quality, 1)
+    item.consumer_noise_penalty = round(consumer_penalty, 1)
+    item.institutional_score    = round(inst_score, 1)
+
+    return signal
 
 
 # ── Date helpers ──────────────────────────────────────────────────────────────

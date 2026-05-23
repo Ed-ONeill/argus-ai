@@ -188,6 +188,14 @@ def score_cluster(cluster: StoryCluster, now: datetime | None = None) -> float:
     ):
         base *= 0.30
 
+    # Consumer noise penalty: down-weight clusters driven by consumer/personal-
+    # finance content so they never surface in What Matters Now.  Uses the
+    # consumer_noise_penalty field set by score_item() — a 30-pt penalty maps
+    # to a 0.50 multiplier (graceful, not binary).
+    consumer_penalty = getattr(p, "consumer_noise_penalty", 0.0)
+    if consumer_penalty > 0:
+        base *= max(0.10, 1.0 - consumer_penalty / 60.0)
+
     return base
 
 

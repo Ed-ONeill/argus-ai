@@ -386,16 +386,40 @@ def generate_market_take(
     """
     Generate a 2-3 sentence market environment summary from top-scored stories.
 
-    Uses the top_n items that already have AI summaries.  Cached by content
-    hash, so repeat refreshes with the same stories are instant.
+    Selects the top_n items that already have AI summaries, ranked by
+    institutional_score descending so consumer/personal-finance content
+    is deprioritised even when it has a high raw signal_score.
+    Cached by content hash — repeat refreshes with same stories are instant.
     Returns "" on failure or when there are fewer than 2 summarised items.
     """
-    candidates = [i for i in items if i.summary][:top_n]
+    summarised = [i for i in items if i.summary]
+
+    # Sort by institutional_score (primary) → signal_score (tiebreak).
+    # Items with high consumer_noise_penalty naturally score lower on
+    # institutional_score, so Bloomberg/FT/Reuters items lead.
+    summarised.sort(
+        key=lambda i: (
+            -getattr(i, "institutional_score", i.signal_score),
+            -i.signal_score,
+        )
+    )
+    candidates = summarised[:top_n]
+
     log.info(
         "[take] candidates=%d / items=%d  summaries=%d",
         len(candidates), len(items),
-        sum(1 for i in items if i.summary),
+        len(summarised),
     )
+    for n, c in enumerate(candidates, 1):
+        log.info(
+            "[take]   #%d  inst=%.1f  qual=%.1f  noise=%.1f  source=%s  title=%.60s",
+            n,
+            getattr(c, "institutional_score", 0.0),
+            getattr(c, "source_quality_score", 0.0),
+            getattr(c, "consumer_noise_penalty", 0.0),
+            c.source,
+            c.title,
+        )
     if len(candidates) < 2:
         log.warning("[take] not enough summarised items (%d) — skipping", len(candidates))
         return ""
@@ -504,13 +528,36 @@ def generate_market_brief(
     """
     Generate a structured macro intelligence brief from top-scored stories.
 
+    Selects top_n items ranked by institutional_score descending, ensuring
+    the brief is driven by market-moving institutional stories rather than
+    consumer/personal-finance content.
     Returns None on failure or when there are fewer than 2 summarised items.
     Cached by content hash — repeat refreshes with same stories return instantly.
     """
-    candidates = [i for i in items if i.summary][:top_n]
+    summarised = [i for i in items if i.summary]
+    summarised.sort(
+        key=lambda i: (
+            -getattr(i, "institutional_score", i.signal_score),
+            -i.signal_score,
+        )
+    )
+    candidates = summarised[:top_n]
     if len(candidates) < 2:
         log.info("[brief] not enough summarised items (%d) — skipping", len(candidates))
         return None
+
+    log.info("[brief] top candidates for market brief:")
+    for n, c in enumerate(candidates, 1):
+        log.info(
+            "[brief]   #%d  inst=%.1f  qual=%.1f  noise=%.1f  score=%.1f  source=%s  title=%.55s",
+            n,
+            getattr(c, "institutional_score", 0.0),
+            getattr(c, "source_quality_score", 0.0),
+            getattr(c, "consumer_noise_penalty", 0.0),
+            c.signal_score,
+            c.source,
+            c.title,
+        )
 
     key = _take_cache_key(candidates)   # reuse same hash logic as market take
     if key in _BRIEF_CACHE:
