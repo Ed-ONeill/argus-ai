@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import feed, saved, analyze, listen, briefings
+from api.routes import feed, saved, analyze, listen, briefings, intelligence
 from app.background import refresher
 
 
@@ -61,11 +61,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(feed.router,    prefix="/api/feed",    tags=["feed"])
-app.include_router(saved.router,   prefix="/api/saved",   tags=["saved"])
-app.include_router(analyze.router, prefix="/api/analyze", tags=["analyze"])
-app.include_router(listen.router,     prefix="/api/listen",     tags=["listen"])
-app.include_router(briefings.router,  prefix="/api/briefings",  tags=["briefings"])
+app.include_router(feed.router,         prefix="/api/feed",         tags=["feed"])
+app.include_router(saved.router,        prefix="/api/saved",        tags=["saved"])
+app.include_router(analyze.router,      prefix="/api/analyze",      tags=["analyze"])
+app.include_router(listen.router,       prefix="/api/listen",       tags=["listen"])
+app.include_router(briefings.router,    prefix="/api/briefings",    tags=["briefings"])
+app.include_router(intelligence.router, prefix="/api/intelligence",  tags=["intelligence"])
 
 
 @app.get("/api/health")
