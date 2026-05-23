@@ -212,11 +212,10 @@ def run_pipeline(
     except Exception:
         log.exception("[bg] aggregate_sector_intelligence FAILED — using empty SectorData")
         from app.sectors import SectorData
-        from datetime import datetime, timezone as _tz
         sector_data = SectorData(
             sectors=[], industries=[], rotation_signals=[],
             dominant_sector=None,
-            generated_at=datetime.now(_tz.utc),
+            generated_at=datetime.now(timezone.utc),
         )
     t_sector = time.perf_counter()
     log.info(
