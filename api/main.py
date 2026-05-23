@@ -10,6 +10,7 @@ Run:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -21,8 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import feed, saved, analyze, listen, briefings, intelligence
+from api.routes import feed, saved, analyze, listen, briefings
 from app.background import refresher
+
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -61,12 +64,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(feed.router,         prefix="/api/feed",         tags=["feed"])
-app.include_router(saved.router,        prefix="/api/saved",        tags=["saved"])
-app.include_router(analyze.router,      prefix="/api/analyze",      tags=["analyze"])
-app.include_router(listen.router,       prefix="/api/listen",       tags=["listen"])
-app.include_router(briefings.router,    prefix="/api/briefings",    tags=["briefings"])
-app.include_router(intelligence.router, prefix="/api/intelligence",  tags=["intelligence"])
+app.include_router(feed.router,      prefix="/api/feed",      tags=["feed"])
+app.include_router(saved.router,     prefix="/api/saved",     tags=["saved"])
+app.include_router(analyze.router,   prefix="/api/analyze",   tags=["analyze"])
+app.include_router(listen.router,    prefix="/api/listen",    tags=["listen"])
+app.include_router(briefings.router, prefix="/api/briefings", tags=["briefings"])
+
+# Intelligence graph router — wrapped so a startup import error is logged
+# clearly rather than silently killing the entire deploy.
+try:
+    from api.routes import intelligence as _intelligence_mod
+    app.include_router(
+        _intelligence_mod.router,
+        prefix="/api/intelligence",
+        tags=["intelligence"],
+    )
+    log.info("[main] intelligence router registered at /api/intelligence")
+except Exception as _exc:
+    log.exception(
+        "[main] FAILED to register intelligence router — /api/intelligence/* will be unavailable: %r",
+        _exc,
+    )
 
 
 @app.get("/api/health")
