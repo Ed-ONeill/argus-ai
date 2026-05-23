@@ -173,11 +173,11 @@ useEffect(() => {
             <button
               onClick={() => setVisibleCount(n => n + PAGE_SIZE)}
               className="text-xs font-medium text-accent/80 hover:text-accent px-4 py-2
-                         rounded-lg border border-edge hover:border-edge-strong
-                         transition-colors duration-150"
+                         rounded-lg transition-colors duration-150"
+              style={{ border: "1px solid rgba(255,255,255,0.08)" }}
             >
               Show {Math.min(PAGE_SIZE, allClusters.length - visibleCount)} more
-              <span className="text-ink-muted ml-1">
+              <span className="ml-1" style={{ color: "rgba(255,255,255,0.35)" }}>
                 ({allClusters.length - visibleCount} remaining)
               </span>
             </button>
@@ -186,16 +186,17 @@ useEffect(() => {
 
         {/* ── Feed meta footer ────────────────────────────────────── */}
         {data && !isLoading && (
-          <p className="text-center text-2xs text-ink-muted mt-6 pb-8">
+          <p className="text-center text-2xs mt-6 pb-8"
+            style={{ color: "rgba(255,255,255,0.28)" }}>
             {data.total} stories · {data.sources.length} sources
             {Object.keys(data.errors).length > 0 && (
-              <span className="text-ink-muted/70">
+              <span style={{ color: "rgba(255,255,255,0.20)" }}>
                 {" "}· {Object.keys(data.errors).length} source{Object.keys(data.errors).length > 1 ? "s" : ""} unavailable
               </span>
             )}
             {" "}· updated {formatAge(cacheAgeSeconds)}
             {data.is_stale && (
-              <span className="text-amber-500/70"> · refreshing…</span>
+              <span className="text-amber-500/60"> · refreshing…</span>
             )}
           </p>
         )}

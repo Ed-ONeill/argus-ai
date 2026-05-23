@@ -363,10 +363,10 @@ function WMNCard({
           <div className="flex items-center gap-1 mt-0.5 min-w-0">
             <span
               className="truncate"
-              style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.35)" }}
+              style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.32)" }}
               title={matchedTheme.name}
             >
-              ✦ {matchedTheme.name}
+              {matchedTheme.name}
             </span>
           </div>
         )}
