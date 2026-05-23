@@ -610,7 +610,7 @@ export function MarketNarrativeNetwork() {
               strokeOpacity={0.85}
               strokeLinejoin="round"
               paintOrder="stroke"
-              fillOpacity={isHov || isFocus ? 1.0 : isActive ? 0.97 : isRegime ? 0.92 : 0.72}
+              fillOpacity={isHov || isFocus ? 1.0 : isActive ? 0.98 : isRegime ? 0.95 : 0.86}
               filter={isActive || isHov || isFocus ? "url(#textGlow)" : undefined}
               className="pointer-events-none select-none"
               style={{ transition: "fill-opacity 140ms" }}>
@@ -648,7 +648,8 @@ export function MarketNarrativeNetwork() {
           </p>
           <div className="flex items-center gap-5 shrink-0 ml-8">
             <div className="text-right">
-              <p className="text-[7px] font-bold uppercase tracking-[0.18em] text-white/42 mb-0.5">
+              <p className="text-[7px] font-bold uppercase tracking-[0.18em] mb-0.5"
+                style={{ color: "rgba(255,255,255,0.58)" }}>
                 Dominant Regime
               </p>
               <p className="text-[12px] font-semibold leading-tight"
@@ -673,7 +674,8 @@ export function MarketNarrativeNetwork() {
           return (
             <div className="flex items-center gap-4 px-6 py-2.5"
               style={{ borderBottom: "1px solid rgba(255,255,255,0.035)" }}>
-              <span className="text-[7px] font-bold uppercase tracking-[0.22em] text-white/38 shrink-0">
+              <span className="text-[7px] font-bold uppercase tracking-[0.22em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.56)" }}>
                 Market Pulse
               </span>
               <div className="flex items-center gap-2 flex-wrap">
@@ -686,7 +688,7 @@ export function MarketNarrativeNetwork() {
                     }}>
                     <div className="rounded-full shrink-0"
                       style={{ width: 5, height: 5, background: p.dot }} />
-                    <span className="text-[7px] text-white/42">{p.label}</span>
+                    <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.58)" }}>{p.label}</span>
                     <span className="text-[7.5px] font-semibold" style={{ color: p.color }}>
                       {p.value}
                     </span>
@@ -881,14 +883,16 @@ export function MarketNarrativeNetwork() {
               );
             })}
 
-            {/* Row lane labels — Tier 4: recede significantly */}
+            {/* Row lane labels — readable but subordinate */}
             {rowEntries.map(([row, y]) => {
-              const labelOp = row === 0 ? 0.36 : row === 1 ? 0.26 : 0.18;
+              const labelOp = row === 0 ? 0.60 : row === 1 ? 0.50 : row === 2 ? 0.44 : 0.40;
               return (
                 <text key={row} x={LABEL_X} y={y + 4} textAnchor="end"
                   fontSize={6.5} fontWeight={700} letterSpacing={1.8}
                   fontFamily="Inter, system-ui, sans-serif"
                   fill={`rgba(255,255,255,${labelOp})`}
+                  stroke="#020508" strokeWidth={3} strokeOpacity={0.72}
+                  strokeLinejoin="round" paintOrder="stroke"
                   className="pointer-events-none select-none">
                   {ROW_LABELS[row] ?? ""}
                 </text>
@@ -914,8 +918,8 @@ export function MarketNarrativeNetwork() {
         {/* Active path / chain tabs */}
         <div className="px-6 py-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[7px] font-bold uppercase tracking-[0.22em] text-white/45
-                             shrink-0 mr-1 self-center">
+            <span className="text-[7px] font-bold uppercase tracking-[0.22em] shrink-0 mr-1 self-center"
+              style={{ color: "rgba(255,255,255,0.65)" }}>
               Active Path
             </span>
             {sortedChains.slice(0, 5).map((chain: PropagationChain, idx: number) => {
@@ -936,7 +940,7 @@ export function MarketNarrativeNetwork() {
                     boxShadow: sel
                       ? "0 0 22px rgba(60,110,220,0.30), 0 0 8px rgba(70,120,240,0.14) inset"
                       : "none",
-                    opacity: activeChain && !sel ? 0.48 : 1,
+                    opacity: activeChain && !sel ? 0.62 : 1,
                     transition: "opacity 200ms, box-shadow 200ms, border-color 200ms",
                   }}>
                   <div className="rounded-full shrink-0"
@@ -950,17 +954,18 @@ export function MarketNarrativeNetwork() {
                   <span style={{
                     fontSize: 10, fontWeight: sel ? 500 : (activeChain ? 400 : (isTop ? 500 : 400)),
                     color: sel ? "rgba(255,255,255,0.97)"
-                      : (activeChain && !sel) ? "rgba(255,255,255,0.40)"
-                      : isTop ? "rgba(255,255,255,0.76)" : "rgba(255,255,255,0.52)",
+                      : (activeChain && !sel) ? "rgba(255,255,255,0.68)"
+                      : isTop ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.64)",
                   }}>{trunc(chain.title, 32)}</span>
                   <span className="text-[8px] tabular-nums shrink-0"
-                    style={{ color: sel ? "rgba(160,200,255,0.78)" : "rgba(255,255,255,0.28)" }}>
+                    style={{ color: sel ? "rgba(160,200,255,0.82)" : "rgba(255,255,255,0.46)" }}>
                     {chain.confidence.toFixed(0)}%
                   </span>
                 </button>
               );
             })}
-            <span className="ml-auto text-[7.5px] text-white/42 tabular-nums shrink-0 self-center">
+            <span className="ml-auto text-[7.5px] tabular-nums shrink-0 self-center"
+              style={{ color: "rgba(255,255,255,0.54)" }}>
               {formatAge(data.generated_at)}
             </span>
           </div>
@@ -968,7 +973,8 @@ export function MarketNarrativeNetwork() {
           {/* Causal transmission sequence */}
           {activeChain && chainHighlight.sequence.length >= 2 && (
             <div className="mt-3 pl-14">
-              <p className="text-[6.5px] font-bold uppercase tracking-[0.22em] text-white/28 mb-1.5">
+              <p className="text-[6.5px] font-bold uppercase tracking-[0.22em] mb-1.5"
+                style={{ color: "rgba(255,255,255,0.55)" }}>
                 Transmission Path
               </p>
               <div className="flex items-center flex-wrap gap-0">
@@ -982,7 +988,7 @@ export function MarketNarrativeNetwork() {
                       {trunc(n.label, 20)}
                     </span>
                     {i < chainHighlight.sequence.length - 1 && (
-                      <span className="text-white/22 text-[10px] px-1">→</span>
+                      <span className="text-[10px] px-1" style={{ color: "rgba(255,255,255,0.44)" }}>→</span>
                     )}
                   </span>
                 ))}
@@ -998,7 +1004,7 @@ export function MarketNarrativeNetwork() {
           )}
 
           {!hasInteracted && (
-            <p className="text-[7.5px] text-white/35 mt-2 pl-14 italic">
+            <p className="text-[7.5px] mt-2 pl-14 italic" style={{ color: "rgba(255,255,255,0.48)" }}>
               Click any node to open the intelligence panel · hover to preview connections
             </p>
           )}
@@ -1046,7 +1052,7 @@ export function MarketNarrativeNetwork() {
                           {focusedNode.sentiment}
                         </span>
                         <span className="ml-auto text-[7px] tabular-nums shrink-0"
-                          style={{ color: "rgba(255,255,255,0.30)" }}>
+                          style={{ color: "rgba(255,255,255,0.55)" }}>
                           {focusedNode.confidence.toFixed(0)}%
                           {focusedNode.source_count > 0 && ` · ${focusedNode.source_count} signals`}
                         </span>
@@ -1069,7 +1075,8 @@ export function MarketNarrativeNetwork() {
                         ? data.nodes.find(n => n.id === chain.nodes[chainPos + 1]) : null;
                       return (
                         <div className="pb-0">
-                          <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/28 mb-2">
+                          <p className="text-[7px] font-bold uppercase tracking-[0.2em] mb-2"
+                            style={{ color: "rgba(255,255,255,0.52)" }}>
                             Role in narrative · step {chainPos + 1} of {total}
                           </p>
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1082,7 +1089,7 @@ export function MarketNarrativeNetwork() {
                                   }}>
                                   {trunc(prevNode.label, 16)}
                                 </span>
-                                <span className="text-white/28 text-[10px]">→</span>
+                                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.42)" }}>→</span>
                               </>
                             )}
                             <span className="text-[8.5px] font-semibold px-2 py-0.5 rounded"
@@ -1095,7 +1102,7 @@ export function MarketNarrativeNetwork() {
                             </span>
                             {nextNode && (
                               <>
-                                <span className="text-white/28 text-[10px]">→</span>
+                                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.42)" }}>→</span>
                                 <span className="text-[8px] font-medium px-1.5 py-0.5 rounded"
                                   style={{
                                     color: (NODE_STYLE[nextNode.type] ?? NODE_STYLE.theme).label,
@@ -1114,7 +1121,8 @@ export function MarketNarrativeNetwork() {
 
                     {/* Why it matters */}
                     <div className="pb-0">
-                      <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                      <p className="text-[7px] font-bold uppercase tracking-[0.2em] mb-2"
+                        style={{ color: "rgba(255,255,255,0.52)" }}>
                         Why it matters
                       </p>
                       <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.86)" }}>
@@ -1127,10 +1135,11 @@ export function MarketNarrativeNetwork() {
                     {/* Connections */}
                     {focusedConnections.length > 0 && (
                       <div className="pb-0">
-                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/30 mb-2.5">
+                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] mb-2.5"
+                          style={{ color: "rgba(255,255,255,0.52)" }}>
                           Connections
                           <span className="ml-1.5 font-normal normal-case tracking-normal"
-                            style={{ color: "rgba(255,255,255,0.18)" }}>
+                            style={{ color: "rgba(255,255,255,0.42)" }}>
                             {focusedConnections.length}
                           </span>
                         </p>
@@ -1143,11 +1152,11 @@ export function MarketNarrativeNetwork() {
                                 style={{ background: "rgba(255,255,255,0.022)", border: `1px solid ${cs.stroke}1a` }}
                                 title={c.desc}>
                                 <span className="text-[7px] shrink-0 w-3 text-right"
-                                  style={{ color: "rgba(255,255,255,0.30)" }}>
+                                  style={{ color: "rgba(255,255,255,0.52)" }}>
                                   {c.isSource ? "→" : "←"}
                                 </span>
                                 <span className="text-[7px] shrink-0 capitalize min-w-[52px]"
-                                  style={{ color: "rgba(255,255,255,0.32)" }}>
+                                  style={{ color: "rgba(255,255,255,0.52)" }}>
                                   {c.rel.replace(/_/g, " ")}
                                 </span>
                                 <span className="text-[9.5px] font-medium truncate" style={{ color: cs.label }}>
@@ -1167,7 +1176,8 @@ export function MarketNarrativeNetwork() {
                     {/* Narrative paths */}
                     {focusedInChains.length > 0 && (
                       <div>
-                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                        <p className="text-[7px] font-bold uppercase tracking-[0.2em] mb-2"
+                          style={{ color: "rgba(255,255,255,0.52)" }}>
                           Narrative {focusedInChains.length === 1 ? "path" : `paths (${focusedInChains.length})`}
                         </p>
                         <div className="space-y-1.5">
@@ -1203,8 +1213,10 @@ export function MarketNarrativeNetwork() {
                   </div>
 
                   <button onClick={() => setFocusedNodeId(null)}
-                    className="shrink-0 p-1.5 rounded text-white/30 hover:text-white/65
-                               hover:bg-white/5 transition-colors mt-0.5">
+                    className="shrink-0 p-1.5 rounded hover:bg-white/5 transition-colors mt-0.5"
+                    style={{ color: "rgba(255,255,255,0.52)" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.75)")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.52)")}>
                     <X size={12} />
                   </button>
                 </div>

@@ -6,7 +6,8 @@ import {
   ExternalLink, Bookmark, BookmarkCheck, Zap,
   ChevronDown, Loader2, ChevronRight, Clock, Radio,
 } from "lucide-react";
-import { cn, impactStyle, catColor } from "@/lib/utils";
+import { cn, catColor } from "@/lib/utils";
+import { classifyImpact } from "@/lib/types";
 import { analyzeItemDeep } from "@/lib/api";
 import type { StoryCluster, FeedItem, RelatedStory, DeepAnalysis } from "@/lib/types";
 
@@ -16,29 +17,39 @@ const _FX   = new Set(["USD","EUR","JPY","GBP","CNY","CHF","AUD","DXY","FX","Dol
 const _RATES = new Set(["Treasury","Treasuries","Bonds","Yields","Fed","FOMC","Rates","ECB","BoJ","10Y","2Y","30Y"]);
 const _COMM  = new Set(["Oil","WTI","Brent","Gold","Silver","Copper","NG","Commodities","CL","GC","Natural Gas"]);
 
-const ASSET_PILL: Record<string, string> = {
-  Equities:    "bg-blue-100  text-blue-800",
-  Rates:       "bg-cyan-100  text-cyan-800",
-  Commodities: "bg-amber-100 text-amber-800",
-  FX:          "bg-violet-100 text-violet-800",
+// Dark-context asset class pill styling
+const ASSET_PILL: Record<string, { bg: string; color: string }> = {
+  Equities:    { bg: "rgba(28,52,120,0.35)",  color: "rgba(120,168,240,0.90)" },
+  Rates:       { bg: "rgba(16,70,90,0.35)",   color: "rgba(80,180,210,0.90)"  },
+  Commodities: { bg: "rgba(80,52,8,0.35)",    color: "rgba(200,156,68,0.90)"  },
+  FX:          { bg: "rgba(60,28,110,0.35)",  color: "rgba(160,120,230,0.90)" },
 };
+
+// Dark-context impact badge styling
+interface DarkImpact { bg: string; color: string }
+function darkImpactStyle(impact: string): DarkImpact {
+  const s = classifyImpact(impact);
+  return {
+    bullish: { bg: "rgba(22,68,40,0.40)",  color: "rgba(88,188,120,0.92)"  },
+    bearish: { bg: "rgba(80,20,20,0.40)",  color: "rgba(196,96,96,0.92)"   },
+    neutral: { bg: "rgba(24,38,70,0.40)",  color: "rgba(134,166,210,0.88)" },
+    mixed:   { bg: "rgba(70,50,16,0.40)",  color: "rgba(196,158,72,0.92)"  },
+  }[s];
+}
 
 function detectAssetClasses(entities: string[], category: string, title: string): string[] {
   const classes = new Set<string>();
   const tl = title.toLowerCase();
 
-  // Category gives us a baseline
   if (category === "Markets") classes.add("Equities");
 
   for (const e of entities) {
     if (_FX.has(e))   { classes.add("FX");          continue; }
     if (_RATES.has(e)){ classes.add("Rates");        continue; }
     if (_COMM.has(e)) { classes.add("Commodities");  continue; }
-    // Short all-caps tokens (e.g. NVDA, AAPL) → equity signal
     if (e.length >= 2 && e.length <= 5 && e === e.toUpperCase()) classes.add("Equities");
   }
 
-  // Title keyword fallback for common rate/commodity terms
   if (!classes.has("Rates") && /\b(yield|rate|bond|treasury|fomc|fed|inflation)\b/.test(tl))
     classes.add("Rates");
   if (!classes.has("Commodities") && /\b(oil|brent|wti|gold|silver|copper|crude)\b/.test(tl))
@@ -48,11 +59,11 @@ function detectAssetClasses(entities: string[], category: string, title: string)
 }
 
 interface ClusterCardProps {
-  cluster:      StoryCluster;
-  isSaved:      boolean;
-  onSave:       () => void;
-  isNew?:       boolean;
-  isWatched?:   boolean;  // true if primary or related items match watchlist
+  cluster:          StoryCluster;
+  isSaved:          boolean;
+  onSave:           () => void;
+  isNew?:           boolean;
+  isWatched?:       boolean;
   watchedEntities?: Set<string>;
 }
 
@@ -61,19 +72,18 @@ export function ClusterCard({
 }: ClusterCardProps) {
   const { primary: item, related, story_count, theme_label, id } = cluster;
 
-  const [analyzed,     setAnalyzed]     = useState(false);
-  const [deepData,     setDeepData]     = useState<DeepAnalysis | null>(null);
-  const [deepLoading,  setDeepLoading]  = useState(false);
-  const [expanded,     setExpanded]     = useState(false);  // related timeline
+  const [analyzed,    setAnalyzed]    = useState(false);
+  const [deepData,    setDeepData]    = useState<DeepAnalysis | null>(null);
+  const [deepLoading, setDeepLoading] = useState(false);
+  const [expanded,    setExpanded]    = useState(false);
 
   const hasSummary  = !!item.summary;
   const hasAnalysis = hasSummary && !!(item.why_it_matters || item.impact);
   const hasRelated  = related.length > 0;
-  const impact      = item.impact ? impactStyle(item.impact) : null;
+  const impact      = item.impact ? darkImpactStyle(item.impact) : null;
   const color       = catColor(item.category);
   const score       = Math.round(item.signal_score);
 
-  // Breaking: strong signal + published within last 90 minutes
   const isBreaking = item.signal_strength === "strong" && (() => {
     const m = item.published?.match(/^(\d+)(m|h)/);
     if (!m) return false;
@@ -97,13 +107,23 @@ export function ClusterCard({
     }
   }
 
-  // Sort related stories: most-recent first via published_ts
   const sortedRelated = [...related].sort((a, b) => {
     if (!a.published_ts && !b.published_ts) return 0;
     if (!a.published_ts) return 1;
     if (!b.published_ts) return -1;
     return b.published_ts.localeCompare(a.published_ts);
   });
+
+  const cardBorder = isBreaking
+    ? "1px solid rgba(180,60,60,0.35)"
+    : item.signal_strength === "strong"
+      ? "1px solid rgba(255,255,255,0.12)"
+      : "1px solid rgba(255,255,255,0.07)";
+  const cardShadow = isBreaking
+    ? "0 4px 20px rgba(160,40,40,0.20), 0 1px 6px rgba(0,0,0,0.40)"
+    : item.signal_strength === "strong"
+      ? "0 3px 14px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.25)"
+      : "0 2px 8px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.18)";
 
   return (
     <motion.article
@@ -117,16 +137,15 @@ export function ClusterCard({
       }
       whileHover={{ y: -1.5, transition: { duration: 0.14, ease: "easeOut" } }}
       className={cn(
-        "group bg-surface rounded-xl border transition-all duration-200",
-        isBreaking
-          ? "border-red-200/70 shadow-card-hover hover:shadow-lg"
-          : item.signal_strength === "strong"
-            ? "border-edge-strong shadow-card-hover hover:shadow-lg"
-            : "border-edge hover:border-edge-strong shadow-card hover:shadow-card-hover",
-        item.signal_strength === "weak" && "opacity-90",
-        // Watchlist ring
+        "group rounded-xl transition-all duration-200",
+        item.signal_strength === "weak" && "opacity-85",
         isWatched && "ring-1 ring-accent/40",
       )}
+      style={{
+        background: "rgba(6,10,20,0.92)",
+        border:     cardBorder,
+        boxShadow:  cardShadow,
+      }}
     >
       {/* Accent bar — thickness signals importance */}
       <div
@@ -142,10 +161,8 @@ export function ClusterCard({
 
         {/* ── Theme label (multi-story clusters only) ────────────────────── */}
         {story_count > 1 && (
-          <p
-            className="text-2xs font-bold uppercase tracking-[0.12em] mb-1.5 truncate"
-            style={{ color }}
-          >
+          <p className="text-2xs font-bold uppercase tracking-[0.12em] mb-1.5 truncate"
+            style={{ color }}>
             {theme_label}
           </p>
         )}
@@ -153,18 +170,20 @@ export function ClusterCard({
         {/* ── Header row ────────────────────────────────────────────────────── */}
         <div className="flex items-start gap-2 mb-2.5">
           <div className="flex items-center gap-1.5 shrink-0 mt-0.5 flex-wrap">
-            <span
-              className="text-2xs font-semibold px-2 py-0.5 rounded-full"
-              style={{ background: `${color}12`, color }}
-            >
+            <span className="text-2xs font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: `${color}18`, color }}>
               {item.category}
             </span>
             {isBreaking && (
               <motion.span
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full
-                           bg-red-50 text-red-600 border border-red-100"
+                className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{
+                  background: "rgba(100,20,20,0.40)",
+                  color:      "rgba(220,100,100,0.95)",
+                  border:     "1px solid rgba(180,60,60,0.40)",
+                }}
               >
                 <motion.span
                   animate={{ opacity: [1, 0.3, 1] }}
@@ -179,8 +198,12 @@ export function ClusterCard({
               <motion.span
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="text-2xs font-bold px-2 py-0.5 rounded-full
-                           bg-emerald-50 text-emerald-700 border border-emerald-100"
+                className="text-2xs font-bold px-2 py-0.5 rounded-full"
+                style={{
+                  background: "rgba(16,68,40,0.40)",
+                  color:      "rgba(80,190,120,0.92)",
+                  border:     "1px solid rgba(40,140,80,0.35)",
+                }}
               >
                 New
               </motion.span>
@@ -189,28 +212,35 @@ export function ClusterCard({
 
           {/* Animated score bar + source + time */}
           <div className="flex items-center gap-1.5 ml-auto shrink-0 mt-0.5">
-            <div className="flex items-center gap-1" title={`Signal: ${item.signal_strength} · ${score}/100`}>
-              <div className="w-10 h-[3px] rounded-full bg-raised overflow-hidden">
+            <div className="flex items-center gap-1"
+              title={`Signal: ${item.signal_strength} · ${score}/100`}>
+              <div className="w-10 h-[3px] rounded-full overflow-hidden"
+                style={{ background: "rgba(255,255,255,0.08)" }}>
                 <motion.div
                   className="h-full rounded-full"
                   style={{
-                    background: score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8",
+                    background: score >= 80 ? "#52b0c8" : score >= 50 ? "#a07030" : "#4a5878",
                   }}
                   initial={{ width: 0 }}
                   animate={{ width: `${score}%` }}
                   transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
                 />
               </div>
-              <span className={cn(
-                "text-2xs font-bold tabular-nums leading-none",
-                score >= 80 ? "text-emerald-600" :
-                score >= 50 ? "text-amber-600"   : "text-ink-muted",
-              )}>
+              <span className="text-2xs font-bold tabular-nums leading-none"
+                style={{
+                  color: score >= 80 ? "rgba(82,176,200,0.90)"
+                       : score >= 50 ? "rgba(160,112,48,0.90)"
+                       : "rgba(140,160,190,0.75)",
+                }}>
                 {score}
               </span>
             </div>
-            <span className="text-2xs text-ink-secondary/75">{item.source}</span>
-            <span className="text-2xs text-ink-muted">· {item.published}</span>
+            <span className="text-2xs" style={{ color: "rgba(255,255,255,0.52)" }}>
+              {item.source}
+            </span>
+            <span className="text-2xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+              · {item.published}
+            </span>
           </div>
         </div>
 
@@ -219,8 +249,9 @@ export function ClusterCard({
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-[13.5px] font-semibold text-ink leading-snug mb-2
+          className="block text-[13.5px] font-semibold leading-snug mb-2
                      hover:text-accent transition-colors"
+          style={{ color: "rgba(255,255,255,0.88)" }}
         >
           {item.title}
           <ExternalLink
@@ -235,11 +266,15 @@ export function ClusterCard({
           if (classes.length === 0) return null;
           return (
             <div className="flex items-center gap-1.5 flex-wrap mb-2">
-              {classes.map(cls => (
-                <span key={cls} className={cn("text-2xs font-semibold px-1.5 py-0.5 rounded", ASSET_PILL[cls])}>
-                  {cls}
-                </span>
-              ))}
+              {classes.map(cls => {
+                const pill = ASSET_PILL[cls];
+                return (
+                  <span key={cls} className="text-2xs font-semibold px-1.5 py-0.5 rounded"
+                    style={pill ? { background: pill.bg, color: pill.color } : {}}>
+                    {cls}
+                  </span>
+                );
+              })}
             </div>
           );
         })()}
@@ -247,16 +282,16 @@ export function ClusterCard({
         {/* ── Affected entities ─────────────────────────────────────────────── */}
         {item.affected_entities.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
-            <span className="text-2xs text-ink-muted">Affects:</span>
+            <span className="text-2xs" style={{ color: "rgba(255,255,255,0.42)" }}>Affects:</span>
             {item.affected_entities.map(e => (
               <span
                 key={e}
-                className={cn(
-                  "text-2xs font-medium px-1.5 py-0.5 rounded transition-colors",
-                  watchedEntities?.has(e.toLowerCase())
-                    ? "bg-accent/10 text-accent ring-1 ring-accent/30"
-                    : "bg-raised text-ink-secondary",
-                )}
+                className="text-2xs font-medium px-1.5 py-0.5 rounded transition-colors"
+                style={watchedEntities?.has(e.toLowerCase())
+                  ? { background: "rgba(30,80,160,0.35)", color: "#52b0c8",
+                      outline: "1px solid rgba(82,176,200,0.35)" }
+                  : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.62)" }
+                }
               >
                 {e}
               </span>
@@ -267,15 +302,15 @@ export function ClusterCard({
         {/* ── AI summary + expandable desk-note ─────────────────────────────── */}
         {hasSummary && (
           <>
-            <p className="text-xs text-ink-secondary leading-relaxed mb-2">
+            <p className="text-xs leading-relaxed mb-2"
+              style={{ color: "rgba(255,255,255,0.72)" }}>
               {item.summary}
             </p>
 
-            {/* Why it matters — always visible below summary; hidden inside panel when analysis is open */}
             {item.why_it_matters && !analyzed && (
               <p
-                className="text-[11.5px] text-ink-secondary/75 leading-relaxed mb-3 pl-2.5 italic"
-                style={{ borderLeft: `2px solid ${color}30` }}
+                className="text-[11.5px] leading-relaxed mb-3 pl-2.5 italic"
+                style={{ color: "rgba(255,255,255,0.60)", borderLeft: `2px solid ${color}38` }}
               >
                 {item.why_it_matters}
               </p>
@@ -294,7 +329,7 @@ export function ClusterCard({
                 >
                   <div
                     className="rounded-lg px-3 py-3 mb-3 space-y-3"
-                    style={{ background: `${color}08`, borderLeft: `2px solid ${color}30` }}
+                    style={{ background: `${color}0a`, borderLeft: `2px solid ${color}38` }}
                   >
                     {item.why_it_matters && (
                       <DeskNoteRow label="Why it matters" color={color}>
@@ -303,7 +338,8 @@ export function ClusterCard({
                     )}
 
                     {deepLoading ? (
-                      <div className="flex items-center gap-2 text-2xs text-ink-muted">
+                      <div className="flex items-center gap-2 text-2xs"
+                        style={{ color: "rgba(255,255,255,0.45)" }}>
                         <Loader2 size={11} className="animate-spin" />
                         Analyzing…
                       </div>
@@ -343,12 +379,11 @@ export function ClusterCard({
             </AnimatePresence>
 
             {/* ── Footer ──────────────────────────────────────────────────────── */}
-            <div className="flex items-center gap-2 pt-2 border-t border-edge/60">
+            <div className="flex items-center gap-2 pt-2"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
               {impact && !analyzed && (
-                <span className={cn(
-                  "text-2xs font-semibold px-2.5 py-1 rounded-full leading-none shrink-0",
-                  impact.bg, impact.text,
-                )}>
+                <span className="text-2xs font-semibold px-2.5 py-1 rounded-full leading-none shrink-0"
+                  style={{ background: impact.bg, color: impact.color }}>
                   {item.impact}
                 </span>
               )}
@@ -358,12 +393,23 @@ export function ClusterCard({
                   <motion.button
                     whileTap={{ scale: 0.9 }}
                     onClick={() => setExpanded(e => !e)}
-                    className={cn(
-                      "flex items-center gap-1 text-2xs font-medium px-2 py-1 rounded-md transition-colors",
-                      expanded
-                        ? "text-ink bg-raised"
-                        : "text-ink-secondary hover:text-ink hover:bg-raised",
-                    )}
+                    className="flex items-center gap-1 text-2xs font-medium px-2 py-1 rounded-md transition-colors"
+                    style={{
+                      color:      expanded ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.55)",
+                      background: expanded ? "rgba(255,255,255,0.08)" : "transparent",
+                    }}
+                    onMouseEnter={e => {
+                      if (!expanded) {
+                        e.currentTarget.style.color = "rgba(255,255,255,0.82)";
+                        e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!expanded) {
+                        e.currentTarget.style.color = "rgba(255,255,255,0.55)";
+                        e.currentTarget.style.background = "transparent";
+                      }
+                    }}
                     title={expanded ? "Collapse related" : "Show related stories"}
                   >
                     <Clock size={10} />
@@ -405,12 +451,11 @@ export function ClusterCard({
                 <motion.button
                   whileTap={{ scale: 0.85 }}
                   onClick={onSave}
-                  className={cn(
-                    "p-1.5 rounded-md transition-all",
-                    isSaved
-                      ? "text-accent bg-accent-subtle"
-                      : "text-ink-muted hover:text-ink hover:bg-raised",
-                  )}
+                  className="p-1.5 rounded-md transition-all"
+                  style={{
+                    color:      isSaved ? "#52b0c8" : "rgba(255,255,255,0.42)",
+                    background: isSaved ? "rgba(82,176,200,0.10)" : "transparent",
+                  }}
                   title={isSaved ? "Remove bookmark" : "Save"}
                 >
                   <AnimatePresence mode="wait" initial={false}>
@@ -436,7 +481,7 @@ export function ClusterCard({
 
         {/* Snippet fallback (no AI yet) */}
         {!hasSummary && item.snippet && (
-          <p className="text-xs text-ink-muted leading-relaxed">
+          <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
             {item.snippet.slice(0, 180)}
             {item.snippet.length > 180 ? "…" : ""}
           </p>
@@ -453,8 +498,10 @@ export function ClusterCard({
               transition={{ duration: 0.24, ease: "easeInOut" }}
               className="overflow-hidden"
             >
-              <div className="mt-3 pt-3 border-t border-edge/40">
-                <p className="text-2xs font-bold uppercase tracking-widest text-ink-muted mb-2">
+              <div className="mt-3 pt-3"
+                style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                <p className="text-2xs font-bold uppercase tracking-widest mb-2"
+                  style={{ color: "rgba(255,255,255,0.42)" }}>
                   Related coverage
                 </p>
                 <div className="space-y-0">
@@ -476,35 +523,36 @@ export function ClusterCard({
 // ── Related story row (lightweight timeline entry) ────────────────────────────
 
 function RelatedStoryRow({ story, isLast }: { story: RelatedStory; isLast: boolean }) {
+  const dotColor = story.signal_strength === "strong"
+    ? "rgba(52,176,130,0.85)"
+    : story.signal_strength === "medium"
+      ? "rgba(180,130,40,0.80)"
+      : "rgba(80,100,140,0.60)";
+
   return (
-    <div className={cn(
-      "flex items-start gap-2.5 py-2",
-      !isLast && "border-b border-edge/30",
-    )}>
-      {/* Signal dot */}
-      <span className={cn(
-        "w-1.5 h-1.5 rounded-full shrink-0 mt-[4px]",
-        story.signal_strength === "strong" ? "bg-emerald-400" :
-        story.signal_strength === "medium"  ? "bg-amber-400"  : "bg-edge-strong",
-      )} />
+    <div className="flex items-start gap-2.5 py-2"
+      style={!isLast ? { borderBottom: "1px solid rgba(255,255,255,0.06)" } : {}}>
+      <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-[4px]"
+        style={{ background: dotColor }} />
 
       <div className="min-w-0 flex-1">
         <a
           href={story.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[12px] text-ink-secondary hover:text-accent transition-colors
-                     leading-snug line-clamp-2 font-medium"
+          className="text-[12px] leading-snug line-clamp-2 font-medium hover:text-accent transition-colors"
+          style={{ color: "rgba(255,255,255,0.68)" }}
         >
           {story.title}
           <ExternalLink size={9} className="inline-block ml-1 opacity-0 group-hover:opacity-50" />
         </a>
-        <p className="text-2xs text-ink-muted mt-0.5">
+        <p className="text-2xs mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
           {story.source} · {story.published}
         </p>
       </div>
 
-      <ChevronRight size={11} className="text-ink-muted/40 shrink-0 mt-[3px]" />
+      <ChevronRight size={11} className="shrink-0 mt-[3px]"
+        style={{ color: "rgba(255,255,255,0.28)" }} />
     </div>
   );
 }
@@ -518,13 +566,13 @@ function DeskNoteRow({
   if (!children) return null;
   return (
     <div>
-      <p
-        className="text-2xs font-bold uppercase tracking-widest mb-0.5"
-        style={{ color }}
-      >
+      <p className="text-2xs font-bold uppercase tracking-widest mb-0.5"
+        style={{ color }}>
         {label}
       </p>
-      <p className="text-xs text-ink-secondary leading-relaxed">{children}</p>
+      <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.68)" }}>
+        {children}
+      </p>
     </div>
   );
 }
