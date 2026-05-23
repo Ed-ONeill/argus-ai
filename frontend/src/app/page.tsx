@@ -120,15 +120,15 @@ useEffect(() => {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7">
 
+        {/* ── Market Narrative Network graph ──────────────────────── */}
+        <MarketNarrativeNetwork />
+
         {/* ── Today's Take hero ──────────────────────────────────── */}
         <TodaysTake
           text={data?.market_take}
           brief={data?.market_brief}
           isLoading={isLoading}
         />
-
-        {/* ── Market Narrative Network graph ──────────────────────── */}
-        <MarketNarrativeNetwork />
 
         {/* ── What Matters Now theme cards ─────────────────────────── */}
         <WhatMattersNow
