@@ -10,6 +10,7 @@ import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
+import { MarketNarrativeNetwork } from "@/components/feed/MarketNarrativeNetwork";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
@@ -125,6 +126,9 @@ useEffect(() => {
           brief={data?.market_brief}
           isLoading={isLoading}
         />
+
+        {/* ── Market Narrative Network graph ──────────────────────── */}
+        <MarketNarrativeNetwork />
 
         {/* ── What Matters Now theme cards ─────────────────────────── */}
         <WhatMattersNow

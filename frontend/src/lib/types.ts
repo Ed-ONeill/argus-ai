@@ -195,6 +195,53 @@ export interface ThemeIntelligence {
   persistence_days:         number;
 }
 
+// ── Narrative Network graph ───────────────────────────────────────────────────
+
+export interface GraphNode {
+  id:           string;
+  label:        string;
+  type:         "regime" | "macro" | "theme" | "sector" | "asset";
+  strength:     number;   // 0–100
+  sentiment:    "bullish" | "bearish" | "neutral" | "mixed";
+  description:  string;
+  source_count: number;
+  confidence:   number;   // 0–100
+}
+
+export interface GraphEdge {
+  id:           string;
+  source:       string;
+  target:       string;
+  relationship: "drives" | "pressures" | "supports" | "benefits" | "correlates" | "rotates_into";
+  weight:       number;   // 0–1
+  confidence:   number;   // 0–1
+  description:  string;
+}
+
+export interface PropagationChain {
+  id:         string;
+  title:      string;
+  confidence: number;
+  nodes:      string[];   // ordered node IDs
+  summary:    string;
+}
+
+export interface NarrativeNetworkResponse {
+  dominant_regime:       string;
+  nodes:                 GraphNode[];
+  edges:                 GraphEdge[];
+  chains:                PropagationChain[];
+  generated_at:          string;   // ISO-8601
+  source_count:          number;
+  // Diagnostic fields (always present)
+  cache_age_seconds:     number;
+  is_stale:              boolean;
+  raw_theme_count:       number;
+  raw_activation_count:  number;
+  active_industry_count: number;
+  scored_sector_count:   number;
+}
+
 // ── Watchlist ─────────────────────────────────────────────────────────────────
 
 export interface WatchlistItem {
