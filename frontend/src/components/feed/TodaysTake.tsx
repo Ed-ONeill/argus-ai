@@ -66,21 +66,19 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="relative rounded-2xl overflow-hidden mb-8"
+      className="relative rounded-xl overflow-hidden mb-4"
       style={{
         background: "linear-gradient(140deg, #0F1E3A 0%, #162D6B 50%, #0F1E3A 100%)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.07), 0 4px 32px rgba(10,15,30,0.35)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 16px rgba(10,15,30,0.25)",
       }}
     >
-      {/* Ambient top-right glow */}
       <div
-        className="absolute -top-12 -right-8 w-64 h-64 rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(96,165,250,0.07) 0%, transparent 65%)" }}
+        className="absolute -top-8 -right-6 w-48 h-48 rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(96,165,250,0.06) 0%, transparent 65%)" }}
       />
-      {/* Readability overlay */}
       <div className="absolute inset-0 bg-black/15 pointer-events-none" />
 
-      <div className="relative px-6 py-4 sm:px-7 sm:py-5 space-y-4">
+      <div className="relative px-5 py-3 sm:px-6 sm:py-3.5 space-y-2.5">
 
         {/* ── Header ──────────────────────────────────────── */}
         <div className="flex items-center justify-between">
@@ -106,7 +104,7 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
             Primary Driver
           </p>
           <p
-            className="text-[15px] font-medium text-white leading-[1.55]"
+            className="text-[13.5px] font-medium text-white leading-[1.52]"
             style={{ textShadow: "0 1px 3px rgba(0,0,0,0.35)" }}
           >
             {brief.primary_driver}
@@ -117,12 +115,12 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
         <div className="border-t border-white/8" />
 
         {/* ── Narrative + Assets row ───────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 sm:gap-5">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35 mb-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35 mb-1">
               Narrative Shift
             </p>
-            <p className="text-[13px] text-white/75 leading-[1.55]">
+            <p className="text-[12px] text-white/75 leading-[1.52]">
               {brief.narrative_shift}
             </p>
           </div>
@@ -148,13 +146,13 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
 
         {/* ── Trade Implication ────────────────────────────── */}
         {brief.trade_implication && (
-          <div className="flex items-start gap-2 rounded-lg bg-white/5 border border-white/8 px-3.5 py-2.5">
-            <ArrowRight size={13} className="text-blue-300/70 mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-lg bg-white/5 border border-white/8 px-3 py-2">
+            <ArrowRight size={11} className="text-blue-300/70 mt-0.5 shrink-0" />
             <div>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35 mr-2">
+              <span className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-white/35 mr-2">
                 Trade
               </span>
-              <span className="text-[12.5px] text-white/80">{brief.trade_implication}</span>
+              <span className="text-[11.5px] text-white/80">{brief.trade_implication}</span>
             </div>
           </div>
         )}
@@ -162,18 +160,18 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
         {/* ── Risk Scenario ────────────────────────────────── */}
         {brief.risk_scenario && (
           <div className="flex items-start gap-2">
-            <Shield size={11} className="text-amber-400/50 mt-0.5 shrink-0" />
-            <p className="text-[11.5px] text-white/45 leading-[1.5]">
-              <span className="text-white/30 font-semibold uppercase tracking-[0.12em] text-[10px] mr-1.5">Risk</span>
+            <Shield size={10} className="text-amber-400/50 mt-0.5 shrink-0" />
+            <p className="text-[10.5px] text-white/42 leading-[1.48]">
+              <span className="text-white/28 font-semibold uppercase tracking-[0.12em] text-[9px] mr-1.5">Risk</span>
               {brief.risk_scenario}
             </p>
           </div>
         )}
 
         {/* ── Confidence bar + footer ─────────────────────── */}
-        <div className="space-y-2 pt-1">
+        <div className="space-y-1.5">
           <ConfidenceBar value={brief.confidence} barClass={regime.bar} />
-          <p className="text-[10px] text-white/30 tracking-wide">
+          <p className="text-[9px] text-white/28 tracking-wide">
             AI-generated macro brief · Not financial advice
           </p>
         </div>
@@ -197,19 +195,19 @@ function SimpleTake({ text, isLoading }: { text: string | undefined; isLoading: 
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
-      className="relative rounded-2xl overflow-hidden mb-8"
+      className="relative rounded-xl overflow-hidden mb-4"
       style={{
         background: "linear-gradient(140deg, #14243E 0%, #1E47A8 48%, #13243C 100%)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.07), 0 4px 24px rgba(15,23,42,0.15)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 14px rgba(15,23,42,0.15)",
       }}
     >
       <div className="absolute inset-0 bg-black/20 pointer-events-none" />
       <div
-        className="absolute -top-10 -right-4 w-48 h-48 rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(96,165,250,0.10) 0%, transparent 70%)" }}
+        className="absolute -top-8 -right-4 w-40 h-40 rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(96,165,250,0.08) 0%, transparent 70%)" }}
       />
-      <div className="relative px-6 py-4 sm:px-7 sm:py-5">
-        <div className="flex items-center justify-between mb-3">
+      <div className="relative px-5 py-3 sm:px-6 sm:py-3.5">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <Sparkles size={11} className="text-blue-300" />
             <span className="text-2xs font-bold uppercase tracking-[0.18em] text-blue-200/90">
@@ -220,23 +218,23 @@ function SimpleTake({ text, isLoading }: { text: string | undefined; isLoading: 
         </div>
         <div className="max-w-[640px]">
           {isLoading || text === undefined ? (
-            <div className="space-y-2 py-0.5">
-              <div className="h-[15px] bg-white/10 rounded animate-pulse w-full" />
-              <div className="h-[15px] bg-white/10 rounded animate-pulse w-5/6" />
-              <div className="h-[15px] bg-white/10 rounded animate-pulse w-2/3" />
+            <div className="space-y-1.5 py-0.5">
+              <div className="h-[13px] bg-white/10 rounded animate-pulse w-full" />
+              <div className="h-[13px] bg-white/10 rounded animate-pulse w-5/6" />
+              <div className="h-[13px] bg-white/10 rounded animate-pulse w-2/3" />
             </div>
           ) : text === "" ? (
-            <p className="text-[14.5px] text-white/50 italic" style={{ lineHeight: "1.58" }}>
+            <p className="text-[13px] text-white/50 italic" style={{ lineHeight: "1.55" }}>
               Generating today&apos;s brief…
             </p>
           ) : (
-            <p className="text-[14.5px] text-white" style={{ lineHeight: "1.58", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
+            <p className="text-[13px] text-white" style={{ lineHeight: "1.55", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
               {text}
             </p>
           )}
         </div>
         {!isLoading && (
-          <p className="mt-3 text-2xs text-white/60 tracking-wide" style={{ textShadow: "0 1px 1px rgba(0,0,0,0.3)" }}>
+          <p className="mt-2 text-[9px] text-white/50 tracking-wide" style={{ textShadow: "0 1px 1px rgba(0,0,0,0.3)" }}>
             AI-generated summary · Not financial advice
           </p>
         )}
