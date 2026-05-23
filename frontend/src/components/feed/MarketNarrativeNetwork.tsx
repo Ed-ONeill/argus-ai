@@ -426,7 +426,6 @@ export function MarketNarrativeNetwork() {
         {/* Inner breathing group for regime (SMIL scale animation) */}
         <g>
           {isRegime && (
-            // @ts-expect-error — animateTransform is valid SVG SMIL
             <animateTransform
               attributeName="transform"
               attributeType="XML"
