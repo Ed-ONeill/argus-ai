@@ -1,8 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { TrendingUp } from "lucide-react";
-import { cn, catColor } from "@/lib/utils";
+import { catColor } from "@/lib/utils";
 import { classifyImpact } from "@/lib/types";
 import type { WhatMattersNowItem, ThemeIntelligence } from "@/lib/types";
 
@@ -11,6 +10,31 @@ interface WhatMattersNowProps {
   isLoading: boolean;
   themes?:   ThemeIntelligence[];
 }
+
+// Muted institutional equivalents for dark atmospheric context
+const MUTED_CAT: Record<string, string> = {
+  "#2563EB": "#3a68b8",
+  "#7C3AED": "#6040a0",
+  "#DC2626": "#8a3838",
+  "#0891B2": "#2878a0",
+  "#D97706": "#a06020",
+};
+
+function mutedColor(brightHex: string): string {
+  return MUTED_CAT[brightHex] ?? "#4a5878";
+}
+
+function pressureBarColor(score: number, baseColor: string): string {
+  if (score >= 78) return baseColor;
+  if (score >= 52) return "#a06830";
+  return "#3a4a6a";
+}
+
+const DIRECTION_CONFIG = {
+  bullish: { label: "Risk-On",  color: "rgba(82,176,200,0.80)"  },
+  bearish: { label: "Risk-Off", color: "rgba(176,88,88,0.80)"   },
+  mixed:   { label: "Mixed",    color: "rgba(180,140,70,0.75)"  },
+} as const;
 
 function buildThemeMap(
   items:  WhatMattersNowItem[],
@@ -43,17 +67,28 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
 
   return (
     <section className="mb-7">
-      {/* Section header */}
+      {/* Section header — institutional MNN-matching style */}
       <div className="flex items-center gap-3 mb-3">
-        <TrendingUp size={13} className="text-accent shrink-0" />
-        <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink">
+        <span
+          className="text-[10px] font-bold uppercase shrink-0"
+          style={{ letterSpacing: "0.14em", color: "rgba(255,255,255,0.38)" }}
+        >
           What Matters Now
         </span>
-        <span className="h-px flex-1 bg-edge" />
+        <div
+          className="flex-1 h-px"
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.08), transparent)" }}
+        />
+        <span
+          className="text-[9.5px] shrink-0"
+          style={{ letterSpacing: "0.06em", color: "rgba(255,255,255,0.20)" }}
+        >
+          Narrative Pressure
+        </span>
       </div>
 
-      {/* Mobile: horizontal scroll with all cards */}
-      <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden">
+      {/* Mobile: horizontal scroll */}
+      <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden">
         {items.map((item, idx) => (
           <WMNCard
             key={item.cluster.id}
@@ -65,8 +100,8 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
         ))}
       </div>
 
-      {/* Desktop: primary driver banner + 4-card grid */}
-      <div className="hidden md:flex md:flex-col gap-2.5">
+      {/* Desktop: primary driver + 4-card grid */}
+      <div className="hidden md:flex md:flex-col gap-2">
         {primary && (
           <PrimaryDriverCard
             item={primary}
@@ -75,7 +110,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
           />
         )}
         {rest.length > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             {rest.map((item, idx) => (
               <WMNCard
                 key={item.cluster.id}
@@ -93,99 +128,124 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
 }
 
 
-// ── Shared constants ──────────────────────────────────────────────────────────
-
-const DIRECTION_CONFIG = {
-  bullish: { label: "↑ Bullish", color: "#10b981" },
-  bearish: { label: "↓ Bearish", color: "#ef4444" },
-  mixed:   { label: "⟷ Mixed",  color: "#f59e0b" },
-} as const;
-
-function scoreBarColor(score: number): string {
-  return score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8";
-}
-
-
-// ── Primary driver banner (desktop rank-1 card) ───────────────────────────────
+// ── Primary driver banner (desktop rank-1) ────────────────────────────────────
 
 function PrimaryDriverCard({
   item, onClick, matchedTheme,
 }: { item: WhatMattersNowItem; onClick: () => void; matchedTheme?: ThemeIntelligence }) {
   const { cluster, thesis, wmn_label } = item;
-  const p          = cluster.primary;
-  const color      = catColor(p.category);
-  const score      = Math.round(p.signal_score ?? 0);
-  const barColor   = scoreBarColor(score);
-  const sentiment  = classifyImpact(p.impact ?? "");
-  const dirConfig  = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
-  const storyLabel = cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
+  const p              = cluster.primary;
+  const color          = mutedColor(catColor(p.category));
+  const score          = Math.round(p.signal_score ?? 0);
+  const barColor       = pressureBarColor(score, color);
+  const sentiment      = classifyImpact(p.impact ?? "");
+  const dirConfig      = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
+  const storyLabel     = cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
+  const accentOpacity  = 0.30 + (score / 100) * 0.60;
 
   return (
     <motion.button
-      initial={{ opacity: 0, y: 6 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: "easeOut" }}
-      whileHover={{ y: -1, transition: { duration: 0.14 } }}
+      transition={{ duration: 0.35, ease: [0.22, 0, 0.36, 1] }}
+      whileHover={{ y: -1, transition: { duration: 0.18 } }}
       onClick={onClick}
-      className="w-full bg-surface rounded-xl border border-edge-strong shadow-card-hover text-left overflow-hidden"
+      className="w-full text-left relative overflow-hidden"
+      style={{
+        background:   "rgba(7,12,24,0.96)",
+        border:       "1px solid rgba(255,255,255,0.06)",
+        borderRadius: "14px",
+      }}
     >
-      <div className="h-[4px] rounded-t-xl" style={{ background: color }} />
+      {/* Left ambient glow from category color */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: `radial-gradient(ellipse at left center, ${color}18 0%, transparent 62%)` }}
+      />
 
-      <div className="px-4 pt-3 pb-3 flex flex-col gap-2">
-        {/* Badge row */}
+      {/* Left vertical accent bar — breathing for high-pressure signals */}
+      {score >= 80 ? (
+        <motion.div
+          animate={{ opacity: [accentOpacity, Math.min(accentOpacity + 0.22, 1), accentOpacity] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute left-0 top-0 bottom-0 w-[3px]"
+          style={{ background: color }}
+        />
+      ) : (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-[3px]"
+          style={{ background: color, opacity: accentOpacity }}
+        />
+      )}
+
+      {/* Content */}
+      <div className="pl-5 pr-4 pt-3.5 pb-3.5 flex flex-col gap-2">
+
+        {/* Top row */}
         <div className="flex items-center gap-2">
-          <span className="text-[9px] font-bold uppercase tracking-[0.2em] px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20 shrink-0">
+          <span
+            className="text-[8.5px] font-bold uppercase shrink-0"
+            style={{ letterSpacing: "0.18em", color }}
+          >
             Primary Driver
           </span>
           {dirConfig && (
-            <span className="text-[10px] font-semibold shrink-0" style={{ color: dirConfig.color }}>
+            <span className="text-[9.5px] font-semibold shrink-0" style={{ color: dirConfig.color }}>
               {dirConfig.label}
             </span>
           )}
-          <span className="ml-auto text-[10.5px] text-ink-muted shrink-0">
+          <span className="ml-auto text-[10px] shrink-0" style={{ color: "rgba(255,255,255,0.28)" }}>
             {storyLabel}
-            <span className="mx-1 opacity-40">·</span>
+            <span className="mx-1 opacity-50">·</span>
             <span style={{ color }}>{p.category}</span>
           </span>
         </div>
 
         {/* Title */}
-        <p className="text-[14px] font-bold text-ink leading-snug">
+        <p className="font-bold leading-snug" style={{ fontSize: "15px", color: "rgba(255,255,255,0.88)" }}>
           {wmn_label || cluster.theme_label}
         </p>
 
         {/* Thesis */}
         {thesis && (
-          <p className="text-[12.5px] text-ink-secondary leading-relaxed line-clamp-2">
+          <p
+            className="line-clamp-2 leading-relaxed"
+            style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.58)" }}
+          >
             {thesis}
           </p>
         )}
 
-        {/* Score bar */}
+        {/* Pressure bar */}
         <div className="flex items-center gap-2 mt-0.5">
-          <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
+          <div
+            className="flex-1 overflow-hidden"
+            style={{ height: "2px", borderRadius: "1px", background: "rgba(255,255,255,0.06)" }}
+          >
             <motion.div
-              className="h-full rounded-full"
-              style={{ background: barColor }}
+              style={{ height: "100%", background: barColor }}
               initial={{ width: 0 }}
               animate={{ width: `${score}%` }}
-              transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+              transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
             />
           </div>
-          <span className="text-[11px] font-bold tabular-nums leading-none" style={{ color: barColor }}>
+          <span className="tabular-nums font-bold" style={{ fontSize: "11px", color: barColor }}>
             {score}
           </span>
         </div>
 
-        {/* Intelligence theme tag */}
+        {/* Theme tag */}
         {matchedTheme && (
-          <div className="flex items-center gap-1.5 pt-1 border-t border-edge/40 mt-0.5">
-            <span className="text-[9px] text-ink-muted shrink-0">Theme:</span>
-            <span className="text-[9px] font-bold px-1.5 py-px rounded bg-accent/10 text-accent border border-accent/20 truncate max-w-[180px]">
+          <div className="flex items-center gap-1.5" style={{ marginTop: "2px" }}>
+            <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)" }}>Theme:</span>
+            <span
+              className="truncate"
+              style={{ fontSize: "9px", color: "rgba(255,255,255,0.45)", maxWidth: "200px" }}
+            >
               {matchedTheme.name}
             </span>
             {matchedTheme.confidence_label && (
-              <span className="text-[9px] text-ink-muted shrink-0">
+              <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.22)" }}>
                 · {matchedTheme.confidence_label}
               </span>
             )}
@@ -203,96 +263,94 @@ function WMNCard({
   item, index, onClick, matchedTheme,
 }: { item: WhatMattersNowItem; index: number; onClick: () => void; matchedTheme?: ThemeIntelligence }) {
   const { cluster, thesis, wmn_label, rank } = item;
-  const p        = cluster.primary;
-  const color    = catColor(p.category);
-  const score    = Math.round(p.signal_score ?? 0);
-  const isTop    = rank <= 2;
-  const barColor = scoreBarColor(score);
-
-  const storyLabel = cluster.story_count === 1
-    ? "1 story"
-    : `${cluster.story_count} stories`;
-
-  const sentiment  = classifyImpact(p.impact ?? "");
-  const dirConfig  = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
+  const p              = cluster.primary;
+  const color          = mutedColor(catColor(p.category));
+  const score          = Math.round(p.signal_score ?? 0);
+  const barColor       = pressureBarColor(score, color);
+  const storyLabel     = cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
+  const sentiment      = classifyImpact(p.impact ?? "");
+  const dirConfig      = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
+  const accentOpacity  = 0.25 + (score / 100) * 0.55;
 
   return (
     <motion.button
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.06, duration: 0.22, ease: "easeOut" }}
-      whileHover={{ y: -2, transition: { duration: 0.14 } }}
+      transition={{ delay: index * 0.08, duration: 0.35, ease: [0.22, 0, 0.36, 1] }}
+      whileHover={{ y: -1, transition: { duration: 0.18 } }}
       onClick={onClick}
-      className={cn(
-        "snap-start flex-shrink-0 w-[220px] md:w-auto",
-        "bg-surface rounded-xl border transition-all duration-200",
-        "shadow-card hover:shadow-card-hover",
-        "text-left overflow-hidden flex flex-col",
-        isTop
-          ? "border-edge-strong hover:border-edge-strong shadow-card-hover"
-          : "border-edge hover:border-edge-strong",
-      )}
+      className="snap-start flex-shrink-0 w-[210px] md:w-auto text-left relative overflow-hidden flex flex-col"
+      style={{
+        background:   "rgba(6,10,20,0.94)",
+        border:       "1px solid rgba(255,255,255,0.05)",
+        borderRadius: "12px",
+      }}
     >
-      {/* Category accent bar */}
+      {/* Left vertical accent bar */}
       <div
-        className={isTop ? "h-[4px] rounded-t-xl" : "h-[3px] rounded-t-xl"}
-        style={{ background: color }}
+        className="absolute left-0 top-0 bottom-0 w-[2px]"
+        style={{ background: color, opacity: accentOpacity }}
       />
 
-      <div className="px-3.5 pt-3 pb-3 flex flex-col flex-1 gap-1.5">
+      {/* Dim rank indicator */}
+      <span
+        className="absolute top-2.5 right-3 tabular-nums font-bold"
+        style={{ fontSize: "9px", color: "rgba(255,255,255,0.15)" }}
+      >
+        {rank}
+      </span>
+
+      {/* Content */}
+      <div className="pl-4 pr-4 pt-3 pb-3 flex flex-col flex-1 gap-1.5">
 
         {/* Title */}
-        <p className={cn(
-          "font-bold text-ink leading-snug line-clamp-2",
-          isTop ? "text-[13px]" : "text-[12px]",
-        )}>
+        <p
+          className="font-bold leading-snug line-clamp-2"
+          style={{ fontSize: "13px", color: "rgba(255,255,255,0.84)", paddingRight: "14px" }}
+        >
           {wmn_label || cluster.theme_label}
         </p>
 
         {/* Thesis */}
         {thesis ? (
-          <p className="text-[11px] text-ink-secondary leading-relaxed line-clamp-2 flex-1">
+          <p
+            className="line-clamp-2 leading-relaxed flex-1"
+            style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)" }}
+          >
             {thesis}
           </p>
         ) : (
           <div className="flex-1" />
         )}
 
-        {/* Score bar */}
+        {/* Pressure bar */}
         <div className="flex items-center gap-2 mt-1">
-          <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
+          <div
+            className="flex-1 overflow-hidden"
+            style={{ height: "2px", borderRadius: "1px", background: "rgba(255,255,255,0.05)" }}
+          >
             <motion.div
-              className="h-full rounded-full"
-              style={{ background: barColor }}
+              style={{ height: "100%", background: barColor }}
               initial={{ width: 0 }}
               animate={{ width: `${score}%` }}
-              transition={{ duration: 0.7, ease: "easeOut", delay: index * 0.06 + 0.2 }}
+              transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.08 + 0.2 }}
             />
           </div>
-          <span
-            className="text-[10px] font-bold tabular-nums leading-none"
-            style={{ color: barColor }}
-          >
+          <span className="tabular-nums font-bold" style={{ fontSize: "10px", color: barColor }}>
             {score}
           </span>
         </div>
 
         {/* Metadata row */}
         <div className="flex items-center gap-1.5 mt-0.5">
-          <p className="text-[10px] text-ink-muted leading-none flex-1 min-w-0 truncate">
-            <span>{storyLabel}</span>
-            <span className="mx-1 opacity-40">·</span>
+          <span className="text-[10px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.25)" }}>
+            {storyLabel}
+            <span className="mx-1 opacity-50">·</span>
             <span style={{ color }}>{p.category}</span>
-            {p.published && (
-              <>
-                <span className="mx-1 opacity-40">·</span>
-                <span>{p.published}</span>
-              </>
-            )}
-          </p>
+          </span>
           {dirConfig && (
             <span
-              className="text-[9.5px] font-semibold leading-none shrink-0"
+              className="text-[9px] font-semibold leading-none shrink-0"
               style={{ color: dirConfig.color }}
             >
               {dirConfig.label}
@@ -300,11 +358,12 @@ function WMNCard({
           )}
         </div>
 
-        {/* Intelligence theme tag */}
+        {/* Theme tag */}
         {matchedTheme && (
-          <div className="flex items-center gap-1 mt-0.5">
+          <div className="flex items-center gap-1 mt-0.5 min-w-0">
             <span
-              className="text-[8.5px] font-bold px-1.5 py-px rounded bg-accent/10 text-accent/80 border border-accent/15 truncate max-w-full"
+              className="truncate"
+              style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.35)" }}
               title={matchedTheme.name}
             >
               ✦ {matchedTheme.name}
@@ -324,28 +383,28 @@ function WhatMattersNowSkeleton() {
   return (
     <section className="mb-7">
       <div className="flex items-center gap-3 mb-3">
-        <div className="h-3 w-3 rounded bg-raised animate-pulse" />
-        <div className="h-3 w-36 bg-raised rounded animate-pulse" />
-        <span className="h-px flex-1 bg-edge" />
+        <div className="h-2.5 w-32 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
+        <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
       </div>
       {/* Mobile skeleton */}
-      <div className="flex gap-2.5 overflow-x-auto md:hidden">
-        {[...Array(5)].map((_, i) => (
-          <SkeletonCard key={i} />
-        ))}
+      <div className="flex gap-2 overflow-x-auto md:hidden">
+        {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
       </div>
       {/* Desktop skeleton */}
-      <div className="hidden md:flex md:flex-col gap-2.5">
-        <div className="bg-surface border border-edge rounded-xl overflow-hidden">
-          <div className="h-[4px] bg-raised animate-pulse" />
-          <div className="px-4 py-3 space-y-2.5">
-            <div className="h-3 w-24 bg-raised rounded-full animate-pulse" />
-            <div className="h-4 w-3/4 bg-raised rounded animate-pulse" />
-            <div className="h-3 w-full bg-raised rounded animate-pulse" />
-            <div className="h-[3px] w-full bg-raised rounded-full animate-pulse" />
+      <div className="hidden md:flex md:flex-col gap-2">
+        <div
+          className="relative overflow-hidden"
+          style={{ background: "rgba(7,12,24,0.96)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px" }}
+        >
+          <div className="absolute left-0 top-0 bottom-0 w-[3px] animate-pulse" style={{ background: "rgba(74,120,184,0.4)" }} />
+          <div className="pl-5 pr-4 py-3.5 space-y-2.5">
+            <div className="h-2.5 w-20 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
+            <div className="h-4 w-3/4 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
+            <div className="h-3 w-full rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
+            <div className="h-[2px] w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
           </div>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
@@ -355,14 +414,16 @@ function WhatMattersNowSkeleton() {
 
 function SkeletonCard() {
   return (
-    <div className="flex-shrink-0 w-[220px] md:w-auto bg-surface border border-edge rounded-xl overflow-hidden">
-      <div className="h-[3px] bg-raised animate-pulse" />
-      <div className="p-3.5 space-y-2.5">
-        <div className="h-4 w-full bg-raised rounded animate-pulse" />
-        <div className="h-3.5 w-4/5 bg-raised rounded animate-pulse" />
-        <div className="h-3 w-3/5 bg-raised rounded animate-pulse" />
-        <div className="h-[3px] w-full bg-raised rounded-full animate-pulse" />
-        <div className="h-2.5 w-3/4 bg-raised rounded animate-pulse" />
+    <div
+      className="flex-shrink-0 w-[210px] md:w-auto relative overflow-hidden"
+      style={{ background: "rgba(6,10,20,0.94)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "12px" }}
+    >
+      <div className="absolute left-0 top-0 bottom-0 w-[2px] animate-pulse" style={{ background: "rgba(74,120,184,0.3)" }} />
+      <div className="pl-4 pr-4 py-3 space-y-2">
+        <div className="h-3.5 w-full rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+        <div className="h-3 w-4/5 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+        <div className="h-[2px] w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+        <div className="h-2.5 w-3/4 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
       </div>
     </div>
   );
