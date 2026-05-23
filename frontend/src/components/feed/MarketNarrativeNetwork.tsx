@@ -126,7 +126,7 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
 }
 
 function nodeRadius(n: GraphNode): number {
-  if (n.type === "regime") return 34;
+  if (n.type === "regime") return 44;
   if (n.type === "macro")  return 18;
   if (n.type === "theme")  return Math.min(10 + (n.confidence / 100) * 14, 22);
   return Math.min(10 + (n.confidence / 100) * 18, 26);
@@ -160,6 +160,67 @@ function regimeColor(label: string): string {
   if (l.includes("tighten") || l.includes("shock") || l.includes("pressure") ||
       l.includes("risk-off") || l.includes("stagflat")) return "#b06060";
   return "#7888a8";
+}
+
+// ── Market pulse ──────────────────────────────────────────────────────────────
+
+interface PulseSignal { label: string; value: string; color: string; dot: string }
+
+function computeMarketPulse(
+  dominant: string,
+  chains: PropagationChain[],
+  nodes: GraphNode[],
+): PulseSignal[] {
+  const r = dominant.toLowerCase();
+  const out: PulseSignal[] = [];
+
+  // 1. Risk appetite from regime label
+  const isOn  = r.includes("risk-on") || r.includes("expansion") || r.includes("dovish") || r.includes("easing");
+  const isOff = r.includes("risk-off") || r.includes("tighten")  || r.includes("stagflat") || r.includes("shock") || r.includes("hawkish");
+  out.push({
+    label: "Risk Appetite",
+    value: isOn ? "Rising" : isOff ? "Falling" : "Neutral",
+    color: isOn ? "#60c080" : isOff ? "#c06060" : "#7888a8",
+    dot:   isOn ? "#40884a" : isOff ? "#904040" : "#507888",
+  });
+
+  // 2. Liquidity conditions from regime
+  const isTight = r.includes("tighten") || r.includes("hawkish") || r.includes("qt") || r.includes("hike");
+  const isLoose = r.includes("easing")  || r.includes("dovish")  || r.includes("qe") || r.includes("expand");
+  out.push({
+    label: "Liquidity",
+    value: isTight ? "Tightening" : isLoose ? "Expanding" : "Stable",
+    color: isTight ? "#c06060" : isLoose ? "#60c080" : "#7888a8",
+    dot:   isTight ? "#904040" : isLoose ? "#40884a" : "#507888",
+  });
+
+  // 3. Signal conviction from highest-confidence chain
+  const topChain = [...chains].sort((a, b) => b.confidence - a.confidence)[0];
+  if (topChain) {
+    const c = topChain.confidence;
+    out.push({
+      label: "Conviction",
+      value: c >= 78 ? "High" : c >= 58 ? "Elevated" : "Moderate",
+      color: c >= 78 ? "#d4b060" : c >= 58 ? "#a87820" : "#7888a8",
+      dot:   c >= 78 ? "#a87820" : c >= 58 ? "#806010" : "#507888",
+    });
+  }
+
+  // 4. Sector sentiment balance
+  const active = nodes.filter(n => n.type === "sector" || n.type === "theme");
+  const bull   = active.filter(n => n.sentiment === "bullish").length;
+  const bear   = active.filter(n => n.sentiment === "bearish").length;
+  const tot    = active.length || 1;
+  const isBid  = bull > tot * 0.55;
+  const isDef  = bear > tot * 0.50;
+  out.push({
+    label: "Flow",
+    value: isBid ? "Risk Bid" : isDef ? "Defensive" : "Rotating",
+    color: isBid ? "#60c080" : isDef ? "#c06060" : "#d4b060",
+    dot:   isBid ? "#40884a" : isDef ? "#904040" : "#a87820",
+  });
+
+  return out;
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
@@ -545,6 +606,36 @@ export function MarketNarrativeNetwork() {
           </div>
         </div>
 
+        {/* Market pulse strip */}
+        {(() => {
+          const pulses = computeMarketPulse(data.dominant_regime, data.chains, data.nodes);
+          return (
+            <div className="flex items-center gap-4 px-5 py-2"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <span className="text-[7px] font-bold uppercase tracking-[0.22em] text-white/38 shrink-0">
+                Market Pulse
+              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {pulses.map(p => (
+                  <div key={p.label}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
+                    style={{
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.09)",
+                    }}>
+                    <div className="rounded-full shrink-0"
+                      style={{ width: 5, height: 5, background: p.dot }} />
+                    <span className="text-[7px] text-white/42">{p.label}</span>
+                    <span className="text-[7.5px] font-semibold" style={{ color: p.color }}>
+                      {p.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Graph canvas */}
         <div ref={wrapRef} className="relative" style={{ minHeight: 420 }}>
 
@@ -580,24 +671,31 @@ export function MarketNarrativeNetwork() {
               {/* Atmospheric background — slow breathing animation */}
               <radialGradient id="bgAtmo" cx="50%" cy="10%" r="72%">
                 <stop offset="0%" stopColor="#0d2040">
-                  <animate attributeName="stop-opacity" values="0.78;0.94;0.78"
+                  <animate attributeName="stop-opacity" values="0.82;0.98;0.82"
                     dur="9s" repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
                 </stop>
-                <stop offset="55%" stopColor="#060f22" stopOpacity="0.32" />
+                <stop offset="55%" stopColor="#060f22" stopOpacity="0.40" />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
 
               {/* Regime environmental glow — centered on regime node position */}
-              <radialGradient id="regEnvGrad" cx={regCx} cy={regCy} r="40%"
+              <radialGradient id="regEnvGrad" cx={regCx} cy={regCy} r="44%"
                 gradientUnits="objectBoundingBox">
                 <stop offset="0%" stopColor="#2060a0">
-                  <animate attributeName="stop-opacity" values="0.18;0.34;0.18"
+                  <animate attributeName="stop-opacity" values="0.25;0.46;0.25"
                     dur="8s" repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
                 </stop>
+                <stop offset="70%" stopColor="#104078" stopOpacity="0.06" />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
+
+              {/* Subtle grid pattern — institutional depth */}
+              <pattern id="gridPat" width="60" height="60" patternUnits="userSpaceOnUse">
+                <path d="M 60 0 L 0 0 0 60" fill="none"
+                  stroke="rgba(255,255,255,0.022)" strokeWidth="0.5" />
+              </pattern>
 
               {/* Corner vignette */}
               <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
@@ -632,6 +730,7 @@ export function MarketNarrativeNetwork() {
 
             {/* Atmospheric layers — back to front */}
             <rect width={W} height={H} fill="url(#bgAtmo)" />
+            <rect width={W} height={H} fill="url(#gridPat)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#regEnvGrad)" />
 
             {/* Ambient drifting particles — very slow, barely visible */}

@@ -489,8 +489,12 @@ class FeedItem:
     impact:                str        = ""        # AI: directional market impact label
     # Quality scoring debug fields (set by score_item)
     source_quality_score:   float     = 0.0  # normalized source tier 0–100
-    consumer_noise_penalty: float     = 0.0  # penalty applied for consumer framing
-    institutional_score:    float     = 0.0  # composite institutional quality 0–120
+    consumer_noise_penalty: float     = 0.0  # −30 for consumer framing
+    retail_content_penalty: float     = 0.0  # −50 for obvious retail content
+    macro_relevance_bonus:  float     = 0.0  # +10 for hard macro catalysts
+    cross_asset_bonus:      float     = 0.0  # +8 for multi-asset-class stories
+    institutional_score:    float     = 0.0  # composite institutional quality 0–100
+    graph_alignment_score:  float     = 0.0  # set post-graph; 0–30 regime keyword match
 
 
 # ── Per-source audit statistics ───────────────────────────────────────────────
@@ -768,6 +772,86 @@ _CONSUMER_SOFT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Retail content penalty ────────────────────────────────────────────────────
+# Patterns for obvious retail/personal-finance content.  Harder than _CONSUMER_SOFT_RE
+# (−50 vs −30) but softer than _NOISE_RE (−75) so items still appear in the feed
+# but rank far below institutional stories.
+_RETAIL_CONTENT_RE = re.compile(
+    r"(?:"
+    # Consumer savings products
+    r"\bbest\s+(?:savings?|checking|money\s+market|high.yield)\s+(?:account|cd)\b"
+    r"|\bcd\s+rates?\s+(?:today|this\s+week|comparison|guide|best|highest)\b"
+    r"|\bapy\s+(?:comparison|today|rates?|guide|ranking|best)\b"
+    # Consumer debt advice
+    r"|\bstudent\s+loan\s+(?:refinanc|forgiven|payoff|forgiveness|tips?|consolid|relief|advice)\b"
+    r"|\bcredit\s+card\s+debt\s+(?:payoff|consolid|help|relief|tips?)\b"
+    r"|\bpay\s+off\s+(?:your\s+)?(?:credit\s+card|student\s+loan|mortgage\s+faster|debt\s+fast)\b"
+    r"|\bdebt\s+(?:snowball|avalanche|consolid|payoff\s+plan|free)\b"
+    # Retail investing advice (not market news)
+    r"|\bbest\s+(?:robo.?advisors?|brokerage\s+accounts?|index\s+funds?|etfs?\s+to\s+buy)\b"
+    r"|\b(?:which|what)\s+(?:brokerage|broker|fund|etf|stock)\s+should\s+(?:i|you)\b"
+    r"|\bpassive\s+income\s+(?:streams?|ideas?|stocks?|investments?)\b"
+    r"|\bdividend\s+stocks?\s+(?:for\s+income|to\s+buy|beginners?|retirees?|passive)\b"
+    r"|\bsafe\s+investments?\s+for\s+(?:retirees?|beginners?|seniors?|conservative)\b"
+    # Home buying / real estate consumer advice
+    r"|\bfirst.time\s+(?:home\s+)?(?:buyer|homebuyer)\b"
+    r"|\bhome\s+buying\s+(?:tips?|guide|advice|checklist|process|mistakes?)\b"
+    r"|\bdown\s+payment\s+(?:tips?|help|assistance|how\s+much|savings?)\b"
+    # Life insurance shopping
+    r"|\blife\s+insurance\s+(?:quotes?|comparison|best|cheapest|affordable|shopping|should\s+you)\b"
+    r"|\bhow\s+much\s+life\s+insurance\s+(?:do\s+i|do\s+you|should)\b"
+    # Estate planning consumer advice
+    r"|\bestate\s+planning\s+(?:tips?|guide|basics?|mistakes?|for\s+(?:families?|retirees?|you))\b"
+    r"|\bwills?\s+and\s+trusts?\s+(?:guide|tips?|basics?|explained?)\b"
+    # Fintech apps / budgeting tools (consumer)
+    r"|\bbest\s+(?:budgeting|money\s+management|personal\s+finance)\s+apps?\b"
+    r"|\b(?:mint|ynab|copilot|monarch)\s+(?:app|review|alternative|vs\.?)\b"
+    r"|\bcash\s+back\s+(?:apps?|cards?|rewards?\s+comparison)\b"
+    # Retail wealth advice
+    r"|\bhow\s+to\s+(?:become\s+a\s+millionaire|build\s+wealth|get\s+rich|retire\s+early)\b"
+    r"|\bfire\s+movement\b|\bfinancial\s+independence\s+retire\s+early\b"
+    r"|\bnet\s+worth\s+(?:tracker|goals?|calculator|milestones?|by\s+age)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# ── Macro relevance bonus ──────────────────────────────────────────────────────
+# Patterns that confirm hard macro / institutional relevance — scored +10 pts
+# and also boost institutional_score.  These are catalysts that move multiple
+# asset classes simultaneously and are the primary focus of institutional desks.
+_MACRO_RELEVANCE_RE = re.compile(
+    r"(?:"
+    r"\b(?:federal\s+reserve|fomc|jerome\s+powell|fed\s+chair|fed\s+decision)\b"
+    r"|\b(?:ecb|bank\s+of\s+japan|bank\s+of\s+england|boj|boe|pboc|rba|snb)\b"
+    r"|\b(?:monetary\s+policy|quantitative\s+tightening|quantitative\s+easing|qt\b|qe\b)\b"
+    r"|\b(?:treasury\s+auction|coupon\s+pass|t-bill\s+issuance|debt\s+ceiling)\b"
+    r"|\b(?:nonfarm\s+payroll|cpi\s+data|pce\s+data|core\s+inflation\s+data|ppi\s+report)\b"
+    r"|\b(?:fiscal\s+stimulus|fiscal\s+deficit|spending\s+bill|budget\s+reconciliation)\b"
+    r"|\b(?:industrial\s+policy|chips\s+act|ira\s+subsidy|export\s+controls?)\b"
+    r"|\b(?:capital\s+flows?|fund\s+flows?|positioning\s+data|cftc\s+data)\b"
+    r"|\b(?:sovereign\s+debt|em\s+contagion|credit\s+contagion|systemic\s+risk)\b"
+    r"|\b(?:geopolitical\s+escalat|military\s+escalat|sanctions?\s+regime|coup)\b"
+    r"|\b(?:opec\+?\s+(?:cut|meeting|quota|output)|cartel\s+decision|crude\s+supply\s+shock)\b"
+    r"|\b(?:ai\s+(?:infrastructure|capex\s+cycle|chip\s+demand)|data\s+center\s+(?:build|demand))\b"
+    r"|\b(?:credit\s+market|leveraged\s+loan\s+market|clo\s+market|abs\s+market)\b"
+    r"|\b(?:global\s+growth|synchronized\s+slowdown|soft\s+landing|hard\s+landing)\b"
+    r"|\b(?:dollar\s+milkshake|dollar\s+wrecking\s+ball|yen\s+carry\s+trade|carry\s+unwind)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# ── Cross-asset class detection ────────────────────────────────────────────────
+# Five distinct asset-class buckets.  +8 bonus when 2+ buckets are found in the
+# same story — these are the macro transmission stories that institutional desks
+# read first.
+_CROSS_ASSET_CLASSES: list[re.Pattern] = [
+    re.compile(r"\b(?:equity|equities|stocks?|shares?|s&p\s*500|nasdaq|dow\s+jones|nikkei|ftse|russell)\b", re.IGNORECASE),
+    re.compile(r"\b(?:treasury|treasuries|bond|bonds?|yield|yields?|rate\s+hike|rate\s+cut|10.year|gilt|bund|duration)\b", re.IGNORECASE),
+    re.compile(r"\b(?:dollar|yen|yuan|euro|sterling|pound|eur/usd|usd/jpy|dxy|fx|currencies?|forex|usd|jpy|gbp|cny)\b", re.IGNORECASE),
+    re.compile(r"\b(?:oil|crude|brent|wti|gold|silver|copper|commodit|energy\s+prices?|nat\s+gas)\b", re.IGNORECASE),
+    re.compile(r"\b(?:credit\s+spread|high.yield\s+spread|investment.grade|ig\s+spread|hy\s+spread|cds\b|credit\s+default)\b", re.IGNORECASE),
+]
+
 # ── Institutional signal boost ─────────────────────────────────────────────────
 # Patterns that confirm market-moving institutional relevance — give +8 pts
 # beyond keyword matching.  Applied only when NOT already covered by keywords.
@@ -801,18 +885,28 @@ def _source_quality(source: str) -> float:
 def score_item(item: "FeedItem") -> float:
     """
     Score a FeedItem for signal quality on a 0–100 scale.
-    Also sets item.source_quality_score, item.consumer_noise_penalty,
-    and item.institutional_score as debug/ranking fields.
+    Sets all quality-scoring debug fields on the item.
 
-    Components:
-      Source tier   : 0–50  (editorial quality of the source)
-      Keywords      : 0–40  (finance relevance of title + snippet)
-      Recency       : 0–20  (linear decay over 48h)
-      Ticker bonus  : +8    (explicit stock ticker in title)
-      Noise penalty : −75   (PR boilerplate, hard exclusions)
-      Consumer soft : −30   (consumer/personal finance framing — soft penalty)
+    Signal score components:
+      Source tier        : 0–50   (editorial quality)
+      Keywords           : 0–40   (finance relevance)
+      Recency            : 0–20   (linear decay over 48h)
+      Ticker bonus       : +8     (explicit stock ticker)
+      Institutional boost: +8     (market-structure signals)
+      Macro bonus        : +10    (hard macro catalyst)
+      Cross-asset bonus  : +8     (2+ asset classes)
+      Noise penalty      : −75    (PR boilerplate)
+      Consumer soft      : −30    (personal finance framing)
+      Retail penalty     : −50    (obvious retail content)
+
+    institutional_score (0–100):
+      A quality-only composite used by Today's Take / WMN selectors to
+      prefer Bloomberg/FT macro stories over consumer finance content even
+      when raw signal_score is similar.  Not capped the same way as signal;
+      see formula below.
     """
-    text = (item.title + " " + item.snippet).lower()
+    full_text = item.title + " " + item.snippet
+    text      = full_text.lower()
 
     # 1. Source tier
     src_score = _SOURCE_TIERS.get(item.source, 20)
@@ -829,51 +923,74 @@ def score_item(item: "FeedItem") -> float:
 
     # 3. Recency (up to 20 pts, linear decay over STALE_HOURS)
     if item.published_dt:
-        age_h       = max(0.0, (datetime.now(timezone.utc) - item.published_dt).total_seconds() / 3600)
-        rec_score   = max(0.0, 20.0 * (1 - age_h / STALE_HOURS))
+        age_h     = max(0.0, (datetime.now(timezone.utc) - item.published_dt).total_seconds() / 3600)
+        rec_score = max(0.0, 20.0 * (1 - age_h / STALE_HOURS))
     else:
-        rec_score   = 0.0
+        rec_score = 0.0
 
     # 4. Hard exclusions — newsletter CTAs, podcast promos, etc.
     if _HARD_EXCLUDE_RE.search(item.title):
-        item.source_quality_score    = 0.0
-        item.consumer_noise_penalty  = 0.0
-        item.institutional_score     = 0.0
+        item.source_quality_score   = 0.0
+        item.consumer_noise_penalty = 0.0
+        item.retail_content_penalty = 0.0
+        item.macro_relevance_bonus  = 0.0
+        item.cross_asset_bonus      = 0.0
+        item.institutional_score    = 0.0
         return 0.0
 
-    # 5. Noise penalty (raised to 75 so that even high-tier editorial sources
-    #    cannot rescue a noisy/commentary title above the minimum threshold)
+    # 5. Noise penalty — PR boilerplate, listicles, commentary
     noise = 75.0 if _NOISE_RE.search(item.title) else 0.0
 
-    # 6. Consumer soft penalty — down-ranks consumer/personal-finance content
-    #    without fully excluding it.  Applied after hard noise so a listicle
-    #    ("10 Medicare Tips to Save Money") already hit by _NOISE_RE isn't
-    #    double-counted.
+    # 6. Consumer soft penalty (−30) — only when not already caught by _NOISE_RE
     consumer_penalty = 0.0
-    if noise == 0.0 and _CONSUMER_SOFT_RE.search(item.title + " " + item.snippet):
+    if noise == 0.0 and _CONSUMER_SOFT_RE.search(full_text):
         consumer_penalty = 30.0
 
-    # 7. Ticker bonus — a stock ticker in the title is an unambiguous single-
-    #    company signal that improves relevance for company-news scoring.
+    # 7. Retail content penalty (−50) — stronger than consumer soft; obvious
+    #    retail/personal-finance content that _CONSUMER_SOFT_RE didn't catch
+    retail_penalty = 0.0
+    if noise == 0.0 and consumer_penalty == 0.0 and _RETAIL_CONTENT_RE.search(full_text):
+        retail_penalty = 50.0
+
+    # 8. Ticker bonus — unambiguous single-company signal
     ticker_bonus = 8.0 if _TICKER_RE.search(item.title) else 0.0
 
-    # 8. Institutional boost — explicit market-structure signals not covered by
-    #    keyword matching (capex cycles, credit spreads, IPO windows, etc.)
-    inst_boost = 8.0 if _INSTITUTIONAL_BOOST_RE.search(item.title + " " + item.snippet) else 0.0
+    # 9. Institutional boost — market-structure signals not in keyword set
+    inst_boost = 8.0 if _INSTITUTIONAL_BOOST_RE.search(full_text) else 0.0
 
+    # 10. Macro relevance bonus — hard macro catalysts that move multiple classes
+    macro_bonus = 10.0 if _MACRO_RELEVANCE_RE.search(full_text) else 0.0
+
+    # 11. Cross-asset bonus — 2+ distinct asset classes in the same story
+    asset_hits  = sum(1 for pat in _CROSS_ASSET_CLASSES if pat.search(full_text))
+    cross_bonus = 8.0 if asset_hits >= 2 else 0.0
+
+    # ── Signal score (0–100) ──────────────────────────────────────────────────
     signal = max(0.0, min(100.0,
-        src_score + kw_score + rec_score + ticker_bonus + inst_boost
-        - noise - consumer_penalty
+        src_score + kw_score + rec_score + ticker_bonus + inst_boost + macro_bonus + cross_bonus
+        - noise - consumer_penalty - retail_penalty
     ))
 
-    # ── Set debug/ranking fields on the item ──────────────────────────────────
+    # ── institutional_score (0–100) ────────────────────────────────────────────
+    # Quality-only composite for Today's Take / WMN candidate ranking.
+    # Weights: source tier (dominant) + keyword depth + macro/cross-asset bonuses
+    # Penalties: consumer/retail framing subtract directly.
     src_quality = _source_quality(item.source)
-    # institutional_score: source quality + keyword strength − consumer penalty
-    # Used by downstream selectors (Today's Take, WMN) to prefer market-moving
-    # institutional content over consumer finance from the same source pool.
-    inst_score = max(0.0, src_quality + min(kw_score * 0.5, 20.0) + inst_boost - consumer_penalty)
+    inst_score  = max(0.0, min(100.0,
+        src_quality                          # 0–100: source prestige
+        + min(kw_score * 0.5, 20.0)          # 0–20: keyword depth
+        + inst_boost                         # +8  : market-structure signal
+        + macro_bonus * 0.8                  # +8  : macro catalyst
+        + cross_bonus * 0.6                  # +4.8: cross-asset breadth
+        - consumer_penalty * 1.2             # −36 : consumer framing
+        - retail_penalty   * 1.5             # −75 : retail content
+    ))
+
     item.source_quality_score   = round(src_quality, 1)
     item.consumer_noise_penalty = round(consumer_penalty, 1)
+    item.retail_content_penalty = round(retail_penalty, 1)
+    item.macro_relevance_bonus  = round(macro_bonus, 1)
+    item.cross_asset_bonus      = round(cross_bonus, 1)
     item.institutional_score    = round(inst_score, 1)
 
     return signal
@@ -1025,13 +1142,18 @@ class FeedManager:
                           " [PROMO]" if is_hard_promo else "",
                           item.title)
 
-        # Re-sort within same-recency bucket: signal_strength tier first, then score.
-        # Mapping: strong=0, medium=1, weak=2 so lower = earlier in list.
+        # Re-sort within same-recency bucket: signal_strength tier first, then
+        # composite quality score (institutional_score weighted 45%, signal_score 55%).
+        # This ensures Bloomberg macro stories rank above Yahoo Finance personal
+        # finance items even when raw recency is similar.
+        # graph_alignment_score is 0.0 here (set later in background.py after the
+        # narrative graph is built); the final re-sort in background.py uses the full
+        # three-component composite.
         _STRENGTH_RANK = {"strong": 0, "medium": 1, "weak": 2}
         scored.sort(key=lambda i: (
             -(i.published_dt or _epoch).timestamp() // 3600,   # bucket by hour
             _STRENGTH_RANK.get(i.signal_strength, 1),          # within hour: strong → medium → weak
-            -i.signal_score,                                    # within tier: highest score first
+            -(i.institutional_score * 0.45 + i.signal_score * 0.55),  # quality composite
         ))
 
         return scored

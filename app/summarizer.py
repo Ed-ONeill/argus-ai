@@ -394,13 +394,14 @@ def generate_market_take(
     """
     summarised = [i for i in items if i.summary]
 
-    # Sort by institutional_score (primary) → signal_score (tiebreak).
-    # Items with high consumer_noise_penalty naturally score lower on
-    # institutional_score, so Bloomberg/FT/Reuters items lead.
+    # Three-component sort: institutional quality + graph alignment + signal.
+    # Consumer/retail items have low institutional_score so they rank last
+    # even with high raw signal_score.  Bloomberg macro + graph-aligned stories lead.
     summarised.sort(
-        key=lambda i: (
-            -getattr(i, "institutional_score", i.signal_score),
-            -i.signal_score,
+        key=lambda i: -(
+            getattr(i, "institutional_score", 0.0) * 0.40
+            + getattr(i, "graph_alignment_score", 0.0) * 0.20
+            + i.signal_score * 0.40
         )
     )
     candidates = summarised[:top_n]
@@ -536,9 +537,10 @@ def generate_market_brief(
     """
     summarised = [i for i in items if i.summary]
     summarised.sort(
-        key=lambda i: (
-            -getattr(i, "institutional_score", i.signal_score),
-            -i.signal_score,
+        key=lambda i: -(
+            getattr(i, "institutional_score", 0.0) * 0.40
+            + getattr(i, "graph_alignment_score", 0.0) * 0.20
+            + i.signal_score * 0.40
         )
     )
     candidates = summarised[:top_n]

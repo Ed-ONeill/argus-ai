@@ -272,8 +272,10 @@ def _select_top_stories(
         0 if i.summary else 1,
         1 if i.source == _PR_NEWSWIRE_SOURCE else 0,
         min(2, int(_age_hours(i) / 24)),
-        -getattr(i, "institutional_score", i.signal_score),  # prefer institutional content
-        -i.signal_score,
+        # Three-component composite: institutional quality + graph alignment + signal
+        -(getattr(i, "institutional_score", 0.0) * 0.40
+          + getattr(i, "graph_alignment_score", 0.0) * 0.20
+          + i.signal_score * 0.40),
     ))
 
     for item in ordered:

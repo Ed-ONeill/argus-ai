@@ -254,6 +254,49 @@ def run_pipeline(
     except Exception:
         log.exception("[bg] derive_extended_regime FAILED — skipping")
 
+    # ── 6d-ii. Graph alignment scoring ───────────────────────────────────────
+    # Score every feed item against the narrative graph — how many active theme
+    # and regime keywords appear in the item's title+snippet.  The resulting
+    # graph_alignment_score (0–30) is used in the final composite feed sort
+    # and in Today's Take candidate selection so the brief aligns with the graph.
+    try:
+        _graph_kw: set[str] = set()
+        for _t in theme_intelligence:
+            for _w in _t.name.lower().split():
+                if len(_w) > 3:
+                    _graph_kw.add(_w)
+        _regime_str = sector_data.derived_regime or ""
+        for _w in _regime_str.lower().split():
+            if len(_w) > 3:
+                _graph_kw.add(_w)
+
+        for _item in items:
+            _tl = (_item.title + " " + _item.snippet).lower()
+            _hits = sum(1 for _kw in _graph_kw if _kw in _tl)
+            _item.graph_alignment_score = round(min(30.0, _hits * 5.0), 1)
+
+        # Final composite re-sort: institutional_score (40%) + graph_alignment (20%) + signal_score (40%)
+        from datetime import timezone as _tz2
+        _epoch2 = datetime.min.replace(tzinfo=timezone.utc)
+        _SR2 = {"strong": 0, "medium": 1, "weak": 2}
+        items.sort(key=lambda _i: (
+            -(_i.published_dt or _epoch2).timestamp() // 3600,
+            _SR2.get(_i.signal_strength, 1),
+            -(_i.institutional_score * 0.40
+              + _i.graph_alignment_score * 0.20
+              + _i.signal_score * 0.40),
+        ))
+        log.info(
+            "[bg] graph_align: regime_kw=%d  theme_kw=%d  top_item=%r  inst=%.1f  align=%.1f",
+            len([w for w in _graph_kw if w in _regime_str.lower()]),
+            len(_graph_kw),
+            items[0].title[:50] if items else "",
+            items[0].institutional_score if items else 0.0,
+            items[0].graph_alignment_score if items else 0.0,
+        )
+    except Exception:
+        log.exception("[bg] graph_alignment_score computation FAILED — skipping")
+
     # ── 6e. Industry activation (server-side per-industry signal aggregation) ──
     try:
         from app.theme_graph import compute_industry_activation
