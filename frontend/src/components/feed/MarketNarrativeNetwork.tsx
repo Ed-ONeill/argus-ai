@@ -677,18 +677,18 @@ export function MarketNarrativeNetwork() {
           const pulses = computeMarketPulse(data.dominant_regime, data.chains, data.nodes);
           return (
             <div className="flex items-center gap-4 px-6 py-2.5"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-              <span className="text-[7px] font-medium uppercase tracking-[0.14em] shrink-0"
-              style={{ color: "rgba(255,255,255,0.46)" }}>
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <span className="text-[7.5px] font-medium uppercase tracking-[0.12em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.55)" }}>
                 Market Pulse
               </span>
               <div className="flex items-center gap-5 flex-wrap">
                 {pulses.map(p => (
                   <div key={p.label} className="flex items-center gap-1.5">
                     <div className="rounded-full shrink-0"
-                      style={{ width: 5, height: 5, background: p.dot, opacity: 0.85 }} />
-                    <span className="text-[7.5px]" style={{ color: "rgba(255,255,255,0.46)" }}>{p.label}</span>
-                    <span className="text-[8px] font-medium" style={{ color: p.color }}>
+                      style={{ width: 5, height: 5, background: p.dot }} />
+                    <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.55)" }}>{p.label}</span>
+                    <span className="text-[9px] font-semibold" style={{ color: p.color }}>
                       {p.value}
                     </span>
                   </div>
@@ -884,7 +884,7 @@ export function MarketNarrativeNetwork() {
 
             {/* Row lane labels — readable but subordinate */}
             {rowEntries.map(([row, y]) => {
-              const labelOp = row === 0 ? 0.72 : row === 1 ? 0.62 : row === 2 ? 0.54 : 0.50;
+              const labelOp = row === 0 ? 0.80 : row === 1 ? 0.70 : row === 2 ? 0.62 : 0.56;
               return (
                 <text key={row} x={LABEL_X} y={y + 4} textAnchor="end"
                   fontSize={7} fontWeight={700} letterSpacing={1.8}

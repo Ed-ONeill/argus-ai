@@ -32,7 +32,7 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
     <section className="mb-8">
       <div className="flex items-center gap-3 mb-3">
         <span className="text-[10px] font-medium tracking-[0.05em] shrink-0"
-          style={{ color: "rgba(255,255,255,0.32)" }}>
+          style={{ color: "rgba(255,255,255,0.42)" }}>
           Top stories
         </span>
         <span className="h-px flex-1"
@@ -85,17 +85,17 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
       whileHover={{ y: -1, transition: { duration: 0.16, ease: "easeOut" } }}
       className="group relative rounded-xl p-3 cursor-default flex flex-col"
       style={{
-        background:   "rgba(5,9,20,0.70)",
-        borderTop:    "1px solid rgba(255,255,255,0.04)",
-        borderRight:  "1px solid rgba(255,255,255,0.04)",
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
-        borderLeft:   `2px solid ${color}45`,
+        background:   "rgba(6,10,22,0.86)",
+        borderTop:    "1px solid rgba(255,255,255,0.06)",
+        borderRight:  "1px solid rgba(255,255,255,0.06)",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        borderLeft:   `2px solid ${color}65`,
       }}
     >
       {/* Slot label + bookmark */}
       <div className="flex items-center justify-between gap-1 mb-1.5">
         <span className="text-[9.5px] font-medium"
-          style={{ color: "rgba(255,255,255,0.32)" }}>
+          style={{ color: "rgba(255,255,255,0.44)" }}>
           {label}
         </span>
         <motion.button
@@ -131,7 +131,7 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
       {/* Why it matters */}
       {item.why_it_matters ? (
         <p className="text-[10.5px] leading-relaxed line-clamp-2 mb-auto pb-2"
-          style={{ color: "rgba(255,255,255,0.48)" }}>
+          style={{ color: "rgba(255,255,255,0.58)" }}>
           {item.why_it_matters}
         </p>
       ) : (
@@ -140,12 +140,12 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 pt-2"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
         <span className="text-[9.5px] truncate leading-none"
-          style={{ color: "rgba(255,255,255,0.35)" }}>
+          style={{ color: "rgba(255,255,255,0.44)" }}>
           {item.source}
           {item.published && (
-            <span className="ml-1" style={{ color: "rgba(255,255,255,0.22)" }}>
+            <span className="ml-1" style={{ color: "rgba(255,255,255,0.28)" }}>
               · {item.published}
             </span>
           )}
