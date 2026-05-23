@@ -49,14 +49,14 @@ const EDGE_STROKE: Record<string, string> = {
   rotates_into: "#706090",
 };
 
-// Brightened versions for active chain edges
+// Significantly brightened for active chain edges
 const EDGE_STROKE_ACTIVE: Record<string, string> = {
-  drives:       "#c0a050",
-  pressures:    "#c05858",
-  supports:     "#50a870",
-  benefits:     "#4098b8",
-  correlates:   "#6880a8",
-  rotates_into: "#8860a8",
+  drives:       "#d4b060",
+  pressures:    "#d06868",
+  supports:     "#60c080",
+  benefits:     "#50aace",
+  correlates:   "#7898be",
+  rotates_into: "#9870c0",
 };
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -103,8 +103,13 @@ function computeLayout(
         return avgX(a.id) - avgX(b.id);
       });
     }
+
+    // Stagger theme nodes vertically to reduce crowding and edge crossings
+    const isThemeRow = rowKey === TYPE_ROW["theme"];
+    const staggerAmt = isThemeRow && ordered.length > 3 ? 18 : 0;
     ordered.forEach((node, col) => {
-      pos.set(node.id, { x: PAD_X + (usableW / (ordered.length + 1)) * (col + 1), y });
+      const stagger = staggerAmt ? (col % 2 === 0 ? -staggerAmt : staggerAmt) : 0;
+      pos.set(node.id, { x: PAD_X + (usableW / (ordered.length + 1)) * (col + 1), y: y + stagger });
     });
   });
 
@@ -114,8 +119,9 @@ function computeLayout(
 function nodeRadius(n: GraphNode): number {
   if (n.type === "regime") return 34;
   if (n.type === "macro")  return 18;
-  const base = n.type === "theme" ? 12 : 10;
-  return Math.min(base + (n.confidence / 100) * 20, 30);
+  // Theme nodes capped smaller to reduce row crowding
+  if (n.type === "theme") return Math.min(10 + (n.confidence / 100) * 14, 22);
+  return Math.min(10 + (n.confidence / 100) * 18, 26);
 }
 
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -164,17 +170,16 @@ function NodeTooltip({ t }: { t: TooltipState }) {
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[8px] font-bold uppercase tracking-widest"
             style={{ color: style.label }}>{t.node.type}</span>
-          <span className="text-[8px] text-white/30">{t.node.confidence.toFixed(0)}% conf</span>
+          <span className="text-[8px] text-white/40">{t.node.confidence.toFixed(0)}% conf</span>
         </div>
         <p className="text-[11.5px] font-semibold text-white/90 leading-tight mb-1">
           {t.node.label}
         </p>
-        <p className="text-[9.5px] text-white/48 leading-snug">
+        <p className="text-[9.5px] text-white/58 leading-snug">
           {trunc(t.node.description, 120)}
         </p>
-        <p className="text-[8px] text-white/24 mt-1.5">
-          {t.node.source_count > 0 ? `${t.node.source_count} stories` : ""}
-          {t.node.source_count > 0 ? " · " : ""}click to focus
+        <p className="text-[8px] text-white/30 mt-1.5">
+          {t.node.source_count > 0 ? `${t.node.source_count} stories · ` : ""}click to focus
         </p>
       </div>
     </div>
@@ -254,14 +259,13 @@ export function MarketNarrativeNetwork() {
     };
   }, [hoveredId, data]);
 
-  const activeHighlight = activeChain !== null ? chainHighlight : hoveredHighlight;
+  const activeHighlight    = activeChain !== null ? chainHighlight : hoveredHighlight;
   const anyHighlightActive = activeChain !== null || hoveredId !== null;
 
   const focusedNode = focusedNodeId && data
     ? (data.nodes.find(n => n.id === focusedNodeId) ?? null)
     : null;
 
-  // Connections for focused node detail panel
   const focusedConnections = useMemo(() => {
     if (!focusedNodeId || !data) return [];
     return data.edges
@@ -270,14 +274,11 @@ export function MarketNarrativeNetwork() {
         const isSource = e.source === focusedNodeId;
         const connId   = isSource ? e.target : e.source;
         const connNode = data.nodes.find(n => n.id === connId);
-        return connNode
-          ? { node: connNode, rel: e.relationship, isSource }
-          : null;
+        return connNode ? { node: connNode, rel: e.relationship, isSource } : null;
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [focusedNodeId, data]);
 
-  // Which propagation chains contain the focused node
   const focusedInChains = useMemo(() => {
     if (!focusedNodeId || !data) return [];
     return data.chains.filter(c => c.nodes.includes(focusedNodeId));
@@ -312,9 +313,14 @@ export function MarketNarrativeNetwork() {
   if (isLoading) return <Skeleton />;
   if (!data || data.nodes.length < 2) return null;
 
-  const sortedChains       = [...data.chains].sort((a, b) => b.confidence - a.confidence);
+  const sortedChains         = [...data.chains].sort((a, b) => b.confidence - a.confidence);
   const presentRelationships = [...new Set(data.edges.map(e => e.relationship))];
-  const anyFocusOrChain    = focusedNodeId !== null || activeChain !== null;
+  const anyFocusOrChain      = focusedNodeId !== null || activeChain !== null;
+
+  // Pre-compute focused node style to use in both panel sections
+  const focusedNodeStyle = focusedNode
+    ? (NODE_STYLE[focusedNode.type] ?? NODE_STYLE.theme)
+    : null;
 
   // Row y-positions for lane labels
   const rowYMap = new Map<number, number>();
@@ -345,25 +351,35 @@ export function MarketNarrativeNetwork() {
     const ex = to.x   - (dx / dist) * tr;
     const ey = to.y   - (dy / dist) * tr;
 
-    const isChainEdge = chainHighlight.edgeIds.has(edge.id);
-    const isHigh  = anyHighlightActive && (activeHighlight?.edgeIds.has(edge.id) ?? false);
-    const isDim   = anyHighlightActive && !isHigh;
-    const baseStroke  = EDGE_STROKE[edge.relationship] ?? "#485a72";
-    const activeStroke = EDGE_STROKE_ACTIVE[edge.relationship] ?? "#6880a8";
-    const stroke  = isChainEdge ? activeStroke : baseStroke;
-    const base    = Math.min(0.48 + edge.confidence * 0.40, 0.82);
-    const opacity = isDim ? 0.04 : isChainEdge ? 0.96 : isHigh ? 0.88 : base;
-    const sw      = Math.max(1.2, edge.weight * 3.5);
-    const d       = edgePath(sx, sy, ex, ey);
+    const isChainEdge  = chainHighlight.edgeIds.has(edge.id);
+    const isHigh       = anyHighlightActive && (activeHighlight?.edgeIds.has(edge.id) ?? false);
+    const isDim        = anyHighlightActive && !isHigh;
+    const baseStroke   = EDGE_STROKE[edge.relationship] ?? "#485a72";
+    const activeStroke = EDGE_STROKE_ACTIVE[edge.relationship] ?? "#7898be";
+    const stroke       = isChainEdge ? activeStroke : baseStroke;
+    const base         = Math.min(0.48 + edge.confidence * 0.40, 0.82);
+    const opacity      = isDim ? 0.025 : isChainEdge ? 1.0 : isHigh ? 0.88 : base;
+    const sw           = Math.max(1.2, edge.weight * 3.5);
+    const d            = edgePath(sx, sy, ex, ey);
 
     return (
       <g key={edge.id}>
-        {/* Ghost glow trail on active chain edges only */}
+        {/* Wide soft aura behind active chain edges */}
         {isChainEdge && (
           <path d={d}
             stroke={activeStroke}
-            strokeWidth={(sw + 1.2) * 2.8}
-            strokeOpacity={0.16}
+            strokeWidth={(sw + 2.0) * 6}
+            strokeOpacity={0.06}
+            fill="none"
+            filter="url(#edgeAura)"
+          />
+        )}
+        {/* Tighter glow trail */}
+        {isChainEdge && (
+          <path d={d}
+            stroke={activeStroke}
+            strokeWidth={(sw + 2.0) * 2.8}
+            strokeOpacity={0.26}
             fill="none"
             filter="url(#edgeGlow)"
           />
@@ -372,7 +388,7 @@ export function MarketNarrativeNetwork() {
         <path
           d={d}
           stroke={stroke}
-          strokeWidth={isChainEdge ? sw + 1.2 : sw}
+          strokeWidth={isChainEdge ? sw + 2.0 : sw}
           strokeOpacity={opacity}
           strokeDasharray={isChainEdge ? "9 4" : undefined}
           fill="none"
@@ -404,26 +420,29 @@ export function MarketNarrativeNetwork() {
     const isHigh   = anyHighlightActive && (activeHighlight?.nodeIds.has(node.id) ?? false);
     const isDim    = anyHighlightActive && !isHigh;
     const isRegime = node.type === "regime";
-    const isActive = chainHighlight.nodeIds.has(node.id); // in the active chain
+    const isTheme  = node.type === "theme";
+    const isActive = chainHighlight.nodeIds.has(node.id);
     const fill     = isRegime ? "url(#regGrad)" : base.fill;
     const rc       = regimeColor(node.label);
 
-    // Only show label when highlighted / hovered / focused, or when nothing is active
+    // Stricter label threshold for theme nodes to reduce crowding
+    const labelThreshold = isTheme ? 14 : 10;
     const showLabel = anyHighlightActive
       ? (isHigh || isHov || isFocus)
-      : r >= 10;
+      : r >= labelThreshold;
+
+    const labelMax = isRegime ? 30 : (isTheme && !isFocus) ? 15 : isFocus ? 28 : 20;
 
     return (
       <g
         key={node.id}
         transform={`translate(${pos.x},${pos.y})`}
         className="cursor-pointer"
-        style={{ opacity: isDim ? 0.06 : 1, transition: "opacity 220ms" }}
+        style={{ opacity: isDim ? 0.03 : 1, transition: "opacity 200ms" }}
         onMouseEnter={e => handleNodeEnter(node, e)}
         onMouseLeave={handleNodeLeave}
         onClick={() => handleNodeClick(node)}
       >
-        {/* Inner breathing group for regime (SMIL scale animation) */}
         <g>
           {isRegime && (
             <animateTransform
@@ -453,21 +472,32 @@ export function MarketNarrativeNetwork() {
           {/* Regime: blur glow halo */}
           {isRegime && (
             <circle r={r + 2} fill="none" stroke={rc}
-              strokeWidth="6" strokeOpacity="0.12"
+              strokeWidth="6" strokeOpacity="0.14"
               filter="url(#regGlow)" />
           )}
 
-          {/* Active chain node: outer emphasis ring */}
+          {/* Active chain node: wide outer glow ring */}
+          {isActive && !isRegime && (
+            <circle r={r + 8} fill="none" stroke={base.label}
+              strokeWidth="1" strokeOpacity="0.30"
+              filter="url(#activeGlow)" />
+          )}
+          {/* Active chain node: inner emphasis ring */}
           {isActive && !isRegime && (
             <circle r={r + 5} fill="none" stroke={base.label}
-              strokeWidth="1.5" strokeOpacity="0.58"
+              strokeWidth="2.0" strokeOpacity="0.82"
+              filter="url(#activeGlow)" />
+          )}
+          {/* Active chain node: inner fill glow */}
+          {isActive && !isRegime && (
+            <circle r={r + 1} fill={base.label} fillOpacity="0.07"
               filter="url(#activeGlow)" />
           )}
 
           {/* Focus indicator ring */}
           {isFocus && (
-            <circle r={r + 6} fill="none" stroke={base.label}
-              strokeWidth="1.5" strokeOpacity="0.60" strokeDasharray="4 3" />
+            <circle r={r + 7} fill="none" stroke={base.label}
+              strokeWidth="1.5" strokeOpacity="0.65" strokeDasharray="4 3" />
           )}
 
           {/* Main circle */}
@@ -475,28 +505,32 @@ export function MarketNarrativeNetwork() {
             r={r}
             fill={fill}
             stroke={stroke}
-            strokeWidth={isActive || isFocus ? 2.6 : isHov ? 2.2 : 1.3}
-            strokeOpacity={isActive || isFocus ? 0.95 : isHov ? 0.88 : 0.65}
-            filter={isHov && !isRegime ? "url(#hoverGlow)" : undefined}
+            strokeWidth={isActive || isFocus ? 2.8 : isHov ? 2.2 : 1.3}
+            strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.90 : 0.65}
+            filter={isActive && !isRegime
+              ? "url(#nodeActiveGlow)"
+              : isHov && !isRegime
+              ? "url(#hoverGlow)"
+              : undefined}
             style={{ transition: "stroke-width 140ms, stroke-opacity 140ms" }}
           />
 
           {r < 18 && <circle r={2.5} fill={stroke} fillOpacity={0.72} />}
 
-          {/* Label — hidden when dimmed, expanded for focus */}
+          {/* Label — hidden when dimmed */}
           {showLabel && (
             <text
               y={r + (isRegime ? 16 : 13)}
               textAnchor="middle"
-              fontSize={isRegime ? 11.5 : isFocus ? 11 : 10}
+              fontSize={isRegime ? 11.5 : isFocus ? 11 : isTheme ? 9.5 : 10}
               fontWeight={isRegime || isFocus || isActive ? 600 : 400}
               fontFamily="Inter, system-ui, sans-serif"
               fill={base.label}
-              fillOpacity={isHov || isFocus ? 0.96 : isActive ? 0.90 : 0.78}
+              fillOpacity={isHov || isFocus ? 0.96 : isActive ? 0.92 : 0.78}
               className="pointer-events-none select-none"
               style={{ transition: "fill-opacity 140ms" }}
             >
-              {trunc(node.label, isRegime ? 30 : isFocus ? 28 : 20)}
+              {trunc(node.label, labelMax)}
             </text>
           )}
         </g>
@@ -526,7 +560,7 @@ export function MarketNarrativeNetwork() {
         <div className="flex items-center justify-between px-5 py-2.5"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <p className="text-[8.5px] text-white/55 leading-relaxed">
-            Live map of how today's dominant market regime is transmitting through macro drivers, themes, and sectors.
+            Live map of how today&apos;s dominant market regime is transmitting through macro drivers, themes, and sectors.
           </p>
           <div className="flex items-center gap-5 shrink-0 ml-6">
             <div className="text-right">
@@ -552,7 +586,7 @@ export function MarketNarrativeNetwork() {
         </div>
 
         {/* ── Graph canvas ──────────────────────────────────────────────────── */}
-        <div ref={wrapRef} className="relative" style={{ minHeight: 440 }}>
+        <div ref={wrapRef} className="relative" style={{ minHeight: 420 }}>
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full block"
             style={{ overflow: "visible" }}>
             <defs>
@@ -561,39 +595,50 @@ export function MarketNarrativeNetwork() {
                 refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
                 <path d="M0,0 L0,6 L6,3 Z" fill="rgba(255,255,255,0.18)" />
               </marker>
-              <marker id="arrActive" markerWidth="6" markerHeight="6"
-                refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,6 L6,3 Z" fill="rgba(255,255,255,0.55)" />
+              <marker id="arrActive" markerWidth="7" markerHeight="7"
+                refX="5" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,7 L7,3.5 Z" fill="rgba(255,255,255,0.88)" />
               </marker>
 
-              {/* Regime gradient — rich deep blue center */}
+              {/* Regime gradient */}
               <radialGradient id="regGrad" cx="50%" cy="50%" r="50%">
                 <stop offset="0%"   stopColor="#1c3f60" stopOpacity="0.96" />
                 <stop offset="65%"  stopColor="#0f2240" stopOpacity="0.98" />
                 <stop offset="100%" stopColor="#060e1e" stopOpacity="1"    />
               </radialGradient>
 
-              {/* Atmospheric background — soft glow from regime position */}
-              <radialGradient id="bgAtmo" cx="50%" cy="12%" r="68%">
-                <stop offset="0%"   stopColor="#0d2040" stopOpacity="0.60" />
+              {/* Atmospheric background — stronger depth from top */}
+              <radialGradient id="bgAtmo" cx="50%" cy="10%" r="72%">
+                <stop offset="0%"   stopColor="#0d2040" stopOpacity="0.85" />
+                <stop offset="55%"  stopColor="#060f22" stopOpacity="0.35" />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0"    />
               </radialGradient>
 
               {/* Filters */}
               <filter id="regGlow" x="-70%" y="-70%" width="240%" height="240%">
+                <feGaussianBlur stdDeviation="8" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id="activeGlow" x="-100%" y="-100%" width="300%" height="300%">
                 <feGaussianBlur stdDeviation="7" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              <filter id="activeGlow" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="4" result="blur" />
+              {/* Applied to active node's main circle for a subtle inner luminance */}
+              <filter id="nodeActiveGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3.5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               <filter id="hoverGlow" x="-40%" y="-40%" width="180%" height="180%">
                 <feGaussianBlur stdDeviation="3.5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
+              {/* Tight glow halo on active edges */}
               <filter id="edgeGlow" x="-20%" y="-100%" width="140%" height="300%">
-                <feGaussianBlur stdDeviation="3" />
+                <feGaussianBlur stdDeviation="3.5" />
+              </filter>
+              {/* Wide soft aura behind active edges */}
+              <filter id="edgeAura" x="-40%" y="-200%" width="180%" height="500%">
+                <feGaussianBlur stdDeviation="10" />
               </filter>
             </defs>
 
@@ -604,7 +649,7 @@ export function MarketNarrativeNetwork() {
             {rowEntries.map(([row, y]) => (
               <line key={row}
                 x1={PAD_X - 20} y1={y} x2={W - PAD_X + 20} y2={y}
-                stroke="rgba(255,255,255,0.034)" strokeWidth="1" />
+                stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
             ))}
 
             {/* Row lane labels */}
@@ -614,7 +659,7 @@ export function MarketNarrativeNetwork() {
                 textAnchor="end"
                 fontSize={7} fontWeight={700} letterSpacing={1.8}
                 fontFamily="Inter, system-ui, sans-serif"
-                fill="rgba(255,255,255,0.16)"
+                fill="rgba(255,255,255,0.20)"
                 className="pointer-events-none select-none">
                 {ROW_LABELS[row] ?? ""}
               </text>
@@ -692,7 +737,7 @@ export function MarketNarrativeNetwork() {
             </p>
           )}
 
-          {/* Discoverability hint — disappears after first interaction */}
+          {/* Discoverability hint */}
           {!hasInteracted && (
             <p className="text-[7.5px] text-white/35 mt-1.5 pl-14 italic">
               Click any node to explore · hover to see connections · select a path to trace transmission
@@ -701,93 +746,134 @@ export function MarketNarrativeNetwork() {
         </div>
 
         {/* ── Focused node intelligence panel ───────────────────────────────── */}
-        {focusedNode && (
-          <div className="px-5 py-4"
+        {focusedNode && focusedNodeStyle && (
+          <div className="relative"
             style={{
               borderTop: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(8,18,38,0.96)",
+              background: "rgba(6,12,28,0.98)",
             }}>
-            <div className="flex items-start justify-between gap-5">
-              <div className="min-w-0 flex-1">
-                {/* Node identity */}
-                <div className="flex items-center gap-2.5 mb-2">
-                  <span className="text-[7.5px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded"
-                    style={{
-                      color: (NODE_STYLE[focusedNode.type] ?? NODE_STYLE.theme).label,
-                      background: "rgba(255,255,255,0.05)",
-                    }}>
-                    {focusedNode.type}
-                  </span>
-                  <span className="text-[7.5px] text-white/55">
-                    {focusedNode.confidence.toFixed(0)}% confidence
-                    {focusedNode.source_count > 0 && ` · ${focusedNode.source_count} contributing stories`}
-                  </span>
+            {/* Left type-colored accent bar */}
+            <div className="absolute left-0 top-0 bottom-0 w-[3px]"
+              style={{ background: focusedNodeStyle.label, opacity: 0.55 }} />
+
+            <div className="px-5 py-4 pl-7">
+              <div className="flex items-start justify-between gap-5">
+                <div className="min-w-0 flex-1">
+
+                  {/* Header: type badge + sentiment + confidence */}
+                  <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+                    <span className="text-[7px] font-bold uppercase tracking-[0.2em] px-1.5 py-0.5 rounded"
+                      style={{
+                        color: focusedNodeStyle.label,
+                        background: "rgba(255,255,255,0.07)",
+                        border: `1px solid ${focusedNodeStyle.stroke}55`,
+                      }}>
+                      {focusedNode.type}
+                    </span>
+                    <span className="text-[7px] font-medium px-1.5 py-0.5 rounded capitalize"
+                      style={{
+                        color: SENTIMENT_STROKE[focusedNode.sentiment] ?? "#507888",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}>
+                      {focusedNode.sentiment}
+                    </span>
+                    <span className="ml-auto text-[7.5px] text-white/45 tabular-nums shrink-0">
+                      {focusedNode.confidence.toFixed(0)}% confidence
+                      {focusedNode.source_count > 0 && ` · ${focusedNode.source_count} stories`}
+                    </span>
+                  </div>
+
+                  {/* Node name */}
+                  <p className="text-[15px] font-semibold leading-snug mb-2.5"
+                    style={{ color: focusedNodeStyle.label }}>
+                    {focusedNode.label}
+                  </p>
+
+                  {/* Why it matters */}
+                  <div className="mb-4">
+                    <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-1.5">
+                      Why it matters
+                    </p>
+                    <p className="text-[10.5px] text-white/72 leading-relaxed">
+                      {focusedNode.description}
+                    </p>
+                  </div>
+
+                  {/* Connections */}
+                  {focusedConnections.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                        Connections
+                        <span className="ml-1.5 text-white/22 font-normal normal-case tracking-normal">
+                          ({focusedConnections.length})
+                        </span>
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {focusedConnections.slice(0, 8).map(c => {
+                          const cs = NODE_STYLE[c.node.type] ?? NODE_STYLE.theme;
+                          return (
+                            <span key={c.node.id}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-md"
+                              style={{
+                                background: "rgba(255,255,255,0.055)",
+                                border: `1px solid ${cs.stroke}40`,
+                              }}>
+                              <span className="text-[7.5px] text-white/40 shrink-0">
+                                {c.rel.replace(/_/g, " ")}
+                              </span>
+                              <span className="text-[9.5px] font-medium"
+                                style={{ color: cs.label }}>
+                                {trunc(c.node.label, 22)}
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Narrative paths */}
+                  {focusedInChains.length > 0 && (
+                    <div>
+                      <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-white/35 mb-2">
+                        Narrative {focusedInChains.length === 1 ? "path" : `paths (${focusedInChains.length})`}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {focusedInChains.map(c => (
+                          <button key={c.id}
+                            onClick={() => handleChainClick(c.id, activeChain)}
+                            className="flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors"
+                            style={{
+                              background: activeChain === c.id
+                                ? "rgba(60,130,100,0.18)"
+                                : "rgba(255,255,255,0.05)",
+                              color: activeChain === c.id
+                                ? "rgba(100,210,150,0.92)"
+                                : "rgba(255,255,255,0.70)",
+                              border: `1px solid ${activeChain === c.id
+                                ? "rgba(80,180,120,0.35)"
+                                : "rgba(255,255,255,0.12)"}`,
+                            }}>
+                            <span className="text-[9px] font-medium">
+                              {trunc(c.title, 30)}
+                            </span>
+                            <span className="text-[8px] tabular-nums opacity-55">
+                              {c.confidence.toFixed(0)}%
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <p className="text-[14px] font-semibold text-white/90 leading-snug mb-1.5">
-                  {focusedNode.label}
-                </p>
-                <p className="text-[10px] text-white/70 leading-relaxed mb-3">
-                  {focusedNode.description}
-                </p>
-
-                {/* Connected nodes */}
-                {focusedConnections.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-white/48 mb-1.5">
-                      Connections
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {focusedConnections.slice(0, 8).map(c => (
-                        <span key={c.node.id}
-                          className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded"
-                          style={{
-                            background: "rgba(255,255,255,0.08)",
-                            border: "1px solid rgba(255,255,255,0.12)",
-                            color: (NODE_STYLE[c.node.type] ?? NODE_STYLE.theme).label,
-                          }}>
-                          <span className="text-white/45 text-[8px]">
-                            {c.rel.replace(/_/g, " ")}
-                          </span>
-                          {trunc(c.node.label, 22)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Chains containing this node */}
-                {focusedInChains.length > 0 && (
-                  <div>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-white/48 mb-1.5">
-                      Part of {focusedInChains.length === 1 ? "narrative" : `${focusedInChains.length} narratives`}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {focusedInChains.map(c => (
-                        <button key={c.id}
-                          onClick={() => handleChainClick(c.id, activeChain)}
-                          className="text-[9px] px-2 py-0.5 rounded transition-colors"
-                          style={{
-                            background: activeChain === c.id
-                              ? "rgba(80,170,120,0.15)"
-                              : "rgba(255,255,255,0.04)",
-                            color: activeChain === c.id
-                              ? "rgba(100,200,140,0.90)"
-                              : "rgba(255,255,255,0.65)",
-                            border: `1px solid ${activeChain === c.id ? "rgba(80,170,120,0.30)" : "rgba(255,255,255,0.07)"}`,
-                          }}>
-                          {trunc(c.title, 28)} · {c.confidence.toFixed(0)}%
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <button onClick={() => setFocusedNodeId(null)}
+                  className="shrink-0 p-1.5 rounded text-white/30 hover:text-white/65
+                             hover:bg-white/5 transition-colors mt-0.5">
+                  <X size={12} />
+                </button>
               </div>
-
-              <button onClick={() => setFocusedNodeId(null)}
-                className="shrink-0 p-1 text-white/26 hover:text-white/60 transition-colors mt-0.5">
-                <X size={13} />
-              </button>
             </div>
           </div>
         )}
