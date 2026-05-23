@@ -7,13 +7,12 @@ import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── SVG canvas constants ──────────────────────────────────────────────────────
 
-const W   = 780;
-const H   = 310;
-const PAD = 44;  // inset from canvas edges
+const W   = 880;
+const H   = 370;
+const PAD = 48;
 
 // ── Visual config ─────────────────────────────────────────────────────────────
 
-/** Vertical order for node types: regime at top, sectors at bottom. */
 const TYPE_ROW: Record<string, number> = {
   regime: 0,
   macro:  1,
@@ -22,31 +21,28 @@ const TYPE_ROW: Record<string, number> = {
   asset:  4,
 };
 
-/** Base fill/stroke/label colors per node type. */
 const NODE_STYLE: Record<string, { fill: string; stroke: string; label: string }> = {
-  regime: { fill: "#0a1828", stroke: "#4a7098", label: "#8ab0c8" },
-  macro:  { fill: "#130e07", stroke: "#7a5818", label: "#b89040" },
-  theme:  { fill: "#090f1e", stroke: "#2a5075", label: "#5090b8" },
-  sector: { fill: "#070e12", stroke: "#2a5538", label: "#50a870" },
-  asset:  { fill: "#0e0a18", stroke: "#4a3870", label: "#8868b0" },
+  regime: { fill: "#0a1828", stroke: "#5a85b0", label: "#9ac0d8" },
+  macro:  { fill: "#130e07", stroke: "#926820", label: "#c8a050" },
+  theme:  { fill: "#090f1e", stroke: "#3a6090", label: "#60a0c8" },
+  sector: { fill: "#070e12", stroke: "#386848", label: "#60b878" },
+  asset:  { fill: "#0e0a18", stroke: "#604898", label: "#9878c0" },
 };
 
-/** Override stroke by sentiment for theme/sector nodes. */
 const SENTIMENT_STROKE: Record<string, string> = {
-  bullish: "#2a5c38",
-  bearish: "#5c2828",
-  neutral: "#384458",
-  mixed:   "#5a4818",
+  bullish: "#357848",
+  bearish: "#783838",
+  neutral: "#486070",
+  mixed:   "#726020",
 };
 
-/** Edge stroke color by relationship type. */
 const EDGE_STROKE: Record<string, string> = {
-  drives:       "#807025",
-  pressures:    "#803030",
-  supports:     "#306038",
-  benefits:     "#285870",
-  correlates:   "#384860",
-  rotates_into: "#583870",
+  drives:       "#a08030",
+  pressures:    "#a03838",
+  supports:     "#387848",
+  benefits:     "#307090",
+  correlates:   "#486080",
+  rotates_into: "#704890",
 };
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -78,17 +74,15 @@ function computeLayout(nodes: GraphNode[]): Map<string, { x: number; y: number }
 }
 
 function nodeRadius(n: GraphNode): number {
-  if (n.type === "regime") return 22;
-  if (n.type === "macro")  return 11;
-  const base = n.type === "theme" ? 9 : 7;
-  return base + (n.confidence / 100) * 15;
+  if (n.type === "regime") return 30;
+  if (n.type === "macro")  return 15;
+  const base = n.type === "theme" ? 11 : 9;
+  return Math.min(base + (n.confidence / 100) * 18, 28);
 }
 
-/** Cubic bezier S-curve for inter-row edges; quadratic arc for same-row. */
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   if (Math.abs(y2 - y1) < 22) {
-    // Same row — arc upward
-    return `M ${x1} ${y1} Q ${(x1 + x2) / 2} ${y1 - 36} ${x2} ${y2}`;
+    return `M ${x1} ${y1} Q ${(x1 + x2) / 2} ${y1 - 48} ${x2} ${y2}`;
   }
   const dy = y2 - y1;
   return `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.48} ${x2} ${y2 - dy * 0.48} ${x2} ${y2}`;
@@ -114,11 +108,11 @@ function formatAge(iso: string): string {
 function regimeColor(label: string): string {
   const l = label.toLowerCase();
   if (l.includes("expansion") || l.includes("risk-on") || l.includes("dovish"))
-    return "#5a9870";
+    return "#68b080";
   if (l.includes("tighten") || l.includes("shock") || l.includes("pressure") ||
       l.includes("risk-off") || l.includes("stagflat"))
-    return "#9a6060";
-  return "#7080a0";
+    return "#b06868";
+  return "#8090b0";
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
@@ -130,29 +124,29 @@ function NodeTooltip({ t }: { t: TooltipState }) {
   return (
     <div
       className="absolute z-20 pointer-events-none"
-      style={{ left: t.x + 14, top: Math.max(4, t.y - 70), width: 220 }}
+      style={{ left: t.x + 14, top: Math.max(4, t.y - 70), width: 230 }}
     >
       <div
         className="rounded-lg border px-3 py-2.5"
-        style={{ background: "#080f1e", borderColor: "rgba(255,255,255,0.10)" }}
+        style={{ background: "#080f1e", borderColor: "rgba(255,255,255,0.12)" }}
       >
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[8.5px] font-bold uppercase tracking-widest"
             style={{ color: style.label }}>
             {t.node.type}
           </span>
-          <span className="text-[8.5px] text-white/25">
+          <span className="text-[8.5px] text-white/30">
             {t.node.confidence.toFixed(0)} conf
           </span>
         </div>
-        <p className="text-[11px] font-semibold text-white/85 leading-tight mb-1">
+        <p className="text-[11.5px] font-semibold text-white/90 leading-tight mb-1">
           {t.node.label}
         </p>
-        <p className="text-[9.5px] text-white/40 leading-snug">
-          {trunc(t.node.description, 120)}
+        <p className="text-[9.5px] text-white/45 leading-snug">
+          {trunc(t.node.description, 130)}
         </p>
         {t.node.source_count > 0 && (
-          <p className="text-[8.5px] text-white/25 mt-1.5">
+          <p className="text-[8.5px] text-white/28 mt-1.5">
             {t.node.source_count} contributing stories
           </p>
         )}
@@ -165,7 +159,7 @@ function NodeTooltip({ t }: { t: TooltipState }) {
 
 function Skeleton() {
   return (
-    <section className="mb-7">
+    <section className="mb-5">
       <div className="flex items-center gap-3 mb-3">
         <Network size={12} className="text-ink-secondary" />
         <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink">
@@ -175,7 +169,7 @@ function Skeleton() {
       </div>
       <div
         className="rounded-xl border animate-pulse"
-        style={{ background: "#070d1a", borderColor: "rgba(255,255,255,0.06)", height: 320 }}
+        style={{ background: "#070d1a", borderColor: "rgba(255,255,255,0.06)", height: 370 }}
       />
     </section>
   );
@@ -185,18 +179,16 @@ function Skeleton() {
 
 export function MarketNarrativeNetwork() {
   const { data, isLoading, isFetching } = useNarrativeNetwork();
-  const [hoveredId, setHoveredId]           = useState<string | null>(null);
-  const [tooltip, setTooltip]               = useState<TooltipState | null>(null);
-  const [activeChain, setActiveChain]       = useState<string | null>(null);
+  const [hoveredId, setHoveredId]     = useState<string | null>(null);
+  const [tooltip, setTooltip]         = useState<TooltipState | null>(null);
+  const [activeChain, setActiveChain] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Compute node positions
   const positions = useMemo(
     () => (data?.nodes ? computeLayout(data.nodes) : new Map()),
     [data?.nodes],
   );
 
-  // Which node/edge IDs belong to the selected propagation chain
   const chainHighlight = useMemo<{ nodeIds: Set<string>; edgeIds: Set<string> }>(() => {
     if (!activeChain || !data) return { nodeIds: new Set(), edgeIds: new Set() };
     const chain = data.chains.find(c => c.id === activeChain);
@@ -226,10 +218,9 @@ export function MarketNarrativeNetwork() {
   }, []);
 
   if (isLoading) return <Skeleton />;
-  // Need at least regime + one other node to show the graph
   if (!data || data.nodes.length < 2) return null;
 
-  // ── Edge rendering helper ──────────────────────────────────────────────────
+  // ── Edge rendering ──────────────────────────────────────────────────────────
   function renderEdge(edge: GraphEdge) {
     const from = positions.get(edge.source);
     const to   = positions.get(edge.target);
@@ -237,10 +228,9 @@ export function MarketNarrativeNetwork() {
 
     const fromNode = data!.nodes.find(n => n.id === edge.source);
     const toNode   = data!.nodes.find(n => n.id === edge.target);
-    const fr = fromNode ? nodeRadius(fromNode) : 10;
-    const tr = toNode   ? nodeRadius(toNode)   : 10;
+    const fr = fromNode ? nodeRadius(fromNode) : 12;
+    const tr = toNode   ? nodeRadius(toNode)   : 12;
 
-    // Trim path endpoints to node boundary
     const dx = to.x - from.x, dy = to.y - from.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const sx = from.x + (dx / dist) * fr;
@@ -250,16 +240,16 @@ export function MarketNarrativeNetwork() {
 
     const isHigh = anyChainActive ? chainHighlight.edgeIds.has(edge.id) : false;
     const isDim  = anyChainActive && !isHigh;
-    const base   = 0.22 + edge.confidence * 0.42;
-    const stroke = EDGE_STROKE[edge.relationship] ?? "#404050";
+    const base   = Math.min(0.38 + edge.confidence * 0.48, 0.82);
+    const stroke = EDGE_STROKE[edge.relationship] ?? "#486070";
 
     return (
       <path
         key={edge.id}
         d={edgePath(sx, sy, ex, ey)}
         stroke={stroke}
-        strokeWidth={Math.max(0.7, edge.weight * 2.2)}
-        strokeOpacity={isDim ? 0.05 : isHigh ? 0.88 : base}
+        strokeWidth={Math.max(1.2, edge.weight * 3.2)}
+        strokeOpacity={isDim ? 0.05 : isHigh ? 0.92 : base}
         fill="none"
         markerEnd="url(#arr)"
         style={{ transition: "stroke-opacity 200ms" }}
@@ -267,63 +257,85 @@ export function MarketNarrativeNetwork() {
     );
   }
 
-  // ── Node rendering helper ──────────────────────────────────────────────────
+  // ── Node rendering ──────────────────────────────────────────────────────────
   function renderNode(node: GraphNode) {
     const pos = positions.get(node.id);
     if (!pos) return null;
 
-    const r         = nodeRadius(node);
-    const base      = NODE_STYLE[node.type] ?? NODE_STYLE.theme;
-    const stroke    = (node.type === "sector" || node.type === "theme")
+    const r        = nodeRadius(node);
+    const base     = NODE_STYLE[node.type] ?? NODE_STYLE.theme;
+    const stroke   = (node.type === "sector" || node.type === "theme")
       ? (SENTIMENT_STROKE[node.sentiment] ?? base.stroke)
       : base.stroke;
 
-    const isHov  = hoveredId === node.id;
-    const isHigh = anyChainActive ? chainHighlight.nodeIds.has(node.id) : false;
-    const isDim  = anyChainActive && !isHigh;
-    const fill   = node.type === "regime" ? "url(#regGrad)" : base.fill;
+    const isHov    = hoveredId === node.id;
+    const isHigh   = anyChainActive ? chainHighlight.nodeIds.has(node.id) : false;
+    const isDim    = anyChainActive && !isHigh;
+    const fill     = node.type === "regime" ? "url(#regGrad)" : base.fill;
+    const isRegime = node.type === "regime";
+    const rc       = regimeColor(node.label);
 
     return (
       <g
         key={node.id}
         transform={`translate(${pos.x},${pos.y})`}
         className="cursor-pointer"
-        style={{ opacity: isDim ? 0.15 : 1, transition: "opacity 200ms" }}
+        style={{ opacity: isDim ? 0.12 : 1, transition: "opacity 200ms" }}
         onMouseEnter={e => handleNodeEnter(node, e)}
         onMouseLeave={handleNodeLeave}
       >
+        {/* Regime: animated pulse ring */}
+        {isRegime && (
+          <circle r={r + 5} fill="none" stroke={rc} strokeWidth="1.2" strokeOpacity="0">
+            <animate attributeName="r"
+              values={`${r + 4};${r + 14};${r + 4}`}
+              dur="3.2s" repeatCount="indefinite" />
+            <animate attributeName="stroke-opacity"
+              values="0.55;0;0.55"
+              dur="3.2s" repeatCount="indefinite" />
+          </circle>
+        )}
+        {/* Regime: soft glow halo */}
+        {isRegime && (
+          <circle r={r + 2} fill="none" stroke={rc}
+            strokeWidth="4" strokeOpacity="0.14"
+            filter="url(#regGlow)" />
+        )}
+        {/* Main circle */}
         <circle
           r={r}
           fill={fill}
           stroke={stroke}
-          strokeWidth={isHov || isHigh ? 1.8 : 0.9}
-          strokeOpacity={isHov || isHigh ? 0.80 : 0.50}
+          strokeWidth={isHov || isHigh ? 2.2 : 1.2}
+          strokeOpacity={isHov || isHigh ? 0.90 : 0.65}
+          filter={isHov && !isRegime ? "url(#hoverGlow)" : undefined}
           style={{ transition: "stroke-width 150ms, stroke-opacity 150ms" }}
         />
         {/* Center dot for small nodes */}
-        {r < 14 && <circle r={2} fill={stroke} fillOpacity={0.65} />}
-        {/* Label below */}
+        {r < 16 && <circle r={2.5} fill={stroke} fillOpacity={0.70} />}
+        {/* Label */}
         <text
-          y={r + 11}
+          y={r + (isRegime ? 14 : 12)}
           textAnchor="middle"
-          fontSize={node.type === "regime" ? 9.5 : 8}
+          fontSize={isRegime ? 11.5 : 10}
+          fontWeight={isRegime ? 600 : 400}
           fontFamily="Inter, system-ui, sans-serif"
           fill={base.label}
-          fillOpacity={isDim ? 0.1 : isHov ? 0.92 : 0.60}
+          fillOpacity={isDim ? 0.08 : isHov ? 0.96 : 0.78}
           className="pointer-events-none select-none"
           style={{ transition: "fill-opacity 150ms" }}
         >
-          {trunc(node.label, node.type === "regime" ? 22 : 15)}
+          {trunc(node.label, isRegime ? 28 : 20)}
         </text>
       </g>
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   const presentRelationships = [...new Set(data.edges.map(e => e.relationship))];
+  const sortedChains = [...data.chains].sort((a, b) => b.confidence - a.confidence);
 
   return (
-    <section className="mb-7">
+    <section className="mb-5">
       {/* Section header */}
       <div className="flex items-center gap-3 mb-3">
         <Network size={12} className="text-ink-secondary shrink-0" />
@@ -341,7 +353,7 @@ export function MarketNarrativeNetwork() {
 
       <div
         className="rounded-xl border overflow-hidden"
-        style={{ background: "#070d1a", borderColor: "rgba(255,255,255,0.07)" }}
+        style={{ background: "#070d1a", borderColor: "rgba(255,255,255,0.08)" }}
       >
         <div className="flex flex-col md:flex-row">
 
@@ -349,7 +361,7 @@ export function MarketNarrativeNetwork() {
           <div
             ref={wrapRef}
             className="relative flex-1 overflow-visible"
-            style={{ minHeight: 260 }}
+            style={{ minHeight: 310 }}
           >
             <svg
               viewBox={`0 0 ${W} ${H}`}
@@ -359,53 +371,70 @@ export function MarketNarrativeNetwork() {
               <defs>
                 <marker id="arr" markerWidth="5" markerHeight="5"
                   refX="4.5" refY="2.5" orient="auto" markerUnits="strokeWidth">
-                  <path d="M0,0 L0,5 L5,2.5 Z" fill="rgba(255,255,255,0.12)" />
+                  <path d="M0,0 L0,5 L5,2.5 Z" fill="rgba(255,255,255,0.18)" />
                 </marker>
                 <radialGradient id="regGrad" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%"   stopColor="#16304a" stopOpacity="0.9" />
-                  <stop offset="100%" stopColor="#080f1c" stopOpacity="1" />
+                  <stop offset="0%"   stopColor="#1a3854" stopOpacity="0.95" />
+                  <stop offset="70%"  stopColor="#0e2038" stopOpacity="0.98" />
+                  <stop offset="100%" stopColor="#06101e" stopOpacity="1" />
                 </radialGradient>
+                {/* Soft blur glow for regime node halo */}
+                <filter id="regGlow" x="-60%" y="-60%" width="220%" height="220%">
+                  <feGaussianBlur stdDeviation="5" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                {/* Subtle hover glow for non-regime nodes */}
+                <filter id="hoverGlow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
               </defs>
 
-              {/* Edges (rendered below nodes) */}
+              {/* Edges (below nodes) */}
               {data.edges.map(renderEdge)}
 
               {/* Nodes */}
               {data.nodes.map(renderNode)}
             </svg>
 
-            {/* Floating tooltip */}
             {tooltip && <NodeTooltip t={tooltip} />}
           </div>
 
           {/* ── Side panel ──────────────────────────────────────────────── */}
           <div
-            className="w-full md:w-52 shrink-0 p-4 flex flex-col gap-5
+            className="w-full md:w-44 shrink-0 p-4 flex flex-col gap-4
                        border-t md:border-t-0 md:border-l"
             style={{ borderColor: "rgba(255,255,255,0.06)" }}
           >
             {/* Dominant regime */}
             <div>
-              <p className="text-[8.5px] font-bold uppercase tracking-[0.18em] text-white/22 mb-1.5">
+              <p className="text-[8px] font-bold uppercase tracking-[0.20em] text-white/22 mb-1.5">
                 Dominant Regime
               </p>
               <p
-                className="text-[12px] font-semibold leading-snug"
+                className="text-[12.5px] font-semibold leading-snug"
                 style={{ color: regimeColor(data.dominant_regime) }}
               >
                 {data.dominant_regime}
               </p>
             </div>
 
-            {/* Propagation chains */}
-            {data.chains.length > 0 && (
+            {/* Propagation chains — sorted highest confidence first */}
+            {sortedChains.length > 0 && (
               <div>
-                <p className="text-[8.5px] font-bold uppercase tracking-[0.18em] text-white/22 mb-2">
+                <p className="text-[8px] font-bold uppercase tracking-[0.20em] text-white/22 mb-2">
                   Propagation
                 </p>
-                <div className="flex flex-col gap-1">
-                  {data.chains.slice(0, 4).map((chain: PropagationChain) => {
-                    const sel = activeChain === chain.id;
+                <div className="flex flex-col gap-0.5">
+                  {sortedChains.slice(0, 4).map((chain: PropagationChain, idx: number) => {
+                    const sel   = activeChain === chain.id;
+                    const isTop = idx === 0;
                     return (
                       <button
                         key={chain.id}
@@ -417,31 +446,41 @@ export function MarketNarrativeNetwork() {
                                      transition-colors duration-150"
                           style={{
                             background: sel
-                              ? "rgba(255,255,255,0.06)"
+                              ? "rgba(255,255,255,0.07)"
+                              : isTop && !activeChain
+                              ? "rgba(255,255,255,0.025)"
                               : "transparent",
                           }}
                         >
-                          {/* Confidence bar */}
-                          <div className="shrink-0 mt-0.5 w-1 rounded-full"
+                          {/* Confidence bar — wider and brighter for top chain */}
+                          <div
+                            className="shrink-0 mt-0.5 rounded-full"
                             style={{
-                              height: Math.max(10, (chain.confidence / 100) * 30),
-                              background: `rgba(80,160,110,${sel ? 0.7 : 0.35})`,
+                              width:    isTop ? 3 : 2,
+                              height:   Math.max(12, (chain.confidence / 100) * 34),
+                              background: isTop
+                                ? `rgba(80,170,120,${sel ? 0.88 : 0.55})`
+                                : `rgba(80,150,110,${sel ? 0.72 : 0.30})`,
                             }}
                           />
                           <div className="min-w-0">
                             <p
-                              className="text-[10px] font-medium leading-tight truncate"
+                              className="leading-tight truncate"
                               style={{
+                                fontSize:   isTop ? 10.5 : 9.5,
+                                fontWeight: isTop ? 500 : 400,
                                 color: sel
-                                  ? "rgba(255,255,255,0.82)"
-                                  : "rgba(255,255,255,0.48)",
+                                  ? "rgba(255,255,255,0.88)"
+                                  : isTop
+                                  ? "rgba(255,255,255,0.62)"
+                                  : "rgba(255,255,255,0.40)",
                               }}
                             >
                               {trunc(chain.title, 24)}
                             </p>
-                            <p className="text-[8.5px] mt-0.5"
-                              style={{ color: "rgba(255,255,255,0.22)" }}>
-                              {chain.confidence.toFixed(0)} confidence
+                            <p className="text-[8px] mt-0.5"
+                              style={{ color: "rgba(255,255,255,0.24)" }}>
+                              {chain.confidence.toFixed(0)}% conf
                             </p>
                           </div>
                         </div>
@@ -450,7 +489,7 @@ export function MarketNarrativeNetwork() {
                   })}
                 </div>
                 {activeChain && (
-                  <p className="text-[8px] text-white/25 mt-2 px-2">
+                  <p className="text-[8px] text-white/28 mt-2 px-2 leading-snug">
                     {data.chains.find(c => c.id === activeChain)?.summary ?? ""}
                   </p>
                 )}
@@ -462,7 +501,7 @@ export function MarketNarrativeNetwork() {
               className="mt-auto pt-3"
               style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
             >
-              <p className="text-[8.5px] text-white/22">
+              <p className="text-[8.5px] text-white/24">
                 Updated {formatAge(data.generated_at)}
               </p>
               <p className="text-[8px] text-white/16 mt-0.5">
@@ -476,16 +515,16 @@ export function MarketNarrativeNetwork() {
         {presentRelationships.length > 0 && (
           <div
             className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2"
-            style={{ borderTop: "1px solid rgba(255,255,255,0.045)" }}
+            style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
           >
             {presentRelationships.map(rel => (
               <div key={rel} className="flex items-center gap-1.5">
                 <svg width="18" height="4" viewBox="0 0 18 4" aria-hidden>
                   <line x1="0" y1="2" x2="18" y2="2"
-                    stroke={EDGE_STROKE[rel] ?? "#404050"}
-                    strokeWidth="1.5" strokeOpacity="0.65" />
+                    stroke={EDGE_STROKE[rel] ?? "#486070"}
+                    strokeWidth="1.8" strokeOpacity="0.70" />
                 </svg>
-                <span className="text-[8px] text-white/22 capitalize">
+                <span className="text-[8px] text-white/28 capitalize">
                   {rel.replace("_", " ")}
                 </span>
               </div>
