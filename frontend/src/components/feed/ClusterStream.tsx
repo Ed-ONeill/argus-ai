@@ -24,16 +24,19 @@ export function ClusterStream({
       <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center gap-2 shrink-0">
           <motion.span
-            className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: "rgba(52,200,120,0.65)" }}
             animate={{ opacity: [1, 0.35, 1] }}
             transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
           />
-          <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink">
+          <span className="text-[10px] font-medium tracking-[0.05em]"
+            style={{ color: "rgba(255,255,255,0.40)" }}>
             Live Market Stream
           </span>
         </div>
         {!isLoading && clusters.length > 0 && (
-          <span className="text-2xs font-medium text-ink-secondary bg-raised px-2 py-0.5 rounded-full">
+          <span className="text-[9px] tabular-nums"
+            style={{ color: "rgba(255,255,255,0.28)" }}>
             {clusters.length}
           </span>
         )}
@@ -41,27 +44,36 @@ export function ClusterStream({
           <motion.span
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-2xs font-bold px-2 py-0.5 rounded-full
-                       bg-emerald-50 text-emerald-700 border border-emerald-100"
+            className="text-[9px] font-medium px-1.5 py-0.5 rounded"
+            style={{
+              color:      "rgba(52,200,120,0.80)",
+              background: "rgba(52,200,120,0.08)",
+              border:     "1px solid rgba(52,200,120,0.15)",
+            }}
           >
             {newCount} new
           </motion.span>
         )}
-        <span className="h-px flex-1 bg-edge" />
+        <span className="h-px flex-1"
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
       </div>
 
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {[...Array(6)].map((_, i) => <SkeletonCard key={i} delay={i * 0.05} />)}
         </div>
       ) : clusters.length === 0 ? (
         <div className="py-16 text-center">
-          <p className="text-sm text-ink-secondary">No stories match the current filters.</p>
-          <p className="text-xs text-ink-muted mt-1">Try selecting a different category above.</p>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.38)" }}>
+            No stories match the current filters.
+          </p>
+          <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.24)" }}>
+            Try selecting a different category above.
+          </p>
         </div>
       ) : (
         <motion.div
-          className="space-y-2.5"
+          className="space-y-2"
           initial="hidden"
           animate="visible"
           variants={{ visible: { transition: { staggerChildren: 0.045 } } }}
@@ -104,28 +116,37 @@ function SkeletonCard({ delay = 0 }: { delay?: number }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay }}
-      className="bg-surface rounded-xl border border-edge overflow-hidden"
+      className="rounded-lg overflow-hidden"
+      style={{
+        background: "rgba(5,9,20,0.55)",
+        borderLeft: "2px solid rgba(255,255,255,0.06)",
+      }}
     >
-      <div className="h-[2.5px] bg-raised rounded-t-xl animate-pulse" />
-      <div className="p-4 space-y-3">
+      <div className="px-3.5 pt-2.5 pb-3 space-y-2.5">
         <div className="flex items-center gap-2">
-          <div className="h-4 w-16 bg-raised rounded-full animate-pulse" />
-          <div className="flex items-center gap-1.5 ml-auto">
-            <div className="h-1.5 w-1.5 rounded-full bg-raised animate-pulse" />
-            <div className="h-3 w-28 bg-raised rounded animate-pulse" />
-          </div>
+          <div className="h-3 w-12 rounded animate-pulse"
+            style={{ background: "rgba(255,255,255,0.06)" }} />
+          <div className="h-3 w-20 rounded animate-pulse ml-auto"
+            style={{ background: "rgba(255,255,255,0.04)" }} />
         </div>
         <div className="space-y-1.5">
-          <div className="h-[13.5px] w-full bg-raised rounded animate-pulse" />
-          <div className="h-[13.5px] w-4/5 bg-raised rounded animate-pulse" />
+          <div className="h-3 w-full rounded animate-pulse"
+            style={{ background: "rgba(255,255,255,0.05)" }} />
+          <div className="h-3 w-4/5 rounded animate-pulse"
+            style={{ background: "rgba(255,255,255,0.05)" }} />
         </div>
         <div className="space-y-1.5">
-          <div className="h-3 w-full bg-raised rounded animate-pulse" />
-          <div className="h-3 w-3/4 bg-raised rounded animate-pulse" />
+          <div className="h-2.5 w-full rounded animate-pulse"
+            style={{ background: "rgba(255,255,255,0.04)" }} />
+          <div className="h-2.5 w-3/4 rounded animate-pulse"
+            style={{ background: "rgba(255,255,255,0.04)" }} />
         </div>
-        <div className="flex items-center gap-2 pt-1 border-t border-edge">
-          <div className="h-5 w-24 bg-raised rounded-full animate-pulse" />
-          <div className="h-5 w-14 bg-raised rounded animate-pulse ml-auto" />
+        <div className="flex items-center gap-2 pt-1.5"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+          <div className="h-2 w-16 rounded animate-pulse"
+            style={{ background: "rgba(255,255,255,0.04)" }} />
+          <div className="h-2 w-10 rounded animate-pulse ml-auto"
+            style={{ background: "rgba(255,255,255,0.04)" }} />
         </div>
       </div>
     </motion.div>

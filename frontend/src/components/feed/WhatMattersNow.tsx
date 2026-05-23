@@ -66,7 +66,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
   const [primary, ...rest] = items;
 
   return (
-    <section className="mb-7">
+    <section className="mb-10">
       {/* Section header — institutional MNN-matching style */}
       <div className="flex items-center gap-3 mb-3">
         <span
@@ -88,7 +88,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
       </div>
 
       {/* Mobile: horizontal scroll */}
-      <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden">
+      <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden">
         {items.map((item, idx) => (
           <WMNCard
             key={item.cluster.id}
@@ -101,7 +101,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
       </div>
 
       {/* Desktop: primary driver + 4-card grid */}
-      <div className="hidden md:flex md:flex-col gap-2">
+      <div className="hidden md:flex md:flex-col gap-2.5">
         {primary && (
           <PrimaryDriverCard
             item={primary}
@@ -110,7 +110,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
           />
         )}
         {rest.length > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
             {rest.map((item, idx) => (
               <WMNCard
                 key={item.cluster.id}
@@ -381,7 +381,7 @@ function WMNCard({
 
 function WhatMattersNowSkeleton() {
   return (
-    <section className="mb-7">
+    <section className="mb-10">
       <div className="flex items-center gap-3 mb-3">
         <div className="h-2.5 w-32 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
         <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
@@ -391,7 +391,7 @@ function WhatMattersNowSkeleton() {
         {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
       </div>
       {/* Desktop skeleton */}
-      <div className="hidden md:flex md:flex-col gap-2">
+      <div className="hidden md:flex md:flex-col gap-2.5">
         <div
           className="relative overflow-hidden"
           style={{ background: "rgba(7,12,24,0.96)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "14px" }}
@@ -404,7 +404,7 @@ function WhatMattersNowSkeleton() {
             <div className="h-[2px] w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
           </div>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>

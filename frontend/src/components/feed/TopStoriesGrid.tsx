@@ -29,7 +29,7 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
   if (!isLoading && !hasAny) return null;
 
   return (
-    <section className="mb-7">
+    <section className="mb-8">
       <div className="flex items-center gap-3 mb-3">
         <span className="text-[10px] font-medium tracking-[0.06em] shrink-0"
           style={{ color: "rgba(255,255,255,0.35)" }}>
@@ -39,7 +39,7 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
           style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
         {isLoading
           ? SLOT_META.map(s => <SkeletonCard key={s.key} />)
           : slots.map(({ key, label, emptyLabel, item }, i) =>

@@ -86,19 +86,16 @@ export function ClusterCard({
       }
       whileHover={{ y: -0.5, transition: { duration: 0.20, ease: "easeOut" } }}
       className={cn(
-        "group rounded-xl overflow-hidden",
+        "group rounded-lg overflow-hidden",
         item.signal_strength === "weak" && "opacity-80",
         isWatched && "ring-1 ring-accent/25",
       )}
       style={{
-        background:   "rgba(5,9,20,0.78)",
-        borderTop:    "1px solid rgba(255,255,255,0.04)",
-        borderRight:  "1px solid rgba(255,255,255,0.04)",
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
-        borderLeft:   `2px solid ${leftAccent}`,
+        background: "rgba(5,9,20,0.55)",
+        borderLeft: `2px solid ${leftAccent}`,
       }}
     >
-      <div className="px-4 pt-3 pb-3.5">
+      <div className="px-3.5 pt-2.5 pb-3">
 
         {/* ── Theme label (multi-story clusters only) ─────────────────── */}
         {story_count > 1 && (
@@ -136,7 +133,7 @@ export function ClusterCard({
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-[13.5px] font-semibold leading-snug mb-2
+          className="block text-[13px] font-semibold leading-snug mb-2
                      hover:text-accent transition-colors"
           style={{ color: "rgba(255,255,255,0.88)" }}
         >
@@ -169,7 +166,7 @@ export function ClusterCard({
         {/* ── AI summary + desk-note ──────────────────────────────────── */}
         {hasSummary && (
           <>
-            <p className="text-xs leading-relaxed mb-2"
+            <p className="text-[11.5px] leading-relaxed mb-2"
               style={{ color: "rgba(255,255,255,0.68)" }}>
               {item.summary}
             </p>
