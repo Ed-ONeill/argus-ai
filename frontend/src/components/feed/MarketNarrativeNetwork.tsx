@@ -11,9 +11,9 @@ import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 // on each side — edge fog fills it so nodes feel like part of a larger unseen system.
 
 const W       = 1120;
-const H       = 492;
+const H       = 400;
 const PAD_X   = 68;
-const PAD_Y   = 64;
+const PAD_Y   = 52;
 const LABEL_X = 54;
 
 // ── Row config ────────────────────────────────────────────────────────────────
@@ -295,9 +295,10 @@ function NodeTooltip({ t }: { t: TooltipState }) {
 
 function Skeleton() {
   return (
-    <section>
-      <div className="animate-pulse w-full"
-        style={{ background: "#070d1a", height: 520 }} />
+    <section style={{ background: "#050b18" }}>
+      <div className="max-w-7xl mx-auto overflow-hidden">
+        <div className="animate-pulse" style={{ background: "#070d1a", height: 460 }} />
+      </div>
     </section>
   );
 }
@@ -638,9 +639,8 @@ export function MarketNarrativeNetwork() {
   }
 
   return (
-    <section>
-      <div className="overflow-hidden"
-        style={{ background: "#050b18" }}>
+    <section style={{ background: "#050b18" }}>
+      <div className="max-w-7xl mx-auto overflow-hidden">
 
         {/* Top info bar */}
         <div className="flex items-center gap-8 px-6 py-4"
@@ -707,7 +707,7 @@ export function MarketNarrativeNetwork() {
         })()}
 
         {/* Graph canvas */}
-        <div ref={wrapRef} className="relative" style={{ minHeight: 455 }}>
+        <div ref={wrapRef} className="relative" style={{ minHeight: 340 }}>
 
           {/* Atmospheric grain texture — precomputed, GPU-cached */}
           <div aria-hidden className="absolute inset-0 pointer-events-none"
