@@ -162,17 +162,31 @@ export default function HomePage() {
         {/* ── Market Narrative Network — full-bleed hero ───────────────────── */}
         <MarketNarrativeNetwork />
 
-        {/* Atmospheric continuity — graph field bleeds into intelligence feed */}
+        {/* Atmospheric continuity — field pressure color bleeds into intelligence feed */}
         <div aria-hidden className="w-full h-7 pointer-events-none"
-          style={{ background: "linear-gradient(to bottom, rgba(5,11,24,0.55) 0%, transparent 100%)" }} />
+          style={{
+            background: `linear-gradient(to bottom, ${
+              ms.riskRegime === "risk-on"  ? "rgba(18,40,90,0.52)"
+              : ms.riskRegime === "risk-off"  ? "rgba(50,15,15,0.46)"
+              : (ms.volRegime === "elevated" || ms.volRegime === "high") ? "rgba(38,28,8,0.40)"
+              : "rgba(5,11,24,0.52)"
+            } 0%, transparent 100%)`,
+          }} />
 
         {/* ── Intelligence feed ────────────────────────────────────────────── */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-14 relative">
 
           {/* ── Data channel bridge: graph → cross-asset → intelligence ── */}
           <div className="flex items-center gap-3 mb-4">
-            <div className="shrink-0 w-px h-5"
-              style={{ background: "linear-gradient(to bottom, rgba(42,96,188,0.50), rgba(255,255,255,0.02))", marginLeft: "3px" }} />
+            <div className="shrink-0 w-px h-5" style={{
+              background: `linear-gradient(to bottom, ${
+                ms.riskRegime === "risk-on"  ? "rgba(42,96,188,0.58)"
+                : ms.riskRegime === "risk-off"  ? "rgba(180,60,60,0.52)"
+                : ms.volRegime === "elevated" || ms.volRegime === "high" ? "rgba(200,160,64,0.52)"
+                : "rgba(42,96,188,0.44)"
+              }, rgba(255,255,255,0.02))`,
+              marginLeft: "3px",
+            }} />
             <span className="text-[6.5px] font-bold uppercase tracking-[0.24em]"
               style={{ color: "rgba(255,255,255,0.18)" }}>
               Intelligence Output
@@ -220,12 +234,24 @@ export default function HomePage() {
             filteredCount={visibleClusters.length}
           />
 
-          {/* ── Stream entry — atmospheric bridge ──────────────────────── */}
+          {/* ── Stream entry — pressure-tinted atmospheric bridge ──────────── */}
           <div className="flex items-center gap-3 mb-4 mt-1">
-            <div className="w-px h-4 shrink-0"
-              style={{ background: "linear-gradient(to bottom, rgba(52,200,120,0.28), rgba(255,255,255,0.02))", marginLeft: "3px" }} />
-            <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(52,200,120,0.06), transparent)" }} />
+            <div className="w-px h-4 shrink-0" style={{
+              background: `linear-gradient(to bottom, ${
+                ms.riskRegime === "risk-on"  ? "rgba(42,168,120,0.35)"
+                : ms.riskRegime === "risk-off"  ? "rgba(180,60,60,0.32)"
+                : ms.volRegime === "elevated" || ms.volRegime === "high" ? "rgba(200,160,64,0.32)"
+                : "rgba(52,200,120,0.28)"
+              }, rgba(255,255,255,0.02))`,
+              marginLeft: "3px",
+            }} />
+            <div className="flex-1 h-px" style={{
+              background: `linear-gradient(to right, ${
+                ms.riskRegime === "risk-on"  ? "rgba(42,168,120,0.07)"
+                : ms.riskRegime === "risk-off"  ? "rgba(180,60,60,0.06)"
+                : "rgba(52,200,120,0.06)"
+              }, transparent)`,
+            }} />
           </div>
 
           {/* ── Live Market Stream ────────────────────────────────────── */}

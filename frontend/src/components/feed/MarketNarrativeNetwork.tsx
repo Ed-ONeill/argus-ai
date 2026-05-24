@@ -48,6 +48,15 @@ const LIQUIDITY_TRAILS = [
   { y: 258, dur: 22, begin: 4.1, opacity: 0.015, w: 270 },
 ];
 
+// ── Directional flow field — base positions for regime-dependent flow ─────────
+
+const FLOW_ORIGINS = [
+  { cx: 178, cy:  90 }, { cx: 420, cy: 132 }, { cx: 618, cy:  78 },
+  { cx: 840, cy: 118 }, { cx: 300, cy: 228 }, { cx: 758, cy: 262 },
+  { cx: 520, cy: 295 }, { cx: 148, cy: 292 }, { cx: 958, cy: 182 },
+  { cx: 650, cy: 170 }, { cx: 268, cy: 155 }, { cx: 990, cy: 285 },
+];
+
 // ── Label compression — institutional terminal style (Phase 4) ────────────────
 
 const LABEL_COMPRESS: [RegExp, string][] = [
@@ -557,7 +566,12 @@ export function MarketNarrativeNetwork() {
   const focusEnvColor    = focusEnvStyle?.stroke ?? "transparent";
   const pulses           = computeMarketPulse(data.dominant_regime, data.chains, data.nodes);
 
-  const isStressEnv = ms.riskRegime === "risk-off" || ms.stressIntensity > 0.18;
+  const isStressEnv   = ms.riskRegime === "risk-off" || ms.stressIntensity > 0.18;
+  const flowDir       = ms.riskRegime === "risk-on" ? 1 : ms.riskRegime === "risk-off" ? -1 : 0;
+  const flowSpeed     = 0.52 + ms.atmosphereIntensity * 0.48;
+  const flowOpBase    = ms.riskRegime !== "neutral"
+    ? 0.030 + ms.atmosphereIntensity * 0.030
+    : 0.014 + ms.atmosphereIntensity * 0.012;
 
   // ── Edge renderer ──────────────────────────────────────────────────────────
   function renderEdge(edge: GraphEdge) {
@@ -1070,6 +1084,23 @@ export function MarketNarrativeNetwork() {
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
 
+              {/* Leadership concentration gradients — local density at active chain nodes */}
+              {activeChain && chainHighlight.sequence.slice(0, 3).map(n => {
+                const p  = positions.get(n.id);
+                if (!p) return null;
+                const ns = NODE_STYLE[n.type] ?? NODE_STYLE.theme;
+                const op = Math.min((n.confidence / 100) * ms.atmosphereIntensity * 0.15, 0.18).toFixed(3);
+                return (
+                  <radialGradient key={n.id} id={`concF_${n.id}`}
+                    cx={`${(p.x / W * 100).toFixed(1)}%`} cy={`${(p.y / H * 100).toFixed(1)}%`}
+                    r="14%" gradientUnits="objectBoundingBox">
+                    <stop offset="0%"   stopColor={ns.stroke} stopOpacity={op} />
+                    <stop offset="68%"  stopColor={ns.stroke} stopOpacity={(parseFloat(op) * 0.20).toFixed(3)} />
+                    <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                  </radialGradient>
+                );
+              })}
+
               {/* Focused node environment — ambient spotlight at clicked node */}
               <radialGradient id="focusEnvGrad" cx={focusEnvCx} cy={focusEnvCy} r="34%"
                 gradientUnits="objectBoundingBox">
@@ -1094,6 +1125,65 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
             {chainCentroid && <rect width={W} height={H} fill="url(#leaderField)" className="pointer-events-none" />}
+            {/* Leadership concentration — local density fields at active chain nodes */}
+            {activeChain && chainHighlight.sequence.slice(0, 3).map(n =>
+              positions.get(n.id)
+                ? <rect key={`cf-${n.id}`} width={W} height={H}
+                    fill={`url(#concF_${n.id})`} className="pointer-events-none" />
+                : null
+            )}
+            {/* Vol instability flicker — rapid field disturbance during elevated vol */}
+            {(ms.volRegime === "elevated" || ms.volRegime === "high") && (() => {
+              const vOp  = (ms.volScore * 0.022).toFixed(3);
+              const vDur = (1.6 + (1 - ms.volScore) * 1.4).toFixed(1);
+              return (
+                <rect width={W} height={H} fill="#7a1818" className="pointer-events-none">
+                  <animate attributeName="fill-opacity"
+                    values={`0;${vOp};0;${(parseFloat(vOp) * 0.58).toFixed(3)};0`}
+                    keyTimes="0;0.14;0.45;0.70;1"
+                    dur={`${vDur}s`} repeatCount="indefinite" />
+                </rect>
+              );
+            })()}
+            {/* Compression waves — radiate outward from regime node during stress */}
+            {ms.stressIntensity > 0.12 && regimePos && (
+              <g className="pointer-events-none">
+                {[0, 1, 2].map(i => {
+                  const wDur = (7.5 - ms.stressIntensity * 2.5).toFixed(1);
+                  const maxR = (175 - ms.stressIntensity * 55).toFixed(0);
+                  const wOp  = (ms.stressIntensity * 0.28).toFixed(2);
+                  return (
+                    <circle key={i} cx={regimePos.x} cy={regimePos.y} r="18"
+                      fill="none" stroke="#8a2020" strokeWidth="0.5" strokeOpacity="0">
+                      <animate attributeName="r" values={`18;${maxR};18`}
+                        dur={`${wDur}s`} begin={`${i * 2.2}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.2 0 0.8 1;0.2 0 0.8 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="stroke-opacity" values={`${wOp};0;${wOp}`}
+                        dur={`${wDur}s`} begin={`${i * 2.2}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+            {/* Expansion waves — radiate outward during risk-on momentum */}
+            {ms.riskFieldIntensity > 0.08 && regimePos && (
+              <g className="pointer-events-none">
+                {[0, 1].map(i => {
+                  const maxR = (215 + ms.riskFieldIntensity * 65).toFixed(0);
+                  const eOp  = (ms.riskFieldIntensity * 0.18).toFixed(2);
+                  return (
+                    <circle key={i} cx={regimePos.x} cy={regimePos.y} r="28"
+                      fill="none" stroke="#2858a0" strokeWidth="0.4" strokeOpacity="0">
+                      <animate attributeName="r" values={`28;${maxR};28`}
+                        dur="9s" begin={`${i * 3.8}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.25 0 0.75 1;0.25 0 0.75 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="stroke-opacity" values={`${eOp};0;${eOp}`}
+                        dur="9s" begin={`${i * 3.8}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
             <rect width={W} height={H} fill="url(#focusEnvGrad)" className="pointer-events-none" />
 
             {/* Ambient drifting particles — speed and brightness driven by market activity */}
@@ -1118,25 +1208,60 @@ export function MarketNarrativeNetwork() {
               })}
             </g>
 
-            {/* Capital flow trails — horizontal liquidity depth indicators */}
+            {/* Capital flow trails — migrate toward leadership zone when chain active */}
             <g className="pointer-events-none">
-              {LIQUIDITY_TRAILS.map((t, i) => (
-                <line key={i} x1={PAD_X + 40} x2={PAD_X + 40 + t.w} y1={t.y} y2={t.y}
-                  stroke="#c8ddf8" strokeWidth="0.7" strokeOpacity="0" fill="none">
-                  <animate attributeName="x1"
-                    values={`${PAD_X + 40};${W - PAD_X - t.w};${PAD_X + 40}`}
-                    dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
-                    calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
-                  <animate attributeName="x2"
-                    values={`${PAD_X + 40 + t.w};${W - PAD_X};${PAD_X + 40 + t.w}`}
-                    dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
-                    calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
-                  <animate attributeName="stroke-opacity"
-                    values={`0;${t.opacity};0`}
-                    dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
-                    calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
-                </line>
-              ))}
+              {LIQUIDITY_TRAILS.map((t, i) => {
+                const ctrX    = chainCentroid?.x ?? W / 2;
+                const span    = chainCentroid ? Math.min(t.w + 90, 260) : (W - PAD_X * 2 - 80);
+                const x1s     = Math.max(PAD_X + 20, Math.min(ctrX - span - t.w / 2, W - PAD_X - t.w - 40));
+                const x1e     = Math.max(PAD_X + 20, Math.min(ctrX + span / 2, W - PAD_X - t.w - 20));
+                const targetY = chainCentroid ? t.y + (chainCentroid.y - t.y) * 0.28 : t.y;
+                const tOp     = chainCentroid
+                  ? Math.min(t.opacity * (1 + ms.atmosphereIntensity * 0.9), 0.055).toFixed(3)
+                  : t.opacity.toFixed(3);
+                return (
+                  <line key={i} x1={x1s} x2={x1s + t.w} y1={targetY} y2={targetY}
+                    stroke="#c8ddf8" strokeWidth="0.7" strokeOpacity="0" fill="none">
+                    <animate attributeName="x1" values={`${x1s};${x1e};${x1s}`}
+                      dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+                    <animate attributeName="x2" values={`${x1s + t.w};${x1e + t.w};${x1s + t.w}`}
+                      dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+                    <animate attributeName="stroke-opacity" values={`0;${tOp};0`}
+                      dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+                  </line>
+                );
+              })}
+            </g>
+
+            {/* Directional flow field — regime-dependent capital movement vectors */}
+            <g className="pointer-events-none">
+              {FLOW_ORIGINS.map((p, i) => {
+                const baseX = p.cx - W / 2;
+                const baseY = p.cy - H / 2;
+                const mag   = Math.sqrt(baseX * baseX + baseY * baseY) || 1;
+                const tx    = ((baseX / mag) * flowDir * 46).toFixed(1);
+                const ty    = ((baseY / mag) * flowDir * 33).toFixed(1);
+                const fh    = idHash(String(i) + "flow");
+                const dur   = ((22 + (fh % 10)) / flowSpeed).toFixed(1);
+                const beg   = ((fh % 80) / 10).toFixed(1);
+                const fOp   = flowOpBase.toFixed(3);
+                if (flowDir === 0 && ms.atmosphereIntensity < 0.35) return null;
+                return (
+                  <circle key={i} cx={p.cx} cy={p.cy} r={1.4} fill="#c8ddf8" fillOpacity="0">
+                    <animateTransform attributeName="transform" attributeType="XML" type="translate"
+                      values={`0,0; ${tx},${ty}; 0,0`}
+                      dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1" keyTimes="0;0.5;1" />
+                    <animate attributeName="fill-opacity"
+                      values={`0;${fOp};0`}
+                      dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1" keyTimes="0;0.5;1" />
+                  </circle>
+                );
+              })}
             </g>
 
             {/* Lane separators — extend into fog zone so they fade naturally */}
