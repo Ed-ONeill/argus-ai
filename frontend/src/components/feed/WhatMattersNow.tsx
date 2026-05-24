@@ -66,7 +66,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
   const [primary, ...rest] = items;
 
   return (
-    <section className="mb-10">
+    <section className="mb-12">
       {/* Section header */}
       <div className="flex items-center gap-3 mb-3">
         <span
@@ -101,7 +101,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
       </div>
 
       {/* Desktop: primary driver + 4-card grid */}
-      <div className="hidden md:flex md:flex-col gap-2.5">
+      <div className="hidden md:flex md:flex-col gap-3.5">
         {primary && (
           <PrimaryDriverCard
             item={primary}
@@ -204,7 +204,7 @@ function PrimaryDriverCard({
         </div>
 
         {/* Title */}
-        <p className="font-bold leading-snug" style={{ fontSize: "15px", color: "rgba(255,255,255,0.88)" }}>
+        <p className="font-bold leading-snug" style={{ fontSize: "16px", color: "rgba(255,255,255,0.90)" }}>
           {wmn_label || cluster.theme_label}
         </p>
 

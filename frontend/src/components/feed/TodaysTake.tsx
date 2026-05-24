@@ -116,8 +116,8 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
               style={{ color: "rgba(255,255,255,0.38)" }}>
               Narrative
             </p>
-            <p className="text-[11.5px] leading-relaxed"
-              style={{ color: "rgba(255,255,255,0.65)" }}>
+            <p className="text-[12px] leading-relaxed"
+              style={{ color: "rgba(255,255,255,0.68)" }}>
               {brief.narrative_shift}
             </p>
           </div>
@@ -146,8 +146,8 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
                   style={{ color: "rgba(255,255,255,0.35)" }}>
                   Trade
                 </span>
-                <span className="text-[11px] leading-relaxed"
-                  style={{ color: "rgba(255,255,255,0.72)" }}>
+                <span className="text-[11.5px] leading-relaxed"
+                  style={{ color: "rgba(255,255,255,0.74)" }}>
                   {brief.trade_implication}
                 </span>
               </div>
@@ -159,7 +159,7 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
                   style={{ color: "rgba(255,255,255,0.35)" }}>
                   Risk
                 </span>
-                <span className="text-[11px] leading-relaxed"
+                <span className="text-[11.5px] leading-relaxed"
                   style={{ color: "rgba(255,255,255,0.52)" }}>
                   {brief.risk_scenario}
                 </span>
