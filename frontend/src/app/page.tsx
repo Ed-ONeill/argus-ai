@@ -52,6 +52,9 @@ export default function HomePage() {
   });
   const { watchlist } = useWatchlist();
   const ms = useMarketState();
+  const isPanic      = ms.regimeTransition && ms.riskRegime === "risk-off";
+  const isEuphoric   = ms.trend.acceleration === "accelerating" && ms.riskRegime === "risk-on";
+  const isComplacent = ms.volRegime === "low" && ms.riskRegime !== "risk-off";
 
   const watchedEntities = useMemo(
     () => new Set(watchlist.map(w => w.id.toLowerCase())),
@@ -157,10 +160,16 @@ export default function HomePage() {
               : "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(6,12,36,0.18) 0%, transparent 72%)",
           }} />
 
-        {/* Quaternary — mid-page atmospheric depth, prevents hard surface transition */}
+        {/* Quaternary — mid-page atmospheric depth, emotionally reactive */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(5,12,34,0.20) 0%, transparent 65%)",
+            background: isPanic
+              ? "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(40,8,8,0.22) 0%, transparent 65%)"
+              : isEuphoric
+              ? "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(8,20,68,0.26) 0%, transparent 65%)"
+              : isComplacent
+              ? "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(22,16,4,0.14) 0%, transparent 65%)"
+              : "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(5,12,34,0.20) 0%, transparent 65%)",
           }} />
 
         {/* New stories banner — sticky inside the dark environment */}

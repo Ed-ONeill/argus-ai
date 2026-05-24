@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, X } from "lucide-react";
 import { useNarrativeNetwork } from "@/hooks/useNarrativeNetwork";
 import { useMarketState } from "@/hooks/useMarketState";
+import { useReflexivity } from "@/hooks/useReflexivity";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -384,6 +385,7 @@ function Skeleton() {
 export function MarketNarrativeNetwork() {
   const { data, isLoading, isFetching } = useNarrativeNetwork();
   const ms = useMarketState();
+  const rf = useReflexivity();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -474,7 +476,13 @@ export function MarketNarrativeNetwork() {
     ? (data.nodes.find(n => n.id === focusedNodeId) ?? null) : null;
 
   // ── Market-state reactive visual params ───────────────────────────────────
-  const particleMax   = (0.085 * ms.particleIntensity).toFixed(3);
+  // Particle brightness: narrow participation dims field; complacency suppresses; euphoria brightens
+  const particleMax = Math.min(
+    0.085 * ms.particleIntensity
+    * (rf.narrowParticipation ? 0.60 : 1.0)
+    * (rf.emotionalState === "complacency" ? 0.50 : rf.emotionalState === "euphoria" ? 1.22 : 1.0),
+    0.15,
+  ).toFixed(3);
   const regBreath     = (1 + 0.022 * ms.breathAmplitude).toFixed(4);
   const atmoBase      = (0.68 + ms.atmosphereIntensity * 0.22).toFixed(2);
   const atmoTop       = (parseFloat(atmoBase) + 0.12).toFixed(2);
@@ -504,8 +512,10 @@ export function MarketNarrativeNetwork() {
   const isDecel          = ms.trend.acceleration === "decelerating";
   const riskDir          = ms.trend.riskDirection;
   const temporalSpeedAdj = isAccel ? 1.20 : isDecel ? 0.80 : 1.0;
+  // Complacency slows propagation: quiet markets = languid particles
+  const complacencySlowdown = rf.emotionalState === "complacency" ? 1.52 : 1.0;
   // Aging momentum slows propagation: extended trend = particles fatigue
-  const chainDur = (2.6 / (particleSpeedMul * temporalSpeedAdj * Math.max(1 - momentumAge * 0.22, 0.62))).toFixed(2);
+  const chainDur = (2.6 * complacencySlowdown / (particleSpeedMul * temporalSpeedAdj * Math.max(1 - momentumAge * 0.22, 0.62))).toFixed(2);
 
   // Rotation flow — directional vertical gradient showing capital rotation zone
   const rotFlowRaw   = Math.max(0, (0.038 + momentumAge * 0.042) * decayMul) * ms.atmosphereIntensity;
@@ -517,6 +527,13 @@ export function MarketNarrativeNetwork() {
   const isCrowded = (ms.exhaustionRisk || (momentumAge > 0.55 && isDecel)) && chainCentroid !== null;
   const isFragile = ms.stressIntensity > 0.20 && ms.volRegime !== "low";
   const hasShock  = ms.regimeTransition;
+
+  // Reflexivity + emotional dynamics
+  const emotionalDecayMul = rf.emotionalState === "exhaustion" ? 0.52 : decayMul;
+  const panicOp     = rf.emotionalState === "panic"
+    ? (0.14 + rf.emotionalIntensity * 0.10).toFixed(2) : "0";
+  const complacencyOp = rf.emotionalState === "complacency"
+    ? (0.007 + rf.emotionalIntensity * 0.007).toFixed(3) : "0";
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -807,21 +824,21 @@ export function MarketNarrativeNetwork() {
           )}
           {isActive && !isRegime && (
             <circle r={r + 9} fill="none" stroke={base.label}
-              strokeWidth="0.8" strokeOpacity={(0.28 * exhaustionFade * decayMul).toFixed(3)} filter="url(#activeGlow)" />
+              strokeWidth="0.8" strokeOpacity={(0.28 * exhaustionFade * emotionalDecayMul).toFixed(3)} filter="url(#activeGlow)" />
           )}
           {isActive && !isRegime && (
             <circle r={r + 5} fill="none" stroke={base.label}
               strokeWidth="2.4" strokeOpacity="0.90" filter="url(#activeGlow)" />
           )}
           {isActive && !isRegime && (
-            <circle r={r + 1} fill={base.label} fillOpacity={(0.12 * exhaustionFade * decayMul).toFixed(3)} filter="url(#activeGlow)" />
+            <circle r={r + 1} fill={base.label} fillOpacity={(0.12 * exhaustionFade * emotionalDecayMul).toFixed(3)} filter="url(#activeGlow)" />
           )}
 
           {/* Latent participation — faint slow pulse for high-confidence dormant nodes */}
           {!isActive && !isRegime && !isDim && node.confidence > 55 && (
             <circle r={r + 11} fill="none" stroke={base.label} strokeWidth="0.4" strokeOpacity="0">
               <animate attributeName="stroke-opacity"
-                values={`0;${((node.confidence / 100) * 0.052 * decayMul).toFixed(3)};0`}
+                values={`0;${((node.confidence / 100) * 0.052 * emotionalDecayMul).toFixed(3)};0`}
                 dur={`${8 + (idHash(node.id + "lat") % 7)}s`}
                 begin={`${((idHash(node.id + "lb") % 50) / 5).toFixed(1)}s`}
                 repeatCount="indefinite"
@@ -1184,6 +1201,32 @@ export function MarketNarrativeNetwork() {
                     fill={`url(#concF_${n.id})`} className="pointer-events-none" />
                 : null
             )}
+            {/* Hidden stress hairlines — masked pressure beneath deceptive surface calm */}
+            {rf.hiddenStress && (
+              <g className="pointer-events-none">
+                {[
+                  { x1: 460, y1: 310, x2: 492, y2: 308 },
+                  { x1: 720, y1:  54, x2: 748, y2:  57 },
+                  { x1: 194, y1: 230, x2: 220, y2: 226 },
+                  { x1: 996, y1: 120, x2: 1026, y2: 117 },
+                ].map((l, i) => {
+                  const hh  = idHash(String(i) + "hs");
+                  const dur = (10 + (hh % 6)).toFixed(0);
+                  const beg = ((hh % 80) / 10).toFixed(1);
+                  const mOp = (0.008 + rf.emotionalIntensity * 0.006).toFixed(3);
+                  return (
+                    <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                      stroke="#c8a040" strokeWidth="0.5" strokeOpacity="0">
+                      <animate attributeName="stroke-opacity"
+                        values={`0;${mOp};0`} keyTimes="0;0.5;1"
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" />
+                    </line>
+                  );
+                })}
+              </g>
+            )}
+
             {/* Vol instability flicker — rapid field disturbance during elevated vol */}
             {(ms.volRegime === "elevated" || ms.volRegime === "high") && (() => {
               const vOp  = (ms.volScore * 0.022).toFixed(3);
@@ -1197,6 +1240,12 @@ export function MarketNarrativeNetwork() {
                 </rect>
               );
             })()}
+            {/* Complacency field — amber-gray wash signals deceptive equilibrium */}
+            {parseFloat(complacencyOp) > 0 && (
+              <rect width={W} height={H} fill="#2e2408"
+                fillOpacity={complacencyOp} className="pointer-events-none" />
+            )}
+
             {/* Compression waves — radiate outward from regime node during stress */}
             {ms.stressIntensity > 0.12 && regimePos && (
               <g className="pointer-events-none">
@@ -1236,6 +1285,22 @@ export function MarketNarrativeNetwork() {
                 })}
               </g>
             )}
+            {/* Panic burst — acute regime break, crimson ring from regime node */}
+            {rf.emotionalState === "panic" && regimePos && (
+              <circle cx={regimePos.x} cy={regimePos.y} r="8"
+                fill="none" stroke="#c03030" strokeWidth="0.9" strokeOpacity="0"
+                className="pointer-events-none">
+                <animate attributeName="r" values="8;215;8"
+                  dur="3.0s" repeatCount="indefinite"
+                  calcMode="spline" keySplines="0.08 0 0.92 1;0.50 0 0.90 1"
+                  keyTimes="0;0.28;1" />
+                <animate attributeName="stroke-opacity"
+                  values={`0;${panicOp};0;0`}
+                  keyTimes="0;0.06;0.28;1"
+                  dur="3.0s" repeatCount="indefinite" />
+              </circle>
+            )}
+
             <rect width={W} height={H} fill="url(#focusEnvGrad)" className="pointer-events-none" />
 
             {/* Ambient drifting particles — speed and brightness driven by market activity */}
@@ -1352,6 +1417,31 @@ export function MarketNarrativeNetwork() {
               })}
             </g>
 
+            {/* Contested perpendicular flow — directional uncertainty, no consensus */}
+            {rf.contested && (
+              <g className="pointer-events-none">
+                {FLOW_ORIGINS.slice(6, 9).map((p, i) => {
+                  const ch  = idHash(String(i) + "cont");
+                  const dir = i % 2 === 0 ? -1 : 1;
+                  const dur = ((18 + (ch % 8)) / flowSpeed).toFixed(1);
+                  const beg = ((ch % 60) / 10).toFixed(1);
+                  const cOp = (0.012 + ms.atmosphereIntensity * 0.010).toFixed(3);
+                  return (
+                    <circle key={i} cx={p.cx} cy={p.cy} r={1.0} fill="#8898b8" fillOpacity="0">
+                      <animateTransform attributeName="transform" attributeType="XML" type="translate"
+                        values={`0,0; 0,${dir * 38}; 0,0`}
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="fill-opacity"
+                        values={`0;${cOp};0`}
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1" keyTimes="0;0.5;1" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
             {/* Lane separators — extend into fog zone so they fade naturally */}
             {rowEntries.map(([row, y]) => {
               const laneOp = row === 0 ? 0.09 : row === 1 ? 0.062 : row === 2 ? 0.050 : row === 3 ? 0.040 : 0.032;
@@ -1443,6 +1533,39 @@ export function MarketNarrativeNetwork() {
                   );
                 })}
               </g>
+            )}
+
+            {/* Reflexive acceleration — momentum feeding on itself, fast blue rings */}
+            {rf.reflexiveAccel && chainCentroid && (
+              <g className="pointer-events-none">
+                {[0, 1].map(i => {
+                  const maxR = (108 + i * 44).toFixed(0);
+                  const dur  = (4.2 - i * 0.7).toFixed(1);
+                  const rOp  = (0.13 + rf.emotionalIntensity * 0.09).toFixed(2);
+                  return (
+                    <circle key={i} cx={chainCentroid.x} cy={chainCentroid.y} r="10"
+                      fill="none" stroke="#2858c8" strokeWidth="0.45" strokeOpacity="0">
+                      <animate attributeName="r" values={`10;${maxR};10`}
+                        dur={`${dur}s`} begin={`${i * 1.7}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.18 0 0.82 1;0.18 0 0.82 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="stroke-opacity" values={`${rOp};0;${rOp}`}
+                        dur={`${dur}s`} begin={`${i * 1.7}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Unwind vulnerability — fragile equilibrium, slow amber aura at centroid */}
+            {rf.unwindVulnerable && chainCentroid && (
+              <circle cx={chainCentroid.x} cy={chainCentroid.y} r="52"
+                fill="none" stroke="#c8a040" strokeWidth="14" strokeOpacity="0"
+                filter="url(#edgeAura)" className="pointer-events-none">
+                <animate attributeName="stroke-opacity"
+                  values={`0;${(0.030 + rf.emotionalIntensity * 0.022).toFixed(3)};0`}
+                  keyTimes="0;0.5;1" dur="7.2s" repeatCount="indefinite"
+                  calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" />
+              </circle>
             )}
 
             {/* Liquidity fragmentation lines — field fracture during stress */}

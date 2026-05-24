@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useMarketCausality } from "@/hooks/useMarketCausality";
+import { useReflexivity } from "@/hooks/useReflexivity";
 import type { MarketSignal } from "@/hooks/useMarketState";
 
 // ── Regime-derived fallback (when live data unavailable) ──────────────────────
@@ -91,6 +92,7 @@ interface MarketPressureMapProps {
 export function MarketPressureMap({ regime }: MarketPressureMapProps) {
   const ms = useMarketState();
   const mc = useMarketCausality();
+  const rf = useReflexivity();
 
   const signals = ms.hasData ? ms.signals : deriveCrossAsset(regime);
   const isLive  = ms.hasData;
@@ -253,6 +255,42 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {/* ── Row 4: Anticipatory pressure trajectory ───────────────────────────── */}
+      {(rf.hiddenStress || rf.unwindVulnerable || rf.liquidityStress || rf.concentrationRisk > 0.68) && (
+        <div
+          className="px-5 sm:px-7 py-1.5 flex items-center gap-3 flex-wrap"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.014)" }}
+        >
+          <span
+            className="text-[6px] font-bold uppercase tracking-[0.18em] shrink-0 pr-3 mr-1"
+            style={{ color: "rgba(255,255,255,0.14)", borderRight: "1px solid rgba(255,255,255,0.04)" }}
+          >
+            Trajectory
+          </span>
+          <div className="flex items-center gap-4 flex-wrap flex-1">
+            {rf.hiddenStress && (
+              <span className="text-[7.5px]" style={{ color: "#c8a040" }}>
+                Vol compressed / hidden stress
+              </span>
+            )}
+            {rf.unwindVulnerable && (
+              <span className="text-[7.5px]" style={{ color: "#c05858" }}>
+                Unwind vulnerability ↑
+              </span>
+            )}
+            {rf.liquidityStress && (
+              <span className="text-[7.5px]" style={{ color: "#b05858" }}>
+                Liquidity deteriorating
+              </span>
+            )}
+            {rf.concentrationRisk > 0.68 && !rf.unwindVulnerable && (
+              <span className="text-[7.5px]" style={{ color: "#c8a040" }}>
+                Concentration risk elevated
+              </span>
+            )}
           </div>
         </div>
       )}
