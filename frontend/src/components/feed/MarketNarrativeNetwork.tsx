@@ -485,10 +485,24 @@ export function MarketNarrativeNetwork() {
   const hasConflict = ms.ratesRegime === "rising" && ms.riskRegime === "risk-on";
   const conflictOp  = hasConflict
     ? (0.04 + ms.atmosphereIntensity * 0.05).toFixed(3) : "0";
-  // Chain propagation speed — faster at high intensity
-  const chainDur = (2.6 / particleSpeedMul).toFixed(2);
   // Exhaustion: ghost chains have lower opacity when trend is exhausting
   const exhaustionFade = ms.exhaustionRisk ? 0.72 : 1.0;
+
+  // ── Temporal flow — trend aging drives particle decay and rotation zone ──────
+  const momentumAge      = Math.min(ms.trend.duration / 6, 1);       // 0→1 as trend ages
+  const decayMul         = ms.trend.momentumDecay ? 0.72 : 1.0;      // dims on decay
+  const isAccel          = ms.trend.acceleration === "accelerating";
+  const isDecel          = ms.trend.acceleration === "decelerating";
+  const riskDir          = ms.trend.riskDirection;
+  const temporalSpeedAdj = isAccel ? 1.20 : isDecel ? 0.80 : 1.0;
+  // Aging momentum slows propagation: extended trend = particles fatigue
+  const chainDur = (2.6 / (particleSpeedMul * temporalSpeedAdj * Math.max(1 - momentumAge * 0.22, 0.62))).toFixed(2);
+
+  // Rotation flow — directional vertical gradient showing capital rotation zone
+  const rotFlowRaw   = Math.max(0, (0.038 + momentumAge * 0.042) * decayMul) * ms.atmosphereIntensity;
+  const rotFlowColor = riskDir === "strengthening" ? "#1030a8" : riskDir === "weakening" ? "#6a1818" : "#0a1c38";
+  const rotFlowTopOp = (riskDir === "weakening"     ? rotFlowRaw : 0).toFixed(3);
+  const rotFlowBotOp = (riskDir === "strengthening" ? rotFlowRaw : 0).toFixed(3);
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -779,14 +793,26 @@ export function MarketNarrativeNetwork() {
           )}
           {isActive && !isRegime && (
             <circle r={r + 9} fill="none" stroke={base.label}
-              strokeWidth="0.8" strokeOpacity="0.28" filter="url(#activeGlow)" />
+              strokeWidth="0.8" strokeOpacity={(0.28 * exhaustionFade * decayMul).toFixed(3)} filter="url(#activeGlow)" />
           )}
           {isActive && !isRegime && (
             <circle r={r + 5} fill="none" stroke={base.label}
               strokeWidth="2.4" strokeOpacity="0.90" filter="url(#activeGlow)" />
           )}
           {isActive && !isRegime && (
-            <circle r={r + 1} fill={base.label} fillOpacity="0.12" filter="url(#activeGlow)" />
+            <circle r={r + 1} fill={base.label} fillOpacity={(0.12 * exhaustionFade * decayMul).toFixed(3)} filter="url(#activeGlow)" />
+          )}
+
+          {/* Latent participation — faint slow pulse for high-confidence dormant nodes */}
+          {!isActive && !isRegime && !isDim && node.confidence > 55 && (
+            <circle r={r + 11} fill="none" stroke={base.label} strokeWidth="0.4" strokeOpacity="0">
+              <animate attributeName="stroke-opacity"
+                values={`0;${((node.confidence / 100) * 0.052 * decayMul).toFixed(3)};0`}
+                dur={`${8 + (idHash(node.id + "lat") % 7)}s`}
+                begin={`${((idHash(node.id + "lb") % 50) / 5).toFixed(1)}s`}
+                repeatCount="indefinite"
+                calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+            </circle>
           )}
 
           {isFocus && (
@@ -1084,6 +1110,14 @@ export function MarketNarrativeNetwork() {
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
 
+              {/* Rotation flow gradient — directional capital zone indicator */}
+              <linearGradient id="rotationFlow" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%"   stopColor={rotFlowColor} stopOpacity={rotFlowTopOp} />
+                <stop offset="40%"  stopColor="transparent" stopOpacity="0" />
+                <stop offset="60%"  stopColor="transparent" stopOpacity="0" />
+                <stop offset="100%" stopColor={rotFlowColor} stopOpacity={rotFlowBotOp} />
+              </linearGradient>
+
               {/* Leadership concentration gradients — local density at active chain nodes */}
               {activeChain && chainHighlight.sequence.slice(0, 3).map(n => {
                 const p  = positions.get(n.id);
@@ -1125,6 +1159,10 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
             {chainCentroid && <rect width={W} height={H} fill="url(#leaderField)" className="pointer-events-none" />}
+            {/* Rotation flow — directional capital zone indicator */}
+            {(parseFloat(rotFlowTopOp) + parseFloat(rotFlowBotOp)) > 0 && (
+              <rect width={W} height={H} fill="url(#rotationFlow)" className="pointer-events-none" />
+            )}
             {/* Leadership concentration — local density fields at active chain nodes */}
             {activeChain && chainHighlight.sequence.slice(0, 3).map(n =>
               positions.get(n.id)
@@ -1190,11 +1228,16 @@ export function MarketNarrativeNetwork() {
             <g className="pointer-events-none">
               {AMBIENT_PARTICLES.map((p, i) => {
                 const scaledDur = (p.dur / particleSpeedMul).toFixed(1);
+                // Leadership bias — particles subtly drift toward active chain centroid
+                const biasTx = chainCentroid ? ((chainCentroid.x - p.cx) / W) * 14 : 0;
+                const biasTy = chainCentroid ? ((chainCentroid.y - p.cy) / H) * 9  : 0;
+                const atx = (p.tx + biasTx).toFixed(1);
+                const aty = (p.ty + biasTy).toFixed(1);
                 return (
                   <circle key={i} cx={p.cx} cy={p.cy} r={p.r} fill="#c8ddf8" fillOpacity={0}>
                     <animateTransform
                       attributeName="transform" attributeType="XML" type="translate"
-                      values={`0,0; ${p.tx},${p.ty}; 0,0`}
+                      values={`0,0; ${atx},${aty}; 0,0`}
                       dur={`${scaledDur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
                       calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                     />
@@ -1325,7 +1368,7 @@ export function MarketNarrativeNetwork() {
                       stroke="#c8ddf8" strokeWidth="0.6"
                       strokeDasharray="2 9" fill="none" strokeOpacity="0">
                       <animate attributeName="stroke-opacity"
-                        values="0;0.042;0" keyTimes="0;0.5;1"
+                        values={`0;${(0.042 * decayMul).toFixed(3)};0`} keyTimes="0;0.5;1"
                         dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" />
                     </path>

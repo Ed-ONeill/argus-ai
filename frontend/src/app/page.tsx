@@ -129,10 +129,14 @@ export default function HomePage() {
         <div aria-hidden className="absolute inset-0 pointer-events-none select-none"
           style={{ backgroundImage: GRID_BG, backgroundRepeat: "repeat" }} />
 
-        {/* Primary radial glow — deep navy bleed from graph anchor, extends far into content */}
+        {/* Primary radial glow — field pressure color bleeds from graph through feed */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(8,22,66,0.62) 0%, rgba(6,14,44,0.28) 38%, transparent 68%)",
+            background: ms.riskRegime === "risk-off"
+              ? "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(40,8,8,0.55) 0%, rgba(28,6,6,0.22) 38%, transparent 68%)"
+              : (ms.volRegime === "elevated" || ms.volRegime === "high")
+              ? "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(30,18,4,0.50) 0%, rgba(20,12,4,0.20) 38%, transparent 68%)"
+              : "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(8,22,66,0.62) 0%, rgba(6,14,44,0.28) 38%, transparent 68%)",
           }} />
 
         {/* Secondary ambient field — left asymmetric depth */}
