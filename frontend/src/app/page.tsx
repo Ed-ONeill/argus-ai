@@ -139,16 +139,22 @@ export default function HomePage() {
               : "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(8,22,66,0.62) 0%, rgba(6,14,44,0.28) 38%, transparent 68%)",
           }} />
 
-        {/* Secondary ambient field — left asymmetric depth */}
+        {/* Secondary ambient field — left asymmetric depth, regime-tinted */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(8,18,46,0.28) 0%, transparent 72%)",
+            background: ms.riskRegime === "risk-off"
+              ? "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(40,10,10,0.24) 0%, transparent 72%)"
+              : (ms.volRegime === "elevated" || ms.volRegime === "high")
+              ? "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(30,18,4,0.22) 0%, transparent 72%)"
+              : "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(8,18,46,0.28) 0%, transparent 72%)",
           }} />
 
-        {/* Tertiary ambient — right-side asymmetric field */}
+        {/* Tertiary ambient — right-side asymmetric field, regime-tinted */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(6,12,36,0.18) 0%, transparent 72%)",
+            background: ms.riskRegime === "risk-off"
+              ? "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(36,8,8,0.16) 0%, transparent 72%)"
+              : "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(6,12,36,0.18) 0%, transparent 72%)",
           }} />
 
         {/* Quaternary — mid-page atmospheric depth, prevents hard surface transition */}

@@ -57,6 +57,15 @@ const FLOW_ORIGINS = [
   { cx: 650, cy: 170 }, { cx: 268, cy: 155 }, { cx: 990, cy: 285 },
 ];
 
+// ── Liquidity fragmentation positions — deterministic field fracture points ────
+
+const FRAG_POSITIONS = [
+  { x: 218, y: 152, angle:  32 }, { x: 582, y:  96, angle: -18 },
+  { x: 812, y: 208, angle:  55 }, { x: 378, y: 268, angle: -42 },
+  { x: 682, y: 280, angle:  22 }, { x: 142, y:  86, angle: -65 },
+  { x: 942, y: 158, angle:  40 },
+];
+
 // ── Label compression — institutional terminal style (Phase 4) ────────────────
 
 const LABEL_COMPRESS: [RegExp, string][] = [
@@ -503,6 +512,11 @@ export function MarketNarrativeNetwork() {
   const rotFlowColor = riskDir === "strengthening" ? "#1030a8" : riskDir === "weakening" ? "#6a1818" : "#0a1c38";
   const rotFlowTopOp = (riskDir === "weakening"     ? rotFlowRaw : 0).toFixed(3);
   const rotFlowBotOp = (riskDir === "strengthening" ? rotFlowRaw : 0).toFixed(3);
+
+  // Positioning dynamics — crowding, fragility, shock detection
+  const isCrowded = (ms.exhaustionRisk || (momentumAge > 0.55 && isDecel)) && chainCentroid !== null;
+  const isFragile = ms.stressIntensity > 0.20 && ms.volRegime !== "low";
+  const hasShock  = ms.regimeTransition;
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -1307,6 +1321,37 @@ export function MarketNarrativeNetwork() {
               })}
             </g>
 
+            {/* Counter-current particles — hidden cross-flows opposing dominant direction */}
+            <g className="pointer-events-none">
+              {FLOW_ORIGINS.slice(0, 6).map((p, i) => {
+                const ccBaseX = p.cx - W / 2;
+                const ccBaseY = p.cy - H / 2;
+                const ccMag   = Math.sqrt(ccBaseX * ccBaseX + ccBaseY * ccBaseY) || 1;
+                const ccDir   = flowDir !== 0 ? -flowDir : ((idHash(String(i) + "ccn") % 2 === 0) ? 1 : -1);
+                const latH    = idHash(String(i) + "cl");
+                const latX    = ((latH & 0x1f) / 31 - 0.5) * 18;
+                const latY    = (((latH >> 5) & 0x1f) / 31 - 0.5) * 12;
+                const ctx     = ((ccBaseX / ccMag) * ccDir * 28 + latX).toFixed(1);
+                const cty     = ((ccBaseY / ccMag) * ccDir * 20 + latY).toFixed(1);
+                const cfh     = idHash(String(i) + "ccf");
+                const dur     = ((30 + (cfh % 14)) / (flowSpeed * 0.8)).toFixed(1);
+                const beg     = ((cfh % 100) / 10).toFixed(1);
+                const ccOp    = (0.008 + ms.atmosphereIntensity * 0.008).toFixed(3);
+                return (
+                  <circle key={i} cx={p.cx} cy={p.cy} r={0.9} fill="#c8ddf8" fillOpacity="0">
+                    <animateTransform attributeName="transform" attributeType="XML" type="translate"
+                      values={`0,0; ${ctx},${cty}; 0,0`}
+                      dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1" keyTimes="0;0.5;1" />
+                    <animate attributeName="fill-opacity"
+                      values={`0;${ccOp};0`}
+                      dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1" keyTimes="0;0.5;1" />
+                  </circle>
+                );
+              })}
+            </g>
+
             {/* Lane separators — extend into fog zone so they fade naturally */}
             {rowEntries.map(([row, y]) => {
               const laneOp = row === 0 ? 0.09 : row === 1 ? 0.062 : row === 2 ? 0.050 : row === 3 ? 0.040 : 0.032;
@@ -1376,6 +1421,68 @@ export function MarketNarrativeNetwork() {
                 })
               }
             </g>
+
+            {/* Crowded leadership rings — instability when positioning overstretched */}
+            {isCrowded && chainCentroid && (
+              <g className="pointer-events-none">
+                {[0, 1, 2, 3].map(i => {
+                  const rh    = idHash(String(i) + "cr");
+                  const dur   = (1.6 + (rh % 8) * 0.20).toFixed(1);
+                  const maxR  = 32 + (rh % 4) * 14;
+                  const sOp   = (0.20 + ms.stressIntensity * 0.18).toFixed(2);
+                  const beg   = (i * 0.48).toFixed(2);
+                  return (
+                    <circle key={i} cx={chainCentroid.x} cy={chainCentroid.y} r="6"
+                      fill="none" stroke="#c8a040" strokeWidth="0.45" strokeOpacity="0">
+                      <animate attributeName="r" values={`6;${maxR};6`}
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.12 0 0.88 1;0.12 0 0.88 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="stroke-opacity" values={`${sOp};0;${sOp}`}
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Liquidity fragmentation lines — field fracture during stress */}
+            {isFragile && (
+              <g className="pointer-events-none">
+                {FRAG_POSITIONS.map((f, i) => {
+                  const rad   = (f.angle * Math.PI) / 180;
+                  const len   = 7 + (idHash(String(i) + "fl") % 14);
+                  const x2    = (f.x + Math.cos(rad) * len).toFixed(1);
+                  const y2    = (f.y + Math.sin(rad) * len).toFixed(1);
+                  const fh    = idHash(String(i) + "fd");
+                  const dur   = (0.7 + (fh % 8) * 0.14).toFixed(1);
+                  const beg   = ((fh % 40) / 10).toFixed(1);
+                  const mOp   = (0.10 + ms.stressIntensity * 0.20).toFixed(2);
+                  return (
+                    <line key={i} x1={f.x} y1={f.y} x2={x2} y2={y2}
+                      stroke="#c05858" strokeWidth="0.5" strokeOpacity="0">
+                      <animate attributeName="stroke-opacity"
+                        values={`0;${mOp};0;${(parseFloat(mOp) * 0.38).toFixed(2)};0`}
+                        keyTimes="0;0.12;0.45;0.70;1"
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite" />
+                    </line>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Regime shock pulse — rapid wide ring on momentum reversal */}
+            {hasShock && regimePos && (
+              <circle cx={regimePos.x} cy={regimePos.y} r="14"
+                fill="none" stroke="#c8a040" strokeWidth="0.6" strokeOpacity="0"
+                className="pointer-events-none">
+                <animate attributeName="r" values="14;340;14"
+                  dur="2.4s" repeatCount="indefinite"
+                  calcMode="spline" keySplines="0.10 0 0.90 1;0.10 0 0.90 1" keyTimes="0;0.5;1" />
+                <animate attributeName="stroke-opacity" values="0.38;0;0.38"
+                  dur="2.4s" repeatCount="indefinite" />
+              </circle>
+            )}
+
             {data.nodes.map(renderNode)}
 
             {/* Edge fog — applied over nodes so boundaries dissolve into atmospheric space */}

@@ -97,6 +97,11 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
 
   if (!regime && !isLive) return null;
 
+  const borderOp  = (0.042 + ms.stressIntensity * 0.055).toFixed(3);
+  const borderClr = ms.stressIntensity > 0.20
+    ? `rgba(180,60,60,${borderOp})`
+    : `rgba(255,255,255,${borderOp})`;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -105,8 +110,8 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
       className="-mx-4 sm:-mx-6 mb-5"
       style={{
         background:   "rgba(4,8,20,0.92)",
-        borderTop:    "1px solid rgba(255,255,255,0.042)",
-        borderBottom: "1px solid rgba(255,255,255,0.042)",
+        borderTop:    `1px solid ${borderClr}`,
+        borderBottom: `1px solid ${borderClr}`,
       }}
     >
       {/* ── Row 1: Cross-asset signals ─────────────────────────────────────── */}
