@@ -152,7 +152,19 @@ export default function HomePage() {
         <MarketNarrativeNetwork />
 
         {/* ── Intelligence feed ────────────────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-14 relative">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-8 pb-14 relative">
+
+          {/* ── Narrative bridge: regime graph → intelligence output ───── */}
+          <div className="flex items-center gap-3 mb-5">
+            <div className="shrink-0 w-px h-4"
+              style={{ background: "linear-gradient(to bottom, rgba(42,96,188,0.38), rgba(255,255,255,0.04))", marginLeft: "3px" }} />
+            <span className="text-[7px] font-bold uppercase tracking-[0.22em]"
+              style={{ color: "rgba(255,255,255,0.22)" }}>
+              Intelligence Output
+            </span>
+            <div className="flex-1 h-px"
+              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.05), transparent)" }} />
+          </div>
 
           {/* ── Market Intelligence panel ─────────────────────────────── */}
           <TodaysTake

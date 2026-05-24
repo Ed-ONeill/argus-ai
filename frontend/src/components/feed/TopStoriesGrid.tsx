@@ -31,9 +31,9 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
   return (
     <section className="mb-8">
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[10px] font-medium tracking-[0.05em] shrink-0"
-          style={{ color: "rgba(255,255,255,0.42)" }}>
-          Top stories
+        <span className="text-[10px] font-semibold tracking-[0.06em] uppercase shrink-0"
+          style={{ color: "rgba(255,255,255,0.46)" }}>
+          Top Signals
         </span>
         <span className="h-px flex-1"
           style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
@@ -85,10 +85,10 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
       whileHover={{ y: -1, transition: { duration: 0.16, ease: "easeOut" } }}
       className="group relative rounded-xl p-3 cursor-default flex flex-col"
       style={{
-        background:   "rgba(6,10,22,0.86)",
-        borderTop:    "1px solid rgba(255,255,255,0.06)",
-        borderRight:  "1px solid rgba(255,255,255,0.06)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        background:   "rgba(7,12,26,0.92)",
+        borderTop:    "1px solid rgba(255,255,255,0.07)",
+        borderRight:  "1px solid rgba(255,255,255,0.05)",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
         borderLeft:   `2px solid ${color}65`,
       }}
     >

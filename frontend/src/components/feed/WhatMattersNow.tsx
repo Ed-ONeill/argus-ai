@@ -152,8 +152,11 @@ function PrimaryDriverCard({
       onClick={onClick}
       className="w-full text-left relative overflow-hidden"
       style={{
-        background:   "rgba(7,12,24,0.94)",
-        borderRadius: "10px",
+        background:    "rgba(7,12,26,0.94)",
+        borderRadius:  "10px",
+        borderTop:     "1px solid rgba(255,255,255,0.07)",
+        borderRight:   "1px solid rgba(255,255,255,0.05)",
+        borderBottom:  "1px solid rgba(255,255,255,0.07)",
       }}
     >
       {/* Left ambient glow from category color */}
@@ -280,8 +283,11 @@ function WMNCard({
       onClick={onClick}
       className="snap-start flex-shrink-0 w-[210px] md:w-auto text-left relative overflow-hidden flex flex-col"
       style={{
-        background:   "rgba(6,10,20,0.88)",
-        borderRadius: "8px",
+        background:    "rgba(6,10,22,0.92)",
+        borderRadius:  "8px",
+        borderTop:     "1px solid rgba(255,255,255,0.06)",
+        borderRight:   "1px solid rgba(255,255,255,0.04)",
+        borderBottom:  "1px solid rgba(255,255,255,0.06)",
       }}
     >
       {/* Left vertical accent bar */}

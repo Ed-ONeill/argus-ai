@@ -84,17 +84,17 @@ export function ClusterCard({
         ? { duration: 0.28, ease: "easeOut" }
         : { duration: 0.22, ease: "easeOut" }
       }
-      whileHover={{ y: -0.5, transition: { duration: 0.20, ease: "easeOut" } }}
+      whileHover={{ y: -1, transition: { duration: 0.18, ease: "easeOut" } }}
       className={cn(
         "group rounded-lg overflow-hidden",
-        item.signal_strength === "weak" && "opacity-85",
+        item.signal_strength === "weak" && "opacity-80",
         isWatched && "ring-1 ring-accent/30",
       )}
       style={{
-        background:   "rgba(7,12,28,0.94)",
-        borderTop:    "1px solid rgba(255,255,255,0.07)",
+        background:   "rgba(7,12,28,0.95)",
+        borderTop:    "1px solid rgba(255,255,255,0.08)",
         borderRight:  "1px solid rgba(255,255,255,0.05)",
-        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
         borderLeft:   `2px solid ${leftAccent}`,
       }}
     >
@@ -136,9 +136,9 @@ export function ClusterCard({
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-[13px] font-semibold leading-snug mb-2
+          className="block text-[13.5px] font-semibold leading-snug mb-2
                      hover:text-accent transition-colors"
-          style={{ color: "rgba(255,255,255,0.93)" }}
+          style={{ color: "rgba(255,255,255,0.92)" }}
         >
           {item.title}
           <ExternalLink
@@ -249,10 +249,10 @@ export function ClusterCard({
               style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
 
               <span className="text-[10px] flex-1 truncate"
-                style={{ color: "rgba(255,255,255,0.48)" }}>
+                style={{ color: "rgba(255,255,255,0.44)" }}>
                 {item.source}
                 {item.published && (
-                  <span className="ml-1" style={{ color: "rgba(255,255,255,0.32)" }}>
+                  <span className="ml-1" style={{ color: "rgba(255,255,255,0.26)" }}>
                     · {item.published}
                   </span>
                 )}

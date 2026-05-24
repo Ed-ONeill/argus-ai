@@ -11,9 +11,9 @@ import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 // on each side — edge fog fills it so nodes feel like part of a larger unseen system.
 
 const W       = 1120;
-const H       = 400;
+const H       = 350;
 const PAD_X   = 68;
-const PAD_Y   = 52;
+const PAD_Y   = 44;
 const LABEL_X = 54;
 
 // ── Row config ────────────────────────────────────────────────────────────────
@@ -35,18 +35,18 @@ const LAYER_FILL_OPACITY: Record<string, number> = {
 // ── Ambient particle definitions (deterministic positions, no JS state) ────────
 
 const AMBIENT_PARTICLES = [
-  { cx:  52, cy: 204, r: 0.8, dur: 29, tx:  18, ty:  24, begin: 9.2 },
-  { cx: 112, cy:  92, r: 0.9, dur: 24, tx:  28, ty:  18, begin: 0.0 },
-  { cx: 298, cy: 155, r: 1.0, dur: 21, tx: -22, ty:  32, begin: 3.2 },
-  { cx: 490, cy:  68, r: 0.8, dur: 27, tx:  35, ty: -18, begin: 6.5 },
-  { cx: 668, cy: 210, r: 1.1, dur: 19, tx: -28, ty:  24, begin: 1.8 },
-  { cx: 865, cy: 115, r: 0.9, dur: 25, tx:  30, ty:  28, begin: 4.9 },
-  { cx: 1042, cy: 265, r: 1.0, dur: 22, tx: -18, ty: -26, begin: 0.7 },
-  { cx: 175, cy: 320, r: 0.8, dur: 28, tx:  22, ty:  35, begin: 7.8 },
-  { cx: 415, cy: 390, r: 1.1, dur: 18, tx: -32, ty:  18, begin: 3.6 },
-  { cx: 598, cy: 302, r: 0.9, dur: 23, tx:  26, ty: -22, begin: 5.3 },
-  { cx: 790, cy: 408, r: 1.0, dur: 20, tx: -24, ty:  28, begin: 2.1 },
-  { cx: 1082, cy: 348, r: 0.9, dur: 26, tx:  20, ty: -30, begin: 5.8 },
+  { cx:  52, cy: 178, r: 0.8, dur: 29, tx:  18, ty:  22, begin: 9.2 },
+  { cx: 112, cy:  80, r: 0.9, dur: 24, tx:  28, ty:  18, begin: 0.0 },
+  { cx: 298, cy: 135, r: 1.0, dur: 21, tx: -22, ty:  28, begin: 3.2 },
+  { cx: 490, cy:  58, r: 0.8, dur: 27, tx:  35, ty: -16, begin: 6.5 },
+  { cx: 668, cy: 183, r: 1.1, dur: 19, tx: -28, ty:  22, begin: 1.8 },
+  { cx: 865, cy: 100, r: 0.9, dur: 25, tx:  30, ty:  26, begin: 4.9 },
+  { cx: 1042, cy: 232, r: 1.0, dur: 22, tx: -18, ty: -24, begin: 0.7 },
+  { cx: 175, cy: 272, r: 0.8, dur: 28, tx:  22, ty:  20, begin: 7.8 },
+  { cx: 415, cy: 258, r: 1.1, dur: 18, tx: -30, ty:  14, begin: 3.6 },
+  { cx: 598, cy: 248, r: 0.9, dur: 23, tx:  24, ty: -20, begin: 5.3 },
+  { cx: 790, cy: 268, r: 1.0, dur: 20, tx: -22, ty:  16, begin: 2.1 },
+  { cx: 1082, cy: 292, r: 0.9, dur: 26, tx:  20, ty: -20, begin: 5.8 },
 ];
 
 // ── Grain texture (precomputed SVG noise, rendered once as raster by browser) ──
@@ -157,10 +157,10 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
 }
 
 function nodeRadius(n: GraphNode): number {
-  if (n.type === "regime") return 44;
-  if (n.type === "macro")  return 18;
-  if (n.type === "theme")  return Math.min(10 + (n.confidence / 100) * 14, 22);
-  return Math.min(10 + (n.confidence / 100) * 18, 26);
+  if (n.type === "regime") return 38;
+  if (n.type === "macro")  return 16;
+  if (n.type === "theme")  return Math.min(9 + (n.confidence / 100) * 11, 19);
+  return Math.min(9 + (n.confidence / 100) * 13, 21);
 }
 
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -297,7 +297,7 @@ function Skeleton() {
   return (
     <section style={{ background: "#050b18" }}>
       <div className="max-w-7xl mx-auto overflow-hidden">
-        <div className="animate-pulse" style={{ background: "#070d1a", height: 460 }} />
+        <div className="animate-pulse" style={{ background: "#070d1a", height: 410 }} />
       </div>
     </section>
   );
@@ -467,7 +467,7 @@ export function MarketNarrativeNetwork() {
     const opacity      = isDim ? 0.02 : isChainEdge ? 1.0 : isHigh ? 0.85 : base;
     const sw           = Math.max(1.0, edge.weight * 3.0);
     const d            = edgePath(sx, sy, ex, ey);
-    const pDelay       = `${(chainHighlight.edgeOrder.get(edge.id) ?? 0) * 0.55}s`;
+    const pDelay       = `${(chainHighlight.edgeOrder.get(edge.id) ?? 0) * 0.65}s`;
 
     return (
       <g key={edge.id}>
@@ -490,13 +490,14 @@ export function MarketNarrativeNetwork() {
           style={{ transition: "stroke-opacity 180ms" }} />
         {/* Propagation particle with glow */}
         {isChainEdge && (
-          <circle r={4.2} fill={activeStroke} filter="url(#particleGlow)">
-            <animateMotion path={d} dur="2.0s" begin={pDelay} repeatCount="indefinite"
+          <circle r={3.8} fill={activeStroke} filter="url(#particleGlow)">
+            <animateMotion path={d} dur="2.6s" begin={pDelay} repeatCount="indefinite"
               calcMode="spline" keyPoints="0;1" keyTimes="0;1"
-              keySplines="0.4 0 0.6 1" />
+              keySplines="0.25 0 0.75 1" />
             <animate attributeName="fill-opacity"
-              values="0;1.0;1.0;0" keyTimes="0;0.06;0.90;1"
-              dur="2.0s" begin={pDelay} repeatCount="indefinite" />
+              values="0;0.92;0.92;0" keyTimes="0;0.08;0.88;1"
+              dur="2.6s" begin={pDelay} repeatCount="indefinite"
+              calcMode="spline" keySplines="0.3 0 0.7 1;0.1 0 0.5 1;0.3 0 0.7 1" />
           </circle>
         )}
       </g>
@@ -533,7 +534,7 @@ export function MarketNarrativeNetwork() {
       <g key={node.id}
         transform={`translate(${pos.x},${pos.y})`}
         className="cursor-pointer"
-        style={{ opacity: isDim ? 0.010 : 1, transition: "opacity 180ms" }}
+        style={{ opacity: isDim ? 0.010 : 1, transition: "opacity 200ms ease-out" }}
         onMouseEnter={e => handleNodeEnter(node, e)}
         onMouseLeave={handleNodeLeave}
         onClick={() => handleNodeClick(node)}>
@@ -541,6 +542,11 @@ export function MarketNarrativeNetwork() {
           {isRegime && (
             <animateTransform attributeName="transform" attributeType="XML" type="scale"
               values="1;1.022;1" dur="6s" repeatCount="indefinite"
+              calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+          )}
+          {isActive && !isRegime && (
+            <animateTransform attributeName="transform" attributeType="XML" type="scale"
+              values="1;1.032;1" dur="4.2s" begin="0.9s" repeatCount="indefinite"
               calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
           )}
 
@@ -611,7 +617,7 @@ export function MarketNarrativeNetwork() {
             strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.88 : isRegime ? 0.72 : 0.48}
             filter={isActive && !isRegime ? "url(#nodeActiveGlow)"
               : isHov && !isRegime ? "url(#hoverGlow)" : undefined}
-            style={{ transition: "stroke-width 140ms, stroke-opacity 140ms" }} />
+            style={{ transition: "stroke-width 160ms ease-out, stroke-opacity 160ms ease-out" }} />
 
           {r < 18 && <circle r={2.5} fill={stroke} fillOpacity={0.72} />}
 
@@ -629,7 +635,7 @@ export function MarketNarrativeNetwork() {
               fillOpacity={isHov || isFocus ? 1.0 : isActive ? 1.0 : isRegime ? 0.98 : 0.92}
               filter={isActive || isHov || isFocus ? "url(#textGlow)" : undefined}
               className="pointer-events-none select-none"
-              style={{ transition: "fill-opacity 140ms" }}>
+              style={{ transition: "fill-opacity 160ms ease-out" }}>
               {trunc(node.label, labelMax)}
             </text>
           )}
@@ -647,11 +653,11 @@ export function MarketNarrativeNetwork() {
           style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
           {/* Dominant regime — lead element */}
           <div className="shrink-0">
-            <p className="text-[6.5px] font-bold uppercase tracking-[0.20em] mb-1.5"
-              style={{ color: "rgba(255,255,255,0.36)" }}>
+            <p className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
+              style={{ color: "rgba(255,255,255,0.40)" }}>
               Dominant Regime
             </p>
-            <p className="text-[15px] font-medium leading-none tracking-tight"
+            <p className="text-[16px] font-semibold leading-none tracking-tight"
               style={{ color: regimeColor(data.dominant_regime) }}>
               {data.dominant_regime}
             </p>
@@ -661,8 +667,8 @@ export function MarketNarrativeNetwork() {
           <div className="w-px self-stretch" style={{ background: "rgba(255,255,255,0.06)" }} />
 
           {/* Sub-labels */}
-          <p className="text-[8px] leading-relaxed flex-1" style={{ color: "rgba(255,255,255,0.36)" }}>
-            Live transmission map · {data.nodes.length} nodes · {data.edges.length} edges
+          <p className="text-[8px] leading-relaxed flex-1" style={{ color: "rgba(255,255,255,0.30)" }}>
+            Transmission map · {data.nodes.length} nodes · {data.edges.length} edges
           </p>
 
           {/* Right actions */}
@@ -685,7 +691,7 @@ export function MarketNarrativeNetwork() {
           return (
             <div className="flex items-center gap-5 px-6 py-3"
               style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <span className="text-[6.5px] font-bold uppercase tracking-[0.16em] shrink-0"
+              <span className="text-[7px] font-bold uppercase tracking-[0.16em] shrink-0"
                 style={{ color: "rgba(255,255,255,0.42)" }}>
                 Market Pulse
               </span>
@@ -696,7 +702,7 @@ export function MarketNarrativeNetwork() {
                     <div className="rounded-full shrink-0"
                       style={{ width: 6, height: 6, background: p.dot, boxShadow: `0 0 6px ${p.dot}` }} />
                     <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.46)" }}>{p.label}</span>
-                    <span className="text-[9.5px] font-semibold" style={{ color: p.color }}>
+                    <span className="text-[10px] font-semibold" style={{ color: p.color }}>
                       {p.value}
                     </span>
                   </div>
@@ -707,7 +713,7 @@ export function MarketNarrativeNetwork() {
         })()}
 
         {/* Graph canvas */}
-        <div ref={wrapRef} className="relative" style={{ minHeight: 340 }}>
+        <div ref={wrapRef} className="relative" style={{ minHeight: 292 }}>
 
           {/* Atmospheric grain texture — precomputed, GPU-cached */}
           <div aria-hidden className="absolute inset-0 pointer-events-none"
@@ -874,7 +880,7 @@ export function MarketNarrativeNetwork() {
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                   />
                   <animate attributeName="fill-opacity"
-                    values="0;0.075;0"
+                    values="0;0.085;0"
                     dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                   />

@@ -78,8 +78,8 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
 
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <span className="text-[10px] font-medium tracking-[0.05em]"
-            style={{ color: "rgba(255,255,255,0.40)" }}>
+          <span className="text-[10px] font-semibold tracking-[0.06em] uppercase"
+            style={{ color: "rgba(255,255,255,0.44)" }}>
             Market Intelligence
           </span>
           <div className="flex items-center gap-1.5">
@@ -95,12 +95,12 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
 
         {/* Primary Driver */}
         <div className="mb-3.5">
-          <p className="text-[7px] font-medium uppercase tracking-[0.16em] mb-1.5"
-            style={{ color: "rgba(255,255,255,0.38)" }}>
+          <p className="text-[7.5px] font-semibold uppercase tracking-[0.16em] mb-1.5"
+            style={{ color: "rgba(255,255,255,0.42)" }}>
             Primary Driver
           </p>
-          <p className="text-[13px] font-medium leading-snug"
-            style={{ color: "rgba(255,255,255,0.85)" }}>
+          <p className="text-[14px] font-semibold leading-snug"
+            style={{ color: "rgba(255,255,255,0.88)" }}>
             {brief.primary_driver}
           </p>
         </div>
@@ -206,8 +206,8 @@ function SimpleTake({ text, isLoading }: { text: string | undefined; isLoading: 
 
       <div className="relative px-6 py-4 pl-8">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[10px] font-medium tracking-[0.05em]"
-            style={{ color: "rgba(255,255,255,0.40)" }}>
+          <span className="text-[10px] font-semibold tracking-[0.06em] uppercase"
+            style={{ color: "rgba(255,255,255,0.44)" }}>
             Today&apos;s Take
           </span>
           <span className="text-[9px] tabular-nums" style={{ color: "rgba(255,255,255,0.25)" }}>
@@ -230,7 +230,7 @@ function SimpleTake({ text, isLoading }: { text: string | undefined; isLoading: 
               Generating today&apos;s brief…
             </p>
           ) : (
-            <p className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.82)", lineHeight: "1.55" }}>
+            <p className="text-[14px] font-medium" style={{ color: "rgba(255,255,255,0.84)", lineHeight: "1.58" }}>
               {text}
             </p>
           )}

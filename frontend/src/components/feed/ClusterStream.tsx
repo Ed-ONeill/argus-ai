@@ -29,8 +29,8 @@ export function ClusterStream({
             animate={{ opacity: [1, 0.35, 1] }}
             transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
           />
-          <span className="text-[10px] font-medium tracking-[0.05em]"
-            style={{ color: "rgba(255,255,255,0.40)" }}>
+          <span className="text-[10px] font-semibold tracking-[0.06em] uppercase"
+            style={{ color: "rgba(255,255,255,0.44)" }}>
             Live Market Stream
           </span>
         </div>
