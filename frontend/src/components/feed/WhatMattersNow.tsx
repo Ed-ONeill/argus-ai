@@ -67,21 +67,21 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
 
   return (
     <section className="mb-10">
-      {/* Section header — institutional MNN-matching style */}
+      {/* Section header */}
       <div className="flex items-center gap-3 mb-3">
         <span
-          className="text-[10px] font-medium uppercase shrink-0"
-          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.35)" }}
+          className="text-[10px] font-bold uppercase shrink-0"
+          style={{ letterSpacing: "0.10em", color: "rgba(255,255,255,0.45)" }}
         >
           What Matters Now
         </span>
         <div
           className="flex-1 h-px"
-          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.08), transparent)" }}
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }}
         />
         <span
-          className="text-[9.5px] shrink-0"
-          style={{ letterSpacing: "0.06em", color: "rgba(255,255,255,0.20)" }}
+          className="text-[9px] shrink-0"
+          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.26)" }}
         >
           Narrative Pressure
         </span>

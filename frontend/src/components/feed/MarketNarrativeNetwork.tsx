@@ -731,11 +731,12 @@ export function MarketNarrativeNetwork() {
                 <path d="M0,0 L0,7 L7,3.5 Z" fill="rgba(255,255,255,0.82)" />
               </marker>
 
-              {/* Regime node gradient — richer, deeper */}
-              <radialGradient id="regGrad" cx="50%" cy="42%" r="50%">
-                <stop offset="0%"   stopColor="#1e4478" stopOpacity="0.98" />
-                <stop offset="58%"  stopColor="#0e2448" stopOpacity="0.99" />
-                <stop offset="100%" stopColor="#060e20" stopOpacity="1"    />
+              {/* Regime node gradient — deeper with a luminous inner core */}
+              <radialGradient id="regGrad" cx="50%" cy="38%" r="50%">
+                <stop offset="0%"   stopColor="#2a5898" stopOpacity="0.98" />
+                <stop offset="35%"  stopColor="#1a3d6c" stopOpacity="0.99" />
+                <stop offset="72%"  stopColor="#0c2040" stopOpacity="1.0"  />
+                <stop offset="100%" stopColor="#05101e" stopOpacity="1"    />
               </radialGradient>
 
               {/* Atmospheric background — slow breathing */}
@@ -759,15 +760,15 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
 
-              {/* Regime environmental glow — tracks regime node */}
-              <radialGradient id="regEnvGrad" cx={regCx} cy={regCy} r="44%"
+              {/* Regime environmental glow — tracks regime node, breathes */}
+              <radialGradient id="regEnvGrad" cx={regCx} cy={regCy} r="48%"
                 gradientUnits="objectBoundingBox">
-                <stop offset="0%" stopColor="#2060a0">
-                  <animate attributeName="stop-opacity" values="0.25;0.46;0.25"
+                <stop offset="0%" stopColor="#2868b8">
+                  <animate attributeName="stop-opacity" values="0.32;0.56;0.32"
                     dur="8s" repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
                 </stop>
-                <stop offset="70%" stopColor="#104078" stopOpacity="0.06" />
+                <stop offset="55%" stopColor="#104080" stopOpacity="0.10" />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
 
@@ -862,7 +863,7 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
 
-            {/* Ambient drifting particles — very slow, barely visible */}
+            {/* Ambient drifting particles — slow, atmospheric */}
             <g className="pointer-events-none">
               {AMBIENT_PARTICLES.map((p, i) => (
                 <circle key={i} cx={p.cx} cy={p.cy} r={p.r} fill="#c8ddf8" fillOpacity={0}>
@@ -873,7 +874,7 @@ export function MarketNarrativeNetwork() {
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                   />
                   <animate attributeName="fill-opacity"
-                    values="0;0.045;0"
+                    values="0;0.075;0"
                     dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                   />
