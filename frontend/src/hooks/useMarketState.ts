@@ -21,11 +21,13 @@ export interface MarketSignal {
 }
 
 export interface MarketTrend {
-  riskDirection: TrendDir;
-  duration:      number;    // consecutive readings confirming direction
-  acceleration:  MomentumTag;
-  volTrend:      "rising" | "falling" | "stable";
-  label:         string;    // human-readable: "Risk-on strengthening"
+  riskDirection:    TrendDir;
+  duration:         number;    // consecutive readings confirming direction
+  acceleration:     MomentumTag;
+  volTrend:         "rising" | "falling" | "stable";
+  label:            string;    // human-readable: "Risk-on strengthening"
+  persistenceLabel: string;    // "Just Emerging" | "Building" | "Persistent" | "Extended"
+  momentumDecay:    boolean;   // decelerating after sustained move
 }
 
 export interface MarketState {
@@ -171,7 +173,7 @@ const HIST_SIZE = 8;
 
 function computeTrend(hist: HistPoint[]): MarketTrend {
   if (hist.length < 2) {
-    return { riskDirection: "stable", duration: 0, acceleration: "stable", volTrend: "stable", label: "Neutral" };
+    return { riskDirection: "stable", duration: 0, acceleration: "stable", volTrend: "stable", label: "Neutral", persistenceLabel: "Just Emerging", momentumDecay: false };
   }
 
   const recent = hist.slice(-4);
@@ -222,7 +224,14 @@ function computeTrend(hist: HistPoint[]): MarketTrend {
       : volTrend === "falling" ? "Volatility easing"
       : "Neutral";
 
-  return { riskDirection, duration, acceleration, volTrend, label };
+  const persistenceLabel =
+    duration <= 1 ? "Just Emerging" :
+    duration <= 3 ? "Building" :
+    duration <= 6 ? "Persistent" : "Extended";
+
+  const momentumDecay = acceleration === "decelerating" && duration > 2;
+
+  return { riskDirection, duration, acceleration, volTrend, label, persistenceLabel, momentumDecay };
 }
 
 // ── Main hook ──────────────────────────────────────────────────────────────────

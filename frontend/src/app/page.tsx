@@ -7,13 +7,13 @@ import { useSaved } from "@/hooks/useSaved";
 import { useFeedFreshness } from "@/hooks/useFeedFreshness";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { useMarketState } from "@/hooks/useMarketState";
-import type { MarketSignal } from "@/hooks/useMarketState";
 import { TodaysTake } from "@/components/feed/TodaysTake";
 import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
 import { MarketNarrativeNetwork } from "@/components/feed/MarketNarrativeNetwork";
+import { MarketPressureMap } from "@/components/feed/MarketPressureMap";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
@@ -26,97 +26,6 @@ function formatAge(seconds: number): string {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
-// ── Cross-asset pressure signals — regime-derived ─────────────────────────────
-
-function deriveCrossAsset(regime: string) {
-  const r        = regime.toLowerCase();
-  const isOn     = r.includes("risk-on")  || r.includes("expansion") || r.includes("dovish") || r.includes("easing");
-  const isOff    = r.includes("risk-off") || r.includes("tighten")   || r.includes("stagflat") || r.includes("shock") || r.includes("hawkish");
-  const isTight  = r.includes("tighten")  || r.includes("hawkish")   || r.includes("hike") || r.includes("qt");
-  const isEase   = r.includes("easing")   || r.includes("dovish")    || r.includes("cut")  || r.includes("qe");
-  const isStagf  = r.includes("stagflat");
-
-  return [
-    {
-      label: "Yields",
-      arrow: isTight ? "↑" : isEase ? "↓" : "→",
-      value: isTight ? "Rising"  : isEase   ? "Falling"  : "Stable",
-      color: isTight ? "#c8a040" : isEase   ? "#52b0c8"  : "#8898b8",
-    },
-    {
-      label: "Dollar",
-      arrow: isOff ? "↑" : isOn ? "↓" : "→",
-      value: isOff ? "Bid"    : isOn  ? "Soft"    : "Mixed",
-      color: isOff ? "#c8a040" : isOn  ? "#52b0c8" : "#8898b8",
-    },
-    {
-      label: "Gold",
-      arrow: (isOff || isStagf) ? "↑" : (isOn && !isStagf) ? "↓" : "→",
-      value: (isOff || isStagf) ? "Bid" : (isOn && !isStagf) ? "Soft" : "Flat",
-      color: (isOff || isStagf) ? "#c8a040" : "#8898b8",
-    },
-    {
-      label: "Oil",
-      arrow: (isOn || isStagf) ? "↑" : (isOff && !isStagf) ? "↓" : "→",
-      value: (isOn || isStagf) ? "Bid"  : (isOff && !isStagf) ? "Soft" : "Flat",
-      color: (isOn || isStagf) ? "#c8a040" : "#8898b8",
-    },
-    {
-      label: "VIX",
-      arrow: isOff ? "↑" : isOn ? "↓" : "→",
-      value: isOff ? "Elevated"   : isOn ? "Compressed" : "Moderate",
-      color: isOff ? "#b05858"    : isOn ? "#52b0c8"    : "#8898b8",
-    },
-    {
-      label: "Spreads",
-      arrow: isOff ? "↑" : isOn ? "↓" : "→",
-      value: isOff ? "Widening"   : isOn ? "Tightening" : "Stable",
-      color: isOff ? "#b05858"    : isOn ? "#52b0c8"    : "#8898b8",
-    },
-  ];
-}
-
-function CrossAssetBar({
-  regime,
-  liveSignals,
-}: {
-  regime:       string;
-  liveSignals?: MarketSignal[];
-}) {
-  const hasLive = !!liveSignals?.length;
-  if (!regime && !hasLive) return null;
-  const signals = hasLive ? liveSignals! : deriveCrossAsset(regime);
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5, delay: 0.15 }}
-      className="-mx-4 sm:-mx-6 px-5 sm:px-7 py-2.5 mb-5 flex items-center gap-0"
-      style={{
-        background:   "rgba(4,8,20,0.92)",
-        borderTop:    "1px solid rgba(255,255,255,0.042)",
-        borderBottom: "1px solid rgba(255,255,255,0.042)",
-      }}
-    >
-      <span className="text-[6px] font-bold uppercase tracking-[0.20em] shrink-0 pr-4 mr-3"
-        style={{ color: "rgba(255,255,255,0.24)", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
-        Cross-Asset
-      </span>
-      <div className="flex items-center gap-5 flex-wrap flex-1">
-        {signals.map(s => (
-          <div key={s.label} className="flex items-center gap-1">
-            <span className="text-[9px] font-bold leading-none" style={{ color: s.color }}>{s.arrow}</span>
-            <span className="text-[7px] ml-0.5" style={{ color: "rgba(255,255,255,0.30)" }}>{s.label}</span>
-            <span className="text-[8.5px] font-semibold ml-0.5" style={{ color: s.color }}>{s.value}</span>
-          </div>
-        ))}
-      </div>
-      <span className="text-[7px] shrink-0 italic" style={{ color: "rgba(255,255,255,0.16)" }}>
-        {hasLive ? "live" : "regime-derived"}
-      </span>
-    </motion.div>
-  );
-}
 
 const PAGE_SIZE = 20;
 
@@ -268,11 +177,8 @@ export default function HomePage() {
               style={{ background: "linear-gradient(to right, rgba(255,255,255,0.04), transparent)" }} />
           </div>
 
-          {/* ── Cross-asset pressure signals ──────────────────────────── */}
-          <CrossAssetBar
-            regime={data?.market_brief?.market_regime ?? ""}
-            liveSignals={ms.hasData ? ms.signals : undefined}
-          />
+          {/* ── Cross-asset pressure signals + causal chain ───────────── */}
+          <MarketPressureMap regime={data?.market_brief?.market_regime ?? ""} />
 
           {/* ── Market Intelligence panel ─────────────────────────────── */}
           <TodaysTake

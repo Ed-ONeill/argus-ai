@@ -346,13 +346,31 @@ export function MarketNarrativeNetwork() {
 
   const wrapRef         = useRef<HTMLDivElement>(null);
   const initialChainRef = useRef(false);
+  const msRegimeRef     = useRef(ms);
+  msRegimeRef.current   = ms;  // always current, no stale closure in effects
   const chains          = data?.chains;
 
   useEffect(() => {
     if (initialChainRef.current || !chains?.length) return;
     initialChainRef.current = true;
-    const top = [...chains].sort((a, b) => b.confidence - a.confidence)[0];
-    setActiveChain(top.id);
+    const { ratesRegime, volRegime, riskRegime } = msRegimeRef.current;
+
+    // Prefer a chain whose title matches the dominant market driver
+    const keyword =
+      ratesRegime === "rising"                              ? "yield"   :
+      (volRegime === "elevated" || volRegime === "high")   ? "vol"     :
+      riskRegime === "risk-off"                             ? "risk"    :
+      riskRegime === "risk-on"                              ? "growth"  : null;
+
+    const sorted = [...chains].sort((a, b) => b.confidence - a.confidence);
+    const matched = keyword
+      ? sorted.find(c =>
+          c.title.toLowerCase().includes(keyword) ||
+          (c.summary ?? "").toLowerCase().includes(keyword),
+        )
+      : undefined;
+
+    setActiveChain((matched ?? sorted[0]).id);
   }, [chains]);
 
   const positions = useMemo(
