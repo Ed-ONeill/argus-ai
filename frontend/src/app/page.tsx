@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { motion } from "framer-motion";
 import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useFeedFreshness } from "@/hooks/useFeedFreshness";
@@ -21,6 +22,91 @@ function formatAge(seconds: number): string {
   if (seconds < 60)   return "just now";
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+// ── Cross-asset pressure signals — regime-derived ─────────────────────────────
+
+function deriveCrossAsset(regime: string) {
+  const r        = regime.toLowerCase();
+  const isOn     = r.includes("risk-on")  || r.includes("expansion") || r.includes("dovish") || r.includes("easing");
+  const isOff    = r.includes("risk-off") || r.includes("tighten")   || r.includes("stagflat") || r.includes("shock") || r.includes("hawkish");
+  const isTight  = r.includes("tighten")  || r.includes("hawkish")   || r.includes("hike") || r.includes("qt");
+  const isEase   = r.includes("easing")   || r.includes("dovish")    || r.includes("cut")  || r.includes("qe");
+  const isStagf  = r.includes("stagflat");
+
+  return [
+    {
+      label: "Yields",
+      arrow: isTight ? "↑" : isEase ? "↓" : "→",
+      value: isTight ? "Rising"  : isEase   ? "Falling"  : "Stable",
+      color: isTight ? "#c8a040" : isEase   ? "#52b0c8"  : "#8898b8",
+    },
+    {
+      label: "Dollar",
+      arrow: isOff ? "↑" : isOn ? "↓" : "→",
+      value: isOff ? "Bid"    : isOn  ? "Soft"    : "Mixed",
+      color: isOff ? "#c8a040" : isOn  ? "#52b0c8" : "#8898b8",
+    },
+    {
+      label: "Gold",
+      arrow: (isOff || isStagf) ? "↑" : (isOn && !isStagf) ? "↓" : "→",
+      value: (isOff || isStagf) ? "Bid" : (isOn && !isStagf) ? "Soft" : "Flat",
+      color: (isOff || isStagf) ? "#c8a040" : "#8898b8",
+    },
+    {
+      label: "Oil",
+      arrow: (isOn || isStagf) ? "↑" : (isOff && !isStagf) ? "↓" : "→",
+      value: (isOn || isStagf) ? "Bid"  : (isOff && !isStagf) ? "Soft" : "Flat",
+      color: (isOn || isStagf) ? "#c8a040" : "#8898b8",
+    },
+    {
+      label: "VIX",
+      arrow: isOff ? "↑" : isOn ? "↓" : "→",
+      value: isOff ? "Elevated"   : isOn ? "Compressed" : "Moderate",
+      color: isOff ? "#b05858"    : isOn ? "#52b0c8"    : "#8898b8",
+    },
+    {
+      label: "Spreads",
+      arrow: isOff ? "↑" : isOn ? "↓" : "→",
+      value: isOff ? "Widening"   : isOn ? "Tightening" : "Stable",
+      color: isOff ? "#b05858"    : isOn ? "#52b0c8"    : "#8898b8",
+    },
+  ];
+}
+
+function CrossAssetBar({ regime }: { regime: string }) {
+  if (!regime) return null;
+  const signals = deriveCrossAsset(regime);
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5, delay: 0.15 }}
+      className="-mx-4 sm:-mx-6 px-5 sm:px-7 py-2.5 mb-5 flex items-center gap-0"
+      style={{
+        background:   "rgba(4,8,20,0.92)",
+        borderTop:    "1px solid rgba(255,255,255,0.042)",
+        borderBottom: "1px solid rgba(255,255,255,0.042)",
+      }}
+    >
+      <span className="text-[6px] font-bold uppercase tracking-[0.20em] shrink-0 pr-4 mr-3"
+        style={{ color: "rgba(255,255,255,0.24)", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
+        Cross-Asset
+      </span>
+      <div className="flex items-center gap-5 flex-wrap flex-1">
+        {signals.map(s => (
+          <div key={s.label} className="flex items-center gap-1">
+            <span className="text-[9px] font-bold leading-none" style={{ color: s.color }}>{s.arrow}</span>
+            <span className="text-[7px] ml-0.5" style={{ color: "rgba(255,255,255,0.30)" }}>{s.label}</span>
+            <span className="text-[8.5px] font-semibold ml-0.5" style={{ color: s.color }}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+      <span className="text-[7px] shrink-0 italic" style={{ color: "rgba(255,255,255,0.16)" }}>
+        regime-derived
+      </span>
+    </motion.div>
+  );
 }
 
 const PAGE_SIZE = 20;
@@ -124,22 +210,28 @@ export default function HomePage() {
         <div aria-hidden className="absolute inset-0 pointer-events-none select-none"
           style={{ backgroundImage: GRID_BG, backgroundRepeat: "repeat" }} />
 
-        {/* Primary radial glow — emanates downward from MNN regime anchor */}
+        {/* Primary radial glow — deep navy bleed from graph anchor, extends far into content */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 110% 55% at 50% 0%, rgba(10,28,74,0.52) 0%, transparent 58%)",
+            background: "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(8,22,66,0.62) 0%, rgba(6,14,44,0.28) 38%, transparent 68%)",
           }} />
 
         {/* Secondary ambient field — left asymmetric depth */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 55% 35% at 18% 60%, rgba(8,16,42,0.22) 0%, transparent 75%)",
+            background: "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(8,18,46,0.28) 0%, transparent 72%)",
           }} />
 
-        {/* Tertiary ambient — right-lower warmth */}
+        {/* Tertiary ambient — right-side asymmetric field */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            background: "radial-gradient(ellipse 45% 28% at 82% 75%, rgba(6,14,34,0.15) 0%, transparent 75%)",
+            background: "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(6,12,36,0.18) 0%, transparent 72%)",
+          }} />
+
+        {/* Quaternary — mid-page atmospheric depth, prevents hard surface transition */}
+        <div aria-hidden className="absolute inset-0 pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(5,12,34,0.20) 0%, transparent 65%)",
           }} />
 
         {/* New stories banner — sticky inside the dark environment */}
@@ -152,19 +244,22 @@ export default function HomePage() {
         <MarketNarrativeNetwork />
 
         {/* ── Intelligence feed ────────────────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-8 pb-14 relative">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-14 relative">
 
-          {/* ── Narrative bridge: regime graph → intelligence output ───── */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="shrink-0 w-px h-4"
-              style={{ background: "linear-gradient(to bottom, rgba(42,96,188,0.38), rgba(255,255,255,0.04))", marginLeft: "3px" }} />
-            <span className="text-[7px] font-bold uppercase tracking-[0.22em]"
-              style={{ color: "rgba(255,255,255,0.22)" }}>
+          {/* ── Data channel bridge: graph → cross-asset → intelligence ── */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="shrink-0 w-px h-5"
+              style={{ background: "linear-gradient(to bottom, rgba(42,96,188,0.50), rgba(255,255,255,0.02))", marginLeft: "3px" }} />
+            <span className="text-[6.5px] font-bold uppercase tracking-[0.24em]"
+              style={{ color: "rgba(255,255,255,0.18)" }}>
               Intelligence Output
             </span>
             <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.05), transparent)" }} />
+              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.04), transparent)" }} />
           </div>
+
+          {/* ── Cross-asset pressure signals ──────────────────────────── */}
+          <CrossAssetBar regime={data?.market_brief?.market_regime ?? ""} />
 
           {/* ── Market Intelligence panel ─────────────────────────────── */}
           <TodaysTake
@@ -199,6 +294,14 @@ export default function HomePage() {
             totalCount={data?.total}
             filteredCount={visibleClusters.length}
           />
+
+          {/* ── Stream entry — atmospheric bridge ──────────────────────── */}
+          <div className="flex items-center gap-3 mb-4 mt-1">
+            <div className="w-px h-4 shrink-0"
+              style={{ background: "linear-gradient(to bottom, rgba(52,200,120,0.28), rgba(255,255,255,0.02))", marginLeft: "3px" }} />
+            <div className="flex-1 h-px"
+              style={{ background: "linear-gradient(to right, rgba(52,200,120,0.06), transparent)" }} />
+          </div>
 
           {/* ── Live Market Stream ────────────────────────────────────── */}
           <ClusterStream

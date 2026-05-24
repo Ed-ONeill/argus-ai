@@ -31,12 +31,15 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
   return (
     <section className="mb-8">
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[10px] font-semibold tracking-[0.06em] uppercase shrink-0"
-          style={{ color: "rgba(255,255,255,0.46)" }}>
-          Top Signals
+        <span className="text-[10px] font-semibold tracking-[0.08em] uppercase shrink-0"
+          style={{ color: "rgba(255,255,255,0.42)" }}>
+          Signal Monitor
         </span>
         <span className="h-px flex-1"
-          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.055), transparent)" }} />
+        <span className="text-[8.5px] shrink-0" style={{ color: "rgba(255,255,255,0.22)" }}>
+          by signal type
+        </span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">

@@ -69,21 +69,29 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
     <section className="mb-12">
       {/* Section header */}
       <div className="flex items-center gap-3 mb-3">
-        <span
-          className="text-[10px] font-bold uppercase shrink-0"
-          style={{ letterSpacing: "0.10em", color: "rgba(255,255,255,0.45)" }}
-        >
-          What Matters Now
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <motion.span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: "rgba(180,140,70,0.60)" }}
+            animate={{ opacity: [1, 0.32, 1] }}
+            transition={{ duration: 3.0, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <span
+            className="text-[10px] font-semibold uppercase"
+            style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.44)" }}
+          >
+            What Matters Now
+          </span>
+        </div>
         <div
           className="flex-1 h-px"
-          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }}
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }}
         />
         <span
           className="text-[9px] shrink-0"
-          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.26)" }}
+          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.24)" }}
         >
-          Narrative Pressure
+          Signal Pressure
         </span>
       </div>
 

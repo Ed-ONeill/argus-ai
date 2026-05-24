@@ -854,11 +854,17 @@ export function MarketNarrativeNetwork() {
                   stopOpacity={chainCentroid ? 0.20 : 0} />
               </radialGradient>
 
-              {/* Chain spotlight — illuminates active narrative centroid */}
+              {/* Chain spotlight — illuminates active chain centroid, breathes when live */}
               <radialGradient id="chainSpot" cx={spotCx} cy={spotCy} r="28%"
                 gradientUnits="objectBoundingBox">
                 <stop offset="0%" stopColor="#304878"
-                  stopOpacity={chainCentroid ? 0.34 : 0} />
+                  stopOpacity={chainCentroid ? 0.34 : 0}>
+                  {chainCentroid && (
+                    <animate attributeName="stop-opacity" values="0.34;0.55;0.34"
+                      dur="4.2s" repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+                  )}
+                </stop>
                 <stop offset="60%" stopColor="#1a2c4a"
                   stopOpacity={chainCentroid ? 0.10 : 0} />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
@@ -988,6 +994,23 @@ export function MarketNarrativeNetwork() {
                   strokeLinejoin="round" paintOrder="stroke"
                   className="pointer-events-none select-none">
                   {ROW_LABELS[row] ?? ""}
+                </text>
+              );
+            })}
+
+            {/* Pressure flow direction — downward indicators between lane labels */}
+            {rowEntries.slice(0, -1).map(([row, y1], i) => {
+              const nextEntry = rowEntries[i + 1];
+              if (!nextEntry) return null;
+              const midY = (y1 + nextEntry[1]) / 2;
+              const op   = row === 0 ? 0.28 : row === 1 ? 0.20 : row === 2 ? 0.14 : 0.10;
+              return (
+                <text key={`pf-${row}`} x={LABEL_X} y={midY + 4}
+                  textAnchor="end" fontSize={9}
+                  fontFamily="Inter, system-ui, sans-serif"
+                  fill={`rgba(255,255,255,${op})`}
+                  className="pointer-events-none select-none">
+                  ↓
                 </text>
               );
             })}
