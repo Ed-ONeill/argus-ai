@@ -127,7 +127,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
           ))}
         </div>
         <span className="text-[7px] shrink-0 italic" style={{ color: "rgba(255,255,255,0.16)" }}>
-          {isLive ? "live" : "regime-derived"}
+          {isLive ? "live" : "state-derived"}
         </span>
       </div>
 

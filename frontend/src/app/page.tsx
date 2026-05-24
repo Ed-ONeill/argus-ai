@@ -162,6 +162,10 @@ export default function HomePage() {
         {/* ── Market Narrative Network — full-bleed hero ───────────────────── */}
         <MarketNarrativeNetwork />
 
+        {/* Atmospheric continuity — graph field bleeds into intelligence feed */}
+        <div aria-hidden className="w-full h-7 pointer-events-none"
+          style={{ background: "linear-gradient(to bottom, rgba(5,11,24,0.55) 0%, transparent 100%)" }} />
+
         {/* ── Intelligence feed ────────────────────────────────────────────── */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-14 relative">
 
