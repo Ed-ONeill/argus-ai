@@ -6,6 +6,8 @@ import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useFeedFreshness } from "@/hooks/useFeedFreshness";
 import { useWatchlist } from "@/hooks/useWatchlist";
+import { useMarketState } from "@/hooks/useMarketState";
+import type { MarketSignal } from "@/hooks/useMarketState";
 import { TodaysTake } from "@/components/feed/TodaysTake";
 import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
@@ -74,9 +76,16 @@ function deriveCrossAsset(regime: string) {
   ];
 }
 
-function CrossAssetBar({ regime }: { regime: string }) {
-  if (!regime) return null;
-  const signals = deriveCrossAsset(regime);
+function CrossAssetBar({
+  regime,
+  liveSignals,
+}: {
+  regime:       string;
+  liveSignals?: MarketSignal[];
+}) {
+  const hasLive = !!liveSignals?.length;
+  if (!regime && !hasLive) return null;
+  const signals = hasLive ? liveSignals! : deriveCrossAsset(regime);
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -103,7 +112,7 @@ function CrossAssetBar({ regime }: { regime: string }) {
         ))}
       </div>
       <span className="text-[7px] shrink-0 italic" style={{ color: "rgba(255,255,255,0.16)" }}>
-        regime-derived
+        {hasLive ? "live" : "regime-derived"}
       </span>
     </motion.div>
   );
@@ -133,6 +142,7 @@ export default function HomePage() {
     currentGeneratedAt: data?.generated_at,
   });
   const { watchlist } = useWatchlist();
+  const ms = useMarketState();
 
   const watchedEntities = useMemo(
     () => new Set(watchlist.map(w => w.id.toLowerCase())),
@@ -259,7 +269,10 @@ export default function HomePage() {
           </div>
 
           {/* ── Cross-asset pressure signals ──────────────────────────── */}
-          <CrossAssetBar regime={data?.market_brief?.market_regime ?? ""} />
+          <CrossAssetBar
+            regime={data?.market_brief?.market_regime ?? ""}
+            liveSignals={ms.hasData ? ms.signals : undefined}
+          />
 
           {/* ── Market Intelligence panel ─────────────────────────────── */}
           <TodaysTake
@@ -273,6 +286,8 @@ export default function HomePage() {
             items={data?.what_matters_now ?? []}
             isLoading={isLoading}
             themes={data?.theme_intelligence ?? []}
+            marketIntensity={ms.atmosphereIntensity}
+            trendLabel={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
           />
 
           {/* ── Top stories by signal type ─────────────────────────────── */}

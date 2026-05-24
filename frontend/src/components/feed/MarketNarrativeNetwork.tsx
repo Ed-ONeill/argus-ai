@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, X } from "lucide-react";
 import { useNarrativeNetwork } from "@/hooks/useNarrativeNetwork";
+import { useMarketState } from "@/hooks/useMarketState";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -335,6 +336,7 @@ function Skeleton() {
 
 export function MarketNarrativeNetwork() {
   const { data, isLoading, isFetching } = useNarrativeNetwork();
+  const ms = useMarketState();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -405,6 +407,19 @@ export function MarketNarrativeNetwork() {
 
   const focusedNode = focusedNodeId && data
     ? (data.nodes.find(n => n.id === focusedNodeId) ?? null) : null;
+
+  // ── Market-state reactive visual params ───────────────────────────────────
+  const particleMax   = (0.085 * ms.particleIntensity).toFixed(3);
+  const regBreath     = (1 + 0.022 * ms.breathAmplitude).toFixed(4);
+  const atmoBase      = (0.68 + ms.atmosphereIntensity * 0.22).toFixed(2);
+  const atmoTop       = (parseFloat(atmoBase) + 0.12).toFixed(2);
+  const envBase       = (0.18 + ms.atmosphereIntensity * 0.18).toFixed(2);
+  const envTop        = (0.30 + ms.atmosphereIntensity * 0.28).toFixed(2);
+  const stressOp      = (ms.stressIntensity * 0.22).toFixed(3);
+  const riskOp        = (ms.riskFieldIntensity * 0.28).toFixed(3);
+  const volR          = `${(ms.volFieldScale * 68).toFixed(0)}%`;
+  // Live signals: use ms.signals when data is available, fall back to pulses
+  const displaySignals = ms.hasData ? ms.signals : null;
 
   const focusedConnections = useMemo(() => {
     if (!focusedNodeId || !data) return [];
@@ -604,7 +619,7 @@ export function MarketNarrativeNetwork() {
           )}
           {isRegime && (
             <animateTransform attributeName="transform" attributeType="XML" type="scale"
-              values="1;1.022;1" dur="6s" repeatCount="indefinite"
+              values={`1;${regBreath};1`} dur="6s" repeatCount="indefinite"
               calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
           )}
           {isActive && !isRegime && (
@@ -746,18 +761,18 @@ export function MarketNarrativeNetwork() {
             </p>
           </div>
 
-          {/* Flow signals — inline Bloomberg ticker style */}
+          {/* Flow signals — live market data when available, regime-derived fallback */}
           <div className="flex items-center gap-5 flex-1 pl-5 flex-wrap">
-            {pulses.map(p => (
-              <div key={p.label} className="flex items-center gap-1">
-                <span className="text-[10px] font-bold leading-none" style={{ color: p.color }}>
-                  {p.arrow}
+            {(displaySignals ?? pulses).map(s => (
+              <div key={s.label} className="flex items-center gap-1">
+                <span className="text-[10px] font-bold leading-none" style={{ color: s.color }}>
+                  {s.arrow}
                 </span>
                 <span className="text-[7.5px] ml-0.5" style={{ color: "rgba(255,255,255,0.36)" }}>
-                  {p.label}
+                  {s.label}
                 </span>
-                <span className="text-[9.5px] font-semibold ml-0.5" style={{ color: p.color }}>
-                  {p.value}
+                <span className="text-[9.5px] font-semibold ml-0.5" style={{ color: s.color }}>
+                  {s.value}
                 </span>
               </div>
             ))}
@@ -813,10 +828,10 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="#05101e" stopOpacity="1"    />
               </radialGradient>
 
-              {/* Atmospheric background — slow breathing */}
+              {/* Atmospheric background — amplitude driven by market intensity */}
               <radialGradient id="bgAtmo" cx="50%" cy="10%" r="72%">
                 <stop offset="0%" stopColor="#0e2244">
-                  <animate attributeName="stop-opacity" values="0.90;1.0;0.90"
+                  <animate attributeName="stop-opacity" values={`${atmoBase};${atmoTop};${atmoBase}`}
                     dur="9s" repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
                 </stop>
@@ -834,16 +849,31 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
 
-              {/* Regime environmental glow — tracks regime node, breathes */}
+              {/* Regime environmental glow — tracks regime node, reacts to live market state */}
               <radialGradient id="regEnvGrad" cx={regCx} cy={regCy} r="48%"
                 gradientUnits="objectBoundingBox">
-                <stop offset="0%" stopColor="#2868b8">
-                  <animate attributeName="stop-opacity" values="0.32;0.56;0.32"
+                <stop offset="0%" stopColor={ms.atmosphereColor}>
+                  <animate attributeName="stop-opacity" values={`${envBase};${envTop};${envBase}`}
                     dur="8s" repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
                 </stop>
-                <stop offset="55%" stopColor="#104080" stopOpacity="0.10" />
+                <stop offset="55%" stopColor={ms.atmosphereColor} stopOpacity="0.06" />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
+              </radialGradient>
+
+              {/* Market stress field — expands with volatility, dims with risk-on */}
+              <radialGradient id="mkStress" cx="50%" cy="55%" r={volR}
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%"   stopColor="#6a1818" stopOpacity={stressOp} />
+                <stop offset="55%"  stopColor="#2a0808" stopOpacity={parseFloat(stressOp) * 0.35 > 0 ? (parseFloat(stressOp) * 0.35).toFixed(3) : "0"} />
+                <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+              </radialGradient>
+
+              {/* Market risk-on field — expands with equity strength */}
+              <radialGradient id="mkRisk" cx="50%" cy="25%" r="60%"
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%"   stopColor="#0e2860" stopOpacity={riskOp} />
+                <stop offset="100%" stopColor="transparent" stopOpacity="0" />
               </radialGradient>
 
               {/* Thermal cold field — inverted spotlight, darkens inactive zones */}
@@ -948,13 +978,16 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#bgAtmo)" />
             <rect width={W} height={H} fill="url(#gridPat)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#ambLight2)" className="pointer-events-none" />
+            {/* Market-state reactive pressure fields */}
+            {parseFloat(riskOp)   > 0 && <rect width={W} height={H} fill="url(#mkRisk)"   className="pointer-events-none" />}
+            {parseFloat(stressOp) > 0 && <rect width={W} height={H} fill="url(#mkStress)" className="pointer-events-none" />}
             <rect width={W} height={H} fill="url(#regEnvGrad)" />
             <rect width={W} height={H} fill="url(#regThermal)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#focusEnvGrad)" className="pointer-events-none" />
 
-            {/* Ambient drifting particles — slow, atmospheric */}
+            {/* Ambient drifting particles — brightness driven by market activity */}
             <g className="pointer-events-none">
               {AMBIENT_PARTICLES.map((p, i) => (
                 <circle key={i} cx={p.cx} cy={p.cy} r={p.r} fill="#c8ddf8" fillOpacity={0}>
@@ -965,7 +998,7 @@ export function MarketNarrativeNetwork() {
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                   />
                   <animate attributeName="fill-opacity"
-                    values="0;0.085;0"
+                    values={`0;${particleMax};0`}
                     dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
                     calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
                   />

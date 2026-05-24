@@ -6,9 +6,11 @@ import { classifyImpact } from "@/lib/types";
 import type { WhatMattersNowItem, ThemeIntelligence } from "@/lib/types";
 
 interface WhatMattersNowProps {
-  items:     WhatMattersNowItem[];
-  isLoading: boolean;
-  themes?:   ThemeIntelligence[];
+  items:            WhatMattersNowItem[];
+  isLoading:        boolean;
+  themes?:          ThemeIntelligence[];
+  marketIntensity?: number;   // 0-1 from useMarketState.atmosphereIntensity
+  trendLabel?:      string;   // e.g. "Risk-on strengthening"
 }
 
 // Muted institutional equivalents for dark atmospheric context
@@ -52,11 +54,15 @@ function buildThemeMap(
   return map;
 }
 
-export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps) {
+export function WhatMattersNow({ items, isLoading, themes, marketIntensity, trendLabel }: WhatMattersNowProps) {
   if (isLoading) return <WhatMattersNowSkeleton />;
   if (!items.length) return null;
 
   const themeMap = buildThemeMap(items, themes ?? []);
+  // Pulse faster when markets are active (3.0s neutral → ~2.2s at high intensity)
+  const pulseDur = marketIntensity
+    ? Math.max(2.2, 3.0 - (marketIntensity - 0.38) * 1.4)
+    : 3.0;
 
   function scrollToCluster(clusterId: string) {
     const el = document.querySelector(`[data-cluster-id="${clusterId}"]`);
@@ -74,7 +80,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
             className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{ background: "rgba(180,140,70,0.60)" }}
             animate={{ opacity: [1, 0.32, 1] }}
-            transition={{ duration: 3.0, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }}
           />
           <span
             className="text-[10px] font-semibold uppercase"
@@ -91,7 +97,7 @@ export function WhatMattersNow({ items, isLoading, themes }: WhatMattersNowProps
           className="text-[9px] shrink-0"
           style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.24)" }}
         >
-          Signal Pressure
+          {trendLabel ?? "Signal Pressure"}
         </span>
       </div>
 
