@@ -7,6 +7,7 @@ import { useNarrativeNetwork } from "@/hooks/useNarrativeNetwork";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useReflexivity } from "@/hooks/useReflexivity";
 import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
+import { useMarketMemory } from "@/hooks/useMarketMemory";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -388,6 +389,7 @@ export function MarketNarrativeNetwork() {
   const ms = useMarketState();
   const rf = useReflexivity();
   const ne = useNarrativeEvolution();
+  const mm = useMarketMemory();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -536,6 +538,11 @@ export function MarketNarrativeNetwork() {
     ? (0.14 + rf.emotionalIntensity * 0.10).toFixed(2) : "0";
   const complacencyOp = rf.emotionalState === "complacency"
     ? (0.007 + rf.emotionalIntensity * 0.007).toFixed(3) : "0";
+
+  // Market memory — accumulated session state drives field conditioning
+  const memoryTintOp    = (mm.stressMemoryScore * 0.020).toFixed(3);
+  const fragilityRingOp = mm.adaptiveFragility > 0.32
+    ? (0.016 + mm.adaptiveFragility * 0.018).toFixed(3) : "0";
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -1183,6 +1190,11 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#bgAtmo)" />
             <rect width={W} height={H} fill="url(#gridPat)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#ambLight2)" className="pointer-events-none" />
+            {/* Memory tint — field carries accumulated stress staining from past episodes */}
+            {parseFloat(memoryTintOp) > 0 && (
+              <rect width={W} height={H} fill="#4a1a08"
+                fillOpacity={memoryTintOp} className="pointer-events-none" />
+            )}
             {/* Market-state reactive pressure fields */}
             {parseFloat(riskOp)    > 0 && <rect width={W} height={H} fill="url(#mkRisk)"       className="pointer-events-none" />}
             {parseFloat(stressOp)  > 0 && <rect width={W} height={H} fill="url(#mkStress)"     className="pointer-events-none" />}
@@ -1654,7 +1666,38 @@ export function MarketNarrativeNetwork() {
               </circle>
             )}
 
+            {/* Adaptive fragility rings — learned sensitivity, slow wide pulses from regime */}
+            {parseFloat(fragilityRingOp) > 0 && regimePos && (
+              <g className="pointer-events-none">
+                {[0, 1].map(i => {
+                  const maxR = (200 + i * 42).toFixed(0);
+                  const dur  = (14 + i * 5).toFixed(0);
+                  return (
+                    <circle key={i} cx={regimePos.x} cy={regimePos.y} r="22"
+                      fill="none" stroke="#7a3a20" strokeWidth="0.5" strokeOpacity="0">
+                      <animate attributeName="r" values={`22;${maxR};22`}
+                        dur={`${dur}s`} begin={`${i * 5.5}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.2 0 0.8 1;0.2 0 0.8 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="stroke-opacity" values={`${fragilityRingOp};0;${fragilityRingOp}`}
+                        dur={`${dur}s`} begin={`${i * 5.5}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
             {data.nodes.map(renderNode)}
+
+            {/* Structural pattern label — bottom-right, only when a pattern is detected */}
+            {mm.structuralPattern !== "none" && mm.structureLabel && (
+              <text x={W - 10} y={H - 10} textAnchor="end"
+                fontSize={6} fontWeight={600} letterSpacing={1.4}
+                fontFamily="Inter, system-ui, sans-serif"
+                fill="rgba(200,160,64,0.30)"
+                className="pointer-events-none select-none">
+                {mm.structureLabel.toUpperCase()}
+              </text>
+            )}
 
             {/* Edge fog — applied over nodes so boundaries dissolve into atmospheric space */}
             <rect width={W} height={H} fill="url(#edgeFog)" className="pointer-events-none" />

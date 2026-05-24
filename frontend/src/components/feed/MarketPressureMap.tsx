@@ -5,6 +5,7 @@ import { useMarketState } from "@/hooks/useMarketState";
 import { useMarketCausality } from "@/hooks/useMarketCausality";
 import { useReflexivity } from "@/hooks/useReflexivity";
 import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
+import { useMarketMemory } from "@/hooks/useMarketMemory";
 import type { MarketSignal } from "@/hooks/useMarketState";
 
 // ── Regime-derived fallback (when live data unavailable) ──────────────────────
@@ -95,6 +96,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
   const mc = useMarketCausality();
   const rf = useReflexivity();
   const ne = useNarrativeEvolution();
+  const mm = useMarketMemory();
 
   const signals = ms.hasData ? ms.signals : deriveCrossAsset(regime);
   const isLive  = ms.hasData;
@@ -331,6 +333,70 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
                 Concentration risk elevated
               </span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Row 5: Structural depth — funding, leverage, balance-sheet ─────────── */}
+      {(mm.fundingPressure > 0.28 || mm.leverageStress > 0.28 || mm.balanceSheetRisk > 0.22) && (
+        <div
+          className="px-5 sm:px-7 py-1.5 flex items-center gap-3 flex-wrap"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.010)" }}
+        >
+          <span
+            className="text-[6px] font-bold uppercase tracking-[0.18em] shrink-0 pr-3 mr-1"
+            style={{ color: "rgba(255,255,255,0.12)", borderRight: "1px solid rgba(255,255,255,0.04)" }}
+          >
+            Structure
+          </span>
+          <div className="flex items-center gap-4 flex-wrap flex-1">
+            {mm.fundingPressure > 0.28 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[6.5px]" style={{ color: "rgba(255,255,255,0.22)" }}>Funding</span>
+                <span className="text-[7.5px] font-semibold tabular-nums"
+                  style={{ color: mm.fundingPressure > 0.62 ? "#c05858" : "#c8a040" }}>
+                  {(mm.fundingPressure * 100).toFixed(0)}
+                </span>
+              </div>
+            )}
+            {mm.leverageStress > 0.28 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[6.5px]" style={{ color: "rgba(255,255,255,0.22)" }}>Leverage</span>
+                <span className="text-[7.5px] font-semibold tabular-nums"
+                  style={{ color: mm.leverageStress > 0.62 ? "#c05858" : "#c8a040" }}>
+                  {(mm.leverageStress * 100).toFixed(0)}
+                </span>
+              </div>
+            )}
+            {mm.balanceSheetRisk > 0.22 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[6.5px]" style={{ color: "rgba(255,255,255,0.22)" }}>B/S Risk</span>
+                <span className="text-[7.5px] font-semibold tabular-nums"
+                  style={{ color: mm.balanceSheetRisk > 0.55 ? "#c05858" : "#c8a040" }}>
+                  {(mm.balanceSheetRisk * 100).toFixed(0)}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {mm.structuralPattern !== "none" && (
+              <span
+                className="text-[6px] italic"
+                style={{ color: "rgba(255,255,255,0.20)" }}
+              >
+                {mm.structureLabel}
+              </span>
+            )}
+            <span
+              className="text-[6px] font-bold uppercase tracking-wide px-1 rounded"
+              style={{
+                color:      mm.memoryLabel === "Conditioned" ? "#c05858" : mm.memoryLabel === "Recurring" ? "#c8a040" : "rgba(255,255,255,0.28)",
+                background: mm.memoryLabel === "Conditioned" ? "rgba(192,80,80,0.07)" : mm.memoryLabel === "Recurring" ? "rgba(200,160,64,0.07)" : "transparent",
+                border:     mm.memoryLabel !== "First Episode" ? `1px solid ${mm.memoryLabel === "Conditioned" ? "rgba(192,80,80,0.16)" : "rgba(200,160,64,0.14)"}` : "none",
+              }}
+            >
+              {mm.memoryLabel}
+            </span>
           </div>
         </div>
       )}
