@@ -23,7 +23,12 @@ const TYPE_ROW: Record<string, number> = {
 };
 
 const ROW_LABELS: Record<number, string> = {
-  0: "REGIME", 1: "MACRO", 2: "THEMES", 3: "SECTORS", 4: "ASSETS",
+  0: "PRESSURE", 1: "DRIVERS", 2: "THEMES", 3: "ROTATION", 4: "ASSETS",
+};
+
+const NODE_TYPE_LABEL: Record<string, string> = {
+  regime: "Market Regime", macro:  "Macro Driver",
+  theme:  "Cross-Asset Theme", sector: "Sector", asset: "Asset Class",
 };
 
 // ── Spatial depth — fill opacity by layer (regime nearest, assets furthest) ───
@@ -206,9 +211,12 @@ function regimeColor(label: string): string {
   return "#8898b8";   // neutral silver-blue
 }
 
-// ── Market pulse ──────────────────────────────────────────────────────────────
+// ── Market pressure signals ────────────────────────────────────────────────────
 
-interface PulseSignal { label: string; value: string; color: string; dot: string }
+interface PulseSignal {
+  label: string; value: string; color: string; dot: string;
+  arrow: "↑" | "↓" | "→";
+}
 
 function computeMarketPulse(
   dominant: string,
@@ -218,39 +226,51 @@ function computeMarketPulse(
   const r = dominant.toLowerCase();
   const out: PulseSignal[] = [];
 
-  // 1. Risk appetite from regime label
+  // 1. Risk — appetite direction
   const isOn  = r.includes("risk-on") || r.includes("expansion") || r.includes("dovish") || r.includes("easing");
-  const isOff = r.includes("risk-off") || r.includes("tighten")  || r.includes("stagflat") || r.includes("shock") || r.includes("hawkish");
+  const isOff = r.includes("risk-off") || r.includes("tighten") || r.includes("stagflat") || r.includes("shock") || r.includes("hawkish");
   out.push({
-    label: "Risk Appetite",
-    value: isOn ? "Rising" : isOff ? "Falling" : "Neutral",
+    label: "Risk",
+    arrow: isOn ? "↑" : isOff ? "↓" : "→",
+    value: isOn ? "On" : isOff ? "Off" : "Neutral",
     color: isOn ? "#52b0c8" : isOff ? "#c05858" : "#8898b8",
     dot:   isOn ? "#2a7890" : isOff ? "#883838" : "#506880",
   });
 
-  // 2. Liquidity conditions from regime
-  const isTight = r.includes("tighten") || r.includes("hawkish") || r.includes("qt") || r.includes("hike");
-  const isLoose = r.includes("easing")  || r.includes("dovish")  || r.includes("qe") || r.includes("expand");
+  // 2. Rates — rising or falling pressure
+  const ratesUp   = r.includes("tighten") || r.includes("hawkish") || r.includes("hike") || r.includes("qt");
+  const ratesDown = r.includes("easing")  || r.includes("dovish")  || r.includes("cut")  || r.includes("qe");
   out.push({
-    label: "Liquidity",
-    value: isTight ? "Tightening" : isLoose ? "Expanding" : "Stable",
-    color: isTight ? "#c05858" : isLoose ? "#52b0c8" : "#8898b8",
-    dot:   isTight ? "#883838" : isLoose ? "#2a7890" : "#506880",
+    label: "Rates",
+    arrow: ratesUp ? "↑" : ratesDown ? "↓" : "→",
+    value: ratesUp ? "Rising" : ratesDown ? "Falling" : "Stable",
+    color: ratesUp ? "#c8a040" : ratesDown ? "#52b0c8" : "#8898b8",
+    dot:   ratesUp ? "#a07820" : ratesDown ? "#2a7890" : "#506880",
   });
 
-  // 3. Signal conviction from highest-confidence chain
-  const topChain = [...chains].sort((a, b) => b.confidence - a.confidence)[0];
-  if (topChain) {
-    const c = topChain.confidence;
-    out.push({
-      label: "Conviction",
-      value: c >= 78 ? "High" : c >= 58 ? "Elevated" : "Moderate",
-      color: c >= 78 ? "#c8a040" : c >= 58 ? "#a07820" : "#8898b8",
-      dot:   c >= 78 ? "#a07820" : c >= 58 ? "#806010" : "#506880",
-    });
-  }
+  // 3. Volatility — stress/calm signals
+  const volHigh = r.includes("shock") || r.includes("stagflat") || r.includes("crisis") || r.includes("stress");
+  const volLow  = r.includes("expansion") || r.includes("risk-on") || r.includes("calm") || r.includes("stable");
+  out.push({
+    label: "Vol",
+    arrow: volHigh ? "↑" : volLow ? "↓" : "→",
+    value: volHigh ? "Elevated" : volLow ? "Suppressed" : "Moderate",
+    color: volHigh ? "#b05858" : volLow ? "#52b0c8" : "#8898b8",
+    dot:   volHigh ? "#883838" : volLow ? "#2a7890" : "#506880",
+  });
 
-  // 4. Sector sentiment balance
+  // 4. Liquidity — expanding vs tightening
+  const liqTight = r.includes("tighten") || r.includes("hawkish") || r.includes("qt") || r.includes("hike");
+  const liqLoose = r.includes("easing")  || r.includes("dovish")  || r.includes("qe") || r.includes("expand");
+  out.push({
+    label: "Liquidity",
+    arrow: liqLoose ? "↑" : liqTight ? "↓" : "→",
+    value: liqLoose ? "Expanding" : liqTight ? "Tightening" : "Stable",
+    color: liqLoose ? "#52b0c8" : liqTight ? "#c05858" : "#8898b8",
+    dot:   liqLoose ? "#2a7890" : liqTight ? "#883838" : "#506880",
+  });
+
+  // 5. Flow — sector/theme sentiment balance
   const active = nodes.filter(n => n.type === "sector" || n.type === "theme");
   const bull   = active.filter(n => n.sentiment === "bullish").length;
   const bear   = active.filter(n => n.sentiment === "bearish").length;
@@ -259,6 +279,7 @@ function computeMarketPulse(
   const isDef  = bear > tot * 0.50;
   out.push({
     label: "Flow",
+    arrow: isBid ? "↑" : isDef ? "↓" : "→",
     value: isBid ? "Risk Bid" : isDef ? "Defensive" : "Rotating",
     color: isBid ? "#52b0c8" : isDef ? "#c05858" : "#c8a040",
     dot:   isBid ? "#2a7890" : isDef ? "#883838" : "#a07820",
@@ -456,6 +477,7 @@ export function MarketNarrativeNetwork() {
   const focusEnvStyle    = focusNodeInGraph
     ? (NODE_STYLE[focusNodeInGraph.type] ?? NODE_STYLE.theme) : null;
   const focusEnvColor    = focusEnvStyle?.stroke ?? "transparent";
+  const pulses           = computeMarketPulse(data.dominant_regime, data.chains, data.nodes);
 
   // ── Edge renderer ──────────────────────────────────────────────────────────
   function renderEdge(edge: GraphEdge) {
@@ -571,6 +593,15 @@ export function MarketNarrativeNetwork() {
         onMouseLeave={handleNodeLeave}
         onClick={() => handleNodeClick(node)}>
         <g>
+          {/* Sentiment pressure aura — high-confidence signal nodes */}
+          {!isRegime && (node.type === "sector" || node.type === "theme") &&
+            node.confidence > 62 && (node.sentiment === "bullish" || node.sentiment === "bearish") && (
+            <circle
+              r={r + 14}
+              fill={node.sentiment === "bullish" ? "rgba(28,110,88,0.20)" : "rgba(130,40,40,0.16)"}
+              filter="url(#hoverGlow)"
+            />
+          )}
           {isRegime && (
             <animateTransform attributeName="transform" attributeType="XML" type="scale"
               values="1;1.022;1" dur="6s" repeatCount="indefinite"
@@ -671,6 +702,25 @@ export function MarketNarrativeNetwork() {
               {trunc(node.label, labelMax)}
             </text>
           )}
+          {/* Directional pressure indicator */}
+          {showLabel && !isRegime && r >= 12 &&
+            (node.sentiment === "bullish" || node.sentiment === "bearish") && (
+            <text
+              y={r + 15 + 11}
+              textAnchor="middle"
+              fontSize={7}
+              fontFamily="Inter, system-ui, sans-serif"
+              fill={node.sentiment === "bullish" ? "#2a9070" : "#c05050"}
+              fillOpacity={0.78}
+              stroke="#010306"
+              strokeWidth={3}
+              strokeOpacity={0.85}
+              strokeLinejoin="round"
+              paintOrder="stroke"
+              className="pointer-events-none select-none">
+              {node.sentiment === "bullish" ? "▲" : "▼"}
+            </text>
+          )}
         </g>
       </g>
     );
@@ -680,31 +730,44 @@ export function MarketNarrativeNetwork() {
     <section style={{ background: "#050b18" }}>
       <div className="max-w-7xl mx-auto overflow-hidden">
 
-        {/* Top info bar */}
-        <div className="flex items-center gap-8 px-6 py-4"
+        {/* Bloomberg-style market state + flow signals bar */}
+        <div className="flex items-center gap-0 px-6 py-3"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-          {/* Dominant regime — lead element */}
-          <div className="shrink-0">
-            <p className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
-              style={{ color: "rgba(255,255,255,0.40)" }}>
-              Dominant Regime
+
+          {/* Market State — compact left anchor */}
+          <div className="shrink-0 pr-5" style={{ borderRight: "1px solid rgba(255,255,255,0.06)" }}>
+            <p className="text-[6.5px] font-bold uppercase tracking-[0.18em] mb-0.5"
+              style={{ color: "rgba(255,255,255,0.30)" }}>
+              Market State
             </p>
-            <p className="text-[16px] font-semibold leading-none tracking-tight"
+            <p className="text-[13px] font-semibold leading-none tracking-tight"
               style={{ color: regimeColor(data.dominant_regime) }}>
               {data.dominant_regime}
             </p>
           </div>
 
-          {/* Vertical rule */}
-          <div className="w-px self-stretch" style={{ background: "rgba(255,255,255,0.06)" }} />
+          {/* Flow signals — inline Bloomberg ticker style */}
+          <div className="flex items-center gap-5 flex-1 pl-5 flex-wrap">
+            {pulses.map(p => (
+              <div key={p.label} className="flex items-center gap-1">
+                <span className="text-[10px] font-bold leading-none" style={{ color: p.color }}>
+                  {p.arrow}
+                </span>
+                <span className="text-[7.5px] ml-0.5" style={{ color: "rgba(255,255,255,0.36)" }}>
+                  {p.label}
+                </span>
+                <span className="text-[9.5px] font-semibold ml-0.5" style={{ color: p.color }}>
+                  {p.value}
+                </span>
+              </div>
+            ))}
+          </div>
 
-          {/* Sub-labels */}
-          <p className="text-[8px] leading-relaxed flex-1" style={{ color: "rgba(255,255,255,0.30)" }}>
-            Transmission map · {data.nodes.length} nodes · {data.edges.length} edges
-          </p>
-
-          {/* Right actions */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Right: metadata + actions */}
+          <div className="flex items-center gap-3 shrink-0 pl-4">
+            <span className="text-[7.5px] tabular-nums" style={{ color: "rgba(255,255,255,0.26)" }}>
+              {data.nodes.length} nodes · {data.edges.length} signals
+            </span>
             {isFetching && <RefreshCw size={9} className="animate-spin" style={{ color: "rgba(255,255,255,0.28)" }} />}
             {anyFocusOrChain && (
               <button onClick={handleReset}
@@ -716,33 +779,6 @@ export function MarketNarrativeNetwork() {
             )}
           </div>
         </div>
-
-        {/* Market pulse strip */}
-        {(() => {
-          const pulses = computeMarketPulse(data.dominant_regime, data.chains, data.nodes);
-          return (
-            <div className="flex items-center gap-5 px-6 py-3"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <span className="text-[7px] font-bold uppercase tracking-[0.16em] shrink-0"
-                style={{ color: "rgba(255,255,255,0.42)" }}>
-                Market Pulse
-              </span>
-              <div className="w-px self-stretch" style={{ background: "rgba(255,255,255,0.05)" }} />
-              <div className="flex items-center gap-6 flex-wrap">
-                {pulses.map(p => (
-                  <div key={p.label} className="flex items-center gap-2">
-                    <div className="rounded-full shrink-0"
-                      style={{ width: 6, height: 6, background: p.dot, boxShadow: `0 0 6px ${p.dot}` }} />
-                    <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.46)" }}>{p.label}</span>
-                    <span className="text-[10px] font-semibold" style={{ color: p.color }}>
-                      {p.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Graph canvas */}
         <div ref={wrapRef} className="relative" style={{ minHeight: 292 }}>
@@ -977,7 +1013,7 @@ export function MarketNarrativeNetwork() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[7px] font-bold uppercase tracking-[0.16em] shrink-0 mr-2 self-center"
               style={{ color: "rgba(255,255,255,0.42)" }}>
-              Narrative Paths
+              Signal Chains
             </span>
             {sortedChains.slice(0, 5).map((chain: PropagationChain, idx: number) => {
               const sel   = activeChain === chain.id;
@@ -1031,7 +1067,7 @@ export function MarketNarrativeNetwork() {
             <div className="mt-3 pl-2">
               <p className="text-[7px] font-bold uppercase tracking-[0.16em] mb-2.5"
                 style={{ color: "rgba(255,255,255,0.40)" }}>
-                Transmission Path
+                Pressure Flow
               </p>
               <div className="flex items-center flex-wrap gap-0">
                 {chainHighlight.sequence.map((n, i) => (
@@ -1101,7 +1137,7 @@ export function MarketNarrativeNetwork() {
                       <div className="flex items-center gap-2.5 mb-2.5 flex-wrap">
                         <span className="text-[7px] font-bold uppercase tracking-[0.18em]"
                           style={{ color: focusedNodeStyle.label }}>
-                          {focusedNode.type}
+                          {NODE_TYPE_LABEL[focusedNode.type] ?? focusedNode.type}
                         </span>
                         <span className="w-1 h-1 rounded-full shrink-0 self-center"
                           style={{ background: "rgba(255,255,255,0.15)" }} />
@@ -1145,7 +1181,7 @@ export function MarketNarrativeNetwork() {
                       style={{ background: `linear-gradient(to right, ${focusedNodeStyle.label}30 0%, rgba(255,255,255,0.04) 45%, transparent)` }} />
                     <p className="text-[7px] font-bold uppercase tracking-[0.22em] mb-2"
                       style={{ color: focusedNodeStyle.label, opacity: 0.65 }}>
-                      Intelligence Summary
+                      Market Context
                     </p>
                     <p className="text-[12.5px] leading-relaxed"
                       style={{ color: "rgba(255,255,255,0.76)" }}>
@@ -1164,7 +1200,7 @@ export function MarketNarrativeNetwork() {
                       <motion.div key="tx-pos" variants={SECTION_REVEAL}>
                         <p className="text-[7px] font-bold uppercase tracking-[0.22em] mb-2.5"
                           style={{ color: "rgba(255,255,255,0.38)" }}>
-                          Transmission Position
+                          Pressure Position
                           <span className="ml-1.5 font-normal normal-case tracking-normal"
                             style={{ color: "rgba(255,255,255,0.26)" }}>
                             step {chainPos + 1} of {total}
@@ -1251,7 +1287,7 @@ export function MarketNarrativeNetwork() {
                     <motion.div variants={SECTION_REVEAL}>
                       <p className="text-[7px] font-bold uppercase tracking-[0.22em] mb-2.5"
                         style={{ color: "rgba(255,255,255,0.38)" }}>
-                        Narrative {focusedInChains.length === 1 ? "Path" : `Paths (${focusedInChains.length})`}
+                        Signal {focusedInChains.length === 1 ? "Chain" : `Chains (${focusedInChains.length})`}
                       </p>
                       <div className="space-y-1.5">
                         {focusedInChains.map((c) => (
