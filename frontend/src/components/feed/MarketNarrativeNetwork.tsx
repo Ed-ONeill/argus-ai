@@ -436,6 +436,22 @@ export function MarketNarrativeNetwork() {
   const stressOp      = (ms.stressIntensity * 0.22).toFixed(3);
   const riskOp        = (ms.riskFieldIntensity * 0.28).toFixed(3);
   const volR          = `${(ms.volFieldScale * 68).toFixed(0)}%`;
+
+  // Phase 5: Field evolution — intensity-driven dynamics
+  // Particles move faster when market pressure is elevated
+  const particleSpeedMul = 0.62 + ms.atmosphereIntensity * 0.72;  // 0.62–1.34×
+  // Leadership concentration field — intensifies when chain active + market hot
+  const leaderFieldOp    = chainCentroid
+    ? (0.12 + ms.atmosphereIntensity * 0.22).toFixed(3) : "0";
+  // Conflict field: subtle amber-left/teal-right split when cross-asset divergence active
+  const hasConflict = ms.ratesRegime === "rising" && ms.riskRegime === "risk-on";
+  const conflictOp  = hasConflict
+    ? (0.04 + ms.atmosphereIntensity * 0.05).toFixed(3) : "0";
+  // Chain propagation speed — faster at high intensity
+  const chainDur = (2.6 / particleSpeedMul).toFixed(2);
+  // Exhaustion: ghost chains have lower opacity when trend is exhausting
+  const exhaustionFade = ms.exhaustionRisk ? 0.72 : 1.0;
+
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
 
@@ -535,7 +551,7 @@ export function MarketNarrativeNetwork() {
     const activeStroke = EDGE_STROKE_ACTIVE[edge.relationship] ?? "#7898be";
     const stroke       = isChainEdge ? activeStroke : baseStroke;
     const base         = Math.min(0.36 + edge.confidence * 0.36, 0.72);
-    const opacity      = isDim ? 0.02 : isChainEdge ? 1.0 : isHigh ? 0.85 : base;
+    const opacity      = isDim ? 0.02 : isChainEdge ? exhaustionFade : isHigh ? 0.85 : base;
     const sw           = Math.max(1.0, edge.weight * 3.0);
     const d            = edgePath(sx, sy, ex, ey);
     const pDelay       = `${(chainHighlight.edgeOrder.get(edge.id) ?? 0) * 0.65}s`;
@@ -559,29 +575,29 @@ export function MarketNarrativeNetwork() {
           strokeOpacity={opacity} fill="none"
           markerEnd={isChainEdge ? "url(#arrActive)" : undefined}
           style={{ transition: "stroke-opacity 200ms ease-out, stroke-width 200ms ease-out" }} />
-        {/* Propagation particle with glow */}
+        {/* Propagation particle with glow — speed driven by market intensity */}
         {isChainEdge && (
           <circle r={3.8} fill={activeStroke} filter="url(#particleGlow)">
-            <animateMotion path={d} dur="2.6s" begin={pDelay} repeatCount="indefinite"
+            <animateMotion path={d} dur={`${chainDur}s`} begin={pDelay} repeatCount="indefinite"
               calcMode="spline" keyPoints="0;1" keyTimes="0;1"
               keySplines="0.25 0 0.75 1" />
             <animate attributeName="fill-opacity"
               values="0;0.92;0.92;0" keyTimes="0;0.08;0.88;1"
-              dur="2.6s" begin={pDelay} repeatCount="indefinite"
+              dur={`${chainDur}s`} begin={pDelay} repeatCount="indefinite"
               calcMode="spline" keySplines="0.3 0 0.7 1;0.1 0 0.5 1;0.3 0 0.7 1" />
           </circle>
         )}
-        {/* Ghost wake trail — softer second particle, transmission memory */}
+        {/* Ghost wake trail */}
         {isChainEdge && (
           <circle r={2.4} fill={activeStroke} filter="url(#particleGlow)">
-            <animateMotion path={d} dur="2.6s"
+            <animateMotion path={d} dur={`${chainDur}s`}
               begin={`${(chainHighlight.edgeOrder.get(edge.id) ?? 0) * 0.65 + 0.36}s`}
               repeatCount="indefinite"
               calcMode="spline" keyPoints="0;1" keyTimes="0;1"
               keySplines="0.25 0 0.75 1" />
             <animate attributeName="fill-opacity"
               values="0;0.35;0.35;0" keyTimes="0;0.08;0.88;1"
-              dur="2.6s"
+              dur={`${chainDur}s`}
               begin={`${(chainHighlight.edgeOrder.get(edge.id) ?? 0) * 0.65 + 0.36}s`}
               repeatCount="indefinite"
               calcMode="spline" keySplines="0.3 0 0.7 1;0.1 0 0.5 1;0.3 0 0.7 1" />
@@ -894,6 +910,22 @@ export function MarketNarrativeNetwork() {
                 <stop offset="100%" stopColor="transparent" stopOpacity="0" />
               </radialGradient>
 
+              {/* Leadership concentration field — hot-zone under active chain centroid */}
+              <radialGradient id="leaderField" cx={spotCx} cy={spotCy} r="18%"
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%"   stopColor="#4878c0" stopOpacity={leaderFieldOp} />
+                <stop offset="60%"  stopColor="#2848a0" stopOpacity={parseFloat(leaderFieldOp) * 0.35 > 0 ? (parseFloat(leaderFieldOp) * 0.35).toFixed(3) : "0"} />
+                <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+              </radialGradient>
+
+              {/* Conflict field — amber/teal horizontal split when cross-asset divergence */}
+              <linearGradient id="conflictField" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%"   stopColor="#c8a040" stopOpacity={conflictOp} />
+                <stop offset="42%"  stopColor="transparent" stopOpacity="0" />
+                <stop offset="58%"  stopColor="transparent" stopOpacity="0" />
+                <stop offset="100%" stopColor="#52b0c8" stopOpacity={conflictOp} />
+              </linearGradient>
+
               {/* Thermal cold field — inverted spotlight, darkens inactive zones */}
               <radialGradient id="coldField" cx={spotCx} cy={spotCy} r="70%"
                 gradientUnits="objectBoundingBox">
@@ -997,31 +1029,36 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#gridPat)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#ambLight2)" className="pointer-events-none" />
             {/* Market-state reactive pressure fields */}
-            {parseFloat(riskOp)   > 0 && <rect width={W} height={H} fill="url(#mkRisk)"   className="pointer-events-none" />}
-            {parseFloat(stressOp) > 0 && <rect width={W} height={H} fill="url(#mkStress)" className="pointer-events-none" />}
+            {parseFloat(riskOp)    > 0 && <rect width={W} height={H} fill="url(#mkRisk)"       className="pointer-events-none" />}
+            {parseFloat(stressOp)  > 0 && <rect width={W} height={H} fill="url(#mkStress)"     className="pointer-events-none" />}
+            {parseFloat(conflictOp) > 0 && <rect width={W} height={H} fill="url(#conflictField)" className="pointer-events-none" />}
             <rect width={W} height={H} fill="url(#regEnvGrad)" />
             <rect width={W} height={H} fill="url(#regThermal)" className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
+            {chainCentroid && <rect width={W} height={H} fill="url(#leaderField)" className="pointer-events-none" />}
             <rect width={W} height={H} fill="url(#focusEnvGrad)" className="pointer-events-none" />
 
-            {/* Ambient drifting particles — brightness driven by market activity */}
+            {/* Ambient drifting particles — speed and brightness driven by market activity */}
             <g className="pointer-events-none">
-              {AMBIENT_PARTICLES.map((p, i) => (
-                <circle key={i} cx={p.cx} cy={p.cy} r={p.r} fill="#c8ddf8" fillOpacity={0}>
-                  <animateTransform
-                    attributeName="transform" attributeType="XML" type="translate"
-                    values={`0,0; ${p.tx},${p.ty}; 0,0`}
-                    dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
-                    calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
-                  />
-                  <animate attributeName="fill-opacity"
-                    values={`0;${particleMax};0`}
-                    dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
-                    calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
-                  />
-                </circle>
-              ))}
+              {AMBIENT_PARTICLES.map((p, i) => {
+                const scaledDur = (p.dur / particleSpeedMul).toFixed(1);
+                return (
+                  <circle key={i} cx={p.cx} cy={p.cy} r={p.r} fill="#c8ddf8" fillOpacity={0}>
+                    <animateTransform
+                      attributeName="transform" attributeType="XML" type="translate"
+                      values={`0,0; ${p.tx},${p.ty}; 0,0`}
+                      dur={`${scaledDur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
+                    />
+                    <animate attributeName="fill-opacity"
+                      values={`0;${particleMax};0`}
+                      dur={`${scaledDur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"
+                    />
+                  </circle>
+                );
+              })}
             </g>
 
             {/* Lane separators — extend into fog zone so they fade naturally */}

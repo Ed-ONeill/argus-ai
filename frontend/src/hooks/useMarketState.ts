@@ -61,6 +61,10 @@ export interface MarketState {
   // Status
   hasData: boolean;
   isLive:  boolean;
+
+  // Temporal intelligence (Phase 4: Regime Memory)
+  exhaustionRisk:   boolean;  // long trend + decelerating — potential reversal
+  regimeTransition: boolean;  // trend just changed direction (duration ≤ 1)
 }
 
 // ── Internal helpers ───────────────────────────────────────────────────────────
@@ -289,6 +293,10 @@ export function useMarketState(): MarketState {
     [data, riskScore, volScore, ratesPressure, dollarScore],
   );
 
+  // Phase 4: Regime memory — derived directly from trend to avoid extra state
+  const exhaustionRisk   = trend.duration > 4 && trend.acceleration === "decelerating";
+  const regimeTransition = trend.duration <= 1 && trend.riskDirection !== "stable";
+
   return {
     riskScore, volScore, ratesPressure, dollarScore,
     riskRegime, volRegime, ratesRegime, dollarRegime,
@@ -299,5 +307,7 @@ export function useMarketState(): MarketState {
     trend,
     hasData: !!data,
     isLive:  heartbeatStatus === "live",
+    exhaustionRisk,
+    regimeTransition,
   };
 }
