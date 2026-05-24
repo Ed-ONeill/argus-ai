@@ -8,6 +8,7 @@ import { useMarketState } from "@/hooks/useMarketState";
 import { useReflexivity } from "@/hooks/useReflexivity";
 import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import { useMarketMemory } from "@/hooks/useMarketMemory";
+import { useAnticipatory } from "@/hooks/useAnticipatory";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -390,6 +391,7 @@ export function MarketNarrativeNetwork() {
   const rf = useReflexivity();
   const ne = useNarrativeEvolution();
   const mm = useMarketMemory();
+  const an = useAnticipatory();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -543,6 +545,25 @@ export function MarketNarrativeNetwork() {
   const memoryTintOp    = (mm.stressMemoryScore * 0.020).toFixed(3);
   const fragilityRingOp = mm.adaptiveFragility > 0.32
     ? (0.016 + mm.adaptiveFragility * 0.018).toFixed(3) : "0";
+
+  // Anticipatory / feedback dynamics
+  const latentInstabOp     = an.latentInstability > 0.30
+    ? (0.012 + an.latentInstability * 0.016).toFixed(3) : "0";
+  const systemicRiskOp     = an.systemicRisk > 0.22
+    ? (an.systemicRisk * 0.016).toFixed(3) : "0";
+  const feedbackRingOp     = an.feedbackIntensity > 0.28
+    ? (0.07 + an.feedbackIntensity * 0.10).toFixed(2) : "0";
+  const brittlenessCrackOp = an.brittleness > 0.42
+    ? (0.004 + an.brittleness * 0.008).toFixed(3) : "0";
+  const exoLineOp          = an.exogenousPressure > 0.40
+    ? (0.12 + an.exogenousPressure * 0.09).toFixed(2) : "0";
+  const exoColor           = an.exogenousType === "geopolitical" ? "#c03838"
+                           : an.exogenousType === "policy"        ? "#c8a040"
+                           : an.exogenousType === "intervention"  ? "#52b0c8"
+                           : "#3ab880";
+  const feedbackRingColor  = an.feedbackMode === "stress_spiral"    ? "#c03838"
+                           : an.feedbackMode === "derisking_cascade" ? "#c05830"
+                           : "#c8a040";
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -1184,6 +1205,15 @@ export function MarketNarrativeNetwork() {
                   stopOpacity={focusedNodeId ? 0.06 : 0} />
                 <stop offset="100%" stopColor="#030608" stopOpacity="0" />
               </radialGradient>
+
+              {/* Latent instability gradient — suppressed tension corona around regime node */}
+              <radialGradient id="latentInstabGrad" cx={regCx} cy={regCy} r="58%"
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%"   stopColor="#3a1806" stopOpacity={latentInstabOp} />
+                <stop offset="52%"  stopColor="#2a1004"
+                  stopOpacity={parseFloat(latentInstabOp) * 0.32 > 0 ? (parseFloat(latentInstabOp) * 0.32).toFixed(3) : "0"} />
+                <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+              </radialGradient>
             </defs>
 
             {/* Atmospheric layers — back to front */}
@@ -1194,6 +1224,15 @@ export function MarketNarrativeNetwork() {
             {parseFloat(memoryTintOp) > 0 && (
               <rect width={W} height={H} fill="#4a1a08"
                 fillOpacity={memoryTintOp} className="pointer-events-none" />
+            )}
+            {/* Systemic risk overlay — emergent composite risk deepens the field */}
+            {parseFloat(systemicRiskOp) > 0 && (
+              <rect width={W} height={H} fill="#200808"
+                fillOpacity={systemicRiskOp} className="pointer-events-none" />
+            )}
+            {/* Latent instability field — suppressed tension corona, precedes visible breaks */}
+            {parseFloat(latentInstabOp) > 0 && (
+              <rect width={W} height={H} fill="url(#latentInstabGrad)" className="pointer-events-none" />
             )}
             {/* Market-state reactive pressure fields */}
             {parseFloat(riskOp)    > 0 && <rect width={W} height={H} fill="url(#mkRisk)"       className="pointer-events-none" />}
@@ -1332,6 +1371,26 @@ export function MarketNarrativeNetwork() {
                   keyTimes="0;0.06;0.28;1"
                   dur="3.0s" repeatCount="indefinite" />
               </circle>
+            )}
+
+            {/* External force intrusion — exogenous shock vector, brief directional flash */}
+            {parseFloat(exoLineOp) > 0 && regimePos && (
+              <g className="pointer-events-none">
+                <line x1={-18} y1={H * 0.5} x2={regimePos.x} y2={regimePos.y}
+                  stroke={exoColor} strokeWidth="0.7" strokeOpacity="0">
+                  <animate attributeName="stroke-opacity"
+                    values={`0;${exoLineOp};0;0;0;0;0`}
+                    keyTimes="0;0.04;0.14;0.4;0.6;0.8;1"
+                    dur="7.5s" repeatCount="indefinite" />
+                </line>
+                <line x1={W + 18} y1={H * 0.18} x2={regimePos.x} y2={regimePos.y}
+                  stroke={exoColor} strokeWidth="0.5" strokeOpacity="0">
+                  <animate attributeName="stroke-opacity"
+                    values={`0;0;0;${(parseFloat(exoLineOp) * 0.58).toFixed(2)};0;0;0`}
+                    keyTimes="0;0.30;0.44;0.52;0.60;0.8;1"
+                    dur="7.5s" repeatCount="indefinite" />
+                </line>
+              </g>
             )}
 
             <rect width={W} height={H} fill="url(#focusEnvGrad)" className="pointer-events-none" />
@@ -1616,6 +1675,27 @@ export function MarketNarrativeNetwork() {
               </g>
             )}
 
+            {/* Feedback loop recursion — self-reinforcing stress, rapid inward cycling */}
+            {parseFloat(feedbackRingOp) > 0 && chainCentroid && (
+              <g className="pointer-events-none">
+                {[0, 1, 2].map(i => {
+                  const startR  = (80 + i * 28).toFixed(0);
+                  const durBase = Math.max(1.4 - an.feedbackIntensity * 0.4, 0.9);
+                  const dur     = (durBase + i * 0.28).toFixed(2);
+                  return (
+                    <circle key={i} cx={chainCentroid.x} cy={chainCentroid.y} r={startR}
+                      fill="none" stroke={feedbackRingColor} strokeWidth="0.38" strokeOpacity="0">
+                      <animate attributeName="r" values={`${startR};8;${startR}`}
+                        dur={`${dur}s`} begin={`${i * 0.44}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.90 0 0.98 1;0.02 0 0.18 1" keyTimes="0;0.42;1" />
+                      <animate attributeName="stroke-opacity" values={`${feedbackRingOp};0;${feedbackRingOp}`}
+                        dur={`${dur}s`} begin={`${i * 0.44}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
             {/* Unwind vulnerability — fragile equilibrium, slow amber aura at centroid */}
             {rf.unwindVulnerable && chainCentroid && (
               <circle cx={chainCentroid.x} cy={chainCentroid.y} r="52"
@@ -1647,6 +1727,32 @@ export function MarketNarrativeNetwork() {
                         values={`0;${mOp};0;${(parseFloat(mOp) * 0.38).toFixed(2)};0`}
                         keyTimes="0;0.12;0.45;0.70;1"
                         dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite" />
+                    </line>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Structural brittleness — compressed instability, slow horizontal fracture seams */}
+            {parseFloat(brittlenessCrackOp) > 0 && (
+              <g className="pointer-events-none">
+                {[
+                  { x1: 290, y1: 192, x2: 362, y2: 189 },
+                  { x1: 636, y1: 118, x2: 708, y2: 121 },
+                  { x1: 882, y1: 252, x2: 950, y2: 249 },
+                ].map((l, i) => {
+                  const bh  = idHash(String(i) + "brit");
+                  const dur = (16 + (bh % 10)).toFixed(0);
+                  const beg = ((bh % 60) / 10).toFixed(1);
+                  const mOp = (parseFloat(brittlenessCrackOp) * (0.50 + 0.50 * ((i + 1) / 3))).toFixed(3);
+                  return (
+                    <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                      stroke="#8898b8" strokeWidth="0.4" strokeOpacity="0">
+                      <animate attributeName="stroke-opacity"
+                        values={`0;${mOp};${(parseFloat(mOp) * 0.38).toFixed(3)};${mOp};0`}
+                        keyTimes="0;0.22;0.50;0.78;1"
+                        dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" />
                     </line>
                   );
                 })}

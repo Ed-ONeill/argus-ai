@@ -6,6 +6,7 @@ import { useMarketCausality } from "@/hooks/useMarketCausality";
 import { useReflexivity } from "@/hooks/useReflexivity";
 import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import { useMarketMemory } from "@/hooks/useMarketMemory";
+import { useAnticipatory } from "@/hooks/useAnticipatory";
 import type { MarketSignal } from "@/hooks/useMarketState";
 
 // ── Regime-derived fallback (when live data unavailable) ──────────────────────
@@ -96,7 +97,8 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
   const mc = useMarketCausality();
   const rf = useReflexivity();
   const ne = useNarrativeEvolution();
-  const mm = useMarketMemory();
+  const mm  = useMarketMemory();
+  const ant = useAnticipatory();
 
   const signals = ms.hasData ? ms.signals : deriveCrossAsset(regime);
   const isLive  = ms.hasData;
@@ -397,6 +399,67 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
             >
               {mm.memoryLabel}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Row 6: Anticipatory / feedback loop signals ───────────────────────── */}
+      {(ant.feedbackMode !== "none" || ant.systemicRisk > 0.50 || ant.latentInstability > 0.48 || ant.exogenousType !== "none") && (
+        <div
+          className="px-5 sm:px-7 py-1.5 flex items-center gap-3 flex-wrap"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.008)" }}
+        >
+          <span
+            className="text-[6px] font-bold uppercase tracking-[0.18em] shrink-0 pr-3 mr-1"
+            style={{ color: "rgba(255,255,255,0.10)", borderRight: "1px solid rgba(255,255,255,0.04)" }}
+          >
+            Feedback
+          </span>
+          <div className="flex items-center gap-4 flex-wrap flex-1">
+            {ant.latentInstability > 0.48 && (
+              <span className="text-[7.5px]" style={{ color: "rgba(200,160,64,0.60)" }}>
+                Latent instability ↑
+              </span>
+            )}
+            {ant.exhaustionProbability > 0.55 && (
+              <span className="text-[7.5px]" style={{ color: "rgba(176,80,80,0.60)" }}>
+                Exhaustion probable
+              </span>
+            )}
+            {ant.exogenousType !== "none" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(82,176,200,0.60)" }}>
+                {ant.exogenousType === "geopolitical" ? "Geopolitical stress"
+                  : ant.exogenousType === "policy"       ? "Policy shock"
+                  : ant.exogenousType === "intervention" ? "Macro intervention"
+                  : "Liquidity injection"}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {ant.feedbackMode !== "none" && (
+              <span
+                className="text-[6px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                style={{
+                  color:      ant.feedbackMode === "stress_spiral" ? "#c05858" : "#c8a040",
+                  background: ant.feedbackMode === "stress_spiral" ? "rgba(192,80,80,0.07)" : "rgba(200,160,64,0.07)",
+                  border:     `1px solid ${ant.feedbackMode === "stress_spiral" ? "rgba(192,80,80,0.15)" : "rgba(200,160,64,0.13)"}`,
+                }}
+              >
+                {ant.feedbackMode === "stress_spiral"    ? "stress loop"
+                  : ant.feedbackMode === "derisking_cascade" ? "de-risking"
+                  : ant.feedbackMode === "liquidity_spiral"  ? "liq spiral"
+                  : "vol loop"}
+              </span>
+            )}
+            {ant.systemicRisk > 0.50 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[6px]" style={{ color: "rgba(255,255,255,0.16)" }}>systemic</span>
+                <span className="text-[7px] font-bold tabular-nums"
+                  style={{ color: ant.systemicRisk > 0.72 ? "#c05858" : "#c8a040" }}>
+                  {(ant.systemicRisk * 100).toFixed(0)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
