@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useMarketCausality } from "@/hooks/useMarketCausality";
 import { useReflexivity } from "@/hooks/useReflexivity";
+import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import type { MarketSignal } from "@/hooks/useMarketState";
 
 // ── Regime-derived fallback (when live data unavailable) ──────────────────────
@@ -93,6 +94,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
   const ms = useMarketState();
   const mc = useMarketCausality();
   const rf = useReflexivity();
+  const ne = useNarrativeEvolution();
 
   const signals = ms.hasData ? ms.signals : deriveCrossAsset(regime);
   const isLive  = ms.hasData;
@@ -215,6 +217,44 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Row 2b: Second-order effects + contagion stage ───────────────────── */}
+      {(ne.secondOrderEffects.length > 0 || ne.contagionStage !== "none") && (
+        <div
+          className="px-5 sm:px-7 py-1 flex items-center gap-3 flex-wrap"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.012)" }}
+        >
+          <span
+            className="text-[7px] shrink-0"
+            style={{ color: "rgba(255,255,255,0.14)" }}
+          >
+            →→
+          </span>
+          <div className="flex items-center gap-3.5 flex-wrap flex-1 min-w-0">
+            {ne.secondOrderEffects.map(e => (
+              <span
+                key={e.label}
+                className="text-[7px]"
+                style={{ color: e.direction === "up" ? "rgba(82,176,200,0.52)" : "rgba(176,80,80,0.52)" }}
+              >
+                {e.direction === "up" ? "↑" : "↓"}&thinsp;{e.label}
+              </span>
+            ))}
+          </div>
+          {ne.contagionStage !== "none" && (
+            <span
+              className="text-[6.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+              style={{
+                color:      ne.contagionStage === "systemic" ? "#c05858" : "#c8a040",
+                background: ne.contagionStage === "systemic" ? "rgba(192,80,80,0.08)" : "rgba(200,160,64,0.07)",
+                border:     `1px solid ${ne.contagionStage === "systemic" ? "rgba(192,80,80,0.20)" : "rgba(200,160,64,0.16)"}`,
+              }}
+            >
+              {ne.contagionStage}
+            </span>
+          )}
         </div>
       )}
 

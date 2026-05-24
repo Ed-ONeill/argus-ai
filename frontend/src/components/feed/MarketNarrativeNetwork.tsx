@@ -6,6 +6,7 @@ import { RefreshCw, X } from "lucide-react";
 import { useNarrativeNetwork } from "@/hooks/useNarrativeNetwork";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useReflexivity } from "@/hooks/useReflexivity";
+import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -386,6 +387,7 @@ export function MarketNarrativeNetwork() {
   const { data, isLoading, isFetching } = useNarrativeNetwork();
   const ms = useMarketState();
   const rf = useReflexivity();
+  const ne = useNarrativeEvolution();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -1285,6 +1287,25 @@ export function MarketNarrativeNetwork() {
                 })}
               </g>
             )}
+            {/* Contagion sweep — stress wave propagating through the market system */}
+            {ne.contagionActive && regimePos && (() => {
+              const dur   = (4.2 - ne.contagionDepth * 1.2).toFixed(1);
+              const sweepOp = (0.065 + ne.contagionDepth * 0.055).toFixed(2);
+              return (
+                <rect x={0} y={0} width={5} height={H}
+                  fill={ne.contagionStage === "systemic" ? "#c83838" : "#c8a040"}
+                  fillOpacity="0" className="pointer-events-none">
+                  <animate attributeName="x"
+                    values={`${regimePos.x - 2};${W + 60}`}
+                    dur={`${dur}s`} repeatCount="indefinite" calcMode="linear" />
+                  <animate attributeName="fill-opacity"
+                    values={`0;${sweepOp};0`}
+                    keyTimes="0;0.12;1"
+                    dur={`${dur}s`} repeatCount="indefinite" />
+                </rect>
+              );
+            })()}
+
             {/* Panic burst — acute regime break, crimson ring from regime node */}
             {rf.emotionalState === "panic" && regimePos && (
               <circle cx={regimePos.x} cy={regimePos.y} r="8"
@@ -1307,9 +1328,13 @@ export function MarketNarrativeNetwork() {
             <g className="pointer-events-none">
               {AMBIENT_PARTICLES.map((p, i) => {
                 const scaledDur = (p.dur / particleSpeedMul).toFixed(1);
-                // Leadership bias — particles subtly drift toward active chain centroid
-                const biasTx = chainCentroid ? ((chainCentroid.x - p.cx) / W) * 14 : 0;
-                const biasTy = chainCentroid ? ((chainCentroid.y - p.cy) / H) * 9  : 0;
+                // Swarm-adaptive bias: herding amplifies centroid pull, scattering repels
+                const swarmBias = ne.swarmMode === "herding"    ?  2.6
+                                : ne.swarmMode === "scattering" ? -1.2
+                                : ne.swarmMode === "clustering" ?  1.7
+                                : 1.0;
+                const biasTx = chainCentroid ? ((chainCentroid.x - p.cx) / W) * 14 * swarmBias : 0;
+                const biasTy = chainCentroid ? ((chainCentroid.y - p.cy) / H) * 9  * swarmBias : 0;
                 const atx = (p.tx + biasTx).toFixed(1);
                 const aty = (p.ty + biasTy).toFixed(1);
                 return (
@@ -1503,7 +1528,7 @@ export function MarketNarrativeNetwork() {
                       stroke="#c8ddf8" strokeWidth="0.6"
                       strokeDasharray="2 9" fill="none" strokeOpacity="0">
                       <animate attributeName="stroke-opacity"
-                        values={`0;${(0.042 * decayMul).toFixed(3)};0`} keyTimes="0;0.5;1"
+                        values={`0;${(0.042 * decayMul * (ne.dominantPhase === "fading" ? 1.9 : 1.0)).toFixed(3)};0`} keyTimes="0;0.5;1"
                         dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" />
                     </path>
@@ -1550,6 +1575,29 @@ export function MarketNarrativeNetwork() {
                         calcMode="spline" keySplines="0.18 0 0.82 1;0.18 0 0.82 1" keyTimes="0;0.5;1" />
                       <animate attributeName="stroke-opacity" values={`${rOp};0;${rOp}`}
                         dur={`${dur}s`} begin={`${i * 1.7}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Herd convergence rings — collective migration toward consensus trade */}
+            {ne.swarmMode === "herding" && chainCentroid && (
+              <g className="pointer-events-none">
+                {[0, 1, 2].map(i => {
+                  const startR = (116 + i * 30).toFixed(0);
+                  const dur    = (3.6 + i * 0.9).toFixed(1);
+                  const sOp    = (0.075 + ne.swarmIntensity * 0.055).toFixed(2);
+                  return (
+                    <circle key={i} cx={chainCentroid.x} cy={chainCentroid.y} r={startR}
+                      fill="none" stroke="#4878c0" strokeWidth="0.45" strokeOpacity="0">
+                      <animate attributeName="r"
+                        values={`${startR};12;${startR}`}
+                        dur={`${dur}s`} begin={`${i * 1.1}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.82 0 0.95 1;0.05 0 0.22 1" keyTimes="0;0.52;1" />
+                      <animate attributeName="stroke-opacity"
+                        values={`${sOp};0;${sOp}`}
+                        dur={`${dur}s`} begin={`${i * 1.1}s`} repeatCount="indefinite" />
                     </circle>
                   );
                 })}
