@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 
 const TICKERS = [
-  { key: "SPY",     symbol: "SPY",       label: "S&P 500"   },
-  { key: "QQQ",     symbol: "QQQ",       label: "Nasdaq"    },
-  { key: "TNX",     symbol: "%5ETNX",    label: "10Y Yield" },
-  { key: "BTC-USD", symbol: "BTC-USD",   label: "BTC/USD"   },
-  { key: "BZ=F",    symbol: "BZ%3DF",    label: "Brent Oil" },
-  { key: "GC=F",    symbol: "GC%3DF",    label: "Gold"      },
-  { key: "VIX",     symbol: "%5EVIX",    label: "VIX"       },
+  { key: "SPY",     symbol: "SPY",       label: "S&P 500"    },
+  { key: "QQQ",     symbol: "QQQ",       label: "Nasdaq"     },
+  { key: "IWM",     symbol: "IWM",       label: "Russell 2K" },
+  { key: "TNX",     symbol: "%5ETNX",    label: "10Y Yield"  },
+  { key: "BTC-USD", symbol: "BTC-USD",   label: "BTC/USD"    },
+  { key: "BZ=F",    symbol: "BZ%3DF",    label: "Brent Oil"  },
+  { key: "GC=F",    symbol: "GC%3DF",    label: "Gold"       },
+  { key: "VIX",     symbol: "%5EVIX",    label: "VIX"        },
+  { key: "DXY",     symbol: "DX-Y.NYB",  label: "DXY"        },
 ] as const;
 
 export interface TickerData {
@@ -17,6 +19,13 @@ export interface TickerData {
   change:        number;
   changePercent: number;
   history:       number[];   // up to 30 intraday 5-min close values, oldest → newest
+}
+
+export interface MarketMeta {
+  fetchedAt:    string;   // ISO timestamp
+  isMarketOpen: boolean;
+  tickerCount:  number;
+  failCount:    number;
 }
 
 const YF_HOSTS = [
@@ -35,6 +44,26 @@ const YF_BASE_HEADERS: Record<string, string> = {
   "Origin":          "https://finance.yahoo.com",
   "Referer":         "https://finance.yahoo.com/",
 };
+
+// ── Market hours (NYC) ────────────────────────────────────────────────────────
+
+function isMarketOpen(): boolean {
+  try {
+    const now   = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short", hour: "numeric", minute: "numeric", hour12: false,
+    }).formatToParts(now);
+    const weekday   = parts.find(p => p.type === "weekday")?.value  ?? "";
+    const hour      = parseInt(parts.find(p => p.type === "hour")?.value    ?? "0", 10);
+    const minute    = parseInt(parts.find(p => p.type === "minute")?.value  ?? "0", 10);
+    const totalMin  = hour * 60 + minute;
+    if (weekday === "Sat" || weekday === "Sun") return false;
+    return totalMin >= 9 * 60 + 30 && totalMin < 16 * 60;
+  } catch {
+    return false;
+  }
+}
 
 // ── Crumb cache ───────────────────────────────────────────────────────────────
 // Yahoo Finance requires a session cookie + crumb for the v8 chart API on
@@ -211,7 +240,7 @@ export async function GET() {
     )
   );
 
-  const data: Record<string, TickerData | null> = {};
+  const tickers: Record<string, TickerData | null> = {};
   let failCount = 0;
   for (let i = 0; i < TICKERS.length; i++) {
     const r = results[i];
@@ -219,12 +248,19 @@ export async function GET() {
       console.error(`[market-data] ${TICKERS[i].key} failed:`, (r.reason as Error)?.message ?? r.reason);
       failCount++;
     }
-    data[TICKERS[i].key] = r.status === "fulfilled" ? r.value : null;
+    tickers[TICKERS[i].key] = r.status === "fulfilled" ? r.value : null;
   }
 
-  console.log(`[market-data] complete  ok=${TICKERS.length - failCount}/${TICKERS.length}  crumb=${crumb ? "yes" : "no"}`);
+  const meta: MarketMeta = {
+    fetchedAt:    new Date().toISOString(),
+    isMarketOpen: isMarketOpen(),
+    tickerCount:  TICKERS.length - failCount,
+    failCount,
+  };
 
-  return NextResponse.json(data, {
-    headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60" },
+  console.log(`[market-data] complete  ok=${meta.tickerCount}/${TICKERS.length}  marketOpen=${meta.isMarketOpen}  crumb=${crumb ? "yes" : "no"}`);
+
+  return NextResponse.json({ tickers, meta }, {
+    headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30" },
   });
 }

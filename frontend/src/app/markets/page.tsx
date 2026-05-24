@@ -38,23 +38,27 @@ const SNAPSHOT_CONFIGS = [
 
 // Tickers shown in Biggest Moves (sorted by |change%| client-side)
 const MOVES_CONFIGS = [
-  { key: "SPY",     label: "S&P 500"   },
-  { key: "QQQ",     label: "Nasdaq"    },
-  { key: "BTC-USD", label: "BTC"       },
-  { key: "BZ=F",    label: "Brent Oil" },
-  { key: "GC=F",    label: "Gold"      },
-  { key: "TNX",     label: "10Y",      isYield: true  },
-  { key: "VIX",     label: "VIX",      isVix:   true  },
+  { key: "SPY",     label: "S&P 500"  },
+  { key: "QQQ",     label: "Nasdaq"   },
+  { key: "IWM",     label: "Russell"  },
+  { key: "BTC-USD", label: "BTC"      },
+  { key: "BZ=F",    label: "Brent"    },
+  { key: "GC=F",    label: "Gold"     },
+  { key: "DXY",     label: "DXY"      },
+  { key: "TNX",     label: "10Y",     isYield: true  },
+  { key: "VIX",     label: "VIX",     isVix:   true  },
 ] as const;
 
 // Keywords for matching tickers to clusters (Biggest Moves explanations)
 const TICKER_MATCH_KW: Record<string, string[]> = {
   "SPY":     ["S&P", "SPX", "equity", "equities", "stocks", "NYSE"],
   "QQQ":     ["Nasdaq", "tech", "technology", "QQQ"],
+  "IWM":     ["Russell", "small cap", "small-cap", "IWM", "mid cap"],
   "TNX":     ["Treasury", "yield", "yields", "Fed", "FOMC", "rates", "bond"],
   "BTC-USD": ["Bitcoin", "BTC", "crypto", "Ethereum"],
   "BZ=F":    ["oil", "brent", "crude", "WTI", "energy"],
   "GC=F":    ["gold", "precious", "safe-haven"],
+  "DXY":     ["dollar", "DXY", "USD", "greenback", "currency", "FX", "forex"],
   "VIX":     ["VIX", "volatility"],
 };
 
@@ -64,11 +68,13 @@ type SnapshotKey = typeof SNAPSHOT_CONFIGS[number]["key"];
 const ENTITY_TO_TICKER: Record<string, string> = {
   "S&P": "SPY", "SPX": "SPY", "Equities": "SPY", "S&P 500": "SPY", "NYSE": "SPY",
   "Nasdaq": "QQQ", "Tech": "QQQ",
+  "Russell": "IWM", "IWM": "IWM", "Small Cap": "IWM",
   "10Y": "TNX", "2Y": "TNX", "Treasury": "TNX", "Treasuries": "TNX",
   "Yields": "TNX", "Rates": "TNX", "Fed": "TNX", "FOMC": "TNX",
   "Oil": "BZ=F", "Brent": "BZ=F", "WTI": "BZ=F", "Crude": "BZ=F",
   "Gold": "GC=F",
   "Bitcoin": "BTC-USD", "BTC": "BTC-USD", "Crypto": "BTC-USD",
+  "Dollar": "DXY", "DXY": "DXY", "USD": "DXY",
   "VIX": "VIX",
 };
 
@@ -550,7 +556,7 @@ function BiggestMoves({
       <SectionHeader label="Biggest Moves" icon={<Zap size={13} className="text-accent shrink-0" />} />
 
       {/* Compact ticker grid */}
-      <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
         {tickers.map(({ cfg, t }, i) => {
           const up = isUp(t);
           const isLargest = i === 0;
@@ -1024,7 +1030,7 @@ export default function MarketsPage() {
   const [activeKey, setActiveKey] = useState<SnapshotKey | null>(null);
   const clusterRef = useRef<HTMLDivElement>(null);
 
-  const { data: marketData }     = useMarketData();
+  const { data: marketData, meta: marketMeta, heartbeatStatus, marketOpen } = useMarketData();
   const { data, isLoading }      = useFeed({ use_ai: true });
   const { savedIds, toggleSave } = useSaved();
 
@@ -1105,12 +1111,34 @@ export default function MarketsPage() {
           <BarChart2 size={18} className="text-accent" />
           <h1 className="text-xl font-bold text-ink">Markets</h1>
         </div>
-        {cacheAge !== undefined && (
+        <div className="flex items-center gap-3">
+          {cacheAge !== undefined && (
+            <span className="text-2xs text-ink-muted flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              Feed {formatAge(cacheAge)}
+            </span>
+          )}
           <span className="text-2xs text-ink-muted flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            Updated {formatAge(cacheAge)}
+            <span className={cn(
+              "w-1.5 h-1.5 rounded-full shrink-0",
+              heartbeatStatus === "live"     ? "bg-emerald-400 animate-pulse" :
+              heartbeatStatus === "stale"    ? "bg-amber-400"                 :
+              heartbeatStatus === "degraded" ? "bg-amber-500"                 :
+              heartbeatStatus === "offline"  ? "bg-red-500"                   :
+                                               "bg-slate-400 animate-pulse",
+            )} />
+            {heartbeatStatus === "live"     ? "Prices live"   :
+             heartbeatStatus === "stale"    ? "Prices stale"  :
+             heartbeatStatus === "degraded" ? "Partial data"  :
+             heartbeatStatus === "offline"  ? "Data offline"  :
+             "Loading prices"}
+            {marketMeta?.fetchedAt && heartbeatStatus !== "loading" && (
+              <span className="ml-0.5">
+                · {formatAge(Math.floor((Date.now() - new Date(marketMeta.fetchedAt).getTime()) / 1000))}
+              </span>
+            )}
           </span>
-        )}
+        </div>
       </div>
       <p className="text-sm text-ink-secondary mb-4">
         Macro, equities, rates, and global market moves.
@@ -1181,7 +1209,13 @@ export default function MarketsPage() {
         </div>
         <p className="text-2xs text-ink-muted flex items-center gap-1 mt-2 mb-5">
           <AlertCircle size={10} className="shrink-0" />
-          Delayed ~15 min via Yahoo Finance · Click a tile to filter themes · Refreshes every 5 min
+          {marketOpen ? "Live prices" : "Delayed ~15 min"} via Yahoo Finance · Click a tile to filter themes · Refreshes every 60 sec
+          {heartbeatStatus === "degraded" && (
+            <span className="text-amber-600 ml-1">· Some data unavailable</span>
+          )}
+          {heartbeatStatus === "offline" && (
+            <span className="text-red-500 ml-1">· Market data offline</span>
+          )}
         </p>
       </div>
 
