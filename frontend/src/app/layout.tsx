@@ -4,8 +4,8 @@ import { Providers } from "./providers";
 import { TopNav } from "@/components/layout/TopNav";
 
 export const metadata: Metadata = {
-  title: "Argus AI — Market Intelligence",
-  description: "Institutional-grade finance intelligence powered by local AI",
+  title: "Argus — Market Intelligence",
+  description: "Real-time market intelligence. Track liquidity, volatility, positioning, and cross-asset flows.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

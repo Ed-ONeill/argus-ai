@@ -11,6 +11,7 @@ import {
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import { ArgusLogo } from "@/components/brand/ArgusLogo";
 
 const NAV_LINKS = [
   { href: "/feed",       label: "Feed",       icon: Newspaper  },
@@ -63,18 +64,11 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
 
         {/* ── Logo ──────────────────────────────────────────────────────── */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0 link-reset group">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center
-                        transition-transform duration-200 group-hover:scale-105"
-            style={{
-              background: "linear-gradient(145deg, #1a3060 0%, #1e4888 100%)",
-              boxShadow: "0 1px 8px rgba(30,72,136,0.45), inset 0 1px 0 rgba(255,255,255,0.10)",
-            }}
-          >
-            <span className="font-bold text-[9.5px] tracking-wider" style={{ color: "rgba(255,255,255,0.92)" }}>A</span>
+          <div className="transition-transform duration-200 group-hover:scale-105">
+            <ArgusLogo variant="icon" iconSize={28} />
           </div>
           <span className="font-medium text-[13px] tracking-tight hidden sm:block"
-            style={{ color: "rgba(255,255,255,0.82)", letterSpacing: "-0.01em" }}>
+            style={{ color: "rgba(255,255,255,0.72)", letterSpacing: "-0.01em" }}>
             Argus
           </span>
         </Link>
@@ -98,19 +92,16 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
               <Link
                 key={href}
                 href={href}
-                className={cn(
-                  "relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                  active
-                    ? "text-accent"
-                    : "text-ink-secondary hover:text-ink hover:bg-raised",
-                )}
+                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hover:bg-white/[0.05]"
+                style={{ color: active ? "rgba(82,176,200,0.88)" : "rgba(255,255,255,0.42)" }}
               >
                 <Icon size={13} strokeWidth={2} />
                 <span className="hidden sm:inline">{label}</span>
                 {active && (
                   <motion.div
                     layoutId="nav-pill"
-                    className="absolute inset-0 rounded-lg bg-accent/8 -z-10"
+                    className="absolute inset-0 rounded-lg -z-10"
+                    style={{ background: "rgba(82,176,200,0.07)" }}
                     transition={{ type: "spring", bounce: 0.15, duration: 0.35 }}
                   />
                 )}
@@ -128,9 +119,10 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
               disabled={isRefreshing}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium",
-                "text-ink-secondary hover:text-ink hover:bg-raised transition-colors",
+                "hover:bg-white/[0.05] transition-colors",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
+              style={{ color: "rgba(255,255,255,0.42)" }}
               title="Refresh feed"
             >
               <motion.div
@@ -148,7 +140,8 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-raised transition-colors"
+              className="p-2 rounded-lg hover:bg-white/[0.05] transition-colors"
+              style={{ color: "rgba(255,255,255,0.36)" }}
               title="Settings"
             >
               <Settings size={15} />
@@ -184,20 +177,26 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
                     align="end"
                     sideOffset={8}
                     className={cn(
-                      "z-50 min-w-[200px] bg-surface border border-edge rounded-xl",
-                      "shadow-card-hover p-1",
+                      "z-50 min-w-[200px] rounded-xl p-1",
                       "data-[state=open]:animate-in data-[state=open]:fade-in-0",
                       "data-[state=open]:zoom-in-95",
                       "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
                       "data-[state=closed]:zoom-out-95",
                       "origin-top-right",
                     )}
+                    style={{
+                      background: "rgba(10,14,30,0.97)",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      backdropFilter: "blur(16px)",
+                      boxShadow: "0 16px 48px rgba(0,0,0,0.55)",
+                    }}
                   >
                     {/* User info */}
-                    <div className="px-3 py-2.5 border-b border-edge mb-1">
+                    <div className="px-3 py-2.5 mb-1"
+                      style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                       <div className="flex items-center gap-2">
-                        <User size={12} className="text-ink-muted shrink-0" />
-                        <p className="text-2xs font-medium text-ink truncate">
+                        <User size={12} className="shrink-0" style={{ color: "rgba(255,255,255,0.28)" }} />
+                        <p className="text-2xs font-medium truncate" style={{ color: "rgba(255,255,255,0.58)" }}>
                           {user.email}
                         </p>
                       </div>
@@ -207,27 +206,21 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
                     <DropdownMenu.Item asChild>
                       <Link
                         href="/saved"
-                        className={cn(
-                          "flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-ink",
-                          "hover:bg-raised transition-colors outline-none cursor-pointer",
-                          "select-none",
-                        )}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs outline-none cursor-pointer select-none hover:bg-white/[0.05] transition-colors"
+                        style={{ color: "rgba(255,255,255,0.68)" }}
                       >
-                        <Bookmark size={12} className="text-ink-muted" />
+                        <Bookmark size={12} style={{ color: "rgba(255,255,255,0.32)" }} />
                         Saved Stories
                       </Link>
                     </DropdownMenu.Item>
 
-                    <DropdownMenu.Separator className="h-px bg-edge my-1" />
+                    <DropdownMenu.Separator style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
 
                     {/* Sign out */}
                     <DropdownMenu.Item
                       onSelect={handleSignOut}
-                      className={cn(
-                        "flex items-center gap-2 px-3 py-2 rounded-lg text-xs",
-                        "text-red-600 hover:bg-red-50",
-                        "transition-colors outline-none cursor-pointer select-none",
-                      )}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors outline-none cursor-pointer select-none hover:bg-red-500/10"
+                      style={{ color: "rgba(220,80,80,0.88)" }}
                     >
                       <LogOut size={12} />
                       Sign Out
@@ -239,11 +232,8 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
               /* Logged-out: Sign in link */
               <Link
                 href="/auth"
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg",
-                  "text-xs font-medium text-ink-secondary",
-                  "hover:text-ink hover:bg-raised transition-colors",
-                )}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white/[0.05] transition-colors"
+                style={{ color: "rgba(255,255,255,0.42)" }}
               >
                 <LogIn size={13} />
                 <span className="hidden sm:inline">Sign in</span>
