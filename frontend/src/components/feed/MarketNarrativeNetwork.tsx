@@ -47,12 +47,12 @@ const LAYER_FILL_OPACITY: Record<string, number> = {
 
 // ── Ambient particle definitions (deterministic positions, no JS state) ────────
 
-// ── Capital flow trails — faint horizontal liquidity indicators ───────────────
+// ── Capital flow trails — between row zones, not on row centers ───────────────
 
 const LIQUIDITY_TRAILS = [
-  { y:  72, dur: 28, begin: 0.0, opacity: 0.018, w: 240 },
-  { y: 168, dur: 34, begin: 9.2, opacity: 0.013, w: 185 },
-  { y: 258, dur: 22, begin: 4.1, opacity: 0.015, w: 270 },
+  { y:  82, dur: 28, begin: 0.0, opacity: 0.022, w: 240 },  // regime→macro gap
+  { y: 216, dur: 34, begin: 9.2, opacity: 0.015, w: 185 },  // theme→sector gap
+  { y: 279, dur: 22, begin: 4.1, opacity: 0.017, w: 270 },  // sector→asset gap
 ];
 
 // ── Directional flow field — base positions for regime-dependent flow ─────────
@@ -175,15 +175,15 @@ const EDGE_STROKE_ACTIVE: Record<string, string> = {
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-// Per-row horizontal drift — creates organic left/right bias per system layer.
-// Macro leans left (upstream pressure), sectors lean right (market effect land),
-// assets lean left (defensive/portfolio gravity). Regime stays centered.
+// Per-row horizontal drift — creates asymmetric pressure-zone clustering.
+// Regime slightly right-of-center; macro hard left (upstream origin);
+// sectors far right (market effect); assets hard left (defensive gravity).
 const ROW_DRIFT_X: Record<number, number> = {
-  0:  0,    // regime: gravitational anchor
-  1: -26,   // macro: upstream lean left
-  2: +18,   // themes: transmission lean right
-  3: +32,   // sectors: market effect pull right
-  4: -22,   // assets: safe-haven / portfolio lean left
+  0: +18,   // regime: slight right — not perfectly centered
+  1: -44,   // macro: hard left — upstream pressure originates left
+  2: +26,   // themes: transmission zone, lean right
+  3: +48,   // sectors: market effect, far right
+  4: -36,   // assets: safe-haven / portfolio gravity, hard left
 };
 
 // ── Animation variants ────────────────────────────────────────────────────────
@@ -199,6 +199,16 @@ function idHash(id: string): number {
   return h;
 }
 
+// Non-uniform row Y positions — wider regime→macro gap (anchor isolation),
+// tighter macro→theme (fast transmission), wider theme→sector (deliberate rotation).
+const FULL_ROW_Y: Record<number, number> = {
+  0: PAD_Y,           // regime:  44
+  1: PAD_Y + 76,      // macro:  120
+  2: PAD_Y + 136,     // theme:  180
+  3: PAD_Y + 208,     // sector: 252
+  4: PAD_Y + 262,     // asset:  306
+};
+
 function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x: number; y: number }> {
   const byRow = new Map<number, GraphNode[]>();
   for (const n of nodes) {
@@ -207,10 +217,7 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
     byRow.get(row)!.push(n);
   }
   const presentRows = [...byRow.keys()].sort((a, b) => a - b);
-  const numRows = presentRows.length;
   const usableW = W - PAD_X * 2;
-  const usableH = H - PAD_Y * 2;
-  const rowGap  = numRows > 1 ? usableH / (numRows - 1) : 0;
 
   const neighbors = new Map<string, string[]>();
   for (const e of edges) {
@@ -223,7 +230,9 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
   const pos = new Map<string, { x: number; y: number }>();
   presentRows.forEach((rowKey, idx) => {
     const rowNodes = byRow.get(rowKey)!;
-    const y = PAD_Y + rowGap * idx;
+    // Use fixed Y per row type; fall back to proportional if unknown type
+    const y = FULL_ROW_Y[rowKey]
+      ?? (PAD_Y + (idx / Math.max(presentRows.length - 1, 1)) * (H - PAD_Y * 2));
     let ordered = rowNodes;
     if (idx > 0 && pos.size > 0) {
       ordered = [...rowNodes].sort((a, b) => {
@@ -236,17 +245,24 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
         return avgX(a.id) - avgX(b.id);
       });
     }
-    const isThemeRow = rowKey === TYPE_ROW["theme"];
-    const staggerAmt = isThemeRow && ordered.length > 3 ? 18 : 0;
+    // Alternating vertical stagger on dense theme/sector rows for natural clustering
+    const hasStagger = (rowKey === TYPE_ROW["theme"] || rowKey === TYPE_ROW["sector"])
+      && ordered.length > 2;
+    const staggerAmt = hasStagger ? (ordered.length > 4 ? 20 : 13) : 0;
     ordered.forEach((node, col) => {
       const stagger = staggerAmt ? (col % 2 === 0 ? -staggerAmt : staggerAmt) : 0;
-      const jitterY = (node.type === "sector" || node.type === "asset" || node.type === "theme")
-        ? (idHash(node.id) % 19) - 9 : 0;
-      const jitterX = node.type === "asset" ? ((idHash(node.id + "x") % 17) - 8) : 0;
+      // More Y jitter on lower layers — assets/sectors drift more than macro
+      const jitterY = node.type === "regime" ? 0
+        : node.type === "macro"  ? ((idHash(node.id)        % 13) - 6)
+        :                          ((idHash(node.id)        % 26) - 13);
+      // X jitter on all non-regime nodes — macro gets moderate, others wider
+      const jitterX = node.type === "regime" ? 0
+        : node.type === "macro"  ? ((idHash(node.id + "x") % 21) - 10)
+        :                          ((idHash(node.id + "x") % 24) - 12);
       const drift = ROW_DRIFT_X[rowKey] ?? 0;
       const rawX  = PAD_X + (usableW / (ordered.length + 1)) * (col + 1) + drift + jitterX;
       pos.set(node.id, {
-        x: Math.max(PAD_X, Math.min(W - PAD_X, rawX)),
+        x: Math.max(PAD_X + 8, Math.min(W - PAD_X - 8, rawX)),
         y: y + stagger + jitterY,
       });
     });
@@ -255,10 +271,10 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, { x:
 }
 
 function nodeRadius(n: GraphNode): number {
-  if (n.type === "regime") return 38;
-  if (n.type === "macro")  return 16;
-  if (n.type === "theme")  return Math.min(9 + (n.confidence / 100) * 11, 19);
-  return Math.min(9 + (n.confidence / 100) * 13, 21);
+  if (n.type === "regime") return 20;
+  if (n.type === "macro")  return 11;
+  if (n.type === "theme")  return Math.min(7 + (n.confidence / 100) * 7, 13);
+  return Math.min(7 + (n.confidence / 100) * 8, 14);
 }
 
 function edgePath(x1: number, y1: number, x2: number, y2: number, edgeId?: string): string {
@@ -370,6 +386,17 @@ function computeMarketPulse(
     value: isBid ? "Risk Bid" : isDef ? "Defensive" : "Rotating",
     color: isBid ? "#52b0c8" : isDef ? "#c05858" : "#c8a040",
     dot:   isBid ? "#2a7890" : isDef ? "#883838" : "#a07820",
+  });
+
+  // 6. Spread — credit spread direction inferred from market state
+  const spreadWide  = isOff || r.includes("credit") || r.includes("stress") || r.includes("high yield");
+  const spreadTight = isOn && !spreadWide;
+  out.push({
+    label: "Spread",
+    arrow: spreadWide ? "↑" : spreadTight ? "↓" : "→",
+    value: spreadWide ? "Widening" : spreadTight ? "Tightening" : "Stable",
+    color: spreadWide ? "#c05858" : spreadTight ? "#52b0c8" : "#8898b8",
+    dot:   spreadWide ? "#883838" : spreadTight ? "#2a7890" : "#506880",
   });
 
   return out;
@@ -527,7 +554,7 @@ export function MarketNarrativeNetwork() {
     * (rf.emotionalState === "complacency" ? 0.50 : rf.emotionalState === "euphoria" ? 1.22 : 1.0),
     0.15,
   ).toFixed(3);
-  const regBreath     = (1 + 0.022 * ms.breathAmplitude).toFixed(4);
+  const regBreath     = (1 + 0.010 * ms.breathAmplitude).toFixed(4);
   const atmoBase      = (0.68 + ms.atmosphereIntensity * 0.22).toFixed(2);
   const atmoTop       = (parseFloat(atmoBase) + 0.12).toFixed(2);
   const envBase       = (0.18 + ms.atmosphereIntensity * 0.18).toFixed(2);
@@ -729,7 +756,7 @@ export function MarketNarrativeNetwork() {
     const baseStroke   = EDGE_STROKE[edge.relationship]       ?? "#485a72";
     const activeStroke = EDGE_STROKE_ACTIVE[edge.relationship] ?? "#7898be";
     const stroke       = isChainEdge ? activeStroke : baseStroke;
-    const base         = Math.min(0.36 + edge.confidence * 0.36, 0.72);
+    const base         = Math.min(0.44 + edge.confidence * 0.38, 0.82);
     const opacity      = isDim ? 0.02 : isChainEdge ? exhaustionFade : isHigh ? 0.85 : base;
     const sw           = Math.max(1.0, edge.weight * 3.0);
     const d            = edgePath(sx, sy, ex, ey, edge.id);
@@ -750,9 +777,9 @@ export function MarketNarrativeNetwork() {
           <path d={d} stroke={activeStroke} strokeWidth={(sw + 2.0) * 3.2}
             strokeOpacity={0.30} fill="none" filter="url(#edgeGlow)" />
         )}
-        <path d={d} stroke={stroke} strokeWidth={isChainEdge ? sw + 2.0 : sw}
+        <path d={d} stroke={stroke} strokeWidth={isChainEdge ? sw + 1.5 : sw}
           strokeOpacity={opacity} fill="none"
-          markerEnd={isChainEdge ? "url(#arrActive)" : undefined}
+          markerEnd={isChainEdge ? "url(#arrActive)" : (!isDim ? "url(#arr)" : undefined)}
           style={{ transition: "stroke-opacity 200ms ease-out, stroke-width 200ms ease-out" }}>
           {isStressEnv && !isDim && !isChainEdge && (() => {
             const fh = idHash(edge.id + "f");
@@ -794,6 +821,42 @@ export function MarketNarrativeNetwork() {
               calcMode="spline" keySplines="0.3 0 0.7 1;0.1 0 0.5 1;0.3 0 0.7 1" />
           </circle>
         )}
+        {/* Ambient flow particle — resting state only, shows live transmission is always happening */}
+        {!anyHighlightActive && edge.confidence > 52 && (() => {
+          const fh  = idHash(edge.id + "af");
+          const dur = ((22 + (fh % 16)) / 0.85).toFixed(1);
+          const beg = ((fh % 120) / 5).toFixed(1);
+          return (
+            <circle r={1.3} fill={baseStroke}>
+              <animateMotion path={d} dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                calcMode="spline" keyPoints="0;1" keyTimes="0;1"
+                keySplines="0.3 0 0.7 1" />
+              <animate attributeName="fill-opacity"
+                values="0;0.20;0.20;0" keyTimes="0;0.18;0.78;1"
+                dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite" />
+            </circle>
+          );
+        })()}
+        {/* Transmission label — relationship type code mid-edge, institutional terminal style */}
+        {isChainEdge && Math.abs(ey - sy) >= 44 && (() => {
+          const mx = (sx + ex) / 2;
+          const my = (sy + ey) / 2 - 6;
+          const REL_CODE: Record<string, string> = {
+            drives: "DRV", pressures: "PRS", supports: "SUP",
+            benefits: "BEN", correlates: "COR", rotates_into: "ROT",
+          };
+          return (
+            <text x={mx} y={my} textAnchor="middle"
+              fontSize={5} fontWeight={700} letterSpacing={1.1}
+              fontFamily="Inter, system-ui, sans-serif"
+              fill={activeStroke} fillOpacity={0.55}
+              stroke="#010306" strokeWidth={2.5} strokeOpacity={0.90}
+              strokeLinejoin="round" paintOrder="stroke"
+              className="pointer-events-none select-none">
+              {REL_CODE[edge.relationship] ?? edge.relationship.toUpperCase().slice(0, 4)}
+            </text>
+          );
+        })()}
       </g>
     );
   }
@@ -813,6 +876,7 @@ export function MarketNarrativeNetwork() {
     const isHigh   = anyHighlightActive && (activeHighlight?.nodeIds.has(node.id) ?? false);
     const isDim    = anyHighlightActive && !isHigh;
     const isRegime = node.type === "regime";
+    const isMacro  = node.type === "macro";
     const isTheme  = node.type === "theme";
     const isActive = chainHighlight.nodeIds.has(node.id);
     const fill     = isRegime ? "url(#regGrad)" : base.fill;
@@ -821,8 +885,8 @@ export function MarketNarrativeNetwork() {
 
     const showLabel = anyHighlightActive
       ? (isHigh || isHov || isFocus)
-      : r >= (isTheme ? 14 : 10);
-    const labelMax = isRegime ? 30 : (isTheme && !isFocus) ? 15 : isFocus ? 28 : 20;
+      : r >= (isTheme ? 10 : 9);
+    const labelMax = isRegime ? 22 : isMacro ? 18 : (isTheme && !isFocus) ? 14 : isFocus ? 24 : 15;
 
     return (
       <g key={node.id}
@@ -851,8 +915,8 @@ export function MarketNarrativeNetwork() {
           {!isRegime && (node.type === "sector" || node.type === "theme") &&
             node.confidence > 62 && (node.sentiment === "bullish" || node.sentiment === "bearish") && (
             <circle
-              r={r + 14}
-              fill={node.sentiment === "bullish" ? "rgba(28,110,88,0.20)" : "rgba(130,40,40,0.16)"}
+              r={r + 8}
+              fill={node.sentiment === "bullish" ? "rgba(28,110,88,0.16)" : "rgba(130,40,40,0.12)"}
               filter="url(#hoverGlow)"
             />
           )}
@@ -867,65 +931,65 @@ export function MarketNarrativeNetwork() {
               calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
           )}
 
-          {/* Regime: slow wide diffuse ring */}
+          {/* Regime: slow outer ring — data-terminal pressure indicator */}
           {isRegime && (
-            <circle r={r + 5} fill="none" stroke={rc} strokeWidth="0.8" strokeOpacity="0">
-              <animate attributeName="r" values={`${r + 2};${r + 58};${r + 2}`}
-                dur="7.8s" repeatCount="indefinite"
+            <circle r={r + 2} fill="none" stroke={rc} strokeWidth="0.55" strokeOpacity="0">
+              <animate attributeName="r" values={`${r + 2};${r + 30};${r + 2}`}
+                dur="11s" repeatCount="indefinite"
                 calcMode="spline" keySplines="0.2 0 0.8 1;0.2 0 0.8 1" keyTimes="0;0.5;1" />
-              <animate attributeName="stroke-opacity" values="0.30;0;0.30"
-                dur="7.8s" repeatCount="indefinite" />
+              <animate attributeName="stroke-opacity" values="0.16;0;0.16"
+                dur="11s" repeatCount="indefinite" />
             </circle>
           )}
-          {/* Regime: mid pulse ring */}
+          {/* Regime: mid ring */}
           {isRegime && (
-            <circle r={r + 5} fill="none" stroke={rc} strokeWidth="1.4" strokeOpacity="0">
-              <animate attributeName="r" values={`${r + 4};${r + 36};${r + 4}`}
-                dur="4.8s" repeatCount="indefinite" />
-              <animate attributeName="stroke-opacity" values="0.48;0;0.48"
-                dur="4.8s" repeatCount="indefinite" />
+            <circle r={r + 2} fill="none" stroke={rc} strokeWidth="0.9" strokeOpacity="0">
+              <animate attributeName="r" values={`${r + 2};${r + 16};${r + 2}`}
+                dur="7s" repeatCount="indefinite" />
+              <animate attributeName="stroke-opacity" values="0.24;0;0.24"
+                dur="7s" repeatCount="indefinite" />
             </circle>
           )}
           {/* Regime: tight inner ring */}
           {isRegime && (
-            <circle r={r + 5} fill="none" stroke={rc} strokeWidth="1.8" strokeOpacity="0">
-              <animate attributeName="r" values={`${r + 4};${r + 18};${r + 4}`}
-                dur="3.2s" begin="1.6s" repeatCount="indefinite" />
-              <animate attributeName="stroke-opacity" values="0.70;0;0.70"
-                dur="3.2s" begin="1.6s" repeatCount="indefinite" />
+            <circle r={r + 2} fill="none" stroke={rc} strokeWidth="1.2" strokeOpacity="0">
+              <animate attributeName="r" values={`${r + 1};${r + 9};${r + 1}`}
+                dur="5s" begin="2.5s" repeatCount="indefinite" />
+              <animate attributeName="stroke-opacity" values="0.36;0;0.36"
+                dur="5s" begin="2.5s" repeatCount="indefinite" />
             </circle>
           )}
-          {/* Regime: blur glow halo — fills + strokes for volume */}
+          {/* Regime: precise terminal halo — tight glow, not diffuse blob */}
           {isRegime && (
-            <circle r={r + 4} fill={rc} fillOpacity="0.055"
-              stroke={rc} strokeWidth="10" strokeOpacity="0.28" filter="url(#regGlow)" />
+            <circle r={r + 2} fill={rc} fillOpacity="0.032"
+              stroke={rc} strokeWidth="4" strokeOpacity="0.12" filter="url(#regGlow)" />
           )}
 
           {/* Active chain node rings — outer pulse + inner glow */}
           {isActive && !isRegime && (
-            <circle r={r + 5} fill="none" stroke={base.label} strokeWidth="0.9" strokeOpacity="0">
-              <animate attributeName="r" values={`${r + 4};${r + 24};${r + 4}`}
+            <circle r={r + 3} fill="none" stroke={base.label} strokeWidth="0.8" strokeOpacity="0">
+              <animate attributeName="r" values={`${r + 3};${r + 18};${r + 3}`}
                 dur="3.8s" repeatCount="indefinite"
                 calcMode="spline" keySplines="0.2 0 0.8 1;0.2 0 0.8 1" keyTimes="0;0.5;1" />
-              <animate attributeName="stroke-opacity" values="0.40;0;0.40"
+              <animate attributeName="stroke-opacity" values="0.42;0;0.42"
                 dur="3.8s" repeatCount="indefinite" />
             </circle>
           )}
           {isActive && !isRegime && (
-            <circle r={r + 9} fill="none" stroke={base.label}
-              strokeWidth="0.8" strokeOpacity={(0.28 * exhaustionFade * emotionalDecayMul).toFixed(3)} filter="url(#activeGlow)" />
+            <circle r={r + 6} fill="none" stroke={base.label}
+              strokeWidth="0.7" strokeOpacity={(0.26 * exhaustionFade * emotionalDecayMul).toFixed(3)} filter="url(#activeGlow)" />
           )}
           {isActive && !isRegime && (
-            <circle r={r + 5} fill="none" stroke={base.label}
-              strokeWidth="2.4" strokeOpacity="0.90" filter="url(#activeGlow)" />
+            <circle r={r + 3} fill="none" stroke={base.label}
+              strokeWidth="2.0" strokeOpacity="0.88" filter="url(#activeGlow)" />
           )}
           {isActive && !isRegime && (
-            <circle r={r + 1} fill={base.label} fillOpacity={(0.12 * exhaustionFade * emotionalDecayMul).toFixed(3)} filter="url(#activeGlow)" />
+            <circle r={r + 1} fill={base.label} fillOpacity={(0.10 * exhaustionFade * emotionalDecayMul).toFixed(3)} filter="url(#activeGlow)" />
           )}
 
           {/* Latent participation — faint slow pulse for high-confidence dormant nodes */}
           {!isActive && !isRegime && !isDim && node.confidence > 55 && (
-            <circle r={r + 11} fill="none" stroke={base.label} strokeWidth="0.4" strokeOpacity="0">
+            <circle r={r + 7} fill="none" stroke={base.label} strokeWidth="0.35" strokeOpacity="0">
               <animate attributeName="stroke-opacity"
                 values={`0;${((node.confidence / 100) * 0.052 * emotionalDecayMul).toFixed(3)};0`}
                 dur={`${8 + (idHash(node.id + "lat") % 7)}s`}
@@ -942,26 +1006,27 @@ export function MarketNarrativeNetwork() {
 
           <circle r={r} fill={fill} fillOpacity={depthFO}
             stroke={stroke}
-            strokeWidth={isActive || isFocus ? 2.8 : isHov ? 2.2 : 1.2}
-            strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.88 : isRegime ? 0.72 : 0.48}
+            strokeWidth={isActive || isFocus ? 2.4 : isHov ? 2.0 : isRegime ? 1.4 : isMacro ? 1.1 : 0.85}
+            strokeOpacity={isActive || isFocus ? 1.0 : isHov ? 0.88 : isRegime ? 0.80 : isMacro ? 0.62 : 0.38}
             filter={isActive && !isRegime ? "url(#nodeActiveGlow)"
               : isHov && !isRegime ? "url(#hoverGlow)" : undefined}
             style={{ transition: "stroke-width 160ms ease-out, stroke-opacity 160ms ease-out" }} />
 
-          {r < 18 && <circle r={2.5} fill={stroke} fillOpacity={0.72} />}
+          {isRegime && <circle r={1.8} fill={rc} fillOpacity={0.95} />}
+          {!isRegime && <circle r={2} fill={stroke} fillOpacity={0.68} />}
 
           {showLabel && (
-            <text y={r + (isRegime ? 20 : 15)} textAnchor="middle"
-              fontSize={isRegime ? 13.5 : isFocus ? 12 : 11}
-              fontWeight={isRegime ? 700 : isFocus || isActive ? 600 : 500}
+            <text y={r + (isRegime ? 15 : 13)} textAnchor="middle"
+              fontSize={isRegime ? 12 : isMacro ? 10.5 : 10}
+              fontWeight={isRegime ? 700 : isMacro ? 600 : isFocus || isActive ? 600 : 400}
               fontFamily="Inter, system-ui, sans-serif"
               fill={base.label}
               stroke="#010306"
-              strokeWidth={isRegime ? 9 : 7}
+              strokeWidth={isRegime ? 9 : isMacro ? 7.5 : 6}
               strokeOpacity={0.94}
               strokeLinejoin="round"
               paintOrder="stroke"
-              fillOpacity={isHov || isFocus ? 1.0 : isActive ? 1.0 : isRegime ? 0.98 : 0.92}
+              fillOpacity={isHov || isFocus ? 1.0 : isActive ? 1.0 : isRegime ? 0.98 : isMacro ? 0.88 : 0.66}
               filter={isActive || isHov || isFocus ? "url(#textGlow)" : undefined}
               className="pointer-events-none select-none"
               style={{ transition: "fill-opacity 160ms ease-out" }}>
@@ -969,10 +1034,10 @@ export function MarketNarrativeNetwork() {
             </text>
           )}
           {/* Directional pressure indicator */}
-          {showLabel && !isRegime && r >= 12 &&
+          {showLabel && !isRegime && r >= 9 &&
             (node.sentiment === "bullish" || node.sentiment === "bearish") && (
             <text
-              y={r + 15 + 11}
+              y={r + 13 + 9}
               textAnchor="middle"
               fontSize={7}
               fontFamily="Inter, system-ui, sans-serif"
@@ -1064,7 +1129,7 @@ export function MarketNarrativeNetwork() {
               {/* Arrow markers */}
               <marker id="arr" markerWidth="5" markerHeight="5"
                 refX="4" refY="2.5" orient="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,5 L5,2.5 Z" fill="rgba(255,255,255,0.07)" />
+                <path d="M0,0 L0,5 L5,2.5 Z" fill="rgba(255,255,255,0.20)" />
               </marker>
               <marker id="arrActive" markerWidth="7" markerHeight="7"
                 refX="5.5" refY="3.5" orient="auto" markerUnits="strokeWidth">
@@ -1659,7 +1724,7 @@ export function MarketNarrativeNetwork() {
 
             {/* Lane separators — extend into fog zone so they fade naturally */}
             {rowEntries.map(([row, y]) => {
-              const laneOp = row === 0 ? 0.09 : row === 1 ? 0.062 : row === 2 ? 0.050 : row === 3 ? 0.040 : 0.032;
+              const laneOp = row === 0 ? 0.13 : row === 1 ? 0.090 : row === 2 ? 0.072 : row === 3 ? 0.056 : 0.044;
               return (
                 <line key={row} x1={0} y1={y} x2={W} y2={y}
                   stroke={`rgba(255,255,255,${laneOp})`} strokeWidth="1" />
@@ -1668,13 +1733,13 @@ export function MarketNarrativeNetwork() {
 
             {/* Row lane labels */}
             {rowEntries.map(([row, y]) => {
-              const labelOp = row === 0 ? 0.88 : row === 1 ? 0.78 : row === 2 ? 0.70 : 0.64;
+              const labelOp = row === 0 ? 0.72 : row === 1 ? 0.56 : row === 2 ? 0.46 : row === 3 ? 0.38 : 0.30;
               return (
                 <text key={row} x={LABEL_X} y={y + 4} textAnchor="end"
-                  fontSize={7.5} fontWeight={700} letterSpacing={2.0}
+                  fontSize={6.5} fontWeight={700} letterSpacing={2.2}
                   fontFamily="Inter, system-ui, sans-serif"
                   fill={`rgba(255,255,255,${labelOp})`}
-                  stroke="#010306" strokeWidth={4} strokeOpacity={0.88}
+                  stroke="#010306" strokeWidth={3.5} strokeOpacity={0.90}
                   strokeLinejoin="round" paintOrder="stroke"
                   className="pointer-events-none select-none">
                   {ROW_LABELS[row] ?? ""}
@@ -1703,8 +1768,8 @@ export function MarketNarrativeNetwork() {
             {/* Ghost pressure paths — dormant transmission channels */}
             <g className="pointer-events-none">
               {data.edges
-                .filter(e => !chainHighlight.edgeIds.has(e.id) && e.confidence > 45)
-                .slice(0, 8)
+                .filter(e => !chainHighlight.edgeIds.has(e.id) && e.confidence > 48)
+                .slice(0, 12)
                 .map(e => {
                   const fp = positions.get(e.source);
                   const tp = positions.get(e.target);
@@ -1713,14 +1778,21 @@ export function MarketNarrativeNetwork() {
                   const gh = idHash(e.id + "g");
                   const dur = 14 + (gh % 10);
                   const beg = (gh % 60) / 10;
+                  // dashoffset animation creates directional flow — period=17 (3+14), offset -17 = 1 full cycle
+                  const flowDur = ((7 + (gh % 5)) / (flowSpeed * 0.75)).toFixed(1);
+                  const peakOp = (0.050 * decayMul * (ne.dominantPhase === "fading" ? 1.8 : 1.0)).toFixed(3);
                   return (
                     <path key={`ghost-${e.id}`} d={gd}
-                      stroke="#c8ddf8" strokeWidth="0.6"
-                      strokeDasharray="2 9" fill="none" strokeOpacity="0">
+                      stroke="#c8ddf8" strokeWidth="0.7"
+                      strokeDasharray="3 14" fill="none" strokeOpacity="0">
                       <animate attributeName="stroke-opacity"
-                        values={`0;${(0.042 * decayMul * (ne.dominantPhase === "fading" ? 1.9 : 1.0)).toFixed(3)};0`} keyTimes="0;0.5;1"
+                        values={`0;${peakOp};0`} keyTimes="0;0.5;1"
                         dur={`${dur}s`} begin={`${beg}s`} repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" />
+                      <animate attributeName="stroke-dashoffset"
+                        from="0" to="-17"
+                        dur={`${flowDur}s`} begin={`${beg}s`} repeatCount="indefinite"
+                        calcMode="linear" />
                     </path>
                   );
                 })
@@ -1992,7 +2064,7 @@ export function MarketNarrativeNetwork() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[7px] font-bold uppercase tracking-[0.16em] shrink-0 mr-2 self-center"
               style={{ color: "rgba(255,255,255,0.42)" }}>
-              Signal Chains
+              Transmission Paths
             </span>
             {sortedChains.slice(0, 5).map((chain: PropagationChain, idx: number) => {
               const sel   = activeChain === chain.id;
@@ -2046,7 +2118,7 @@ export function MarketNarrativeNetwork() {
             <div className="mt-3 pl-2">
               <p className="text-[7px] font-bold uppercase tracking-[0.16em] mb-2.5"
                 style={{ color: "rgba(255,255,255,0.40)" }}>
-                Pressure Flow
+                Causal Transmission
               </p>
               <div className="flex items-center flex-wrap gap-0">
                 {chainHighlight.sequence.map((n, i) => (
