@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 
 const NAV_LINKS = [
-  { href: "/",           label: "Feed",       icon: Newspaper  },
+  { href: "/feed",       label: "Feed",       icon: Newspaper  },
   { href: "/markets",    label: "Markets",    icon: BarChart2  },
   { href: "/industries", label: "Industries", icon: Building2  },
   { href: "/listen",     label: "Listen",     icon: Headphones },
@@ -93,7 +93,7 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
         {/* ── Nav links ─────────────────────────────────────────────────── */}
         <nav className="flex items-center gap-0.5 flex-1">
           {NAV_LINKS.map(({ href, label, icon: Icon }) => {
-            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            const active = pathname.startsWith(href);
             return (
               <Link
                 key={href}
