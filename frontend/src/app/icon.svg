@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <!-- Dark navy background, rounded for app-icon contexts -->
-  <rect width="16" height="16" rx="3.5" fill="#0e1c38"/>
-  <!-- Bold A: thick strokes read cleanly at 16×16, 32×32, 48×48 -->
-  <path d="M8 2 L2.5 14" stroke="rgba(255,255,255,0.96)" stroke-width="2.4" stroke-linecap="round" fill="none"/>
-  <path d="M8 2 L13.5 14" stroke="rgba(255,255,255,0.96)" stroke-width="2.4" stroke-linecap="round" fill="none"/>
-  <line x1="5" y1="9.5" x2="11" y2="9.5" stroke="rgba(255,255,255,0.96)" stroke-width="1.8" stroke-linecap="round"/>
-</svg>
