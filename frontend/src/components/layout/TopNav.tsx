@@ -11,7 +11,6 @@ import {
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
-import { ArgusLogo } from "@/components/brand/ArgusLogo";
 
 const NAV_LINKS = [
   { href: "/feed",       label: "Feed",       icon: Newspaper  },
@@ -64,9 +63,13 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
 
         {/* ── Logo ──────────────────────────────────────────────────────── */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0 link-reset group">
-          <div className="transition-transform duration-200 group-hover:scale-105">
-            <ArgusLogo variant="icon" iconSize={28} />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/argus-icon.png"
+            alt="Argus"
+            className="transition-transform duration-200 group-hover:scale-105"
+            style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0 }}
+          />
           <span className="font-medium text-[13px] tracking-tight hidden sm:block"
             style={{ color: "rgba(255,255,255,0.72)", letterSpacing: "-0.01em" }}>
             Argus

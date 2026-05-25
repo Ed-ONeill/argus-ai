@@ -7,7 +7,6 @@ import { ArrowRight } from "lucide-react";
 import { useMarketState } from "@/hooks/useMarketState";
 import { MarketNarrativeNetwork } from "@/components/feed/MarketNarrativeNetwork";
 import { MarketPressureMap } from "@/components/feed/MarketPressureMap";
-import { ArgusLogo } from "@/components/brand/ArgusLogo";
 
 const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">'
@@ -105,13 +104,13 @@ export default function LandingPage() {
         <div aria-hidden className="absolute inset-0 pointer-events-none select-none"
           style={{ backgroundImage: GRID_BG, backgroundRepeat: "repeat" }} />
 
-        <div className="relative max-w-5xl mx-auto w-full px-6 sm:px-10 py-24">
+        <div className="relative max-w-5xl mx-auto w-full px-6 sm:px-10 py-16 sm:py-20">
 
           {/* Live status strip */}
           {mounted && (
             <motion.div
               custom={0} variants={fadeUp} initial="hidden" animate="visible"
-              className="flex items-center gap-3 mb-12">
+              className="flex items-center gap-3 mb-10">
               <PulseDot color={pulseDotColor} />
               <span style={{ fontSize: "10px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.36)" }}>
                 LIVE
@@ -131,21 +130,30 @@ export default function LandingPage() {
             </motion.div>
           )}
 
-          {/* Logo lockup */}
+          {/* Logo — primary visual centerpiece */}
           <motion.div custom={1} variants={fadeUp} initial="hidden" animate="visible"
             style={{ marginBottom: "28px" }}>
-            <ArgusLogo variant="full" iconSize={52} wordmarkSize={40} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/argus-logo-hero.png"
+              alt="Argus Market Intelligence"
+              style={{
+                display: "block",
+                width: "min(100%, 460px)",
+                height: "auto",
+              }}
+            />
           </motion.div>
 
           {/* Tagline */}
           <motion.p
             custom={2} variants={fadeUp} initial="hidden" animate="visible"
             style={{
-              fontSize: "15px",
+              fontSize: "14px",
               fontWeight: 300,
-              letterSpacing: "0.06em",
-              color: "rgba(255,255,255,0.42)",
-              marginBottom: "20px",
+              letterSpacing: "0.05em",
+              color: "rgba(255,255,255,0.40)",
+              marginBottom: "16px",
             }}>
             Real-time market intelligence.
           </motion.p>
@@ -154,11 +162,11 @@ export default function LandingPage() {
           <motion.p
             custom={3} variants={fadeUp} initial="hidden" animate="visible"
             style={{
-              fontSize: "14px",
+              fontSize: "13.5px",
               lineHeight: "1.80",
-              color: "rgba(255,255,255,0.30)",
-              maxWidth: "480px",
-              marginBottom: "44px",
+              color: "rgba(255,255,255,0.28)",
+              maxWidth: "460px",
+              marginBottom: "36px",
             }}>
             Tracks liquidity conditions, volatility regimes, participant positioning,
             and cross-asset flows in real time. Built for the speed and structure
@@ -370,7 +378,8 @@ export default function LandingPage() {
       {/* ── FOOTER ────────────────────────────────────────────────────────── */}
       <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "20px 0" }}>
         <div className="max-w-5xl mx-auto px-6 flex items-center justify-between">
-          <ArgusLogo variant="icon" iconSize={22} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/argus-icon.png" alt="Argus" style={{ width: 22, height: 22, borderRadius: 5 }} />
           <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.14)", letterSpacing: "0.04em" }}>
             Market Intelligence Platform
           </span>
