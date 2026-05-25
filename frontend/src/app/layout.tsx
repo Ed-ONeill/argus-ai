@@ -6,6 +6,16 @@ import { TopNav } from "@/components/layout/TopNav";
 export const metadata: Metadata = {
   title: "Argus — Market Intelligence",
   description: "Real-time market intelligence. Track liquidity, volatility, positioning, and cross-asset flows.",
+  icons: {
+    icon: [
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon.svg",       type: "image/svg+xml"               },
+    ],
+    shortcut: "/favicon.ico",
+    apple:    "/argus-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

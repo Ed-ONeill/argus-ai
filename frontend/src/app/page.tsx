@@ -18,17 +18,17 @@ const INTELLIGENCE_LAYERS = [
   {
     index: "01",
     title: "CAUSAL TRANSMISSION",
-    body:  "Capital moves across asset classes in sequence. Credit spreads widen before equities fall. Dollar strength compresses EM liquidity. Argus maps live transmission paths — not correlations, but actual propagation.",
+    body:  "Capital moves across asset classes in sequence. Credit spreads widen before equities fall. Dollar strength compresses EM liquidity. Argus maps live transmission paths: causal flow, not static correlation.",
   },
   {
     index: "02",
     title: "MULTI-HORIZON ANALYSIS",
-    body:  "Intraday momentum, swing positioning, and structural regime operate at different speeds. When they conflict, inflection points form. Argus tracks all three simultaneously.",
+    body:  "Intraday momentum, swing positioning, and structural regime operate at different speeds. When they conflict, inflection points form. Argus reads all three at once.",
   },
   {
     index: "03",
     title: "REGIME DETECTION",
-    body:  "Volatility regimes, liquidity conditions, and participant crowding build incrementally. Argus detects regime shifts as they form — before price confirms.",
+    body:  "Volatility regimes, liquidity conditions, and participant crowding accumulate gradually. Argus flags the shift as it forms, before price confirms it.",
   },
 ] as const;
 
@@ -217,10 +217,10 @@ export default function LandingPage() {
 
       {/* ── INTELLIGENCE LAYERS ───────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-16">
 
-          <div className="flex items-center gap-4 mb-14">
-            <span style={{ fontSize: "9px", letterSpacing: "0.24em", fontWeight: 600, color: "rgba(255,255,255,0.22)" }}>
+          <div className="flex items-center gap-4 mb-10">
+            <span style={{ fontSize: "9px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.26)" }}>
               INTELLIGENCE LAYERS
             </span>
             <div className="flex-1 h-px"
@@ -252,7 +252,7 @@ export default function LandingPage() {
                 }}>
                   {p.title}
                 </h3>
-                <p style={{ fontSize: "13px", lineHeight: "1.80", color: "rgba(255,255,255,0.30)" }}>
+                <p style={{ fontSize: "13px", lineHeight: "1.72", color: "rgba(255,255,255,0.32)" }}>
                   {p.body}
                 </p>
               </motion.div>
@@ -263,10 +263,10 @@ export default function LandingPage() {
 
       {/* ── LIVE MARKET STRUCTURE ─────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-14 pb-6">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-12 pb-4">
           <div className="flex items-center gap-4">
             {mounted && <PulseDot color={pulseDotColor} />}
-            <span style={{ fontSize: "9px", letterSpacing: "0.24em", fontWeight: 600, color: "rgba(255,255,255,0.22)" }}>
+            <span style={{ fontSize: "9px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.26)" }}>
               LIVE MARKET STRUCTURE
             </span>
             <div className="flex-1 h-px"
@@ -283,10 +283,10 @@ export default function LandingPage() {
 
       {/* ── CAPABILITIES ──────────────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-16">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-12">
 
-          <div className="flex items-center gap-4 mb-10">
-            <span style={{ fontSize: "9px", letterSpacing: "0.24em", fontWeight: 600, color: "rgba(255,255,255,0.22)" }}>
+          <div className="flex items-center gap-4 mb-8">
+            <span style={{ fontSize: "9px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.26)" }}>
               CAPABILITIES
             </span>
             <div className="flex-1 h-px"
@@ -325,7 +325,7 @@ export default function LandingPage() {
 
       {/* ── ENTER CTA ─────────────────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
-        <div className="max-w-5xl mx-auto px-6 py-28 text-center">
+        <div className="max-w-5xl mx-auto px-6 py-20 text-center">
           <motion.p
             initial={{ opacity: 0 }} whileInView={{ opacity: 1 }}
             viewport={{ once: true }} transition={{ duration: 0.55 }}
