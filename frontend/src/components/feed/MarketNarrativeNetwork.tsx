@@ -9,6 +9,7 @@ import { useReflexivity } from "@/hooks/useReflexivity";
 import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import { useMarketMemory } from "@/hooks/useMarketMemory";
 import { useAnticipatory } from "@/hooks/useAnticipatory";
+import { useTemporalMarket } from "@/hooks/useTemporalMarket";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -103,6 +104,27 @@ const AMBIENT_PARTICLES = [
   { cx: 790, cy: 268, r: 1.0, dur: 20, tx: -22, ty:  16, begin: 2.1 },
   { cx: 1082, cy: 292, r: 0.9, dur: 26, tx:  20, ty: -20, begin: 5.8 },
 ];
+
+// ── Structural-timescale drift particles — glacially slow, represent deep capital forces ─
+
+const STRUCTURAL_PARTICLES = [
+  { cx: 188, cy: 292, r: 1.2, dur: 64, tx:  22, ty: -16, begin:  0.0 },
+  { cx: 492, cy: 318, r: 1.0, dur: 78, tx: -18, ty:  20, begin: 14.5 },
+  { cx: 748, cy: 302, r: 1.3, dur: 58, tx:  28, ty: -12, begin:  6.2 },
+  { cx: 968, cy: 274, r: 1.1, dur: 72, tx: -22, ty:  16, begin: 24.0 },
+  { cx: 338, cy: 336, r: 1.0, dur: 84, tx:  18, ty: -22, begin: 40.0 },
+];
+
+// ── Temporal conflict short labels ────────────────────────────────────────────
+
+const TEMPORAL_CONFLICT_LABEL: Record<string, string> = {
+  calm_surface_fragile_depth:  "SURFACE / DEPTH",
+  momentum_breadth_divergence: "MOMENTUM / BREADTH",
+  vol_liquidity_split:         "VOL / LIQUIDITY",
+  compression_building:        "COMPRESSION",
+  aligned_stress:              "ALIGNED STRESS",
+  aligned_strength:            "ALIGNED STRENGTH",
+};
 
 // ── Grain texture (precomputed SVG noise, rendered once as raster by browser) ──
 
@@ -392,6 +414,7 @@ export function MarketNarrativeNetwork() {
   const ne = useNarrativeEvolution();
   const mm = useMarketMemory();
   const an = useAnticipatory();
+  const tm = useTemporalMarket();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -564,6 +587,17 @@ export function MarketNarrativeNetwork() {
   const feedbackRingColor  = an.feedbackMode === "stress_spiral"    ? "#c03838"
                            : an.feedbackMode === "derisking_cascade" ? "#c05830"
                            : "#c8a040";
+
+  // Multi-timescale cognition
+  const structuralDepthOp   = tm.structural.direction === "stress" && tm.structural.intensity > 0.26
+    ? (0.008 + tm.structural.intensity * 0.012).toFixed(3) : "0";
+  const faultLineOp         = (tm.temporalConflict === "calm_surface_fragile_depth"
+                               || tm.temporalConflict === "compression_building"
+                               || tm.temporalConflict === "vol_liquidity_split")
+                              && tm.conflictIntensity > 0.28
+    ? (0.020 + tm.conflictIntensity * 0.022).toFixed(3) : "0";
+  const structParticleOp    = tm.capitalHierarchyRisk > 0.26
+    ? (0.003 + tm.capitalHierarchyRisk * 0.006).toFixed(3) : "0";
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -1234,6 +1268,11 @@ export function MarketNarrativeNetwork() {
             {parseFloat(latentInstabOp) > 0 && (
               <rect width={W} height={H} fill="url(#latentInstabGrad)" className="pointer-events-none" />
             )}
+            {/* Structural depth field — amber wash rising from below when deep fragility builds */}
+            {parseFloat(structuralDepthOp) > 0 && (
+              <rect x={0} y={H * 0.48} width={W} height={H * 0.52}
+                fill="#3a1a04" fillOpacity={structuralDepthOp} className="pointer-events-none" />
+            )}
             {/* Market-state reactive pressure fields */}
             {parseFloat(riskOp)    > 0 && <rect width={W} height={H} fill="url(#mkRisk)"       className="pointer-events-none" />}
             {parseFloat(stressOp)  > 0 && <rect width={W} height={H} fill="url(#mkStress)"     className="pointer-events-none" />}
@@ -1278,6 +1317,19 @@ export function MarketNarrativeNetwork() {
                   );
                 })}
               </g>
+            )}
+
+            {/* Temporal fault line — horizontal fissure between surface calm and structural depth */}
+            {parseFloat(faultLineOp) > 0 && (
+              <line x1={PAD_X} y1={H * 0.62} x2={W - PAD_X} y2={H * 0.62}
+                stroke={tm.temporalConflict === "vol_liquidity_split" ? "#52b0c8" : "#c8a040"}
+                strokeWidth="0.3" strokeOpacity="0" className="pointer-events-none">
+                <animate attributeName="stroke-opacity"
+                  values={`0;${faultLineOp};${(parseFloat(faultLineOp) * 0.35).toFixed(3)};${faultLineOp};0`}
+                  keyTimes="0;0.25;0.5;0.75;1"
+                  dur="24s" repeatCount="indefinite"
+                  calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" />
+              </line>
             )}
 
             {/* Vol instability flicker — rapid field disturbance during elevated vol */}
@@ -1425,6 +1477,24 @@ export function MarketNarrativeNetwork() {
                 );
               })}
             </g>
+
+            {/* Structural drift particles — glacially slow deep-capital substrate indicators */}
+            {parseFloat(structParticleOp) > 0 && (
+              <g className="pointer-events-none">
+                {STRUCTURAL_PARTICLES.map((p, i) => (
+                  <circle key={i} cx={p.cx} cy={p.cy} r={p.r} fill="#c8a060" fillOpacity={0}>
+                    <animateTransform attributeName="transform" attributeType="XML" type="translate"
+                      values={`0,0; ${p.tx},${p.ty}; 0,0`}
+                      dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+                    <animate attributeName="fill-opacity"
+                      values={`0;${structParticleOp};0`}
+                      dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1" />
+                  </circle>
+                ))}
+              </g>
+            )}
 
             {/* Capital flow trails — migrate toward leadership zone when chain active */}
             <g className="pointer-events-none">
@@ -1802,6 +1872,19 @@ export function MarketNarrativeNetwork() {
                 fill="rgba(200,160,64,0.30)"
                 className="pointer-events-none select-none">
                 {mm.structureLabel.toUpperCase()}
+              </text>
+            )}
+
+            {/* Temporal conflict label — bottom-left, shows when horizons diverge */}
+            {tm.temporalConflict !== "none" && tm.conflictIntensity > 0.32 && (
+              <text x={10} y={H - 10} textAnchor="start"
+                fontSize={6} fontWeight={600} letterSpacing={1.4}
+                fontFamily="Inter, system-ui, sans-serif"
+                fill={tm.temporalConflict === "aligned_stress"   ? "rgba(176,80,80,0.28)"
+                     : tm.temporalConflict === "aligned_strength" ? "rgba(82,176,200,0.28)"
+                     : "rgba(200,160,64,0.22)"}
+                className="pointer-events-none select-none">
+                {TEMPORAL_CONFLICT_LABEL[tm.temporalConflict] ?? ""}
               </text>
             )}
 

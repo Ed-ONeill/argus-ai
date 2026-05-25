@@ -7,6 +7,7 @@ import { useReflexivity } from "@/hooks/useReflexivity";
 import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import { useMarketMemory } from "@/hooks/useMarketMemory";
 import { useAnticipatory } from "@/hooks/useAnticipatory";
+import { useTemporalMarket } from "@/hooks/useTemporalMarket";
 import type { MarketSignal } from "@/hooks/useMarketState";
 
 // ── Regime-derived fallback (when live data unavailable) ──────────────────────
@@ -99,6 +100,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
   const ne = useNarrativeEvolution();
   const mm  = useMarketMemory();
   const ant = useAnticipatory();
+  const tm  = useTemporalMarket();
 
   const signals = ms.hasData ? ms.signals : deriveCrossAsset(regime);
   const isLive  = ms.hasData;
@@ -461,6 +463,62 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Row 7: Temporal layers / capital hierarchy ────────────────────────── */}
+      {((tm.temporalConflict !== "none" && tm.conflictIntensity > 0.38) || tm.capitalHierarchyRisk > 0.52) && (
+        <div
+          className="px-5 sm:px-7 py-1.5 flex items-center gap-3 flex-wrap"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.006)" }}
+        >
+          <span
+            className="text-[6px] font-bold uppercase tracking-[0.18em] shrink-0 pr-3 mr-1"
+            style={{ color: "rgba(255,255,255,0.09)", borderRight: "1px solid rgba(255,255,255,0.04)" }}
+          >
+            Layers
+          </span>
+          <div className="flex items-center gap-4 flex-wrap flex-1">
+            {tm.temporalConflict === "calm_surface_fragile_depth" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(200,160,64,0.52)" }}>
+                Surface calm · deep fragile
+              </span>
+            )}
+            {tm.temporalConflict === "momentum_breadth_divergence" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(200,160,64,0.52)" }}>
+                Momentum / breadth split
+              </span>
+            )}
+            {tm.temporalConflict === "vol_liquidity_split" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(200,160,64,0.52)" }}>
+                Vol stable · liquidity stressed
+              </span>
+            )}
+            {tm.temporalConflict === "compression_building" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(200,160,64,0.52)" }}>
+                Compression building
+              </span>
+            )}
+            {tm.temporalConflict === "aligned_stress" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(176,80,80,0.62)" }}>
+                All horizons: stress
+              </span>
+            )}
+            {tm.temporalConflict === "aligned_strength" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(82,176,200,0.58)" }}>
+                All horizons: strength
+              </span>
+            )}
+          </div>
+          {tm.capitalHierarchyRisk > 0.52 && (
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[6px]" style={{ color: "rgba(255,255,255,0.14)" }}>capital</span>
+              <span className="text-[7px] font-bold tabular-nums"
+                style={{ color: tm.capitalHierarchyRisk > 0.70 ? "#c05858" : "#c8a040" }}>
+                {(tm.capitalHierarchyRisk * 100).toFixed(0)}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </motion.div>
