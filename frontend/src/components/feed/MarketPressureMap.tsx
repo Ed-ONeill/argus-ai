@@ -8,6 +8,8 @@ import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import { useMarketMemory } from "@/hooks/useMarketMemory";
 import { useAnticipatory } from "@/hooks/useAnticipatory";
 import { useTemporalMarket } from "@/hooks/useTemporalMarket";
+import { useMarketRhythm } from "@/hooks/useMarketRhythm";
+import { useParticipantDynamics } from "@/hooks/useParticipantDynamics";
 import type { MarketSignal } from "@/hooks/useMarketState";
 
 // ── Regime-derived fallback (when live data unavailable) ──────────────────────
@@ -101,6 +103,8 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
   const mm  = useMarketMemory();
   const ant = useAnticipatory();
   const tm  = useTemporalMarket();
+  const mr  = useMarketRhythm();
+  const pd  = useParticipantDynamics();
 
   const signals = ms.hasData ? ms.signals : deriveCrossAsset(regime);
   const isLive  = ms.hasData;
@@ -516,6 +520,54 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
               <span className="text-[7px] font-bold tabular-nums"
                 style={{ color: tm.capitalHierarchyRisk > 0.70 ? "#c05858" : "#c8a040" }}>
                 {(tm.capitalHierarchyRisk * 100).toFixed(0)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Row 8: Market rhythm / participant dynamics ────────────────────────── */}
+      {(mr.cyclePhase !== "expansion" || pd.destabilizationRisk > 0.45 || pd.participantCrowding > 0.55) && (
+        <div
+          className="px-5 sm:px-7 py-1.5 flex items-center gap-3 flex-wrap"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.006)" }}
+        >
+          <span
+            className="text-[6px] font-bold uppercase tracking-[0.18em] shrink-0 pr-3 mr-1"
+            style={{ color: "rgba(255,255,255,0.09)", borderRight: "1px solid rgba(255,255,255,0.04)" }}
+          >
+            Rhythm
+          </span>
+          <div className="flex items-center gap-4 flex-wrap flex-1">
+            <span className="text-[7.5px]" style={{
+              color: mr.cyclePhase === "instability"  ? "rgba(176,80,80,0.65)"
+                   : mr.cyclePhase === "de-risking"   ? "rgba(176,80,80,0.58)"
+                   : mr.cyclePhase === "fragility"    ? "rgba(200,130,64,0.60)"
+                   : mr.cyclePhase === "crowding"     ? "rgba(200,160,64,0.58)"
+                   : mr.cyclePhase === "recovery"     ? "rgba(82,176,200,0.55)"
+                   : "rgba(255,255,255,0.36)",
+            }}>
+              {mr.cyclePhase.charAt(0).toUpperCase() + mr.cyclePhase.slice(1)}
+              {mr.recurringInstability ? " · recurrent" : ""}
+            </span>
+            {pd.dominantParticipant !== "none" && (
+              <span className="text-[7.5px]" style={{ color: "rgba(136,152,184,0.50)" }}>
+                {pd.dominantParticipant === "vol-targeting" ? "Vol targeting"
+                  : pd.dominantParticipant.charAt(0).toUpperCase() + pd.dominantParticipant.slice(1)}{" "}led
+              </span>
+            )}
+            {pd.participantCrowding > 0.55 && (
+              <span className="text-[7.5px]" style={{ color: "rgba(200,160,64,0.54)" }}>
+                Crowd pressure ↑
+              </span>
+            )}
+          </div>
+          {pd.destabilizationRisk > 0.45 && (
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[6px]" style={{ color: "rgba(255,255,255,0.14)" }}>cascade</span>
+              <span className="text-[7px] font-bold tabular-nums"
+                style={{ color: pd.destabilizationRisk > 0.65 ? "#c05858" : "#c88040" }}>
+                {(pd.destabilizationRisk * 100).toFixed(0)}
               </span>
             </div>
           )}

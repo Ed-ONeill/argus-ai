@@ -10,6 +10,8 @@ import { useNarrativeEvolution } from "@/hooks/useNarrativeEvolution";
 import { useMarketMemory } from "@/hooks/useMarketMemory";
 import { useAnticipatory } from "@/hooks/useAnticipatory";
 import { useTemporalMarket } from "@/hooks/useTemporalMarket";
+import { useMarketRhythm } from "@/hooks/useMarketRhythm";
+import { useParticipantDynamics } from "@/hooks/useParticipantDynamics";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
@@ -125,6 +127,17 @@ const TEMPORAL_CONFLICT_LABEL: Record<string, string> = {
   aligned_stress:              "ALIGNED STRESS",
   aligned_strength:            "ALIGNED STRENGTH",
 };
+
+// ── Cycle phase atmospheric colors ────────────────────────────────────────────
+
+const CYCLE_PHASE_COLOR: Record<string, string> = {
+  crowding:     "#3a2004",
+  fragility:    "#3a1004",
+  instability:  "#3a0404",
+  "de-risking": "#2a0404",
+  recovery:     "#081420",
+};
+
 
 // ── Grain texture (precomputed SVG noise, rendered once as raster by browser) ──
 
@@ -415,6 +428,8 @@ export function MarketNarrativeNetwork() {
   const mm = useMarketMemory();
   const an = useAnticipatory();
   const tm = useTemporalMarket();
+  const mr = useMarketRhythm();
+  const pd = useParticipantDynamics();
 
   const [hoveredId, setHoveredId]         = useState<string | null>(null);
   const [tooltip, setTooltip]             = useState<TooltipState | null>(null);
@@ -598,6 +613,16 @@ export function MarketNarrativeNetwork() {
     ? (0.020 + tm.conflictIntensity * 0.022).toFixed(3) : "0";
   const structParticleOp    = tm.capitalHierarchyRisk > 0.26
     ? (0.003 + tm.capitalHierarchyRisk * 0.006).toFixed(3) : "0";
+
+  // Market rhythm and participant dynamics
+  const cycleBreathOp    = mr.cyclePhase !== "expansion" && mr.cyclePhase !== "reset" && mr.phaseIntensity > 0.22
+    ? (0.007 + mr.phaseIntensity * 0.015).toFixed(3) : "0";
+  const cycleBreathColor = CYCLE_PHASE_COLOR[mr.cyclePhase] ?? "#081018";
+  const cycleBreathDur   = (20 - mr.cycleVelocity * 16).toFixed(1);
+  const crowdHazeOp      = pd.participantCrowding > 0.50 && chainCentroid !== null
+    ? (0.016 + (pd.participantCrowding - 0.50) * 0.055).toFixed(3) : "0";
+  const cascadeRingOp    = pd.destabilizationRisk > 0.48
+    ? (0.055 + (pd.destabilizationRisk - 0.48) * 0.120).toFixed(2) : "0";
 
   // Live signals: use ms.signals when data is available, fall back to pulses
   const displaySignals = ms.hasData ? ms.signals : null;
@@ -1248,6 +1273,15 @@ export function MarketNarrativeNetwork() {
                   stopOpacity={parseFloat(latentInstabOp) * 0.32 > 0 ? (parseFloat(latentInstabOp) * 0.32).toFixed(3) : "0"} />
                 <stop offset="100%" stopColor="transparent" stopOpacity="0" />
               </radialGradient>
+
+              {/* Participant crowding haze — warm pressure at chain centroid when classes crowd same trade */}
+              <radialGradient id="crowdHaze" cx={spotCx} cy={spotCy} r="34%"
+                gradientUnits="objectBoundingBox">
+                <stop offset="0%"   stopColor="#c8a040" stopOpacity={crowdHazeOp} />
+                <stop offset="60%"  stopColor="#8a6420"
+                  stopOpacity={parseFloat(crowdHazeOp) * 0.28 > 0 ? (parseFloat(crowdHazeOp) * 0.28).toFixed(3) : "0"} />
+                <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+              </radialGradient>
             </defs>
 
             {/* Atmospheric layers — back to front */}
@@ -1273,6 +1307,17 @@ export function MarketNarrativeNetwork() {
               <rect x={0} y={H * 0.48} width={W} height={H * 0.52}
                 fill="#3a1a04" fillOpacity={structuralDepthOp} className="pointer-events-none" />
             )}
+            {/* Cycle phase breath — field-level pulse at the rhythm of the market cycle */}
+            {parseFloat(cycleBreathOp) > 0 && (
+              <rect width={W} height={H} fill={cycleBreathColor} fillOpacity="0"
+                className="pointer-events-none">
+                <animate attributeName="fill-opacity"
+                  values={`0;${cycleBreathOp};0`}
+                  keyTimes="0;0.5;1"
+                  dur={`${cycleBreathDur}s`} repeatCount="indefinite"
+                  calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" />
+              </rect>
+            )}
             {/* Market-state reactive pressure fields */}
             {parseFloat(riskOp)    > 0 && <rect width={W} height={H} fill="url(#mkRisk)"       className="pointer-events-none" />}
             {parseFloat(stressOp)  > 0 && <rect width={W} height={H} fill="url(#mkStress)"     className="pointer-events-none" />}
@@ -1282,6 +1327,10 @@ export function MarketNarrativeNetwork() {
             <rect width={W} height={H} fill="url(#coldField)"  className="pointer-events-none" />
             <rect width={W} height={H} fill="url(#chainSpot)"  className="pointer-events-none" />
             {chainCentroid && <rect width={W} height={H} fill="url(#leaderField)" className="pointer-events-none" />}
+            {/* Participant crowding haze — warm density when multiple classes crowd same trade */}
+            {parseFloat(crowdHazeOp) > 0 && chainCentroid && (
+              <rect width={W} height={H} fill="url(#crowdHaze)" className="pointer-events-none" />
+            )}
             {/* Rotation flow — directional capital zone indicator */}
             {(parseFloat(rotFlowTopOp) + parseFloat(rotFlowBotOp)) > 0 && (
               <rect width={W} height={H} fill="url(#rotationFlow)" className="pointer-events-none" />
@@ -1862,6 +1911,26 @@ export function MarketNarrativeNetwork() {
               </g>
             )}
 
+            {/* Participant cascade rings — systematic + vol-targeting forced unwind wave */}
+            {parseFloat(cascadeRingOp) > 0 && regimePos && (
+              <g className="pointer-events-none">
+                {[0, 1, 2].map(i => {
+                  const maxR = (152 + i * 54).toFixed(0);
+                  const dur  = (3.4 + i * 1.0 - (i === 1 ? 0.38 : 0)).toFixed(1);
+                  return (
+                    <circle key={i} cx={regimePos.x} cy={regimePos.y} r="12"
+                      fill="none" stroke="#c85020" strokeWidth="0.40" strokeOpacity="0">
+                      <animate attributeName="r" values={`12;${maxR};12`}
+                        dur={`${dur}s`} begin={`${i * 1.2}s`} repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.18 0 0.82 1;0.18 0 0.82 1" keyTimes="0;0.5;1" />
+                      <animate attributeName="stroke-opacity" values={`${cascadeRingOp};0;${cascadeRingOp}`}
+                        dur={`${dur}s`} begin={`${i * 1.2}s`} repeatCount="indefinite" />
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
+
             {data.nodes.map(renderNode)}
 
             {/* Structural pattern label — bottom-right, only when a pattern is detected */}
@@ -1885,6 +1954,23 @@ export function MarketNarrativeNetwork() {
                      : "rgba(200,160,64,0.22)"}
                 className="pointer-events-none select-none">
                 {TEMPORAL_CONFLICT_LABEL[tm.temporalConflict] ?? ""}
+              </text>
+            )}
+
+            {/* Cycle phase label — top-left, dim marker of current market rhythm state */}
+            {mr.cyclePhase !== "expansion" && mr.cyclePhase !== "reset" && mr.phaseIntensity > 0.30 && (
+              <text x={10} y={12} textAnchor="start"
+                fontSize={6} fontWeight={600} letterSpacing={1.4}
+                fontFamily="Inter, system-ui, sans-serif"
+                fill={
+                  mr.cyclePhase === "instability"  ? "rgba(176,80,80,0.24)"
+                  : mr.cyclePhase === "de-risking" ? "rgba(176,80,80,0.20)"
+                  : mr.cyclePhase === "fragility"  ? "rgba(200,120,64,0.22)"
+                  : mr.cyclePhase === "recovery"   ? "rgba(82,176,200,0.20)"
+                  : "rgba(200,160,64,0.20)"
+                }
+                className="pointer-events-none select-none">
+                {mr.cyclePhase.toUpperCase().replace("-", " ")}
               </text>
             )}
 
