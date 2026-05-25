@@ -1067,8 +1067,8 @@ export function MarketNarrativeNetwork() {
 
           {/* Market State — compact left anchor */}
           <div className="shrink-0 pr-5" style={{ borderRight: "1px solid rgba(255,255,255,0.06)" }}>
-            <p className="text-[6.5px] font-bold uppercase tracking-[0.18em] mb-0.5"
-              style={{ color: "rgba(255,255,255,0.30)" }}>
+            <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] mb-0.5"
+              style={{ color: "rgba(255,255,255,0.36)" }}>
               Market State
             </p>
             <p className="text-[13px] font-semibold leading-none tracking-tight"
@@ -2062,8 +2062,8 @@ export function MarketNarrativeNetwork() {
         {/* Active path / chain tabs */}
         <div className="px-6 py-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[7px] font-bold uppercase tracking-[0.16em] shrink-0 mr-2 self-center"
-              style={{ color: "rgba(255,255,255,0.42)" }}>
+            <span className="text-[8px] font-bold uppercase tracking-[0.16em] shrink-0 mr-2 self-center"
+              style={{ color: "rgba(255,255,255,0.50)" }}>
               Transmission Paths
             </span>
             {sortedChains.slice(0, 5).map((chain: PropagationChain, idx: number) => {
@@ -2144,8 +2144,12 @@ export function MarketNarrativeNetwork() {
           )}
 
           {!hasInteracted && (
-            <p className="text-[8px] mt-2.5 pl-2 italic" style={{ color: "rgba(255,255,255,0.32)" }}>
-              Click any node to open the intelligence panel · hover to preview connections
+            <p className="text-[9px] mt-2.5 pl-2" style={{ color: "rgba(255,255,255,0.42)", fontStyle: "normal" }}>
+              <span style={{ color: "rgba(255,255,255,0.52)" }}>Click any node</span> to open the intelligence panel
+              <span className="mx-1.5" style={{ opacity: 0.35 }}>·</span>
+              hover edges to preview flow relationships
+              <span className="mx-1.5" style={{ opacity: 0.35 }}>·</span>
+              select a Transmission Path above to trace causal chains
             </p>
           )}
         </div>

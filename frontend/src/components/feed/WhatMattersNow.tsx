@@ -72,30 +72,30 @@ export function WhatMattersNow({ items, isLoading, themes, marketIntensity, tren
   const [primary, ...rest] = items;
 
   return (
-    <section className="mb-12">
+    <section className="mb-14">
       {/* Section header */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center gap-2 shrink-0">
           <motion.span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: "rgba(180,140,70,0.60)" }}
-            animate={{ opacity: [1, 0.32, 1] }}
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{ background: "rgba(180,140,70,0.72)" }}
+            animate={{ opacity: [1, 0.35, 1] }}
             transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }}
           />
           <span
-            className="text-[10px] font-semibold uppercase"
-            style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.44)" }}
+            className="text-[11px] font-semibold uppercase"
+            style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}
           >
             What Matters Now
           </span>
         </div>
         <div
           className="flex-1 h-px"
-          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }}
+          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }}
         />
         <span
           className="text-[9px] shrink-0"
-          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.24)" }}
+          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.30)" }}
         >
           {trendLabel ?? "Signal Pressure"}
         </span>
@@ -195,13 +195,13 @@ function PrimaryDriverCard({
       )}
 
       {/* Content */}
-      <div className="pl-5 pr-4 pt-3.5 pb-3.5 flex flex-col gap-2">
+      <div className="pl-5 pr-4 pt-4 pb-4 flex flex-col gap-2">
 
         {/* Top row */}
         <div className="flex items-center gap-2">
           <span
-            className="text-[8.5px] font-medium uppercase shrink-0"
-            style={{ letterSpacing: "0.12em", color }}
+            className="text-[8.5px] font-bold uppercase shrink-0"
+            style={{ letterSpacing: "0.14em", color }}
           >
             Primary Driver
           </span>
@@ -210,7 +210,7 @@ function PrimaryDriverCard({
               {dirConfig.label}
             </span>
           )}
-          <span className="ml-auto text-[10px] shrink-0" style={{ color: "rgba(255,255,255,0.28)" }}>
+          <span className="ml-auto text-[10px] shrink-0" style={{ color: "rgba(255,255,255,0.34)" }}>
             {storyLabel}
             <span className="mx-1 opacity-50">·</span>
             <span style={{ color }}>{p.category}</span>
@@ -218,7 +218,7 @@ function PrimaryDriverCard({
         </div>
 
         {/* Title */}
-        <p className="font-bold leading-snug" style={{ fontSize: "16px", color: "rgba(255,255,255,0.90)" }}>
+        <p className="font-bold leading-snug" style={{ fontSize: "17px", color: "rgba(255,255,255,0.93)" }}>
           {wmn_label || cluster.theme_label}
         </p>
 
@@ -324,7 +324,7 @@ function WMNCard({
         {/* Title */}
         <p
           className="font-bold leading-snug line-clamp-2"
-          style={{ fontSize: "13px", color: "rgba(255,255,255,0.84)", paddingRight: "14px" }}
+          style={{ fontSize: "13.5px", color: "rgba(255,255,255,0.88)", paddingRight: "14px" }}
         >
           {wmn_label || cluster.theme_label}
         </p>
@@ -333,7 +333,7 @@ function WMNCard({
         {thesis ? (
           <p
             className="line-clamp-2 leading-relaxed flex-1"
-            style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)" }}
+            style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.52)" }}
           >
             {thesis}
           </p>

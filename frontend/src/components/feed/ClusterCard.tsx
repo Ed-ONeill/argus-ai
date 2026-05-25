@@ -110,7 +110,7 @@ export function ClusterCard({
 
         {/* ── Header row ──────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-semibold" style={{ color }}>
+          <span className="text-[10.5px] font-semibold" style={{ color }}>
             {item.category}
           </span>
           {isBreaking && (
@@ -126,7 +126,7 @@ export function ClusterCard({
             </span>
           )}
           <span className="ml-auto text-[9px] tabular-nums font-mono"
-            style={{ color: "rgba(255,255,255,0.45)" }}>
+            style={{ color: "rgba(255,255,255,0.38)" }}>
             {score}
           </span>
         </div>
@@ -136,9 +136,9 @@ export function ClusterCard({
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-[13.5px] font-semibold leading-snug mb-2
+          className="block text-[14px] font-semibold leading-snug mb-2
                      hover:text-accent transition-colors"
-          style={{ color: "rgba(255,255,255,0.92)" }}
+          style={{ color: "rgba(255,255,255,0.93)" }}
         >
           {item.title}
           <ExternalLink
@@ -169,8 +169,8 @@ export function ClusterCard({
         {/* ── AI summary + desk-note ──────────────────────────────────── */}
         {hasSummary && (
           <>
-            <p className="text-[11.5px] leading-relaxed mb-2"
-              style={{ color: "rgba(255,255,255,0.76)" }}>
+            <p className="text-[12px] leading-relaxed mb-2"
+              style={{ color: "rgba(255,255,255,0.78)" }}>
               {item.summary}
             </p>
 
@@ -345,8 +345,8 @@ export function ClusterCard({
             >
               <div className="mt-3 pt-3"
                 style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
-                <p className="text-[9.5px] font-medium uppercase tracking-[0.10em] mb-2"
-                  style={{ color: "rgba(255,255,255,0.42)" }}>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.10em] mb-2"
+                  style={{ color: "rgba(255,255,255,0.52)" }}>
                   Related coverage
                 </p>
                 <div className="space-y-0">

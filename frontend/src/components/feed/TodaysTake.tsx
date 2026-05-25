@@ -79,7 +79,7 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <span className="text-[10px] font-semibold tracking-[0.06em] uppercase"
-            style={{ color: "rgba(255,255,255,0.44)" }}>
+            style={{ color: "rgba(255,255,255,0.56)" }}>
             Market Intelligence
           </span>
           <div className="flex items-center gap-1.5">
@@ -95,8 +95,8 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
 
         {/* Primary Driver */}
         <div className="mb-3.5">
-          <p className="text-[7.5px] font-semibold uppercase tracking-[0.16em] mb-1.5"
-            style={{ color: "rgba(255,255,255,0.42)" }}>
+          <p className="text-[8px] font-semibold uppercase tracking-[0.16em] mb-1.5"
+            style={{ color: "rgba(255,255,255,0.46)" }}>
             Primary Driver
           </p>
           <p className="text-[14px] font-semibold leading-snug"
@@ -112,19 +112,19 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
         {/* Narrative + Assets */}
         <div className="flex gap-6 mb-3.5">
           <div className="flex-1 min-w-0">
-            <p className="text-[7px] font-medium uppercase tracking-[0.16em] mb-1.5"
-              style={{ color: "rgba(255,255,255,0.38)" }}>
+            <p className="text-[7.5px] font-medium uppercase tracking-[0.16em] mb-1.5"
+              style={{ color: "rgba(255,255,255,0.42)" }}>
               Narrative
             </p>
             <p className="text-[12px] leading-relaxed"
-              style={{ color: "rgba(255,255,255,0.68)" }}>
+              style={{ color: "rgba(255,255,255,0.70)" }}>
               {brief.narrative_shift}
             </p>
           </div>
           {brief.assets_impacted.length > 0 && (
             <div className="shrink-0" style={{ maxWidth: 180 }}>
-              <p className="text-[7px] font-medium uppercase tracking-[0.16em] mb-1.5"
-                style={{ color: "rgba(255,255,255,0.38)" }}>
+              <p className="text-[7.5px] font-medium uppercase tracking-[0.16em] mb-1.5"
+                style={{ color: "rgba(255,255,255,0.42)" }}>
                 Key Assets
               </p>
               <p className="text-[10.5px] leading-relaxed"
@@ -142,12 +142,12 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
               style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.04) 20%, rgba(255,255,255,0.04) 80%, transparent)" }} />
             {brief.trade_implication && (
               <div className="flex items-start gap-3 py-1.5">
-                <span className="text-[7px] font-medium uppercase tracking-[0.14em] shrink-0 mt-px w-8"
-                  style={{ color: "rgba(255,255,255,0.35)" }}>
+                <span className="text-[7.5px] font-medium uppercase tracking-[0.14em] shrink-0 mt-px w-8"
+                  style={{ color: "rgba(255,255,255,0.40)" }}>
                   Trade
                 </span>
                 <span className="text-[11.5px] leading-relaxed"
-                  style={{ color: "rgba(255,255,255,0.74)" }}>
+                  style={{ color: "rgba(255,255,255,0.76)" }}>
                   {brief.trade_implication}
                 </span>
               </div>
@@ -155,8 +155,8 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
             {brief.risk_scenario && (
               <div className="flex items-start gap-3 py-1.5"
                 style={brief.trade_implication ? { borderTop: "1px solid rgba(255,255,255,0.04)" } : {}}>
-                <span className="text-[7px] font-medium uppercase tracking-[0.14em] shrink-0 mt-px w-8"
-                  style={{ color: "rgba(255,255,255,0.35)" }}>
+                <span className="text-[7.5px] font-medium uppercase tracking-[0.14em] shrink-0 mt-px w-8"
+                  style={{ color: "rgba(255,255,255,0.40)" }}>
                   Risk
                 </span>
                 <span className="text-[11.5px] leading-relaxed"

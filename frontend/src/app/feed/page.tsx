@@ -204,12 +204,12 @@ export default function FeedPage() {
               }, rgba(255,255,255,0.02))`,
               marginLeft: "3px",
             }} />
-            <span className="text-[6.5px] font-bold uppercase tracking-[0.24em]"
-              style={{ color: "rgba(255,255,255,0.18)" }}>
+            <span className="text-[8px] font-bold uppercase tracking-[0.22em]"
+              style={{ color: "rgba(255,255,255,0.28)" }}>
               Intelligence Output
             </span>
             <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.04), transparent)" }} />
+              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
           </div>
 
           {/* ── Cross-asset pressure signals + causal chain ───────────── */}

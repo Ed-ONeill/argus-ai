@@ -131,8 +131,8 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
       {/* ── Row 1: Cross-asset signals ─────────────────────────────────────── */}
       <div className="px-5 sm:px-7 py-2.5 flex items-center gap-0">
         <span
-          className="text-[6px] font-bold uppercase tracking-[0.20em] shrink-0 pr-4 mr-3"
-          style={{ color: "rgba(255,255,255,0.24)", borderRight: "1px solid rgba(255,255,255,0.05)" }}
+          className="text-[7.5px] font-bold uppercase tracking-[0.16em] shrink-0 pr-4 mr-3"
+          style={{ color: "rgba(255,255,255,0.34)", borderRight: "1px solid rgba(255,255,255,0.06)" }}
         >
           Cross-Asset
         </span>
@@ -176,8 +176,8 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
               {mc.dominant.reframe ?? mc.dominant.triggerTag}
             </span>
             <span
-              className="text-[6.5px] italic shrink-0"
-              style={{ color: "rgba(255,255,255,0.26)" }}
+              className="text-[7px] shrink-0"
+              style={{ color: "rgba(255,255,255,0.32)" }}
             >
               {CATEGORY_LABEL[mc.dominant.category]}
             </span>
@@ -207,7 +207,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
           <div className="flex items-center gap-2 shrink-0">
             {mc.dominant.contextNote && (
               <span
-                className="text-[6.5px] italic"
+                className="text-[7px] italic"
                 style={{ color: "rgba(255,255,255,0.28)" }}
               >
                 {mc.dominant.contextNote}
@@ -215,7 +215,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
             )}
             {mc.exhaustionRisk && (
               <span
-                className="text-[6.5px] font-bold uppercase tracking-wide px-1 rounded"
+                className="text-[7px] font-bold uppercase tracking-wide px-1 rounded"
                 style={{ color: "#c8a040", background: "rgba(200,160,64,0.08)", border: "1px solid rgba(200,160,64,0.18)" }}
               >
                 exhausting
@@ -255,7 +255,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
           </div>
           {ne.contagionStage !== "none" && (
             <span
-              className="text-[6.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+              className="text-[7px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
               style={{
                 color:      ne.contagionStage === "systemic" ? "#c05858" : "#c8a040",
                 background: ne.contagionStage === "systemic" ? "rgba(192,80,80,0.08)" : "rgba(200,160,64,0.07)",
@@ -297,7 +297,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
                 </span>
                 {c.dominant !== "neutral" && (
                   <span
-                    className="text-[6.5px] font-bold uppercase"
+                    className="text-[7px] font-bold uppercase"
                     style={{ color: "rgba(255,255,255,0.22)" }}
                   >
                     [{c.dominant} led]
@@ -360,7 +360,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
           <div className="flex items-center gap-4 flex-wrap flex-1">
             {mm.fundingPressure > 0.28 && (
               <div className="flex items-center gap-1">
-                <span className="text-[6.5px]" style={{ color: "rgba(255,255,255,0.22)" }}>Funding</span>
+                <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.22)" }}>Funding</span>
                 <span className="text-[7.5px] font-semibold tabular-nums"
                   style={{ color: mm.fundingPressure > 0.62 ? "#c05858" : "#c8a040" }}>
                   {(mm.fundingPressure * 100).toFixed(0)}
@@ -369,7 +369,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
             )}
             {mm.leverageStress > 0.28 && (
               <div className="flex items-center gap-1">
-                <span className="text-[6.5px]" style={{ color: "rgba(255,255,255,0.22)" }}>Leverage</span>
+                <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.22)" }}>Leverage</span>
                 <span className="text-[7.5px] font-semibold tabular-nums"
                   style={{ color: mm.leverageStress > 0.62 ? "#c05858" : "#c8a040" }}>
                   {(mm.leverageStress * 100).toFixed(0)}
@@ -378,7 +378,7 @@ export function MarketPressureMap({ regime }: MarketPressureMapProps) {
             )}
             {mm.balanceSheetRisk > 0.22 && (
               <div className="flex items-center gap-1">
-                <span className="text-[6.5px]" style={{ color: "rgba(255,255,255,0.22)" }}>B/S Risk</span>
+                <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.22)" }}>B/S Risk</span>
                 <span className="text-[7.5px] font-semibold tabular-nums"
                   style={{ color: mm.balanceSheetRisk > 0.55 ? "#c05858" : "#c8a040" }}>
                   {(mm.balanceSheetRisk * 100).toFixed(0)}
