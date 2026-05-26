@@ -149,7 +149,7 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
   return { crumb: "", cookies };
 }
 
-// ── Ticker fetch ──────────────────────────────────────────────────────────────
+// ── Yahoo Finance fetch helpers ───────────────────────────────────────────────
 
 async function fetchFromHost(
   host:    string,
@@ -170,7 +170,7 @@ async function fetchFromHost(
   });
 }
 
-async function fetchTicker(
+async function fetchTickerFromYahoo(
   key:     string,
   symbol:  string,
   label:   string,
@@ -185,13 +185,13 @@ async function fetchTicker(
       res = await fetchFromHost(host, symbol, crumb, cookies);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.error(`[market-data] ${key} network error on ${host}:`, lastError.message);
+      console.error(`[market-data] provider=yahoo symbol=${key} host=${host} status=network_error:`, lastError.message);
       continue;
     }
 
     if (!res.ok) {
       lastError = new Error(`HTTP ${res.status}`);
-      console.error(`[market-data] ${key} ${lastError.message} from ${host}`);
+      console.error(`[market-data] provider=yahoo symbol=${key} host=${host} status=${res.status}`);
       // 401 = crumb expired/invalid — invalidate cache so next request re-fetches
       if (res.status === 401) _crumbCache = null;
       continue;
@@ -202,7 +202,7 @@ async function fetchTicker(
       json = await res.json();
     } catch (err) {
       lastError = new Error(`JSON parse error: ${String(err)}`);
-      console.error(`[market-data] ${key} ${lastError.message} from ${host}`);
+      console.error(`[market-data] provider=yahoo symbol=${key} host=${host} status=json_error`);
       continue;
     }
 
@@ -210,7 +210,7 @@ async function fetchTicker(
     if (!result) {
       const errMsg = ((json as { chart?: { error?: { description?: string } } })?.chart?.error?.description) ?? "no chart result";
       lastError = new Error(errMsg);
-      console.error(`[market-data] ${key} ${lastError.message} from ${host}`);
+      console.error(`[market-data] provider=yahoo symbol=${key} host=${host} status=no_result:`, errMsg);
       continue;
     }
 
@@ -239,11 +239,71 @@ async function fetchTicker(
       .filter((v): v is number => v !== null && isFinite(v) && v > 0)
       .slice(-30);
 
-    console.log(`[market-data] ${key} OK  price=${price.toFixed(2)}  host=${host}`);
+    console.log(`[market-data] provider=yahoo symbol=${key} status=ok price=${price.toFixed(2)} host=${host}`);
     return { key, label, price, change, changePercent, history };
   }
 
   throw lastError;
+}
+
+// ── Alternative providers (no-auth, cloud-IP safe) ───────────────────────────
+
+async function fetchBTCFromCoinGecko(): Promise<TickerData> {
+  const res = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true",
+    { signal: AbortSignal.timeout(8_000), headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json() as { bitcoin?: { usd?: number; usd_24h_change?: number } };
+  const price = json.bitcoin?.usd;
+  const changePercent = json.bitcoin?.usd_24h_change ?? 0;
+  if (!price || !isFinite(price)) throw new Error("invalid price");
+  const change = price * (changePercent / 100);
+  console.log(`[market-data] provider=coingecko symbol=BTC-USD status=ok price=${price.toFixed(2)}`);
+  return { key: "BTC-USD", label: "BTC/USD", price, change, changePercent, history: [] };
+}
+
+async function fetchBTCFromBinance(): Promise<TickerData> {
+  const res = await fetch(
+    "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",
+    { signal: AbortSignal.timeout(8_000), headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json() as { lastPrice?: string; priceChangePercent?: string };
+  const price = parseFloat(json.lastPrice ?? "0");
+  const changePercent = parseFloat(json.priceChangePercent ?? "0");
+  if (!price || !isFinite(price)) throw new Error("invalid price");
+  const change = price * (changePercent / 100);
+  console.log(`[market-data] provider=binance symbol=BTC-USD status=ok price=${price.toFixed(2)}`);
+  return { key: "BTC-USD", label: "BTC/USD", price, change, changePercent, history: [] };
+}
+
+// ── Ticker dispatch ───────────────────────────────────────────────────────────
+
+async function fetchTicker(
+  key:     string,
+  symbol:  string,
+  label:   string,
+  crumb:   string,
+  cookies: string,
+): Promise<TickerData> {
+  // BTC: CoinGecko → Binance → Yahoo fallback
+  if (key === "BTC-USD") {
+    try {
+      return await fetchBTCFromCoinGecko();
+    } catch (err) {
+      console.warn(`[market-data] provider=coingecko symbol=BTC-USD status=failed —`, String(err));
+    }
+    try {
+      return await fetchBTCFromBinance();
+    } catch (err) {
+      console.warn(`[market-data] provider=binance symbol=BTC-USD status=failed —`, String(err));
+    }
+    console.log(`[market-data] provider=yahoo symbol=BTC-USD status=fallback`);
+  }
+
+  // All other tickers (and BTC fallback): Yahoo Finance with crumb auth
+  return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
