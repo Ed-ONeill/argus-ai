@@ -383,7 +383,14 @@ function SnapshotTile({
       {loading ? (
         <div className="mt-2 h-10 w-full bg-raised rounded animate-pulse" />
       ) : error ? (
-        <p className="mt-2 text-xs text-ink-muted">Unavailable</p>
+        <div className="mt-2 h-10 flex flex-col justify-end gap-0.5">
+          <p className="text-[15px] font-semibold tabular-nums text-ink-muted leading-none" style={{ opacity: 0.30 }}>
+            —
+          </p>
+          <p className="text-2xs text-ink-muted leading-none" style={{ opacity: 0.50 }}>
+            offline
+          </p>
+        </div>
       ) : (
         <div className="mt-2 flex items-end justify-between gap-2">
           <div className="min-w-0">
@@ -659,9 +666,9 @@ function PrimaryDriver({
         {/* Thick accent bar */}
         <div className="h-1" style={{ background: color }} />
 
-        <div className="px-4 pt-4 pb-4">
+        <div className="px-4 pt-3 pb-3">
           {/* Category + score */}
-          <div className="flex items-center gap-2 mb-2.5">
+          <div className="flex items-center gap-2 mb-2">
             <span
               className="text-2xs font-semibold px-2 py-0.5 rounded-full"
               style={{ background: `${color}15`, color }}
@@ -678,14 +685,24 @@ function PrimaryDriver({
           </div>
 
           {/* Theme label */}
-          <p className="text-[15px] font-bold text-ink leading-snug mb-2">
+          <p className="text-[15px] font-bold text-ink leading-snug mb-1.5">
             {wmn_label || cluster.theme_label}
           </p>
 
           {/* Thesis */}
           {thesis && (
-            <p className="text-xs text-ink-secondary leading-relaxed mb-3 line-clamp-2">
+            <p className="text-xs text-ink-secondary leading-relaxed mb-2 line-clamp-2">
               {thesis}
+            </p>
+          )}
+
+          {/* Why it matters — compact anchor note */}
+          {p.why_it_matters && p.why_it_matters !== thesis && (
+            <p
+              className="text-[10.5px] leading-relaxed mb-2 line-clamp-1 pl-2.5"
+              style={{ color: "var(--color-ink-secondary)", borderLeft: `2px solid ${color}40` }}
+            >
+              {p.why_it_matters}
             </p>
           )}
 
@@ -694,7 +711,7 @@ function PrimaryDriver({
             const assets = deriveKeyAssets(item, marketData);
             if (assets.length === 0) return null;
             return (
-              <div className="flex items-center gap-1.5 flex-wrap mb-3">
+              <div className="flex items-center gap-1.5 flex-wrap mb-2">
                 <span className="text-2xs text-ink-muted shrink-0">Key assets:</span>
                 {assets.map(({ label, dir, change }) => (
                   <span
@@ -714,7 +731,7 @@ function PrimaryDriver({
           })()}
 
           {/* Score bar + jump button */}
-          <div className="flex items-center gap-3 pt-2 border-t border-edge/50">
+          <div className="flex items-center gap-3 pt-1.5 border-t border-edge/50">
             <div className="flex items-center gap-2 flex-1">
               <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden max-w-[80px]">
                 <div className="h-full rounded-full" style={{ width: `${score}%`, background: barColor }} />
@@ -1089,6 +1106,10 @@ export default function MarketsPage() {
     return map;
   }, [clusters]);
 
+  const allSnapshotUnavailable =
+    marketData !== undefined &&
+    SNAPSHOT_CONFIGS.every(cfg => marketData[cfg.key] === null);
+
   // Active tile config
   const activeCfg = SNAPSHOT_CONFIGS.find(c => c.key === activeKey) ?? null;
 
@@ -1114,17 +1135,16 @@ export default function MarketsPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7">
-
-      {/* ── Argus identity header — dark band ────────────────────────────── */}
+    <>
+      {/* ── Argus identity header — full-width dark band ─────────────────── */}
       <div
-        className="-mx-4 sm:-mx-6 -mt-7 mb-6 px-4 sm:px-6 py-4"
         style={{
-          background:    "rgba(6,10,22,0.97)",
-          borderBottom:  "1px solid rgba(255,255,255,0.07)",
+          background:   "rgba(6,10,22,0.97)",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          marginBottom: "24px",
         }}
       >
-        <div className="max-w-5xl mx-auto flex items-start justify-between gap-4">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-start justify-between gap-4">
 
           {/* Left: brand + title */}
           <div>
@@ -1179,6 +1199,8 @@ export default function MarketsPage() {
           </div>
         </div>
       </div>
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-7">
 
       {/* Regime banner — shown when structured brief is available */}
       {data?.market_brief && !isLoading && (
@@ -1243,6 +1265,14 @@ export default function MarketsPage() {
             />
           ))}
         </div>
+        {allSnapshotUnavailable && (
+          <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+            <AlertTriangle size={10} className="shrink-0 text-amber-500" />
+            <p className="text-[10.5px] text-ink-secondary leading-snug">
+              Market prices temporarily unavailable — intelligence and narrative sections remain active.
+            </p>
+          </div>
+        )}
         <p className="text-2xs text-ink-muted flex items-center gap-1 mt-2 mb-5">
           <AlertCircle size={10} className="shrink-0" />
           {marketOpen ? "Live prices" : "Delayed ~15 min"} via Yahoo Finance · Click a tile to filter themes · Refreshes every 60 sec
@@ -1308,6 +1338,7 @@ export default function MarketsPage() {
       {/* 6. Top Movers */}
       <TopMovers items={allItems} clusterByItemId={clusterByItemId} />
 
-    </div>
+      </div>
+    </>
   );
 }
