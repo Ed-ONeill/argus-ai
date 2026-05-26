@@ -81,54 +81,71 @@ let _crumbCache: CrumbCache | null = null;
 async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
   const now = Date.now();
   if (_crumbCache && now < _crumbCache.expiresAt) {
+    console.log(`[market-data] crumb: cache hit crumb=${_crumbCache.crumb.slice(0, 8)}... expires_in=${Math.round((_crumbCache.expiresAt - now) / 1000)}s`);
     return { crumb: _crumbCache.crumb, cookies: _crumbCache.cookies };
   }
 
-  // Step 1: visit Yahoo Finance to receive the A3 consent cookie
+  // Step 1: Visit Yahoo Finance to receive session cookies (A1, A3, etc.).
+  // NOTE: fc.yahoo.com (old GDPR consent endpoint) is now defunct — returns 404.
+  // finance.yahoo.com is the correct seed URL. We try two URLs in case one is
+  // rate-limited from cloud IPs (Railway/Vercel).
+  const CONSENT_URLS = ["https://finance.yahoo.com", "https://yahoo.com"];
   let cookies = "";
-  try {
-    const consentRes = await fetch("https://fc.yahoo.com", {
-      headers: {
-        "User-Agent":      YF_UA,
-        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-    });
-    const rawCookies = consentRes.headers.getSetCookie?.() ?? [];
-    if (rawCookies.length > 0) {
-      cookies = rawCookies.map(c => c.split(";")[0]).filter(Boolean).join("; ");
+  for (const consentUrl of CONSENT_URLS) {
+    if (cookies) break;
+    try {
+      const consentRes = await fetch(consentUrl, {
+        signal:   AbortSignal.timeout(12_000),
+        headers: {
+          "User-Agent":      YF_UA,
+          "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+        },
+        redirect: "follow",
+      });
+      const rawCookies = consentRes.headers.getSetCookie?.() ?? [];
+      if (rawCookies.length > 0) {
+        cookies = rawCookies.map(c => c.split(";")[0]).filter(Boolean).join("; ");
+      }
+      console.log(
+        `[market-data] consent: url=${consentUrl} status=${consentRes.status}` +
+        ` cookies=${rawCookies.length} keys=${rawCookies.map(c => c.split("=")[0]).join(",") || "(none)"}`,
+      );
+    } catch (err) {
+      console.warn(`[market-data] consent: ${consentUrl} failed —`, String(err));
     }
-    console.log(`[market-data] crumb: consent cookies=${rawCookies.length} status=${consentRes.status}`);
-  } catch (err) {
-    console.warn("[market-data] crumb: consent fetch failed —", String(err));
   }
 
-  // Step 2: fetch crumb from both hosts
+  // Step 2: Fetch crumb from both query hosts using the session cookies
   for (const host of YF_HOSTS) {
     try {
       const crumbRes = await fetch(`${host}/v1/test/getcrumb`, {
+        signal: AbortSignal.timeout(8_000),
         headers: {
           ...YF_BASE_HEADERS,
           ...(cookies ? { Cookie: cookies } : {}),
         },
       });
+      const body = await crumbRes.text();
       if (crumbRes.ok) {
-        const crumb = (await crumbRes.text()).trim();
-        if (crumb && crumb.length < 60 && !crumb.startsWith("<")) {
+        const crumb = body.trim();
+        if (crumb && crumb.length < 60 && !crumb.startsWith("<") && !crumb.includes("{")) {
           _crumbCache = { crumb, cookies, expiresAt: now + 20 * 60 * 1000 };
-          console.log(`[market-data] crumb: acquired from ${host} crumb=${crumb.slice(0, 8)}...`);
+          console.log(`[market-data] crumb: acquired from ${host} crumb=${crumb.slice(0, 8)}... cookies_present=${!!cookies}`);
           return { crumb, cookies };
         }
+        console.warn(`[market-data] crumb: ${host} ok but unexpected body: ${body.slice(0, 80)}`);
+      } else {
+        console.warn(`[market-data] crumb: ${host} status=${crumbRes.status} body=${body.slice(0, 80)}`);
       }
-      console.warn(`[market-data] crumb: ${host} returned status=${crumbRes.status}`);
     } catch (err) {
       console.warn(`[market-data] crumb: ${host} error —`, String(err));
     }
   }
 
-  // Crumb unavailable — proceed without it (falls back to no-auth behavior)
-  console.warn("[market-data] crumb: could not acquire — proceeding without authentication");
+  // Crumb unavailable — proceed without it; tickers will likely return 401
+  console.warn("[market-data] crumb: could not acquire — proceeding without auth (expect 401s)");
   return { crumb: "", cookies };
 }
 
@@ -143,6 +160,7 @@ async function fetchFromHost(
   const crumbParam = crumb ? `&crumb=${encodeURIComponent(crumb)}` : "";
   const url        = `${host}/v8/finance/chart/${symbol}?interval=5m&range=1d${crumbParam}`;
   return fetch(url, {
+    signal: AbortSignal.timeout(12_000),
     headers: {
       ...YF_BASE_HEADERS,
       ...(cookies ? { Cookie: cookies } : {}),
@@ -231,6 +249,7 @@ async function fetchTicker(
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function GET() {
+  console.log(`[market-data] GET  tickers=${TICKERS.map(t => t.key).join(",")}`);
   // Acquire (or reuse cached) crumb before fetching any tickers
   const { crumb, cookies } = await getYahooCrumb();
 
