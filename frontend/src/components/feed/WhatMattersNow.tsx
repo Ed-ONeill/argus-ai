@@ -203,7 +203,7 @@ function PrimaryDriverCard({
             className="text-[8.5px] font-bold uppercase shrink-0"
             style={{ letterSpacing: "0.14em", color }}
           >
-            Primary Driver
+            {p.category}
           </span>
           {dirConfig && (
             <span className="text-[9.5px] font-semibold shrink-0" style={{ color: dirConfig.color }}>
@@ -212,8 +212,6 @@ function PrimaryDriverCard({
           )}
           <span className="ml-auto text-[10px] shrink-0" style={{ color: "rgba(255,255,255,0.34)" }}>
             {storyLabel}
-            <span className="mx-1 opacity-50">·</span>
-            <span style={{ color }}>{p.category}</span>
           </span>
         </div>
 

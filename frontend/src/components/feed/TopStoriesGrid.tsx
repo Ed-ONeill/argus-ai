@@ -29,11 +29,11 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
   if (!isLoading && !hasAny) return null;
 
   return (
-    <section className="mb-8">
+    <section className="mt-8 mb-4">
       <div className="flex items-center gap-3 mb-3">
         <span className="text-[10px] font-semibold tracking-[0.08em] uppercase shrink-0"
-          style={{ color: "rgba(255,255,255,0.52)" }}>
-          Signal Monitor
+          style={{ color: "rgba(255,255,255,0.42)" }}>
+          Signal Picks
         </span>
         <span className="h-px flex-1"
           style={{ background: "linear-gradient(to right, rgba(255,255,255,0.055), transparent)" }} />

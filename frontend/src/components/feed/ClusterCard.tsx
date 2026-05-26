@@ -42,6 +42,12 @@ export function ClusterCard({
     return mins <= 90;
   })();
 
+  // Visual tier — drives rendering density
+  // Watched entities are always promoted to Tier 2 minimum
+  const tier: 1 | 2 | 3 =
+    score >= 75 ? 1 :
+    (item.signal_strength === "weak" || score < 40) && !isWatched ? 3 : 2;
+
   async function handleAnalyzeToggle() {
     if (analyzed) { setAnalyzed(false); return; }
     setAnalyzed(true);
@@ -65,7 +71,7 @@ export function ClusterCard({
     return b.published_ts.localeCompare(a.published_ts);
   });
 
-  // Left border: sole signal-strength indicator — tiers scale with signal
+  // Left border weight scales with tier
   const leftAccent = isBreaking
     ? "rgba(180,56,56,0.85)"
     : item.signal_strength === "strong"
@@ -74,6 +80,50 @@ export function ClusterCard({
         ? `${color}55`
         : `${color}38`;
 
+  const leftBorderW = tier === 1 ? "4px" : "2px";
+
+  // ── Tier 3: compressed row (noise) ────────────────────────────────────────
+  if (tier === 3) {
+    return (
+      <article
+        data-cluster-id={id}
+        className="group rounded overflow-hidden"
+        style={{
+          background:   "rgba(5,9,20,0.70)",
+          borderTop:    "1px solid rgba(255,255,255,0.04)",
+          borderRight:  "1px solid rgba(255,255,255,0.03)",
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          borderLeft:   `2px solid ${leftAccent}`,
+          opacity:      0.62,
+        }}
+      >
+        <div className="px-3.5 py-2 flex items-center gap-2.5 min-w-0">
+          <span className="text-[9.5px] font-medium shrink-0" style={{ color }}>
+            {item.category}
+          </span>
+          <span className="text-[10px] opacity-20 shrink-0">·</span>
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[12.5px] font-medium leading-tight line-clamp-1 flex-1 min-w-0
+                       hover:opacity-80 transition-opacity"
+            style={{ color: "rgba(255,255,255,0.78)" }}
+          >
+            {item.title}
+          </a>
+          <span
+            className="text-[8.5px] tabular-nums font-mono shrink-0 ml-1"
+            style={{ color: "rgba(255,255,255,0.26)" }}
+          >
+            {score}
+          </span>
+        </div>
+      </article>
+    );
+  }
+
+  // ── Tier 1 / Tier 2: full card ─────────────────────────────────────────────
   return (
     <motion.article
       data-cluster-id={id}
@@ -87,18 +137,17 @@ export function ClusterCard({
       whileHover={{ y: -1, transition: { duration: 0.18, ease: "easeOut" } }}
       className={cn(
         "group rounded-lg overflow-hidden",
-        item.signal_strength === "weak" && "opacity-80",
         isWatched && "ring-1 ring-accent/30",
       )}
       style={{
-        background:   "rgba(7,12,28,0.95)",
+        background:   tier === 1 ? "rgba(8,14,32,0.97)" : "rgba(7,12,28,0.95)",
         borderTop:    "1px solid rgba(255,255,255,0.08)",
         borderRight:  "1px solid rgba(255,255,255,0.05)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
-        borderLeft:   `2px solid ${leftAccent}`,
+        borderLeft:   `${leftBorderW} solid ${leftAccent}`,
       }}
     >
-      <div className="px-3.5 pt-2.5 pb-3">
+      <div className={cn("px-3.5", tier === 1 ? "pt-4 pb-4" : "pt-2.5 pb-3")}>
 
         {/* ── Theme label (multi-story clusters only) ─────────────────── */}
         {story_count > 1 && (
@@ -136,8 +185,10 @@ export function ClusterCard({
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-[14px] font-semibold leading-snug mb-2
-                     hover:text-accent transition-colors"
+          className={cn(
+            "block font-semibold leading-snug mb-2 hover:text-accent transition-colors",
+            tier === 1 ? "text-[15px]" : "text-[14px]",
+          )}
           style={{ color: "rgba(255,255,255,0.93)" }}
         >
           {item.title}

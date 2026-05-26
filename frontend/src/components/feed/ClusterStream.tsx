@@ -4,6 +4,14 @@ import { motion } from "framer-motion";
 import { ClusterCard } from "./ClusterCard";
 import type { StoryCluster, FeedItem } from "@/lib/types";
 
+function clusterTier(cluster: StoryCluster): 1 | 2 | 3 {
+  const score    = Math.round(cluster.primary.signal_score);
+  const strength = cluster.primary.signal_strength;
+  if (score >= 75) return 1;
+  if (strength === "weak" || score < 40) return 3;
+  return 2;
+}
+
 interface ClusterStreamProps {
   clusters:    StoryCluster[];
   savedIds:    string[];
@@ -20,27 +28,9 @@ export function ClusterStream({
 
   return (
     <section>
-      {/* Section header */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex items-center gap-2 shrink-0">
-          <motion.span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: "rgba(52,200,120,0.65)" }}
-            animate={{ opacity: [1, 0.35, 1] }}
-            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-          />
-          <span className="text-[10px] font-semibold tracking-[0.06em] uppercase"
-            style={{ color: "rgba(255,255,255,0.44)" }}>
-            Live Market Stream
-          </span>
-        </div>
-        {!isLoading && clusters.length > 0 && (
-          <span className="text-[9px] tabular-nums"
-            style={{ color: "rgba(255,255,255,0.28)" }}>
-            {clusters.length}
-          </span>
-        )}
-        {newCount > 0 && (
+      {/* New stories badge — floats inline with stream label in page */}
+      {newCount > 0 && (
+        <div className="mb-3">
           <motion.span
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -53,10 +43,8 @@ export function ClusterStream({
           >
             {newCount} new
           </motion.span>
-        )}
-        <span className="h-px flex-1"
-          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
-      </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2">
@@ -73,36 +61,41 @@ export function ClusterStream({
         </div>
       ) : (
         <motion.div
-          className="space-y-2"
           initial="hidden"
           animate="visible"
-          variants={{ visible: { transition: { staggerChildren: 0.045 } } }}
+          variants={{ visible: { transition: { staggerChildren: 0.04 } } }}
         >
-          {clusters.map((cluster, i) => (
-            <motion.div
-              key={cluster.id}
-              custom={i}
-              variants={{
-                hidden:  { opacity: 0, y: 10 },
-                visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: "easeOut" } },
-              }}
-            >
-              <ClusterCard
-                cluster={cluster}
-                isSaved={savedIds.includes(cluster.id)}
-                onSave={() => onSave(cluster.primary)}
-                isNew={newIds?.has(cluster.id)}
-                isWatched={
-                  watchedEntities
-                    ? cluster.primary.affected_entities.some(
-                        e => watchedEntities.has(e.toLowerCase()),
-                      )
-                    : false
-                }
-                watchedEntities={watchedEntities}
-              />
-            </motion.div>
-          ))}
+          {clusters.map((cluster, i) => {
+            const tier = clusterTier(cluster);
+            return (
+              <motion.div
+                key={cluster.id}
+                custom={i}
+                variants={{
+                  hidden:  { opacity: 0, y: 8 },
+                  visible: { opacity: 1, y: 0, transition: { duration: 0.28, ease: "easeOut" } },
+                }}
+                style={{
+                  marginBottom: tier === 1 ? "12px" : tier === 2 ? "8px" : "3px",
+                }}
+              >
+                <ClusterCard
+                  cluster={cluster}
+                  isSaved={savedIds.includes(cluster.id)}
+                  onSave={() => onSave(cluster.primary)}
+                  isNew={newIds?.has(cluster.id)}
+                  isWatched={
+                    watchedEntities
+                      ? cluster.primary.affected_entities.some(
+                          e => watchedEntities.has(e.toLowerCase()),
+                        )
+                      : false
+                  }
+                  watchedEntities={watchedEntities}
+                />
+              </motion.div>
+            );
+          })}
         </motion.div>
       )}
     </section>

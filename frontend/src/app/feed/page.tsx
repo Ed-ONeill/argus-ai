@@ -7,13 +7,12 @@ import { useSaved } from "@/hooks/useSaved";
 import { useFeedFreshness } from "@/hooks/useFeedFreshness";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { useMarketState } from "@/hooks/useMarketState";
-import { TodaysTake } from "@/components/feed/TodaysTake";
+import { MorningBriefing } from "@/components/feed/MorningBriefing";
 import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
 import { MarketNarrativeNetwork } from "@/components/feed/MarketNarrativeNetwork";
-import { MarketPressureMap } from "@/components/feed/MarketPressureMap";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
@@ -193,31 +192,8 @@ export default function FeedPage() {
         {/* ── Intelligence feed ────────────────────────────────────────────── */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-14 relative">
 
-          {/* ── Data channel bridge: graph → cross-asset → intelligence ── */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="shrink-0 w-px h-5" style={{
-              background: `linear-gradient(to bottom, ${
-                ms.riskRegime === "risk-on"  ? "rgba(42,96,188,0.58)"
-                : ms.riskRegime === "risk-off"  ? "rgba(180,60,60,0.52)"
-                : ms.volRegime === "elevated" || ms.volRegime === "high" ? "rgba(200,160,64,0.52)"
-                : "rgba(42,96,188,0.44)"
-              }, rgba(255,255,255,0.02))`,
-              marginLeft: "3px",
-            }} />
-            <span className="text-[8px] font-bold uppercase tracking-[0.22em]"
-              style={{ color: "rgba(255,255,255,0.28)" }}>
-              Intelligence Output
-            </span>
-            <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.06), transparent)" }} />
-          </div>
-
-          {/* ── Cross-asset pressure signals + causal chain ───────────── */}
-          <MarketPressureMap regime={data?.market_brief?.market_regime ?? ""} />
-
-          {/* ── Market Intelligence panel ─────────────────────────────── */}
-          <TodaysTake
-            text={data?.market_take}
+          {/* ── Morning Briefing — intelligence anchor ────────────────── */}
+          <MorningBriefing
             brief={data?.market_brief}
             isLoading={isLoading}
           />
@@ -231,17 +207,6 @@ export default function FeedPage() {
             trendLabel={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
           />
 
-          {/* ── Top stories by signal type ─────────────────────────────── */}
-          <TopStoriesGrid
-            stories={data?.top_stories ?? {
-              top_deal: null, top_macro: null,
-              top_single_name: null, top_price_move: null, top_policy_risk: null,
-            }}
-            savedIds={savedIds}
-            onSave={handleSave}
-            isLoading={isLoading}
-          />
-
           {/* ── Category filter strip ──────────────────────────────────── */}
           <FilterChips
             activeCategory={activeCategory}
@@ -251,24 +216,14 @@ export default function FeedPage() {
             filteredCount={visibleClusters.length}
           />
 
-          {/* ── Stream entry — pressure-tinted atmospheric bridge ──────────── */}
+          {/* ── Stream entry bridge ───────────────────────────────────── */}
           <div className="flex items-center gap-3 mb-4 mt-1">
-            <div className="w-px h-4 shrink-0" style={{
-              background: `linear-gradient(to bottom, ${
-                ms.riskRegime === "risk-on"  ? "rgba(42,168,120,0.35)"
-                : ms.riskRegime === "risk-off"  ? "rgba(180,60,60,0.32)"
-                : ms.volRegime === "elevated" || ms.volRegime === "high" ? "rgba(200,160,64,0.32)"
-                : "rgba(52,200,120,0.28)"
-              }, rgba(255,255,255,0.02))`,
-              marginLeft: "3px",
-            }} />
-            <div className="flex-1 h-px" style={{
-              background: `linear-gradient(to right, ${
-                ms.riskRegime === "risk-on"  ? "rgba(42,168,120,0.07)"
-                : ms.riskRegime === "risk-off"  ? "rgba(180,60,60,0.06)"
-                : "rgba(52,200,120,0.06)"
-              }, transparent)`,
-            }} />
+            <span className="text-[8px] font-bold uppercase tracking-[0.18em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.26)" }}>
+              Live Market Stream
+            </span>
+            <div className="flex-1 h-px"
+              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.05), transparent)" }} />
           </div>
 
           {/* ── Live Market Stream ────────────────────────────────────── */}
@@ -280,6 +235,19 @@ export default function FeedPage() {
             isLoading={isLoading}
             watchedEntities={watchedEntities.size > 0 ? watchedEntities : undefined}
           />
+
+          {/* ── Signal Picks — after stream, by type ─────────────────── */}
+          {!isLoading && !hasMore && (
+            <TopStoriesGrid
+              stories={data?.top_stories ?? {
+                top_deal: null, top_macro: null,
+                top_single_name: null, top_price_move: null, top_policy_risk: null,
+              }}
+              savedIds={savedIds}
+              onSave={handleSave}
+              isLoading={false}
+            />
+          )}
 
           {/* ── Show more ────────────────────────────────────────────── */}
           {!isLoading && hasMore && (
