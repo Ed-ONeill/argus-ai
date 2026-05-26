@@ -37,7 +37,7 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
         </span>
         <span className="h-px flex-1"
           style={{ background: "linear-gradient(to right, rgba(255,255,255,0.055), transparent)" }} />
-        <span className="text-[8.5px] shrink-0" style={{ color: "rgba(255,255,255,0.22)" }}>
+        <span className="text-[9px] shrink-0" style={{ color: "rgba(255,255,255,0.30)" }}>
           by signal type
         </span>
       </div>

@@ -81,8 +81,8 @@ export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <span
-              className="text-[8px] font-bold uppercase"
-              style={{ letterSpacing: "0.18em", color: "rgba(255,255,255,0.32)" }}
+              className="text-[9px] font-bold uppercase"
+              style={{ letterSpacing: "0.18em", color: "rgba(255,255,255,0.36)" }}
             >
               Market State
             </span>
@@ -91,7 +91,7 @@ export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
               {brief.market_regime}
             </span>
           </div>
-          <span className="text-[9px] tabular-nums" style={{ color: "rgba(255,255,255,0.26)" }}>
+          <span className="text-[9px] tabular-nums" style={{ color: "rgba(255,255,255,0.34)" }}>
             {today}
           </span>
         </div>
@@ -118,8 +118,8 @@ export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
         {transmission && (
           <div className="flex items-center gap-2.5 mb-4">
             <span
-              className="text-[7.5px] font-bold uppercase shrink-0"
-              style={{ letterSpacing: "0.16em", color: "rgba(255,255,255,0.28)" }}
+              className="text-[8.5px] font-bold uppercase shrink-0"
+              style={{ letterSpacing: "0.16em", color: "rgba(255,255,255,0.36)" }}
             >
               Transmission
             </span>
@@ -134,8 +134,8 @@ export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
         {(brief.trade_implication || brief.risk_scenario) && (
           <div className="mb-4">
             <span
-              className="text-[7.5px] font-bold uppercase block mb-2"
-              style={{ letterSpacing: "0.16em", color: "rgba(255,255,255,0.28)" }}
+              className="text-[8.5px] font-bold uppercase block mb-2"
+              style={{ letterSpacing: "0.16em", color: "rgba(255,255,255,0.36)" }}
             >
               Watch
             </span>
@@ -170,7 +170,7 @@ export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
           >
             {signals.map(s => (
               <div key={s.label} className="flex items-center gap-1.5">
-                <span className="text-[8px] font-medium" style={{ color: "rgba(255,255,255,0.34)" }}>
+                <span className="text-[9px] font-medium" style={{ color: "rgba(255,255,255,0.42)" }}>
                   {s.label}
                 </span>
                 <span className="text-[9.5px] font-bold" style={{ color: s.color }}>

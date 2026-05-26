@@ -218,8 +218,8 @@ export default function FeedPage() {
 
           {/* ── Stream entry bridge ───────────────────────────────────── */}
           <div className="flex items-center gap-3 mb-4 mt-1">
-            <span className="text-[8px] font-bold uppercase tracking-[0.18em] shrink-0"
-              style={{ color: "rgba(255,255,255,0.26)" }}>
+            <span className="text-[9px] font-bold uppercase tracking-[0.18em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.32)" }}>
               Live Market Stream
             </span>
             <div className="flex-1 h-px"

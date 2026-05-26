@@ -114,7 +114,7 @@ export function ClusterCard({
           </a>
           <span
             className="text-[8.5px] tabular-nums font-mono shrink-0 ml-1"
-            style={{ color: "rgba(255,255,255,0.26)" }}
+            style={{ color: "rgba(255,255,255,0.34)" }}
           >
             {score}
           </span>

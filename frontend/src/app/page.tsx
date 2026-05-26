@@ -104,13 +104,13 @@ export default function LandingPage() {
         <div aria-hidden className="absolute inset-0 pointer-events-none select-none"
           style={{ backgroundImage: GRID_BG, backgroundRepeat: "repeat" }} />
 
-        <div className="relative max-w-5xl mx-auto w-full px-6 sm:px-10 py-16 sm:py-20">
+        <div className="relative max-w-5xl mx-auto w-full px-6 sm:px-10 py-10 sm:py-14">
 
           {/* Live status strip */}
           {mounted && (
             <motion.div
               custom={0} variants={fadeUp} initial="hidden" animate="visible"
-              className="flex items-center gap-3 mb-10">
+              className="flex items-center gap-3 mb-8">
               <PulseDot color={pulseDotColor} />
               <span style={{ fontSize: "10px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.36)" }}>
                 LIVE
@@ -153,7 +153,7 @@ export default function LandingPage() {
               fontWeight: 300,
               letterSpacing: "0.05em",
               color: "rgba(255,255,255,0.40)",
-              marginBottom: "16px",
+              marginBottom: "12px",
             }}>
             Real-time market intelligence.
           </motion.p>
@@ -166,7 +166,7 @@ export default function LandingPage() {
               lineHeight: "1.80",
               color: "rgba(255,255,255,0.28)",
               maxWidth: "460px",
-              marginBottom: "36px",
+              marginBottom: "28px",
             }}>
             Tracks liquidity conditions, volatility regimes, participant positioning,
             and cross-asset flows in real time. Built for the speed and structure
@@ -217,10 +217,10 @@ export default function LandingPage() {
 
       {/* ── INTELLIGENCE LAYERS ───────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-16">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-12">
 
-          <div className="flex items-center gap-4 mb-10">
-            <span style={{ fontSize: "9px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.26)" }}>
+          <div className="flex items-center gap-4 mb-8">
+            <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
               INTELLIGENCE LAYERS
             </span>
             <div className="flex-1 h-px"
@@ -263,10 +263,10 @@ export default function LandingPage() {
 
       {/* ── LIVE MARKET STRUCTURE ─────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-12 pb-4">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-8 pb-4">
           <div className="flex items-center gap-4">
             {mounted && <PulseDot color={pulseDotColor} />}
-            <span style={{ fontSize: "9px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.26)" }}>
+            <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
               LIVE MARKET STRUCTURE
             </span>
             <div className="flex-1 h-px"
@@ -283,10 +283,10 @@ export default function LandingPage() {
 
       {/* ── CAPABILITIES ──────────────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-12">
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-9">
 
-          <div className="flex items-center gap-4 mb-8">
-            <span style={{ fontSize: "9px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.26)" }}>
+          <div className="flex items-center gap-4 mb-7">
+            <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
               CAPABILITIES
             </span>
             <div className="flex-1 h-px"
@@ -325,13 +325,13 @@ export default function LandingPage() {
 
       {/* ── ENTER CTA ─────────────────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
-        <div className="max-w-5xl mx-auto px-6 py-20 text-center">
+        <div className="max-w-5xl mx-auto px-6 py-14 text-center">
           <motion.p
             initial={{ opacity: 0 }} whileInView={{ opacity: 1 }}
             viewport={{ once: true }} transition={{ duration: 0.55 }}
             style={{
               fontSize: "13px", letterSpacing: "0.04em",
-              color: "rgba(255,255,255,0.22)", marginBottom: "28px",
+              color: "rgba(255,255,255,0.22)", marginBottom: "22px",
             }}>
             Markets don&apos;t wait. Neither does Argus.
           </motion.p>

@@ -94,8 +94,8 @@ export function WhatMattersNow({ items, isLoading, themes, marketIntensity, tren
           style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }}
         />
         <span
-          className="text-[9px] shrink-0"
-          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.30)" }}
+          className="text-[9.5px] shrink-0"
+          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.36)" }}
         >
           {trendLabel ?? "Signal Pressure"}
         </span>
@@ -251,15 +251,15 @@ function PrimaryDriverCard({
         {/* Theme tag */}
         {matchedTheme && (
           <div className="flex items-center gap-1.5" style={{ marginTop: "2px" }}>
-            <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)" }}>Theme:</span>
+            <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.32)" }}>Theme:</span>
             <span
               className="truncate"
-              style={{ fontSize: "9px", color: "rgba(255,255,255,0.45)", maxWidth: "200px" }}
+              style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.50)", maxWidth: "200px" }}
             >
               {matchedTheme.name}
             </span>
             {matchedTheme.confidence_label && (
-              <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.22)" }}>
+              <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.28)" }}>
                 · {matchedTheme.confidence_label}
               </span>
             )}
@@ -359,7 +359,7 @@ function WMNCard({
 
         {/* Metadata row */}
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[10px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.25)" }}>
+          <span className="text-[10px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.34)" }}>
             {storyLabel}
             <span className="mx-1 opacity-50">·</span>
             <span style={{ color }}>{p.category}</span>

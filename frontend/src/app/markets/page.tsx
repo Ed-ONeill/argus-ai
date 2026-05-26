@@ -914,92 +914,103 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
           return (
             <div
               key={t.id}
-              className="bg-surface rounded-xl border border-edge px-4 py-3 space-y-2.5"
+              className="bg-surface rounded-xl border border-edge px-4 py-3 space-y-2"
             >
-              {/* Header row */}
-              <div className="flex items-start gap-2 flex-wrap">
-                <span className="text-[13px] font-bold text-ink leading-tight flex-1 min-w-0">
-                  {t.name}
+              {/* ── Top strip: momentum + strength + confidence ───────────── */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={cn("text-[9.5px] font-bold px-1.5 py-px rounded border", momCfg.cls)}>
+                  {momCfg.icon} {t.momentum_label ?? "emerging"}
                 </span>
-                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                  {/* Momentum pill */}
-                  <span className={cn(
-                    "text-[9px] font-bold px-1.5 py-px rounded border",
-                    momCfg.cls,
-                  )}>
-                    {momCfg.icon} {t.momentum_label ?? "emerging"}
-                  </span>
-                  {/* Signal strength */}
-                  <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
-                    <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
-                    {t.signal_strength}
+                <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
+                  <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
+                  {t.signal_strength}
+                </span>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <div className="w-16 h-[2.5px] rounded-full bg-raised overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${t.confidence}%`, background: cfg.bar }} />
+                  </div>
+                  <span className="text-[9.5px] font-bold tabular-nums" style={{ color: cfg.bar }}>
+                    {t.confidence_label || `${t.confidence}%`}
                   </span>
                 </div>
               </div>
 
-              {/* Confidence bar row */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${t.confidence}%`, background: cfg.bar }}
-                  />
-                </div>
-                <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: cfg.bar }}>
-                  {t.confidence_label || `${t.confidence}%`}
+              {/* ── Driver ─────────────────────────────────────────────────── */}
+              <div className="flex items-start gap-2.5">
+                <span
+                  className="text-[7.5px] font-bold uppercase shrink-0 mt-[3px]"
+                  style={{ letterSpacing: "0.14em", color: "#94a3b8", minWidth: 36 }}
+                >
+                  Driver
                 </span>
-                <span className={cn("text-[9.5px] font-medium shrink-0", qualCfg.cls)}>
-                  {qualCfg.label}
-                </span>
-              </div>
-
-              {/* Description */}
-              <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2">
-                {t.description}
-              </p>
-
-              {/* Related industries with relationship weights */}
-              {t.related_industries.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[9.5px] text-ink-muted shrink-0">Affected:</span>
-                  {t.related_industries.slice(0, 4).map(ind => {
-                    const rel = (t.relationship_weights ?? {})[ind];
-                    const dir = rel?.direction;
-                    return (
-                      <span
-                        key={ind}
-                        className="text-[9.5px] font-medium px-2 py-px rounded-full border"
-                        style={
-                          dir === "positive"
-                            ? { background: "#10b98110", color: "#059669", borderColor: "#10b98130" }
-                            : dir === "negative"
-                            ? { background: "#ef444410", color: "#dc2626", borderColor: "#ef444430" }
-                            : { background: "var(--color-raised)", color: "var(--color-ink-secondary)", borderColor: "var(--color-edge)" }
-                        }
-                      >
-                        {dir === "positive" ? "↑ " : dir === "negative" ? "↓ " : ""}{ind}
-                        {rel && ` ${Math.round(rel.weight * 100)}%`}
-                      </span>
-                    );
-                  })}
-                  {relCount > 4 && (
-                    <span className="text-[9.5px] text-ink-muted">+{relCount - 4} more</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-bold text-ink leading-tight mb-1">
+                    {t.name}
+                  </p>
+                  {t.description && (
+                    <p className="text-[11px] text-ink-secondary leading-relaxed line-clamp-2">
+                      {t.description}
+                    </p>
                   )}
+                </div>
+              </div>
+
+              {/* ── Impact ─────────────────────────────────────────────────── */}
+              {t.related_industries.length > 0 && (
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className="text-[7.5px] font-bold uppercase shrink-0 mt-[3px]"
+                    style={{ letterSpacing: "0.14em", color: "#94a3b8", minWidth: 36 }}
+                  >
+                    Impact
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    {t.related_industries.slice(0, 4).map(ind => {
+                      const rel = (t.relationship_weights ?? {})[ind];
+                      const dir = rel?.direction;
+                      return (
+                        <span
+                          key={ind}
+                          className="text-[9.5px] font-medium px-2 py-px rounded-full border"
+                          style={
+                            dir === "positive"
+                              ? { background: "#10b98110", color: "#059669", borderColor: "#10b98130" }
+                              : dir === "negative"
+                              ? { background: "#ef444410", color: "#dc2626", borderColor: "#ef444430" }
+                              : { background: "var(--color-raised)", color: "var(--color-ink-secondary)", borderColor: "var(--color-edge)" }
+                          }
+                        >
+                          {dir === "positive" ? "↑ " : dir === "negative" ? "↓ " : ""}{ind}
+                          {rel && ` ${Math.round(rel.weight * 100)}%`}
+                        </span>
+                      );
+                    })}
+                    {relCount > 4 && (
+                      <span className="text-[9.5px] text-ink-muted">+{relCount - 4} more</span>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Footer: second-order effect + evidence count */}
+              {/* ── Watch ──────────────────────────────────────────────────── */}
               {t.second_order_effects[0] && (
-                <div className="flex items-start gap-2 border-t border-edge/40 pt-1.5">
-                  <p className="text-[10.5px] text-ink-muted leading-snug flex-1">
-                    <span className="font-semibold text-ink-secondary">→ </span>
-                    {t.second_order_effects[0]}
-                  </p>
-                  {t.evidence_count > 0 && (
-                    <span className="text-[9px] text-ink-muted shrink-0 tabular-nums">
-                      {t.evidence_count} source{t.evidence_count !== 1 ? "s" : ""}
-                    </span>
-                  )}
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className="text-[7.5px] font-bold uppercase shrink-0 mt-[3px]"
+                    style={{ letterSpacing: "0.14em", color: "#94a3b8", minWidth: 36 }}
+                  >
+                    Watch
+                  </span>
+                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                    <p className="text-[11px] text-ink-secondary leading-snug flex-1">
+                      {t.second_order_effects[0]}
+                    </p>
+                    {t.evidence_count > 0 && (
+                      <span className="text-[9px] text-ink-muted shrink-0 tabular-nums self-start">
+                        {t.evidence_count}s
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1105,44 +1116,69 @@ export default function MarketsPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7">
 
-      {/* ── Page header ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2.5">
-          <BarChart2 size={18} className="text-accent" />
-          <h1 className="text-xl font-bold text-ink">Markets</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          {cacheAge !== undefined && (
-            <span className="text-2xs text-ink-muted flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              Feed {formatAge(cacheAge)}
-            </span>
-          )}
-          <span className="text-2xs text-ink-muted flex items-center gap-1.5">
-            <span className={cn(
-              "w-1.5 h-1.5 rounded-full shrink-0",
-              heartbeatStatus === "live"     ? "bg-emerald-400 animate-pulse" :
-              heartbeatStatus === "stale"    ? "bg-amber-400"                 :
-              heartbeatStatus === "degraded" ? "bg-amber-500"                 :
-              heartbeatStatus === "offline"  ? "bg-red-500"                   :
-                                               "bg-slate-400 animate-pulse",
-            )} />
-            {heartbeatStatus === "live"     ? "Prices live"   :
-             heartbeatStatus === "stale"    ? "Prices stale"  :
-             heartbeatStatus === "degraded" ? "Partial data"  :
-             heartbeatStatus === "offline"  ? "Data offline"  :
-             "Loading prices"}
-            {marketMeta?.fetchedAt && heartbeatStatus !== "loading" && (
-              <span className="ml-0.5">
-                · {formatAge(Math.floor((Date.now() - new Date(marketMeta.fetchedAt).getTime()) / 1000))}
+      {/* ── Argus identity header — dark band ────────────────────────────── */}
+      <div
+        className="-mx-4 sm:-mx-6 -mt-7 mb-6 px-4 sm:px-6 py-4"
+        style={{
+          background:    "rgba(6,10,22,0.97)",
+          borderBottom:  "1px solid rgba(255,255,255,0.07)",
+        }}
+      >
+        <div className="max-w-5xl mx-auto flex items-start justify-between gap-4">
+
+          {/* Left: brand + title */}
+          <div>
+            <div className="flex items-center gap-2.5 mb-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/argus-icon.png"
+                alt=""
+                style={{ width: 16, height: 16, borderRadius: 3, opacity: 0.85 }}
+              />
+              <span style={{ fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.28)" }}>
+                ARGUS
+              </span>
+              <div style={{ width: 1, height: 10, background: "rgba(255,255,255,0.10)" }} />
+              <h1 style={{ fontSize: "14px", fontWeight: 600, color: "rgba(255,255,255,0.90)", letterSpacing: "0.02em" }}>
+                Markets
+              </h1>
+            </div>
+            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.36)", letterSpacing: "0.02em" }}>
+              Macro, equities, rates, and global market moves.
+            </p>
+          </div>
+
+          {/* Right: live status */}
+          <div className="flex items-center gap-3 shrink-0 self-center">
+            {cacheAge !== undefined && (
+              <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.38)" }} className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                Feed {formatAge(cacheAge)}
               </span>
             )}
-          </span>
+            <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.38)" }} className="flex items-center gap-1.5">
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full shrink-0",
+                heartbeatStatus === "live"     ? "bg-emerald-400 animate-pulse" :
+                heartbeatStatus === "stale"    ? "bg-amber-400"                 :
+                heartbeatStatus === "degraded" ? "bg-amber-500"                 :
+                heartbeatStatus === "offline"  ? "bg-red-500"                   :
+                                                 "bg-slate-400 animate-pulse",
+              )} />
+              {heartbeatStatus === "live"     ? "Prices live"   :
+               heartbeatStatus === "stale"    ? "Prices stale"  :
+               heartbeatStatus === "degraded" ? "Partial data"  :
+               heartbeatStatus === "offline"  ? "Data offline"  :
+               "Loading prices"}
+              {marketMeta?.fetchedAt && heartbeatStatus !== "loading" && (
+                <span className="ml-0.5" style={{ color: "rgba(255,255,255,0.24)" }}>
+                  · {formatAge(Math.floor((Date.now() - new Date(marketMeta.fetchedAt).getTime()) / 1000))}
+                </span>
+              )}
+            </span>
+          </div>
         </div>
       </div>
-      <p className="text-sm text-ink-secondary mb-4">
-        Macro, equities, rates, and global market moves.
-      </p>
 
       {/* Regime banner — shown when structured brief is available */}
       {data?.market_brief && !isLoading && (
