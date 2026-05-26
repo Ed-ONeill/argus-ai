@@ -65,10 +65,9 @@ function isMarketOpen(): boolean {
   }
 }
 
-// ── Crumb cache ───────────────────────────────────────────────────────────────
+// ── Yahoo crumb cache ─────────────────────────────────────────────────────────
 // Yahoo Finance requires a session cookie + crumb for the v8 chart API on
 // cloud server IPs.  We cache the crumb for 20 min (well within Yahoo's TTL).
-// Module-level state persists across requests in Railway's Node.js runtime.
 
 interface CrumbCache {
   crumb:     string;
@@ -87,8 +86,6 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
 
   // Step 1: Visit Yahoo Finance to receive session cookies (A1, A3, etc.).
   // NOTE: fc.yahoo.com (old GDPR consent endpoint) is now defunct — returns 404.
-  // finance.yahoo.com is the correct seed URL. We try two URLs in case one is
-  // rate-limited from cloud IPs (Railway/Vercel).
   const CONSENT_URLS = ["https://finance.yahoo.com", "https://yahoo.com"];
   let cookies = "";
   for (const consentUrl of CONSENT_URLS) {
@@ -144,14 +141,13 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
     }
   }
 
-  // Crumb unavailable — proceed without it; tickers will likely return 401
   console.warn("[market-data] crumb: could not acquire — proceeding without auth (expect 401s)");
   return { crumb: "", cookies };
 }
 
-// ── Yahoo Finance fetch helpers ───────────────────────────────────────────────
+// ── Yahoo Finance v8/chart (fallback) ─────────────────────────────────────────
 
-async function fetchFromHost(
+async function fetchFromYahooHost(
   host:    string,
   symbol:  string,
   crumb:   string,
@@ -165,8 +161,6 @@ async function fetchFromHost(
       ...YF_BASE_HEADERS,
       ...(cookies ? { Cookie: cookies } : {}),
     },
-    // No next.revalidate here — the route's own Cache-Control header handles caching.
-    // Per-fetch revalidate can poison the cache with a failed response for 5 min.
   });
 }
 
@@ -182,7 +176,7 @@ async function fetchTickerFromYahoo(
   for (const host of YF_HOSTS) {
     let res: Response;
     try {
-      res = await fetchFromHost(host, symbol, crumb, cookies);
+      res = await fetchFromYahooHost(host, symbol, crumb, cookies);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(`[market-data] provider=yahoo symbol=${key} host=${host} status=network_error:`, lastError.message);
@@ -192,7 +186,6 @@ async function fetchTickerFromYahoo(
     if (!res.ok) {
       lastError = new Error(`HTTP ${res.status}`);
       console.error(`[market-data] provider=yahoo symbol=${key} host=${host} status=${res.status}`);
-      // 401 = crumb expired/invalid — invalidate cache so next request re-fetches
       if (res.status === 401) _crumbCache = null;
       continue;
     }
@@ -215,7 +208,6 @@ async function fetchTickerFromYahoo(
     }
 
     const meta = result.meta as Record<string, unknown>;
-
     const rawPrice =
       (meta.regularMarketPrice            as number | undefined) ||
       (meta.regularMarketPreviousClose    as number | undefined) ||
@@ -223,19 +215,16 @@ async function fetchTickerFromYahoo(
       (meta.previousClose                 as number | undefined) ||
       0;
 
-    if (!rawPrice || !isFinite(rawPrice)) {
-      throw new Error(`invalid price data for ${key}: ${rawPrice}`);
-    }
+    if (!rawPrice || !isFinite(rawPrice)) throw new Error(`invalid price data for ${key}: ${rawPrice}`);
 
     const price         = rawPrice;
-    const previousClose =
-      ((meta.chartPreviousClose ?? meta.previousClose) as number | undefined) ?? price;
+    const previousClose = ((meta.chartPreviousClose ?? meta.previousClose) as number | undefined) ?? price;
     const change        = price - previousClose;
     const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0;
 
-    const indicators    = result.indicators as { quote?: { close?: (number | null)[] }[] } | undefined;
-    const rawCloses     = indicators?.quote?.[0]?.close ?? [];
-    const history       = rawCloses
+    const indicators = result.indicators as { quote?: { close?: (number | null)[] }[] } | undefined;
+    const rawCloses  = indicators?.quote?.[0]?.close ?? [];
+    const history    = rawCloses
       .filter((v): v is number => v !== null && isFinite(v) && v > 0)
       .slice(-30);
 
@@ -246,7 +235,104 @@ async function fetchTickerFromYahoo(
   throw lastError;
 }
 
-// ── Alternative providers (no-auth, cloud-IP safe) ───────────────────────────
+// ── Stooq live-quote provider ─────────────────────────────────────────────────
+// Uses /q/l/ (live quote endpoint), NOT /q/d/l/ (historical download, requires API key).
+// Format: sd2t2ohlcv = Symbol, Date, Time, Open, High, Low, Close, Volume
+
+const STOOQ_SYMBOLS: Partial<Record<string, string>> = {
+  "SPY":  "spy.us",
+  "QQQ":  "qqq.us",
+  "IWM":  "iwm.us",
+  "TNX":  "tnx.us",
+  "GC=F": "gc.f",
+  "BZ=F": "bz.f",
+  "VIX":  "^vix",
+  "DXY":  "dx.f",
+};
+
+async function fetchFromStooq(key: string, label: string): Promise<TickerData> {
+  const stooqSym = STOOQ_SYMBOLS[key];
+  if (!stooqSym) throw new Error(`no Stooq symbol mapping for ${key}`);
+
+  const url = `https://stooq.com/q/l/?s=${encodeURIComponent(stooqSym)}&f=sd2t2ohlcv&h&e=csv`;
+  const res = await fetch(url, {
+    signal:  AbortSignal.timeout(8_000),
+    headers: { "User-Agent": YF_UA, Accept: "text/csv,text/plain,*/*" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const text = await res.text();
+
+  // Stooq returns API key instructions if the endpoint requires auth
+  if (/apikey|api_key|captcha/i.test(text)) throw new Error("Stooq requires API key");
+
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) throw new Error(`Stooq: no data rows for ${key}`);
+
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const row     = lines[lines.length - 1].split(",").map(v => v.trim());
+  const col     = (name: string) => row[headers.indexOf(name)] ?? "";
+
+  const close = parseFloat(col("close"));
+  const open  = parseFloat(col("open"));
+
+  if (!close || !isFinite(close) || close <= 0) {
+    throw new Error(`Stooq: invalid price for ${key}: "${col("close")}"`);
+  }
+
+  // Day open is used as proxy for previous close — directionally correct for intraday display
+  const ref           = open > 0 && isFinite(open) ? open : close;
+  const change        = close - ref;
+  const changePercent = ref > 0 ? (change / ref) * 100 : 0;
+
+  console.log(`[market-data] provider=stooq symbol=${key} status=ok price=${close.toFixed(2)}`);
+  return { key, label, price: close, change, changePercent, history: [] };
+}
+
+// ── US Treasury provider for 10Y yield ───────────────────────────────────────
+// Public OData feed, no auth required.
+// Tries current month, then prior month to handle early-month publishing delays.
+
+async function fetchTNXFromTreasury(): Promise<TickerData> {
+  const now = new Date();
+
+  for (let offset = 0; offset <= 1; offset++) {
+    const d  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+    const ym = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const url = `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=${ym}`;
+
+    try {
+      const res = await fetch(url, {
+        signal:  AbortSignal.timeout(10_000),
+        headers: { Accept: "application/xml,text/xml,*/*" },
+      });
+      if (!res.ok) continue;
+
+      const text = await res.text();
+      // Matches <d:BC_10YEAR m:type="Edm.Double">4.51</d:BC_10YEAR>
+      const matches = [...text.matchAll(/<d:BC_10YEAR[^>]*>([\d.]+)<\/d:BC_10YEAR>/g)];
+      if (matches.length === 0) continue;
+
+      const rate = parseFloat(matches[matches.length - 1][1]);
+      if (!rate || !isFinite(rate)) continue;
+
+      let change = 0, changePercent = 0;
+      if (matches.length >= 2) {
+        const prev = parseFloat(matches[matches.length - 2][1]);
+        if (prev > 0) { change = rate - prev; changePercent = (change / prev) * 100; }
+      }
+
+      console.log(`[market-data] provider=treasury symbol=TNX status=ok rate=${rate.toFixed(3)}`);
+      return { key: "TNX", label: "10Y Yield", price: rate, change, changePercent, history: [] };
+    } catch {
+      // try next offset
+    }
+  }
+
+  throw new Error("Treasury: no 10Y yield data found");
+}
+
+// ── CoinGecko / Binance providers for BTC ────────────────────────────────────
 
 async function fetchBTCFromCoinGecko(): Promise<TickerData> {
   const res = await fetch(
@@ -289,20 +375,31 @@ async function fetchTicker(
 ): Promise<TickerData> {
   // BTC: CoinGecko → Binance → Yahoo fallback
   if (key === "BTC-USD") {
-    try {
-      return await fetchBTCFromCoinGecko();
-    } catch (err) {
-      console.warn(`[market-data] provider=coingecko symbol=BTC-USD status=failed —`, String(err));
-    }
-    try {
-      return await fetchBTCFromBinance();
-    } catch (err) {
-      console.warn(`[market-data] provider=binance symbol=BTC-USD status=failed —`, String(err));
-    }
+    try { return await fetchBTCFromCoinGecko(); }
+    catch (err) { console.warn(`[market-data] provider=coingecko symbol=BTC-USD status=failed —`, String(err)); }
+    try { return await fetchBTCFromBinance(); }
+    catch (err) { console.warn(`[market-data] provider=binance symbol=BTC-USD status=failed —`, String(err)); }
     console.log(`[market-data] provider=yahoo symbol=BTC-USD status=fallback`);
+    return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
   }
 
-  // All other tickers (and BTC fallback): Yahoo Finance with crumb auth
+  // TNX: US Treasury XML → Stooq → Yahoo fallback
+  if (key === "TNX") {
+    try { return await fetchTNXFromTreasury(); }
+    catch (err) { console.warn(`[market-data] provider=treasury symbol=TNX status=failed —`, String(err)); }
+    try { return await fetchFromStooq(key, label); }
+    catch (err) { console.warn(`[market-data] provider=stooq symbol=TNX status=failed —`, String(err)); }
+    console.log(`[market-data] provider=yahoo symbol=TNX status=fallback`);
+    return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
+  }
+
+  // Equities / commodities / indices: Stooq → Yahoo fallback
+  if (STOOQ_SYMBOLS[key]) {
+    try { return await fetchFromStooq(key, label); }
+    catch (err) { console.warn(`[market-data] provider=stooq symbol=${key} status=failed —`, String(err)); }
+    console.log(`[market-data] provider=yahoo symbol=${key} status=fallback`);
+  }
+
   return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
 }
 
@@ -310,7 +407,6 @@ async function fetchTicker(
 
 export async function GET() {
   console.log(`[market-data] GET  tickers=${TICKERS.map(t => t.key).join(",")}`);
-  // Acquire (or reuse cached) crumb before fetching any tickers
   const { crumb, cookies } = await getYahooCrumb();
 
   const results = await Promise.allSettled(
