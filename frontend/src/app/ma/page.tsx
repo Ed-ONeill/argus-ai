@@ -2,11 +2,14 @@
 
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network } from "lucide-react";
+import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb } from "lucide-react";
 import { useMAIntelligence, type MADeal, type DealType } from "@/hooks/useMAIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
+import { useMarketData } from "@/hooks/useMarketData";
 import { useFeed } from "@/hooks/useFeed";
 import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
+import { explainMAActivity } from "@/lib/themeIntelligence";
+import { computeCapitalFlow } from "@/lib/capitalFlow";
 import { cn } from "@/lib/utils";
 
 // ── Deal type config ──────────────────────────────────────────────────────────
@@ -135,13 +138,41 @@ function BreakdownRow({ label, count, total, color }: { label: string; count: nu
 
 export default function MAPage() {
   const { deals, breakdown, sponsors, sectorDistribution, totalDealCount, isLoading, isError } = useMAIntelligence();
-  const { riskRegime } = useMarketState();
-  const { data: feedData } = useFeed();
+  const { riskRegime, volRegime } = useMarketState();
+  const { data: feedData }  = useFeed();
+  const { data: marketData } = useMarketData();
 
   const maThemes = useMemo(() => {
     const all = feedData?.theme_intelligence ?? [];
     return filterMAThemes(all).slice(0, 4);
   }, [feedData]);
+
+  // Capital flow layers for M&A rationale context
+  const capitalFlow = useMemo(() => {
+    const tnxRate = marketData?.["TNX"]?.price ?? null;
+    return computeCapitalFlow({
+      riskRegime,
+      volRegime,
+      regime: feedData?.sector_data?.derived_regime ?? null,
+      tnxRate,
+      maDealCount:   deals.length,
+      vcDealCount:   0,
+      ipoFilerCount: 0,
+    });
+  }, [riskRegime, volRegime, feedData, marketData, deals.length]);
+
+  const maRationale = useMemo(() => {
+    const creditLayer = capitalFlow.layers[2]; // Credit/Leverage
+    const maLayer     = capitalFlow.layers[3]; // M&A Activity
+    if (!creditLayer || !maLayer) return null;
+    return explainMAActivity(
+      deals.map(d => ({ dealType: d.dealType, sector: d.sector, peFirm: d.peFirm })),
+      maThemes,
+      feedData?.sector_data?.derived_regime ?? null,
+      { status: creditLayer.status, signal: creditLayer.signal, detail: creditLayer.detail },
+      { status: maLayer.status,     signal: maLayer.signal },
+    );
+  }, [deals, maThemes, feedData, capitalFlow]);
 
   const regimeColor =
     riskRegime === "risk-on"  ? "#52b0c8" :
@@ -223,6 +254,19 @@ export default function MAPage() {
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>Loading…</span>
               )}
             </div>
+
+            {/* M&A Rationale */}
+            {maRationale && !isLoading && deals.length > 0 && (
+              <div
+                className="rounded-xl border px-4 py-3 mb-4 flex items-start gap-2.5"
+                style={{ background: "rgba(167,139,250,0.05)", borderColor: "rgba(167,139,250,0.14)" }}
+              >
+                <Lightbulb size={12} className="shrink-0 mt-[2px]" style={{ color: "rgba(167,139,250,0.60)" }} />
+                <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
+                  {maRationale}
+                </p>
+              </div>
+            )}
 
             {!isLoading && deals.length === 0 && (
               <div className="rounded-xl border p-8 text-center"

@@ -13,7 +13,10 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import type { StoryCluster, FeedItem, WhatMattersNowItem, MarketBrief, ThemeIntelligence } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
-import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
+import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
+import { buildThemeRelationshipMap, decomposeConfidence, detectContradictions, getConflictedThemeIds } from "@/lib/themeIntelligence";
+import { useMarketState } from "@/hooks/useMarketState";
+import type { SectorData } from "@/lib/types";
 
 
 // ── Snapshot tile config ───────────────────────────────────────────────────────
@@ -903,10 +906,28 @@ const QUALITY_CFG: Record<string, { label: string; cls: string }> = {
   speculative: { label: "Speculative", cls: "text-ink-muted"   },
 };
 
-function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
+function IntelligenceThemes({
+  themes,
+  sectorData,
+  riskRegime,
+  volRegime,
+}: {
+  themes:     ThemeIntelligence[];
+  sectorData: SectorData | null;
+  riskRegime: "risk-on" | "neutral" | "risk-off";
+  volRegime:  "low" | "moderate" | "elevated" | "high";
+}) {
   const visible = themes
     .filter(t => t.signal_strength === "strong" || t.signal_strength === "medium")
     .slice(0, 5);
+
+  const relMap = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
+  const contradictions = useMemo(
+    () => detectContradictions(visible, sectorData, riskRegime, volRegime),
+    [visible, sectorData, riskRegime, volRegime],
+  );
+  const conflictedIds = useMemo(() => getConflictedThemeIds(contradictions), [contradictions]);
+
   if (visible.length === 0) return (
     <div className="mb-5">
       <SectionHeader
@@ -925,35 +946,86 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
       />
       <div className="space-y-2.5">
         {visible.map(t => {
-          const cfg      = STRENGTH_CFG[t.signal_strength] ?? STRENGTH_CFG.weak;
-          const relCount = Object.keys(t.relationship_weights ?? {}).length;
-          const evState  = computeThemeEvolutionState(t);
-          const evMeta   = THEME_EVOLUTION_META[evState];
-          const evCls    = EVOLUTION_CLS[evState] ?? EVOLUTION_CLS.stabilizing;
+          const cfg        = STRENGTH_CFG[t.signal_strength] ?? STRENGTH_CFG.weak;
+          const relCount   = Object.keys(t.relationship_weights ?? {}).length;
+          const evState    = computeThemeEvolutionState(t);
+          const evMeta     = THEME_EVOLUTION_META[evState];
+          const evCls      = EVOLUTION_CLS[evState] ?? EVOLUTION_CLS.stabilizing;
+          const lcStage    = computeThemeLifecycleStage(t);
+          const lcMeta     = THEME_LIFECYCLE_META[lcStage];
+          const isConflict = conflictedIds.has(t.id);
+          const rel        = relMap.get(t.id);
+          const upstream   = rel?.upstream.slice(0, 3) ?? [];
+          const connected  = rel?.connected.slice(0, 2) ?? [];
+          const confidence = decomposeConfidence(t);
 
           return (
             <div
               key={t.id}
               className="bg-surface rounded-xl border border-edge px-4 py-3 space-y-2"
             >
-              {/* ── Top strip: momentum + strength + confidence ───────────── */}
+              {/* ── Top strip: evolution + lifecycle + strength + confidence + conflict ── */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={cn("text-[9.5px] font-bold px-1.5 py-px rounded border", evCls)}>
                   {evMeta.icon} {evMeta.label}
+                </span>
+                <span
+                  className="text-[9.5px] font-bold px-1.5 py-px rounded border"
+                  style={{ color: lcMeta.color, background: lcMeta.bg, borderColor: lcMeta.border }}
+                >
+                  {lcMeta.label}
                 </span>
                 <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
                   <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
                   {t.signal_strength}
                 </span>
                 <div className="flex items-center gap-1.5 ml-auto">
-                  <div className="w-16 h-[2.5px] rounded-full bg-raised overflow-hidden">
+                  {/* Confidence decomposition micro-bars */}
+                  <div className="flex items-center gap-1 mr-0.5">
+                    {confidence.map(c => (
+                      <div key={c.label} className="flex flex-col items-center gap-[2px]" title={`${c.label}: ${c.value}% — ${c.description}`}>
+                        <div className="w-[18px] h-[3px] rounded-full bg-raised overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${c.value}%`,
+                              background: c.direction === "positive" ? "#10b981" :
+                                          c.direction === "negative" ? "#ef4444" : "#94a3b8",
+                            }}
+                          />
+                        </div>
+                        <span className="text-[7px] text-ink-muted/60 leading-none">{c.label[0]}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="w-12 h-[2.5px] rounded-full bg-raised overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${t.confidence}%`, background: cfg.bar }} />
                   </div>
                   <span className="text-[9.5px] font-bold tabular-nums" style={{ color: cfg.bar }}>
                     {t.confidence_label || `${t.confidence}%`}
                   </span>
+                  {isConflict && (
+                    <span className="text-[10px] text-amber-500" title="Signal conflicts detected">⚠</span>
+                  )}
                 </div>
               </div>
+
+              {/* ── Driven by (upstream macro factors) ───────────────────── */}
+              {upstream.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    className="text-[7.5px] font-bold uppercase shrink-0"
+                    style={{ letterSpacing: "0.14em", color: "#94a3b8", minWidth: 36 }}
+                  >
+                    By
+                  </span>
+                  {upstream.map(u => (
+                    <span key={u} className="text-[9px] text-ink-muted px-1 py-px rounded bg-raised border border-edge">
+                      {u}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* ── Driver ─────────────────────────────────────────────────── */}
               <div className="flex items-start gap-2.5">
@@ -1015,6 +1087,32 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
                 </div>
               )}
 
+              {/* ── Connected themes ───────────────────────────────────────── */}
+              {connected.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    className="text-[7.5px] font-bold uppercase shrink-0"
+                    style={{ letterSpacing: "0.14em", color: "#94a3b8", minWidth: 36 }}
+                  >
+                    Link
+                  </span>
+                  {connected.map(c => (
+                    <span
+                      key={c.id}
+                      className="text-[9px] font-medium px-1.5 py-px rounded border"
+                      style={{
+                        color: c.strength === "strong" ? "#38bdf8" : "#94a3b8",
+                        background: c.strength === "strong" ? "rgba(56,189,248,0.06)" : "var(--color-raised)",
+                        borderColor: c.strength === "strong" ? "rgba(56,189,248,0.18)" : "var(--color-edge)",
+                      }}
+                      title={c.linkType}
+                    >
+                      {c.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* ── Watch ──────────────────────────────────────────────────── */}
               {t.second_order_effects[0] && (
                 <div className="flex items-start gap-2.5">
@@ -1066,6 +1164,7 @@ export default function MarketsPage() {
 
   const { data: marketData, meta: marketMeta, heartbeatStatus, marketOpen } = useMarketData();
   const { data, isLoading }      = useFeed({ use_ai: true });
+  const { riskRegime, volRegime } = useMarketState();
   const { savedIds, toggleSave } = useSaved();
 
   const clusters      = data?.clusters              ?? [];
@@ -1301,7 +1400,12 @@ export default function MarketsPage() {
       {primaryDriver && <PrimaryDriver item={primaryDriver} marketData={marketData} />}
 
       {/* 4b. Intelligence Themes */}
-      <IntelligenceThemes themes={themes} />
+      <IntelligenceThemes
+        themes={themes}
+        sectorData={data?.sector_data ?? null}
+        riskRegime={riskRegime}
+        volRegime={volRegime}
+      />
 
       {/* 5. Clustered themes */}
       <div ref={clusterRef}>

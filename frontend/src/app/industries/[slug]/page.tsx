@@ -35,7 +35,7 @@ import {
 } from "@/lib/sectorIntelligence";
 import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
-import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
+import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -851,12 +851,14 @@ export default function IndustryDetailPage() {
                     const relWeight = rel ? Math.round(rel.weight * 100) : null;
                     const relDir    = rel?.direction ?? null;
                     const relType   = rel?.type ?? null;
-                    const evState = computeThemeEvolutionState(t);
-                    const evMeta  = THEME_EVOLUTION_META[evState];
+                    const evState  = computeThemeEvolutionState(t);
+                    const evMeta   = THEME_EVOLUTION_META[evState];
+                    const lcStage  = computeThemeLifecycleStage(t);
+                    const lcMeta   = THEME_LIFECYCLE_META[lcStage];
 
                     return (
                       <div key={t.id} className="space-y-1.5 pb-4 last:pb-0 last:border-0 border-b border-edge/40">
-                        {/* Name + momentum + strength */}
+                        {/* Name + evolution + lifecycle + strength */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
                             {t.name}
@@ -866,6 +868,12 @@ export default function IndustryDetailPage() {
                             style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}
                           >
                             {evMeta.icon} {evMeta.label}
+                          </span>
+                          <span
+                            className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0"
+                            style={{ color: lcMeta.color, background: lcMeta.bg, borderColor: lcMeta.border }}
+                          >
+                            {lcMeta.label}
                           </span>
                           <span className={cn(
                             "text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",

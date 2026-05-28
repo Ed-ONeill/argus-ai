@@ -165,3 +165,67 @@ export function filterCapitalFlowThemes(themes: ThemeIntelligence[]): ThemeIntel
     .filter(t => themeMatchesKeywords(t, CAPITAL_KW))
     .sort((a, b) => (b.persistence_score ?? 0) - (a.persistence_score ?? 0));
 }
+
+// ── Theme Lifecycle ───────────────────────────────────────────────────────────
+
+export type ThemeLifecycleStage = "emerging" | "building" | "dominant" | "maturing" | "retiring";
+
+export interface ThemeLifecycleMeta {
+  label:       string;
+  color:       string;
+  bg:          string;
+  border:      string;
+  description: string;
+}
+
+export const THEME_LIFECYCLE_META: Record<ThemeLifecycleStage, ThemeLifecycleMeta> = {
+  emerging:  {
+    label: "Emerging",  color: "#38bdf8",
+    bg: "rgba(56,189,248,0.08)",   border: "rgba(56,189,248,0.22)",
+    description: "Newly detected — conviction still forming",
+  },
+  building:  {
+    label: "Building",  color: "#a78bfa",
+    bg: "rgba(167,139,250,0.08)",  border: "rgba(167,139,250,0.22)",
+    description: "Evidence accumulating, confidence rising",
+  },
+  dominant:  {
+    label: "Dominant",  color: "#22c55e",
+    bg: "rgba(34,197,94,0.08)",    border: "rgba(34,197,94,0.22)",
+    description: "Established, high-confidence, persistent",
+  },
+  maturing:  {
+    label: "Maturing",  color: "#f59e0b",
+    bg: "rgba(245,158,11,0.08)",   border: "rgba(245,158,11,0.22)",
+    description: "Past peak — watch for rotation or reversal",
+  },
+  retiring:  {
+    label: "Retiring",  color: "#94a3b8",
+    bg: "rgba(148,163,184,0.06)",  border: "rgba(148,163,184,0.16)",
+    description: "Signal fading — consensus unwinding",
+  },
+};
+
+export function computeThemeLifecycleStage(t: ThemeIntelligence): ThemeLifecycleStage {
+  const persist  = t.persistence_score  ?? 50;
+  const days     = t.persistence_days   ?? 0;
+  const cycles   = t.persistence_cycles ?? 0;
+  const strength = t.signal_strength    ?? "weak";
+  const evState  = computeThemeEvolutionState(t);
+
+  // Retiring: weak and actively fading/reversing
+  if (evState === "reversing" && persist < 40) return "retiring";
+  if (strength === "weak" && (evState === "reversing" || evState === "weakening")) return "retiring";
+
+  // Emerging: very new, low persistence, little cycle history
+  if (persist < 25 || (days < 5 && cycles <= 1)) return "emerging";
+
+  // Maturing: established but showing decline
+  if (persist >= 55 && (evState === "weakening" || evState === "peaking")) return "maturing";
+
+  // Dominant: well-established, active signal
+  if (persist >= 55 && strength !== "weak") return "dominant";
+
+  // Building: in between — growing but not yet established
+  return "building";
+}
