@@ -2,9 +2,11 @@
 
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight } from "lucide-react";
+import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network } from "lucide-react";
 import { useMAIntelligence, type MADeal, type DealType } from "@/hooks/useMAIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
+import { useFeed } from "@/hooks/useFeed";
+import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
 import { cn } from "@/lib/utils";
 
 // ── Deal type config ──────────────────────────────────────────────────────────
@@ -134,6 +136,12 @@ function BreakdownRow({ label, count, total, color }: { label: string; count: nu
 export default function MAPage() {
   const { deals, breakdown, sponsors, sectorDistribution, totalDealCount, isLoading, isError } = useMAIntelligence();
   const { riskRegime } = useMarketState();
+  const { data: feedData } = useFeed();
+
+  const maThemes = useMemo(() => {
+    const all = feedData?.theme_intelligence ?? [];
+    return filterMAThemes(all).slice(0, 4);
+  }, [feedData]);
 
   const regimeColor =
     riskRegime === "risk-on"  ? "#52b0c8" :
@@ -301,6 +309,44 @@ export default function MAPage() {
                       color="#52b0c8"
                     />
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* M&A Narrative Themes */}
+            {maThemes.length > 0 && (
+              <div className="rounded-xl border p-5"
+                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Network size={12} style={{ color: "rgba(255,255,255,0.36)" }} />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
+                    Narrative Themes
+                  </h3>
+                </div>
+                <div className="space-y-3">
+                  {maThemes.map(t => {
+                    const evState = computeThemeEvolutionState(t);
+                    const evMeta  = THEME_EVOLUTION_META[evState];
+                    return (
+                      <div key={t.id} className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                            style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}>
+                            {evMeta.icon} {evMeta.label}
+                          </span>
+                          <span className="text-xs font-medium flex-1 truncate"
+                            style={{ color: "rgba(255,255,255,0.72)" }}>
+                            {t.name}
+                          </span>
+                        </div>
+                        <p className="text-[10px] italic leading-snug"
+                          style={{ color: "rgba(255,255,255,0.34)" }}>
+                          {getEvolutionNarrative(t.name, evState)}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

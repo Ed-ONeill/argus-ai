@@ -15,6 +15,12 @@ import {
   type FlowStatus,
 } from "@/lib/capitalFlow";
 import { useFeed } from "@/hooks/useFeed";
+import {
+  computeThemeEvolutionState,
+  getEvolutionNarrative,
+  filterCapitalFlowThemes,
+  THEME_EVOLUTION_META,
+} from "@/lib/themeEvolution";
 
 // ── Capital Flow Transmission ─────────────────────────────────────────────────
 
@@ -199,6 +205,11 @@ export default function PrivateMarketsPage() {
     [deals],
   );
 
+  const capitalThemes = useMemo(() => {
+    const all = feedData?.theme_intelligence ?? [];
+    return filterCapitalFlowThemes(all).slice(0, 4);
+  }, [feedData]);
+
   const capitalFlow = useMemo(() => computeCapitalFlow({
     riskRegime,
     volRegime,
@@ -364,6 +375,40 @@ export default function PrivateMarketsPage() {
                 </a>
               </div>
             </div>
+
+            {/* Capital Flow Themes */}
+            {capitalThemes.length > 0 && (
+              <div className="rounded-xl border p-5"
+                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
+                <h3 className="text-sm font-semibold mb-4" style={{ color: "rgba(255,255,255,0.78)" }}>
+                  Narrative Themes
+                </h3>
+                <div className="space-y-3">
+                  {capitalThemes.map(t => {
+                    const evState = computeThemeEvolutionState(t);
+                    const evMeta  = THEME_EVOLUTION_META[evState];
+                    return (
+                      <div key={t.id} className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                            style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}>
+                            {evMeta.icon} {evMeta.label}
+                          </span>
+                          <span className="text-xs font-medium flex-1 truncate"
+                            style={{ color: "rgba(255,255,255,0.72)" }}>
+                            {t.name}
+                          </span>
+                        </div>
+                        <p className="text-[10px] italic leading-snug"
+                          style={{ color: "rgba(255,255,255,0.36)" }}>
+                          {getEvolutionNarrative(t.name, evState)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* PE / Sponsor deals */}
             {sponsorDeals.length > 0 && (

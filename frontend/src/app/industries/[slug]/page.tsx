@@ -35,6 +35,7 @@ import {
 } from "@/lib/sectorIntelligence";
 import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
+import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -850,13 +851,8 @@ export default function IndustryDetailPage() {
                     const relWeight = rel ? Math.round(rel.weight * 100) : null;
                     const relDir    = rel?.direction ?? null;
                     const relType   = rel?.type ?? null;
-                    const momLabel  = t.momentum_label ?? "emerging";
-                    const momCls =
-                      momLabel === "accelerating" || momLabel === "strengthening"
-                        ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
-                      momLabel === "cooling" || momLabel === "reversing"
-                        ? "text-red-400 bg-red-500/10 border-red-500/20"
-                        : "text-ink-muted bg-edge border-edge";
+                    const evState = computeThemeEvolutionState(t);
+                    const evMeta  = THEME_EVOLUTION_META[evState];
 
                     return (
                       <div key={t.id} className="space-y-1.5 pb-4 last:pb-0 last:border-0 border-b border-edge/40">
@@ -865,11 +861,11 @@ export default function IndustryDetailPage() {
                           <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
                             {t.name}
                           </span>
-                          <span className={cn(
-                            "text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
-                            momCls,
-                          )}>
-                            {momLabel}
+                          <span
+                            className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0"
+                            style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}
+                          >
+                            {evMeta.icon} {evMeta.label}
                           </span>
                           <span className={cn(
                             "text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
@@ -878,6 +874,11 @@ export default function IndustryDetailPage() {
                             {t.signal_strength}
                           </span>
                         </div>
+
+                        {/* Evolution narrative */}
+                        <p className="text-[9.5px] text-ink-muted italic leading-snug -mt-0.5">
+                          {getEvolutionNarrative(t.name, evState)}
+                        </p>
 
                         {/* Confidence bar + impact */}
                         <div className="flex items-center gap-1.5">

@@ -13,6 +13,7 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import type { StoryCluster, FeedItem, WhatMattersNowItem, MarketBrief, ThemeIntelligence } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
+import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
 
 
 // ── Snapshot tile config ───────────────────────────────────────────────────────
@@ -885,13 +886,15 @@ const MOMENTUM_COLOR: Record<string, string> = {
   neutral: "#94a3b8",
 };
 
-const MOMENTUM_LABEL_CFG: Record<string, { icon: string; cls: string }> = {
-  accelerating:  { icon: "↑↑", cls: "text-emerald-600 bg-emerald-50 border-emerald-200" },
-  strengthening: { icon: "↑",  cls: "text-emerald-600 bg-emerald-50 border-emerald-200" },
-  stable:        { icon: "→",  cls: "text-ink-muted   bg-raised     border-edge"        },
-  cooling:       { icon: "↓",  cls: "text-amber-600   bg-amber-50   border-amber-200"   },
-  reversing:     { icon: "↓↓", cls: "text-red-600     bg-red-50     border-red-200"     },
-  emerging:      { icon: "✦",  cls: "text-blue-600    bg-blue-50    border-blue-200"    },
+// Evolution state Tailwind class map — mirrors THEME_EVOLUTION_META for CSS-variable pages
+const EVOLUTION_CLS: Record<string, string> = {
+  accelerating:  "text-emerald-600 bg-emerald-50  border-emerald-200",
+  strengthening: "text-emerald-600 bg-emerald-50  border-emerald-200",
+  broadening:    "text-sky-600     bg-sky-50       border-sky-200",
+  stabilizing:   "text-ink-muted   bg-raised       border-edge",
+  peaking:       "text-amber-600   bg-amber-50     border-amber-200",
+  weakening:     "text-orange-600  bg-orange-50    border-orange-200",
+  reversing:     "text-red-600     bg-red-50       border-red-200",
 };
 
 const QUALITY_CFG: Record<string, { label: string; cls: string }> = {
@@ -923,10 +926,10 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
       <div className="space-y-2.5">
         {visible.map(t => {
           const cfg      = STRENGTH_CFG[t.signal_strength] ?? STRENGTH_CFG.weak;
-          const mColor   = MOMENTUM_COLOR[t.momentum_direction] ?? MOMENTUM_COLOR.neutral;
-          const momCfg   = MOMENTUM_LABEL_CFG[t.momentum_label ?? "emerging"] ?? MOMENTUM_LABEL_CFG.emerging;
-          const qualCfg  = QUALITY_CFG[t.signal_quality ?? "speculative"] ?? QUALITY_CFG.speculative;
           const relCount = Object.keys(t.relationship_weights ?? {}).length;
+          const evState  = computeThemeEvolutionState(t);
+          const evMeta   = THEME_EVOLUTION_META[evState];
+          const evCls    = EVOLUTION_CLS[evState] ?? EVOLUTION_CLS.stabilizing;
 
           return (
             <div
@@ -935,8 +938,8 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
             >
               {/* ── Top strip: momentum + strength + confidence ───────────── */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={cn("text-[9.5px] font-bold px-1.5 py-px rounded border", momCfg.cls)}>
-                  {momCfg.icon} {t.momentum_label ?? "emerging"}
+                <span className={cn("text-[9.5px] font-bold px-1.5 py-px rounded border", evCls)}>
+                  {evMeta.icon} {evMeta.label}
                 </span>
                 <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-px rounded border ${cfg.cls}`}>
                   <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
@@ -969,6 +972,9 @@ function IntelligenceThemes({ themes }: { themes: ThemeIntelligence[] }) {
                       {t.description}
                     </p>
                   )}
+                  <p className="text-[10.5px] text-ink-muted italic leading-snug mt-0.5">
+                    {getEvolutionNarrative(t.name, evState)}
+                  </p>
                 </div>
               </div>
 
