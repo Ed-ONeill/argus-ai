@@ -2,13 +2,13 @@
 
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb } from "lucide-react";
+import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb, Users, Target } from "lucide-react";
 import { useMAIntelligence, type MADeal, type DealType } from "@/hooks/useMAIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useFeed } from "@/hooks/useFeed";
 import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
-import { explainMAActivity } from "@/lib/themeIntelligence";
+import { explainMAActivity, extractAcquirerProfiles, enrichSponsorProfiles } from "@/lib/themeIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
 import { cn } from "@/lib/utils";
 
@@ -174,6 +174,16 @@ export default function MAPage() {
     );
   }, [deals, maThemes, feedData, capitalFlow]);
 
+  const acquirerProfiles = useMemo(
+    () => extractAcquirerProfiles(deals.map(d => ({ entities: d.entities, sector: d.sector, dealType: d.dealType }))),
+    [deals],
+  );
+
+  const enrichedSponsors = useMemo(
+    () => enrichSponsorProfiles(sponsors, deals.map(d => ({ peFirm: d.peFirm, sector: d.sector }))),
+    [sponsors, deals],
+  );
+
   const regimeColor =
     riskRegime === "risk-on"  ? "#52b0c8" :
     riskRegime === "risk-off" ? "#f87171" : "#94a3b8";
@@ -311,23 +321,86 @@ export default function MAPage() {
               </div>
             </div>
 
-            {/* Active sponsors */}
-            {sponsors.length > 0 && (
+            {/* Sponsor Intelligence — enriched with sector breakdown */}
+            {enrichedSponsors.length > 0 && (
               <div className="rounded-xl border p-5"
                 style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
-                <h3 className="text-xs font-semibold uppercase tracking-widest mb-4"
-                  style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
-                  Active Sponsors
-                </h3>
-                <div className="space-y-2">
-                  {sponsors.map(s => (
-                    <div key={s.firm} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Building2 size={11} style={{ color: "#a78bfa" }} />
-                        <span className="text-xs" style={{ color: "rgba(255,255,255,0.72)" }}>{s.firm}</span>
+                <div className="flex items-center gap-2 mb-4">
+                  <Building2 size={12} style={{ color: "rgba(167,139,250,0.50)" }} />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
+                    Sponsor Intelligence
+                  </h3>
+                </div>
+                <div className="space-y-3">
+                  {enrichedSponsors.map(s => (
+                    <div key={s.firm}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.72)" }}>{s.firm}</span>
+                        <span className="text-[10px] font-mono font-bold" style={{ color: "#a78bfa" }}>
+                          {s.deals} deal{s.deals > 1 ? "s" : ""}
+                        </span>
                       </div>
-                      <span className="text-xs font-mono" style={{ color: "#a78bfa" }}>
-                        {s.deals} deal{s.deals > 1 ? "s" : ""}
+                      {s.sectors.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {s.sectors.map((sec, i) => (
+                            <span
+                              key={sec}
+                              className="text-[9px] px-1.5 py-px rounded"
+                              style={{
+                                background: i === 0 ? "rgba(167,139,250,0.12)" : "rgba(255,255,255,0.04)",
+                                color:      i === 0 ? "#c4b5fd"                : "rgba(255,255,255,0.34)",
+                                border:     `1px solid ${i === 0 ? "rgba(167,139,250,0.20)" : "rgba(255,255,255,0.06)"}`,
+                              }}
+                            >
+                              {i === 0 && "● "}{sec}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Acquirer Intelligence — strategic deal entity activity */}
+            {acquirerProfiles.length > 0 && (
+              <div className="rounded-xl border p-5"
+                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Target size={12} style={{ color: "rgba(82,176,200,0.50)" }} />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
+                    Strategic Entities
+                  </h3>
+                </div>
+                <p className="text-[9.5px] mb-3 leading-snug" style={{ color: "rgba(255,255,255,0.24)" }}>
+                  Most active entities in strategic &amp; merger deals this window.
+                </p>
+                <div className="space-y-2.5">
+                  {acquirerProfiles.map(p => (
+                    <div key={p.name} className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[11px] font-bold font-mono" style={{ color: "#52b0c8" }}>
+                          {p.name}
+                        </span>
+                        {p.sectors.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {p.sectors.map(sec => (
+                              <span
+                                key={sec}
+                                className="text-[8px] px-1 py-px rounded"
+                                style={{ background: "rgba(82,176,200,0.08)", color: "rgba(82,176,200,0.60)", border: "1px solid rgba(82,176,200,0.12)" }}
+                              >
+                                {sec}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-mono shrink-0 mt-0.5" style={{ color: "rgba(255,255,255,0.30)" }}>
+                        ×{p.dealCount}
                       </span>
                     </div>
                   ))}

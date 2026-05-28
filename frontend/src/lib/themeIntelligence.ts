@@ -338,3 +338,119 @@ export function explainMAActivity(
     ? parts.join(" ")
     : `${deals.length} deals active — ${maLayer.signal.toLowerCase()} environment with ${creditLayer.signal.toLowerCase()} credit conditions.`;
 }
+
+// ── 5. Market Breadth Snapshot ────────────────────────────────────────────────
+
+export interface SectorParticipation {
+  sector:        string;
+  signalScore:   number;
+  themeCount:    number;
+  dominantTheme: string | null;
+  direction:     "positive" | "negative" | "mixed" | "neutral";
+}
+
+export function computeBreadthSnapshot(
+  themes:     ThemeIntelligence[],
+  sectorData: SectorData | null,
+): SectorParticipation[] {
+  if (!sectorData?.sectors?.length) return [];
+
+  return sectorData.sectors
+    .filter(s => s.signal_score > 0)
+    .map(s => {
+      const sLower   = s.name.toLowerCase();
+      const matching = themes.filter(t =>
+        t.related_industries.some(i => {
+          const iLower = i.toLowerCase();
+          return iLower.includes(sLower) || sLower.includes(iLower);
+        }),
+      );
+
+      const bullish = matching.filter(t => t.momentum_direction === "bullish").length;
+      const bearish = matching.filter(t => t.momentum_direction === "bearish").length;
+
+      const direction: SectorParticipation["direction"] =
+        bullish > 0 && bearish > 0 ? "mixed"    :
+        bullish > 0                ? "positive" :
+        bearish > 0                ? "negative" : "neutral";
+
+      const dominantTheme = [...matching]
+        .sort((a, b) => (b.persistence_score ?? 0) - (a.persistence_score ?? 0))[0]?.name ?? null;
+
+      return {
+        sector:        s.name,
+        signalScore:   s.signal_score,
+        themeCount:    matching.length,
+        dominantTheme,
+        direction,
+      };
+    })
+    .sort((a, b) => b.signalScore - a.signalScore);
+}
+
+// ── 6. Acquirer & Sponsor Intelligence ────────────────────────────────────────
+
+export interface AcquirerProfile {
+  name:      string;
+  dealCount: number;
+  sectors:   string[];
+}
+
+interface DealForAcquirer {
+  entities: string[];
+  sector:   string;
+  dealType: string;
+}
+
+export function extractAcquirerProfiles(deals: DealForAcquirer[]): AcquirerProfile[] {
+  const strategic = deals.filter(d => d.dealType === "strategic" || d.dealType === "merger");
+  const map       = new Map<string, Set<string>>();
+
+  for (const deal of strategic) {
+    for (const entity of deal.entities.slice(0, 2)) {
+      if (!entity || entity.trim().length === 0) continue;
+      if (!map.has(entity)) map.set(entity, new Set());
+      map.get(entity)!.add(deal.sector);
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([name, sectorSet]) => ({
+      name,
+      dealCount: strategic.filter(d => d.entities.includes(name)).length,
+      sectors:   Array.from(sectorSet),
+    }))
+    .filter(p => p.dealCount >= 1)
+    .sort((a, b) => b.dealCount - a.dealCount)
+    .slice(0, 6);
+}
+
+export interface EnrichedSponsor {
+  firm:      string;
+  deals:     number;
+  topSector: string | null;
+  sectors:   string[];
+}
+
+interface DealForSponsor {
+  peFirm: string | null;
+  sector: string;
+}
+
+export function enrichSponsorProfiles(
+  sponsors: { firm: string; deals: number }[],
+  deals:    DealForSponsor[],
+): EnrichedSponsor[] {
+  return sponsors.map(s => {
+    const firmDeals  = deals.filter(d => d.peFirm === s.firm);
+    const sectorMap  = new Map<string, number>();
+    for (const d of firmDeals) {
+      sectorMap.set(d.sector, (sectorMap.get(d.sector) ?? 0) + 1);
+    }
+    const sectors = Array.from(sectorMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([sector]) => sector);
+
+    return { firm: s.firm, deals: s.deals, topSector: sectors[0] ?? null, sectors: sectors.slice(0, 3) };
+  });
+}

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart2, TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle,
   Activity, Zap, ArrowUpRight, ArrowDownRight, X, Target, Network,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn, catColor } from "@/lib/utils";
 import { useFeed } from "@/hooks/useFeed";
@@ -13,8 +14,9 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import type { StoryCluster, FeedItem, WhatMattersNowItem, MarketBrief, ThemeIntelligence } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
-import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
-import { buildThemeRelationshipMap, decomposeConfidence, detectContradictions, getConflictedThemeIds } from "@/lib/themeIntelligence";
+import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META, type ThemeLifecycleStage } from "@/lib/themeEvolution";
+import { buildThemeRelationshipMap, decomposeConfidence, detectContradictions, getConflictedThemeIds, computeBreadthSnapshot } from "@/lib/themeIntelligence";
+import type { SectorParticipation } from "@/lib/themeIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
 import type { SectorData } from "@/lib/types";
 
@@ -875,6 +877,307 @@ function RegimeBanner({ brief }: { brief: MarketBrief }) {
 }
 
 
+// ── Lifecycle Journey Strip ────────────────────────────────────────────────────
+
+const LIFECYCLE_STAGES: ThemeLifecycleStage[] = ["emerging", "building", "dominant", "maturing", "retiring"];
+
+function LifecycleJourney({ stage }: { stage: ThemeLifecycleStage }) {
+  const currentIdx = LIFECYCLE_STAGES.indexOf(stage);
+  return (
+    <div
+      className="flex items-center w-full"
+      title={`Lifecycle: ${THEME_LIFECYCLE_META[stage].label} — ${THEME_LIFECYCLE_META[stage].description}`}
+    >
+      {LIFECYCLE_STAGES.map((s, i) => {
+        const isCurrent = i === currentIdx;
+        const isPast    = i <  currentIdx;
+        const sMeta     = THEME_LIFECYCLE_META[s];
+        return (
+          <div key={s} className={cn("flex items-center", i < LIFECYCLE_STAGES.length - 1 ? "flex-1" : "shrink-0")}>
+            <div
+              className="w-[7px] h-[7px] rounded-full shrink-0 transition-transform"
+              style={{
+                background:   isCurrent ? sMeta.color : isPast ? `${sMeta.color}45` : "transparent",
+                border:       `${isCurrent ? 2 : 1}px solid ${isCurrent ? sMeta.color : isPast ? `${sMeta.color}55` : "rgba(148,163,184,0.18)"}`,
+                transform:    isCurrent ? "scale(1.4)" : "none",
+              }}
+            />
+            {i < LIFECYCLE_STAGES.length - 1 && (
+              <div
+                className="flex-1 h-px mx-1"
+                style={{ background: i < currentIdx ? `${sMeta.color}30` : "rgba(148,163,184,0.10)" }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ── Theme Relationship Panel (expanded view) ──────────────────────────────────
+
+function RelationshipPanel({
+  theme,
+  upstream,
+  downstream,
+  connected,
+  conflicts,
+}: {
+  theme:      ThemeIntelligence;
+  upstream:   string[];
+  downstream: string[];
+  connected:  { id: string; name: string; linkType: string; strength: string }[];
+  conflicts:  { id: string; description: string; type: string; severity: string; themeIds: string[] }[];
+}) {
+  const lcStage = computeThemeLifecycleStage(theme);
+
+  return (
+    <motion.div
+      key="rel-panel"
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.2, ease: "easeInOut" }}
+      style={{ overflow: "hidden" }}
+    >
+      <div className="pt-3 mt-2 border-t border-edge/40 space-y-3.5">
+
+        {/* Timeline journey */}
+        <div>
+          <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2.5">
+            Lifecycle Timeline — {THEME_LIFECYCLE_META[lcStage].label}
+          </p>
+          <div className="px-2">
+            <LifecycleJourney stage={lcStage} />
+          </div>
+          <div className="flex justify-between mt-1.5 px-1">
+            {LIFECYCLE_STAGES.map(s => (
+              <span
+                key={s}
+                className="text-[6.5px] font-medium"
+                style={{
+                  color: s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.30)",
+                  fontWeight: s === lcStage ? 800 : 400,
+                }}
+              >
+                {THEME_LIFECYCLE_META[s].label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Causal chain: upstream → theme → downstream */}
+        {(upstream.length > 0 || downstream.length > 0) && (
+          <div>
+            <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
+              Causal Chain
+            </p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-x-2 gap-y-1">
+              {/* Upstream drivers */}
+              <div className="space-y-1 text-right">
+                {upstream.slice(0, 4).map(u => (
+                  <div key={u} className="flex items-center justify-end gap-1">
+                    <span className="text-[9px] text-ink-muted/70 leading-tight">{u}</span>
+                    <span className="text-[8px] text-ink-muted/25 shrink-0">→</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Center node */}
+              <div className="flex items-start justify-center pt-0.5">
+                <div
+                  className="px-2 py-1 rounded-lg border text-[8.5px] font-bold text-center leading-tight"
+                  style={{
+                    borderColor: "var(--color-edge-strong)",
+                    color:       "var(--color-ink)",
+                    background:  "var(--color-raised)",
+                    maxWidth:    84,
+                  }}
+                >
+                  {theme.name.length > 24 ? theme.name.slice(0, 22) + "…" : theme.name}
+                </div>
+              </div>
+
+              {/* Downstream effects */}
+              <div className="space-y-1">
+                {downstream.slice(0, 4).map(d => (
+                  <div key={d} className="flex items-center gap-1">
+                    <span className="text-[8px] text-ink-muted/25 shrink-0">→</span>
+                    <span className="text-[9px] text-ink-muted/70 leading-tight line-clamp-1">{d}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Connected themes */}
+        {connected.length > 0 && (
+          <div>
+            <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/40 mb-1.5">
+              Connected Themes
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {connected.map(c => {
+                const linkColor = c.linkType === "shared-story"  ? "#38bdf8" :
+                                  c.linkType === "shared-asset"  ? "#a78bfa" : "#94a3b8";
+                const bw        = c.strength === "strong" ? 1.5 : 1;
+                return (
+                  <span
+                    key={c.id}
+                    className="text-[9px] px-1.5 py-0.5 rounded"
+                    style={{
+                      color:      linkColor,
+                      background: `${linkColor}10`,
+                      border:     `${bw}px solid ${linkColor}28`,
+                    }}
+                    title={`${c.linkType.replace(/-/g, " ")} · ${c.strength}`}
+                  >
+                    {c.name}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Signal conflicts */}
+        {conflicts.length > 0 && (
+          <div>
+            <p className="text-[7px] font-bold uppercase tracking-widest text-amber-500/50 mb-1.5">
+              Signal Conflicts
+            </p>
+            <div className="space-y-1">
+              {conflicts.slice(0, 2).map(c => (
+                <div key={c.id} className="flex items-start gap-1.5">
+                  <span className="text-[9px] text-amber-500/60 shrink-0 mt-px">⚠</span>
+                  <p className="text-[9px] text-ink-muted/60 leading-snug">{c.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </motion.div>
+  );
+}
+
+
+// ── Market Breadth Snapshot ────────────────────────────────────────────────────
+
+function BreadthSnapshot({
+  themes,
+  sectorData,
+}: {
+  themes:     ThemeIntelligence[];
+  sectorData: SectorData | null;
+}) {
+  const snapshot = useMemo(
+    () => computeBreadthSnapshot(themes, sectorData),
+    [themes, sectorData],
+  );
+
+  if (snapshot.length === 0) return null;
+
+  const active     = snapshot.filter(s => s.themeCount > 0);
+  const confirming = snapshot.filter(s => s.direction === "positive" || s.direction === "mixed");
+  const maxScore   = snapshot[0]?.signalScore ?? 100;
+
+  const DIR_COLOR: Record<SectorParticipation["direction"], string> = {
+    positive: "#10b981",
+    negative: "#ef4444",
+    mixed:    "#f59e0b",
+    neutral:  "#94a3b8",
+  };
+
+  return (
+    <div className="mb-5">
+      <SectionHeader
+        label="Market Breadth"
+        icon={<BarChart2 size={13} className="text-accent shrink-0" />}
+      />
+
+      {/* Breadth summary bar */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-2 flex-1">
+          <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden max-w-[120px]">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width:      `${snapshot.length > 0 ? (confirming.length / snapshot.length) * 100 : 0}%`,
+                background: confirming.length / snapshot.length >= 0.6 ? "#10b981" :
+                            confirming.length / snapshot.length >= 0.3 ? "#f59e0b" : "#ef4444",
+              }}
+            />
+          </div>
+          <span className="text-[10.5px] text-ink-secondary">
+            <span className="font-bold">{confirming.length}</span>
+            <span className="text-ink-muted"> of {snapshot.length} sectors confirming</span>
+          </span>
+        </div>
+        {active.length > 0 && (
+          <span className="text-[9.5px] text-ink-muted shrink-0">
+            {active.length} with active themes
+          </span>
+        )}
+      </div>
+
+      {/* Sector list with signal bars */}
+      <div className="space-y-1.5">
+        {snapshot.map(s => {
+          const pct   = maxScore > 0 ? (s.signalScore / maxScore) * 100 : 0;
+          const color = DIR_COLOR[s.direction];
+          return (
+            <div key={s.sector} className="flex items-center gap-2.5 group">
+              {/* Sector name */}
+              <span className="text-[10px] text-ink-secondary w-24 shrink-0 truncate">
+                {s.sector}
+              </span>
+
+              {/* Signal bar */}
+              <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden max-w-[100px]">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${pct}%`, background: s.themeCount > 0 ? color : "#94a3b830" }}
+                />
+              </div>
+
+              {/* Score */}
+              <span className="text-[9px] tabular-nums text-ink-muted/70 w-6 text-right shrink-0">
+                {Math.round(s.signalScore)}
+              </span>
+
+              {/* Theme badge */}
+              {s.themeCount > 0 ? (
+                <span
+                  className="text-[8px] font-bold px-1.5 py-px rounded shrink-0"
+                  style={{ color, background: `${color}14` }}
+                  title={s.dominantTheme ?? ""}
+                >
+                  ×{s.themeCount}
+                </span>
+              ) : (
+                <span className="w-8 shrink-0" />
+              )}
+
+              {/* Dominant theme name — shown on hover-equivalent (always visible, truncated) */}
+              {s.dominantTheme && (
+                <span className="text-[8.5px] text-ink-muted/40 truncate min-w-0 flex-1 hidden sm:block">
+                  {s.dominantTheme}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 // ── Intelligence Themes ───────────────────────────────────────────────────────
 
 const STRENGTH_CFG = {
@@ -917,6 +1220,8 @@ function IntelligenceThemes({
   riskRegime: "risk-on" | "neutral" | "risk-off";
   volRegime:  "low" | "moderate" | "elevated" | "high";
 }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   const visible = themes
     .filter(t => t.signal_strength === "strong" || t.signal_strength === "medium")
     .slice(0, 5);
@@ -1134,6 +1439,34 @@ function IntelligenceThemes({
                   </div>
                 </div>
               )}
+
+              {/* ── Expand toggle ──────────────────────────────────────────── */}
+              <button
+                onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}
+                className="flex items-center gap-1 w-full pt-1.5 mt-0.5 border-t border-edge/30
+                           text-[9px] text-ink-muted/50 hover:text-ink-muted transition-colors"
+              >
+                {expandedId === t.id
+                  ? <><ChevronUp size={9} className="shrink-0" /> Hide relationships &amp; timeline</>
+                  : <><ChevronDown size={9} className="shrink-0" /> Relationships &amp; lifecycle timeline</>
+                }
+              </button>
+
+              {/* ── Relationship panel (expanded) ──────────────────────────── */}
+              <AnimatePresence>
+                {expandedId === t.id && (() => {
+                  const relData = relMap.get(t.id);
+                  return (
+                    <RelationshipPanel
+                      theme={t}
+                      upstream={relData?.upstream ?? []}
+                      downstream={relData?.downstream ?? []}
+                      connected={relData?.connected ?? []}
+                      conflicts={contradictions.filter(c => c.themeIds.includes(t.id))}
+                    />
+                  );
+                })()}
+              </AnimatePresence>
             </div>
           );
         })}
@@ -1406,6 +1739,9 @@ export default function MarketsPage() {
         riskRegime={riskRegime}
         volRegime={volRegime}
       />
+
+      {/* 4c. Market Breadth */}
+      <BreadthSnapshot themes={themes} sectorData={data?.sector_data ?? null} />
 
       {/* 5. Clustered themes */}
       <div ref={clusterRef}>
