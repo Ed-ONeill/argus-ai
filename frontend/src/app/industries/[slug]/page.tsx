@@ -25,6 +25,13 @@ import {
   getCrossAssetEffects,
   getRiskFactors,
   getKeyDrivers,
+  getLiveDevelopments,
+  getLeadershipDynamics,
+  getPositioningNarrative,
+  getMomentumState,
+  type LiveDevelopment,
+  type LeadershipDynamics,
+  type MomentumState,
 } from "@/lib/sectorIntelligence";
 import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
@@ -184,6 +191,148 @@ function IndustryBar({ sig, max, color }: { sig: IndustrySignal; max: number; co
   );
 }
 
+// ── Momentum state badge ──────────────────────────────────────────────────────
+
+const MOMENTUM_META: Record<MomentumState, { label: string; cls: string }> = {
+  accelerating:  { label: "Accelerating",  cls: "text-emerald-300 bg-emerald-500/15 border-emerald-400/30" },
+  broadening:    { label: "Broadening",    cls: "text-emerald-300 bg-emerald-500/10 border-emerald-400/25" },
+  stabilizing:   { label: "Stabilizing",   cls: "text-sky-300    bg-sky-500/15     border-sky-400/30"    },
+  consolidating: { label: "Consolidating", cls: "text-white/40   bg-white/5        border-white/15"      },
+  fading:        { label: "Fading",        cls: "text-amber-300  bg-amber-500/15   border-amber-400/30"  },
+  reversing:     { label: "Reversing",     cls: "text-red-300    bg-red-500/15     border-red-400/30"    },
+};
+
+// ── Live developments section ─────────────────────────────────────────────────
+
+const DEV_TYPE_COLOR: Record<LiveDevelopment["type"], string> = {
+  live:       "#10b981",
+  macro:      "#f59e0b",
+  structural: "#64748b",
+  risk:       "#ef4444",
+};
+
+const DEV_TYPE_LABEL: Record<LiveDevelopment["type"], string> = {
+  live:       "live",
+  macro:      "macro",
+  structural: "structural",
+  risk:       "risk",
+};
+
+function LiveDevelopmentsSection({ developments }: { developments: LiveDevelopment[] }) {
+  if (developments.length === 0) return null;
+  return (
+    <ul className="space-y-2">
+      {developments.map((dev, i) => (
+        <motion.li
+          key={i}
+          initial={{ opacity: 0, x: -6 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.04 + i * 0.035, duration: 0.2, ease: "easeOut" }}
+          className="flex items-start gap-2.5"
+        >
+          <span
+            className="text-[7px] mt-[5px] shrink-0 leading-none select-none"
+            style={{ color: DEV_TYPE_COLOR[dev.type] }}
+          >
+            ●
+          </span>
+          <p className="text-[12px] text-ink-secondary leading-relaxed flex-1">{dev.text}</p>
+          <span
+            className="text-[7.5px] font-bold uppercase tracking-wide shrink-0 mt-[3px] opacity-50"
+            style={{ color: DEV_TYPE_COLOR[dev.type] }}
+          >
+            {DEV_TYPE_LABEL[dev.type]}
+          </span>
+        </motion.li>
+      ))}
+    </ul>
+  );
+}
+
+// ── Leadership / laggards section ─────────────────────────────────────────────
+
+const LEADERSHIP_STATE_META: Record<LeadershipDynamics["state"], { label: string; color: string }> = {
+  accelerating:  { label: "Momentum Accelerating", color: "#10b981" },
+  broadening:    { label: "Breadth Broadening",    color: "#10b981" },
+  stabilizing:   { label: "Leadership Stable",     color: "#38bdf8" },
+  rotating:      { label: "Rotation Active",       color: "#f59e0b" },
+  narrowing:     { label: "Breadth Narrowing",     color: "#f97316" },
+  consolidating: { label: "Consolidating",         color: "#94a3b8" },
+};
+
+function LeadershipSection({ leadership, color }: { leadership: LeadershipDynamics; color: string }) {
+  const stateMeta = LEADERSHIP_STATE_META[leadership.state];
+  const hasData   = leadership.leaders.length > 0 || leadership.laggards.length > 0;
+  if (!hasData) return null;
+
+  return (
+    <div className="space-y-3">
+      {/* State badge */}
+      <div className="flex items-center gap-2">
+        <span
+          className="text-[8.5px] font-bold uppercase tracking-[0.12em] px-2 py-[3px] rounded-full border"
+          style={{ color: stateMeta.color, background: `${stateMeta.color}14`, borderColor: `${stateMeta.color}35` }}
+        >
+          {stateMeta.label}
+        </span>
+      </div>
+
+      {/* Leaders */}
+      {leadership.leaders.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[9px] font-bold text-emerald-400/80 shrink-0 w-14">↑ Leading</span>
+          {leadership.leaders.map(t => (
+            <span
+              key={t}
+              className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+              style={{ color: "#10b981", background: "#10b98118" }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Laggards */}
+      {leadership.laggards.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[9px] font-bold text-red-400/80 shrink-0 w-14">↓ Lagging</span>
+          {leadership.laggards.map(t => (
+            <span
+              key={t}
+              className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+              style={{ color: "#ef4444", background: "#ef444418" }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Improving */}
+      {leadership.improving.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[9px] font-bold shrink-0 w-14" style={{ color: color + "aa" }}>↗ Improving</span>
+          {leadership.improving.map(t => (
+            <span
+              key={t}
+              className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+              style={{ color, background: `${color}14` }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Explanation */}
+      <p className="text-[10.5px] text-ink-muted leading-relaxed pt-0.5">
+        {leadership.explanation}
+      </p>
+    </div>
+  );
+}
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
 function DetailSkeleton({ color }: { color: string }) {
@@ -253,7 +402,11 @@ export default function IndustryDetailPage() {
     ? getKeyDrivers(sectorIntel, indSignals, topClusters)
     : industry.macroDrivers.slice(0, 6);
 
-  const activeThemes  = getThemesForIndustry(industry.name, feedData?.theme_intelligence ?? []).slice(0, 3);
+  const activeThemes    = getThemesForIndustry(industry.name, feedData?.theme_intelligence ?? []).slice(0, 3);
+  const liveDevelopments = getLiveDevelopments(industry.slug, sectorIntel, indSignals, topClusters, regime);
+  const leadership      = getLeadershipDynamics(industry.slug, sectorIntel, indSignals, regime);
+  const positioning     = getPositioningNarrative(industry.slug, sectorIntel, regime);
+  const momentumState   = getMomentumState(sectorIntel, indSignals);
 
   const maClusters    = topClusters.filter(c => c.primary.category === "M&A").slice(0, 3);
   const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 5);
@@ -336,6 +489,17 @@ export default function IndustryDetailPage() {
                 {derivedRegime}
               </span>
             )}
+            {hasData && (() => {
+              const mm = MOMENTUM_META[momentumState];
+              return (
+                <span className={cn(
+                  "text-[9px] font-bold uppercase tracking-widest px-2 py-[3px] rounded-full border",
+                  mm.cls,
+                )}>
+                  {mm.label}
+                </span>
+              );
+            })()}
             {isFetching && !isLoading && (
               <motion.span
                 animate={{ rotate: 360 }}
@@ -504,11 +668,46 @@ export default function IndustryDetailPage() {
           </motion.section>
         )}
 
+        {/* ── Live Developments ─────────────────────────────────────────── */}
+        {liveDevelopments.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.25, ease: "easeOut" }}
+            className="bg-surface rounded-xl border border-edge p-5"
+          >
+            <div className="flex items-center gap-2.5 mb-4">
+              <Radio size={11} className="text-emerald-500 shrink-0" strokeWidth={2} />
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
+                Live Developments
+              </span>
+              <span className="h-px flex-1 bg-edge" />
+              <span className="text-[8.5px] font-semibold uppercase tracking-[0.10em] text-ink-muted/50">
+                {liveDevelopments.filter(d => d.type === "live").length > 0 ? "feed + structural" : "structural"}
+              </span>
+            </div>
+            <LiveDevelopmentsSection developments={liveDevelopments} />
+          </motion.section>
+        )}
+
         {/* ── Main 2-col grid ───────────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* Left column (2/3) */}
           <div className="lg:col-span-2 space-y-6">
+
+            {/* Leadership / Laggards */}
+            {(leadership.leaders.length > 0 || leadership.laggards.length > 0) && (
+              <motion.section
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.13, duration: 0.25, ease: "easeOut" }}
+                className="bg-surface rounded-xl border border-edge p-5"
+              >
+                <SectionHeader icon={TrendingUp}>Leadership Dynamics</SectionHeader>
+                <LeadershipSection leadership={leadership} color={industry.color} />
+              </motion.section>
+            )}
 
             {/* Live Themes */}
             {themeClusters.length > 0 && (
@@ -750,41 +949,44 @@ export default function IndustryDetailPage() {
               )}
             </motion.section>
 
-            {/* Bullish / Bearish Positioning */}
-            {sectorIntel && (
-              <motion.section
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2, duration: 0.25, ease: "easeOut" }}
-                className="bg-surface rounded-xl border border-edge p-4"
-              >
-                <SectionHeader icon={TrendingUp}>Positioning</SectionHeader>
-                <div className="space-y-2.5">
-                  <div>
-                    <p className="text-[9.5px] font-bold uppercase tracking-widest text-emerald-600 mb-1">
-                      Bullish Case
-                    </p>
-                    <p className="text-[11px] text-ink-secondary leading-relaxed">
-                      {alignment === "tailwind"
-                        ? `Regime tailwind supports ${industry.name} leadership. Signal strength is ${score >= 70 ? "high" : score >= 40 ? "moderate" : "building"}.`
-                        : `${industry.name} signal at ${score.toFixed(0)} — ${count} active stories sustaining the upside thesis.`
-                      }
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9.5px] font-bold uppercase tracking-widest text-red-600 mb-1">
-                      Bearish Case
-                    </p>
-                    <p className="text-[11px] text-ink-secondary leading-relaxed">
-                      {alignment === "headwind"
-                        ? `Current regime is a headwind. Positioning requires evidence of mean reversion before adding risk.`
-                        : `Watch for regime shift or signal deterioration below 20 as a rotation warning signal.`
-                      }
-                    </p>
-                  </div>
+            {/* Positioning */}
+            <motion.section
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.25, ease: "easeOut" }}
+              className="bg-surface rounded-xl border border-edge p-4"
+            >
+              <SectionHeader icon={TrendingUp}>Positioning</SectionHeader>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-emerald-500/80 mb-1.5">
+                    Bull Case
+                  </p>
+                  <p className="text-[11px] text-ink-secondary leading-relaxed">
+                    {positioning.bull}
+                  </p>
                 </div>
-              </motion.section>
-            )}
+                <div className="h-px bg-edge/60" />
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-red-500/80 mb-1.5">
+                    Bear Case
+                  </p>
+                  <p className="text-[11px] text-ink-secondary leading-relaxed">
+                    {positioning.bear}
+                  </p>
+                </div>
+                <div className="h-px bg-edge/60" />
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.13em] mb-1.5"
+                    style={{ color: `${industry.color}aa` }}>
+                    Watch For
+                  </p>
+                  <p className="text-[10.5px] text-ink-muted leading-relaxed">
+                    {positioning.watchFor}
+                  </p>
+                </div>
+              </div>
+            </motion.section>
 
             {/* Risk Factors */}
             {(rkA || rkB) && (
