@@ -42,13 +42,15 @@ async function proxy(
       ? await req.arrayBuffer()
       : undefined;
 
+  const t0 = Date.now();
   let res: Response;
   try {
     res = await fetch(upstream, {
-      method: req.method,
+      method:  req.method,
       headers,
       body,
       redirect: "follow",
+      signal:   AbortSignal.timeout(30_000),
     });
   } catch (err) {
     console.error("[proxy] fetch failed:", err);
@@ -57,6 +59,8 @@ async function proxy(
       { status: 502 },
     );
   }
+
+  console.log(`[perf] proxy ${req.method} ${req.nextUrl.pathname} status=${res.status} total=${Date.now() - t0}ms`);
 
   const resHeaders = new Headers(res.headers);
   resHeaders.delete("transfer-encoding"); // Next.js handles this itself

@@ -20,7 +20,7 @@ function parseMarketResponse(raw: unknown): MarketResponse {
   // Backward-compat: flat record from old route format
   return {
     tickers: raw as Record<string, TickerData | null>,
-    meta: { fetchedAt: new Date().toISOString(), isMarketOpen: false, tickerCount: 0, failCount: 0 },
+    meta: { fetchedAt: new Date().toISOString(), isMarketOpen: false, tickerCount: 0, failCount: 0, staleCount: 0 },
   };
 }
 
@@ -46,6 +46,8 @@ export function useMarketData() {
   const dataAge = meta ? Date.now() - new Date(meta.fetchedAt).getTime() : null;
   const isStale = dataAge !== null && dataAge > STALE_MS;
 
+  const hasStaleProviderData = (meta?.staleCount ?? 0) > 0;
+
   let heartbeatStatus: HeartbeatStatus = "loading";
   if (!query.isPending) {
     if (!tickers) {
@@ -53,10 +55,10 @@ export function useMarketData() {
     } else {
       const vals      = Object.values(tickers);
       const nullCount = vals.filter(v => v === null).length;
-      if (nullCount === vals.length) heartbeatStatus = "offline";
-      else if (isStale)              heartbeatStatus = "stale";
-      else if (nullCount > 0)        heartbeatStatus = "degraded";
-      else                           heartbeatStatus = "live";
+      if (nullCount === vals.length)          heartbeatStatus = "offline";
+      else if (isStale || hasStaleProviderData) heartbeatStatus = "stale";
+      else if (nullCount > 0)                 heartbeatStatus = "degraded";
+      else                                    heartbeatStatus = "live";
     }
   }
 

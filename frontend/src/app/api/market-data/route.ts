@@ -19,6 +19,7 @@ export interface TickerData {
   change:        number;
   changePercent: number;
   history:       number[];   // up to 30 intraday 5-min close values, oldest → newest
+  isStale?:      boolean;    // true when served from stale fallback cache
 }
 
 export interface MarketMeta {
@@ -26,7 +27,16 @@ export interface MarketMeta {
   isMarketOpen: boolean;
   tickerCount:  number;
   failCount:    number;
+  staleCount:   number;   // tickers served from stale cache (all providers failed)
 }
+
+// ── Stale fallback ticker cache ───────────────────────────────────────────────
+// Persists across requests in Railway's Node.js runtime.  Serves last known
+// price when all live providers fail.  15-minute TTL.
+
+interface TickerValueCache { value: TickerData; fetchedAt: number }
+const _tickerValueCache = new Map<string, TickerValueCache>();
+const TICKER_CACHE_TTL  = 15 * 60 * 1_000;
 
 const YF_HOSTS = [
   "https://query1.finance.yahoo.com",
@@ -403,27 +413,62 @@ async function fetchTicker(
   return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
 }
 
+// ── Cached ticker fetch — stale fallback on total provider failure ────────────
+
+async function fetchTickerCached(
+  key:     string,
+  symbol:  string,
+  label:   string,
+  crumb:   string,
+  cookies: string,
+): Promise<{ data: TickerData; stale: boolean }> {
+  try {
+    const value = await fetchTicker(key, symbol, label, crumb, cookies);
+    _tickerValueCache.set(key, { value, fetchedAt: Date.now() });
+    return { data: value, stale: false };
+  } catch (err) {
+    const cached = _tickerValueCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < TICKER_CACHE_TTL) {
+      const ageMin = Math.round((Date.now() - cached.fetchedAt) / 60_000);
+      console.log(`[market-data] symbol=${key} status=stale_cache age=${ageMin}m`);
+      return { data: { ...cached.value, isStale: true }, stale: true };
+    }
+    const msg = (err instanceof Error ? err.message : String(err));
+    console.error(`[market-data] symbol=${key} exhausted all providers: ${msg}`);
+    throw err;
+  }
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function GET() {
+  const t0 = Date.now();
   console.log(`[market-data] GET  tickers=${TICKERS.map(t => t.key).join(",")}`);
-  const { crumb, cookies } = await getYahooCrumb();
 
+  const crumbStart = Date.now();
+  const { crumb, cookies } = await getYahooCrumb();
+  const crumbMs = Date.now() - crumbStart;
+
+  const fetchStart = Date.now();
   const results = await Promise.allSettled(
     TICKERS.map(({ key, symbol, label }) =>
-      fetchTicker(key, symbol, label, crumb, cookies)
+      fetchTickerCached(key, symbol, label, crumb, cookies)
     )
   );
+  const fetchMs = Date.now() - fetchStart;
 
   const tickers: Record<string, TickerData | null> = {};
-  let failCount = 0;
+  let failCount = 0, staleCount = 0;
   for (let i = 0; i < TICKERS.length; i++) {
     const r = results[i];
     if (r.status === "rejected") {
       console.error(`[market-data] ${TICKERS[i].key} failed:`, (r.reason as Error)?.message ?? r.reason);
       failCount++;
+      tickers[TICKERS[i].key] = null;
+    } else {
+      tickers[TICKERS[i].key] = r.value.data;
+      if (r.value.stale) staleCount++;
     }
-    tickers[TICKERS[i].key] = r.status === "fulfilled" ? r.value : null;
   }
 
   const meta: MarketMeta = {
@@ -431,9 +476,14 @@ export async function GET() {
     isMarketOpen: isMarketOpen(),
     tickerCount:  TICKERS.length - failCount,
     failCount,
+    staleCount,
   };
 
-  console.log(`[market-data] complete  ok=${meta.tickerCount}/${TICKERS.length}  marketOpen=${meta.isMarketOpen}  crumb=${crumb ? "yes" : "no"}`);
+  const totalMs = Date.now() - t0;
+  console.log(
+    `[perf] market-data total=${totalMs}ms crumb=${crumbMs}ms tickers=${fetchMs}ms` +
+    ` ok=${meta.tickerCount}/${TICKERS.length} stale=${staleCount} failed=${failCount}`,
+  );
 
   return NextResponse.json({ tickers, meta }, {
     headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30" },

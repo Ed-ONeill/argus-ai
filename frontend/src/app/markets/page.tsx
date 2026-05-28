@@ -1275,7 +1275,7 @@ export default function MarketsPage() {
         )}
         <p className="text-2xs text-ink-muted flex items-center gap-1 mt-2 mb-5">
           <AlertCircle size={10} className="shrink-0" />
-          {marketOpen ? "Live prices" : "Delayed ~15 min"} via Yahoo Finance · Click a tile to filter themes · Refreshes every 60 sec
+          {marketOpen ? "Live prices" : "Delayed ~15 min"} via market data providers · Click a tile to filter themes · Refreshes every 60 sec
           {heartbeatStatus === "degraded" && (
             <span className="text-amber-600 ml-1">· Some data unavailable</span>
           )}
