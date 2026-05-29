@@ -1,10 +1,16 @@
 "use client";
 
-import { ExternalLink, Play, Headphones, Bookmark, BookmarkCheck, Clock } from "lucide-react";
+import { ExternalLink, Play, Bookmark, BookmarkCheck, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { TOPIC_COLOR } from "./TopicFilterBar";
-import type { Episode } from "@/lib/types";
+import type { Episode, ThemeIntelligence } from "@/lib/types";
+
+const THEME_SIGNAL_COLOR: Record<string, string> = {
+  strong: "#10B981",
+  medium: "#F59E0B",
+  weak:   "#6B7280",
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,17 +77,20 @@ export function hasVerifiedExternalUrl(ep: Episode): ep is Episode & { external_
 // ── Card ──────────────────────────────────────────────────────────────────────
 
 interface EpisodeCardProps {
-  episode: Episode;
-  isSaved: boolean;
-  onSave:  () => void;
-  onPlay:  (ep: Episode) => void;
-  variant?: "grid" | "list";
-  index?:  number;
+  episode:       Episode;
+  isSaved:       boolean;
+  onSave:        () => void;
+  onPlay:        (ep: Episode) => void;
+  variant?:      "grid" | "list";
+  index?:        number;
+  matchedThemes?: ThemeIntelligence[];
+  onThemeClick?:  (theme: ThemeIntelligence) => void;
 }
 
 export function EpisodeCard({
   episode, isSaved, onSave, onPlay,
   variant = "grid", index = 0,
+  matchedThemes, onThemeClick,
 }: EpisodeCardProps) {
   const primaryTopic = episode.topics[0] ?? "Markets";
   const topicColor   = TOPIC_COLOR[primaryTopic] ?? "#6B7280";
@@ -155,9 +164,28 @@ export function EpisodeCard({
             )}
           </div>
 
-          <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-1 mb-2">
+          <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-1 mb-1.5">
             {episode.why_it_matters}
           </p>
+
+          {/* Theme connections */}
+          {(matchedThemes ?? []).length > 0 && onThemeClick && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {(matchedThemes ?? []).map(t => {
+                const sc = THEME_SIGNAL_COLOR[t.signal_strength] ?? "#6B7280";
+                return (
+                  <button
+                    key={t.id}
+                    onClick={e => { e.stopPropagation(); onThemeClick(t); }}
+                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full transition-opacity hover:opacity-75"
+                    style={{ background: `${sc}12`, color: sc, border: `1px solid ${sc}28` }}
+                  >
+                    {t.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {hasValidCta ? (
             <button
@@ -238,9 +266,47 @@ export function EpisodeCard({
         </h3>
 
         {/* Why it matters */}
-        <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-2 mb-3">
+        <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-2 mb-2">
           {episode.why_it_matters}
         </p>
+
+        {/* Theme connections */}
+        {(matchedThemes ?? []).length > 0 && onThemeClick && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {(matchedThemes ?? []).map(t => {
+              const sc = THEME_SIGNAL_COLOR[t.signal_strength] ?? "#6B7280";
+              return (
+                <button
+                  key={t.id}
+                  onClick={e => { e.stopPropagation(); onThemeClick(t); }}
+                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full transition-opacity hover:opacity-75"
+                  style={{ background: `${sc}12`, color: sc, border: `1px solid ${sc}28` }}
+                >
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Key entities */}
+        {episode.entities.slice(0, 3).length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {episode.entities.slice(0, 3).map(entity => (
+              <span
+                key={entity}
+                className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                style={{
+                  background: "rgba(0,0,0,0.04)",
+                  color:      "rgba(0,0,0,0.38)",
+                  border:     "1px solid rgba(0,0,0,0.07)",
+                }}
+              >
+                {entity}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-2.5 border-t border-edge/60">

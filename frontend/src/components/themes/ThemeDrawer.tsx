@@ -2,8 +2,15 @@
 
 import { useEffect } from "react";
 import { motion } from "framer-motion";
-import { X, Bookmark, BookmarkCheck, ExternalLink } from "lucide-react";
-import type { ThemeIntelligence, StoryCluster } from "@/lib/types";
+import { X, Bookmark, BookmarkCheck, ExternalLink, Headphones } from "lucide-react";
+import type { ThemeIntelligence, StoryCluster, Episode } from "@/lib/types";
+import { matchEpisodeThemes } from "@/lib/listenIntelligence";
+
+function fmtDur(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 // ── Color helpers ──────────────────────────────────────────────────────────────
 
@@ -50,6 +57,7 @@ interface ThemeDrawerProps {
   theme:           ThemeIntelligence;
   clusters:        StoryCluster[];
   deals:           DrawerDeal[];
+  episodes?:       Episode[];
   isWatched:       boolean;
   hasAlert:        boolean;
   alertDirection?: "up" | "down";
@@ -60,7 +68,7 @@ interface ThemeDrawerProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ThemeDrawer({
-  theme, clusters, deals,
+  theme, clusters, deals, episodes = [],
   isWatched, hasAlert, alertDirection,
   onToggleWatch, onClose,
 }: ThemeDrawerProps) {
@@ -90,6 +98,11 @@ export function ThemeDrawer({
         (d.entities ?? []).some(e => assetSet.has(e.toUpperCase()))
       );
     })
+    .slice(0, 5);
+
+  // Connected podcasts — episodes that match this theme
+  const connectedEpisodes = episodes
+    .filter(ep => matchEpisodeThemes(ep, [theme], 1).length > 0)
     .slice(0, 5);
 
   // Top relationship weights
@@ -429,6 +442,49 @@ export function ThemeDrawer({
                     </div>
                   );
                 })}
+              </div>
+            </Section>
+          )}
+
+          {/* Connected podcasts */}
+          {connectedEpisodes.length > 0 && (
+            <Section title={`Podcasts · ${connectedEpisodes.length}`}>
+              <div className="space-y-3">
+                {connectedEpisodes.map(ep => (
+                  <div key={ep.id} className="flex items-start gap-2.5">
+                    <div
+                      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5"
+                      style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.14)" }}
+                    >
+                      <Headphones size={11} style={{ color: "rgba(16,185,129,0.70)" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] leading-snug line-clamp-2"
+                        style={{ color: "rgba(255,255,255,0.72)" }}>
+                        {ep.title}
+                      </p>
+                      <p className="text-[10px] mt-0.5 flex items-center gap-1.5"
+                        style={{ color: "rgba(255,255,255,0.30)" }}>
+                        <span>{ep.show_name}</span>
+                        {ep.duration_seconds > 0 && (
+                          <><span style={{ color: "rgba(255,255,255,0.16)" }}>·</span>
+                          <span>{fmtDur(ep.duration_seconds)}</span></>
+                        )}
+                      </p>
+                    </div>
+                    {ep.external_url && (
+                      <a
+                        href={ep.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 p-1.5 rounded-lg transition-colors hover:bg-white/[0.05]"
+                        style={{ color: "rgba(16,185,129,0.60)" }}
+                      >
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                ))}
               </div>
             </Section>
           )}

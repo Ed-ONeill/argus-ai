@@ -249,5 +249,5 @@ export function useListenRails() {
     return { macroMarket, maPrivate, venture, company, quick, longForm };
   }, [data]);
 
-  return { rails, isLoading, totalEpisodes: data?.length ?? 0 };
+  return { rails, isLoading, totalEpisodes: data?.length ?? 0, allEpisodes: data ?? [] };
 }
