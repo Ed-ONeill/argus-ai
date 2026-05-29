@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { X, Bookmark, BookmarkCheck, ExternalLink, Headphones } from "lucide-react";
 import type { ThemeIntelligence, StoryCluster, Episode } from "@/lib/types";
 import { matchEpisodeThemes } from "@/lib/listenIntelligence";
+import { computeThemeMomentum, LIFECYCLE_META } from "@/lib/themeMomentum";
 
 function fmtDur(s: number): string {
   const h = Math.floor(s / 3600);
@@ -106,6 +107,13 @@ export function ThemeDrawer({
     .filter(ep => matchEpisodeThemes(ep, [theme], 1).length > 0)
     .slice(0, 5);
 
+  // Momentum engine — full computation with all available context
+  const momentum = useMemo(
+    () => computeThemeMomentum(theme, { episodes, clusters, deals }),
+    [theme, episodes, clusters, deals],
+  );
+  const lcMeta = LIFECYCLE_META[momentum.lifecycleState];
+
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
     .sort(([, a], [, b]) => b.weight - a.weight)
@@ -151,6 +159,12 @@ export function ThemeDrawer({
                 }}
               >
                 {theme.signal_strength}
+              </span>
+              <span
+                className="text-[9.5px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: lcMeta.bg, color: lcMeta.color, border: `1px solid ${lcMeta.color}30` }}
+              >
+                {lcMeta.label}
               </span>
               {hasAlert && (
                 <span
@@ -262,11 +276,12 @@ export function ThemeDrawer({
           )}
 
           {/* Signal metrics */}
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
             {[
-              { label: "Persistence", value: String(theme.persistence_score ?? 0), unit: "/100" },
-              { label: "Breadth",     value: String(theme.breadth_score ?? 0),      unit: "/100" },
-              { label: "Evidence",    value: String(theme.evidence_count ?? 0),     unit: " sources" },
+              { label: "Signal Score", value: String(momentum.signalScore),          unit: "/100"    },
+              { label: "Persistence",  value: String(theme.persistence_score ?? 0),  unit: "/100"    },
+              { label: "Breadth",      value: String(theme.breadth_score ?? 0),       unit: "/100"    },
+              { label: "Evidence",     value: String(theme.evidence_count ?? 0),      unit: " sources" },
             ].map(m => (
               <div
                 key={m.label}
@@ -294,10 +309,19 @@ export function ThemeDrawer({
               style={{ color: momentumColor(theme.momentum_label) }}>
               {theme.momentum_label}
             </span>
+            <span
+              className="text-[10px] font-bold font-mono tabular-nums px-1.5 py-0.5 rounded"
+              style={{
+                background: momentum.momentumScore >= 0 ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+                color:      momentum.momentumScore >= 0 ? "#10B981" : "#EF4444",
+              }}
+            >
+              {momentum.momentumScore > 0 ? "+" : ""}{momentum.momentumScore}
+            </span>
             {theme.momentum_delta !== 0 && (
               <span className="text-[10px] font-mono"
                 style={{ color: theme.momentum_delta > 0 ? "#10B981" : "#EF4444" }}>
-                {theme.momentum_delta > 0 ? "+" : ""}{theme.momentum_delta.toFixed(0)}
+                Δ{theme.momentum_delta > 0 ? "+" : ""}{theme.momentum_delta.toFixed(0)}
               </span>
             )}
             <span style={{ color: "rgba(255,255,255,0.18)" }}>·</span>
@@ -313,6 +337,35 @@ export function ThemeDrawer({
               </span>
             )}
           </div>
+
+          {/* Momentum Breakdown */}
+          <Section title="Momentum Breakdown">
+            <div className="space-y-2">
+              {([
+                { label: "Story Activity",       value: momentum.components.storyActivity       },
+                { label: "Podcast Mentions",     value: momentum.components.podcastMentions     },
+                { label: "Industry Penetration", value: momentum.components.industryPenetration },
+                { label: "M&A Activity",         value: momentum.components.maActivity          },
+                { label: "VC Activity",          value: momentum.components.vcActivity          },
+              ] as const).map(({ label, value }) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className="text-[10px] w-36 shrink-0" style={{ color: "rgba(255,255,255,0.42)" }}>
+                    {label}
+                  </span>
+                  <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${value}%`, background: sColor }}
+                    />
+                  </div>
+                  <span className="text-[9.5px] font-mono tabular-nums w-6 text-right shrink-0"
+                    style={{ color: "rgba(255,255,255,0.30)" }}>
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Section>
 
           {/* Second order effects */}
           {(theme.second_order_effects ?? []).length > 0 && (

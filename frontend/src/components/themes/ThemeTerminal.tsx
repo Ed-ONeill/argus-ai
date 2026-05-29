@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { X, Network, Bookmark, BookmarkCheck, AlertCircle } from "lucide-react";
 import type { ThemeIntelligence } from "@/lib/types";
+import { computeThemeMomentum, LIFECYCLE_META } from "@/lib/themeMomentum";
 
 // ── Color helpers ──────────────────────────────────────────────────────────────
 
@@ -70,6 +71,11 @@ export function ThemeTerminal({
   };
 
   const alertCount = themes.filter(t => hasAlert(t.id)).length;
+
+  const momentumMap = useMemo(
+    () => new Map(themes.map(t => [t.id, computeThemeMomentum(t)])),
+    [themes],
+  );
 
   return (
     <motion.div
@@ -176,9 +182,11 @@ export function ThemeTerminal({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {displayed.map((theme, i) => {
-                const watched = watchedIds.includes(theme.id);
-                const alert   = hasAlert(theme.id);
-                const sColor  = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
+                const watched  = watchedIds.includes(theme.id);
+                const alert    = hasAlert(theme.id);
+                const sColor   = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
+                const momentum = momentumMap.get(theme.id)!;
+                const lcMeta   = LIFECYCLE_META[momentum.lifecycleState];
 
                 return (
                   <motion.div
@@ -213,6 +221,12 @@ export function ThemeTerminal({
                             >
                               {theme.signal_strength}
                             </span>
+                            <span
+                              className="text-[9px] font-bold uppercase tracking-[0.11em] px-1.5 py-0.5 rounded"
+                              style={{ background: lcMeta.bg, color: lcMeta.color }}
+                            >
+                              {lcMeta.label}
+                            </span>
                             {alert && (
                               <AlertCircle size={10} style={{ color: "#F59E0B" }} aria-label="Signal changed" />
                             )}
@@ -243,30 +257,37 @@ export function ThemeTerminal({
                       </p>
 
                       {/* Footer */}
-                      <div className="flex items-center justify-between">
-                        <span
-                          className="text-[10px] font-semibold capitalize"
-                          style={{ color: momentumColor(theme.momentum_label) }}
-                        >
-                          {theme.momentum_label}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.20)" }}>P</span>
-                          <div
-                            className="w-16 h-1 rounded-full overflow-hidden"
-                            style={{ background: "rgba(255,255,255,0.06)" }}
-                          >
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${theme.persistence_score ?? 0}%`, background: sColor }}
-                            />
-                          </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
                           <span
-                            className="text-[9px] tabular-nums"
-                            style={{ color: "rgba(255,255,255,0.28)" }}
+                            className="text-[10px] font-semibold"
+                            style={{ color: momentumColor(theme.momentum_label) }}
                           >
-                            {theme.persistence_score ?? 0}
+                            {momentum.momentumLabel}
                           </span>
+                          <span
+                            className="text-[9px] font-mono tabular-nums px-1 py-0.5 rounded"
+                            style={{
+                              background: momentum.momentumScore >= 0 ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+                              color:      momentum.momentumScore >= 0 ? "#10B981" : "#EF4444",
+                            }}
+                          >
+                            {momentum.momentumScore > 0 ? "+" : ""}{momentum.momentumScore}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1 items-end">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.20)" }}>P</span>
+                            <div className="w-12 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                              <div className="h-full rounded-full" style={{ width: `${theme.persistence_score ?? 0}%`, background: sColor }} />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.20)" }}>B</span>
+                            <div className="w-12 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                              <div className="h-full rounded-full" style={{ width: `${theme.breadth_score ?? 0}%`, background: "rgba(82,176,200,0.60)" }} />
+                            </div>
+                          </div>
                         </div>
                       </div>
 
