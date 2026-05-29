@@ -54,15 +54,16 @@ export interface DrawerDeal {
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface ThemeDrawerProps {
-  theme:           ThemeIntelligence;
-  clusters:        StoryCluster[];
-  deals:           DrawerDeal[];
-  episodes?:       Episode[];
-  isWatched:       boolean;
-  hasAlert:        boolean;
-  alertDirection?: "up" | "down";
-  onToggleWatch:   () => void;
-  onClose:         () => void;
+  theme:            ThemeIntelligence;
+  clusters:         StoryCluster[];
+  deals:            DrawerDeal[];
+  episodes?:        Episode[];
+  isWatched:        boolean;
+  hasAlert:         boolean;
+  alertDirection?:  "up" | "down";
+  onToggleWatch:    () => void;
+  onClose:          () => void;
+  sourceContext?:   "listen";  // elevates Podcasts section when opened from Listen
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ interface ThemeDrawerProps {
 export function ThemeDrawer({
   theme, clusters, deals, episodes = [],
   isWatched, hasAlert, alertDirection,
-  onToggleWatch, onClose,
+  onToggleWatch, onClose, sourceContext,
 }: ThemeDrawerProps) {
 
   // ESC to close
@@ -199,6 +200,49 @@ export function ThemeDrawer({
             <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>
               {theme.description}
             </p>
+          )}
+
+          {/* Podcasts — hoisted here when opened from Listen */}
+          {sourceContext === "listen" && connectedEpisodes.length > 0 && (
+            <Section title={`Podcasts · ${connectedEpisodes.length}`}>
+              <div className="space-y-3">
+                {connectedEpisodes.map(ep => (
+                  <div key={ep.id} className="flex items-start gap-2.5">
+                    <div
+                      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5"
+                      style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.14)" }}
+                    >
+                      <Headphones size={11} style={{ color: "rgba(16,185,129,0.70)" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] leading-snug line-clamp-2"
+                        style={{ color: "rgba(255,255,255,0.72)" }}>
+                        {ep.title}
+                      </p>
+                      <p className="text-[10px] mt-0.5 flex items-center gap-1.5"
+                        style={{ color: "rgba(255,255,255,0.30)" }}>
+                        <span>{ep.show_name}</span>
+                        {ep.duration_seconds > 0 && (
+                          <><span style={{ color: "rgba(255,255,255,0.16)" }}>·</span>
+                          <span>{fmtDur(ep.duration_seconds)}</span></>
+                        )}
+                      </p>
+                    </div>
+                    {ep.external_url && (
+                      <a
+                        href={ep.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 p-1.5 rounded-lg transition-colors hover:bg-white/[0.05]"
+                        style={{ color: "rgba(16,185,129,0.60)" }}
+                      >
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
           )}
 
           {/* Causal narrative */}
@@ -446,8 +490,8 @@ export function ThemeDrawer({
             </Section>
           )}
 
-          {/* Connected podcasts */}
-          {connectedEpisodes.length > 0 && (
+          {/* Connected podcasts — default position (below relationships) */}
+          {sourceContext !== "listen" && connectedEpisodes.length > 0 && (
             <Section title={`Podcasts · ${connectedEpisodes.length}`}>
               <div className="space-y-3">
                 {connectedEpisodes.map(ep => (

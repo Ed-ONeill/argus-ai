@@ -16,6 +16,7 @@ import {
   getThemeEpisodeGroups,
   isEarningsEpisode,
   extractSpeakers,
+  generateWhyListen,
 } from "@/lib/listenIntelligence";
 import type { Episode, ThemeIntelligence, FeedResponse } from "@/lib/types";
 
@@ -39,21 +40,22 @@ const RAIL_DEFS = [
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface RailProps {
-  title:         string;
-  subtitle?:     string;
-  color:         string;
-  episodes:      Episode[];
-  savedIds:      string[];
-  onSave:        (ep: Episode) => void;
-  onPlay:        (ep: Episode) => void;
-  episodeThemes: Map<string, ThemeIntelligence[]>;
-  onThemeClick:  (theme: ThemeIntelligence) => void;
+  title:          string;
+  subtitle?:      string;
+  color:          string;
+  episodes:       Episode[];
+  savedIds:       string[];
+  onSave:         (ep: Episode) => void;
+  onPlay:         (ep: Episode) => void;
+  episodeThemes:  Map<string, ThemeIntelligence[]>;
+  whyListenMap:   Map<string, string>;
+  onThemeClick:   (theme: ThemeIntelligence) => void;
   earningsBadge?: boolean;
 }
 
 function Rail({
   title, subtitle, color, episodes, savedIds,
-  onSave, onPlay, episodeThemes, onThemeClick, earningsBadge,
+  onSave, onPlay, episodeThemes, whyListenMap, onThemeClick, earningsBadge,
 }: RailProps) {
   if (episodes.length === 0) return null;
   return (
@@ -86,6 +88,7 @@ function Rail({
             variant="grid"
             index={i}
             matchedThemes={episodeThemes.get(ep.id)}
+            whyListen={whyListenMap.get(ep.id)}
             onThemeClick={onThemeClick}
           />
         ))}
@@ -158,6 +161,17 @@ export default function ListenPage() {
     return map;
   }, [allEpisodes, themes]);
 
+  // ── Episode → "Why Listen" copy (generated when backend text is generic) ────
+  const whyListenMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ep of allEpisodes) {
+      const primaryTheme = episodeThemeMap.get(ep.id)?.[0] ?? null;
+      const copy = generateWhyListen(ep, primaryTheme);
+      map.set(ep.id, copy);
+    }
+    return map;
+  }, [allEpisodes, episodeThemeMap]);
+
   // ── Intelligence derivations ─────────────────────────────────────────────────
   const themeGroups = useMemo(
     () => getThemeEpisodeGroups(allEpisodes, themes).slice(0, 4),
@@ -183,9 +197,10 @@ export default function ListenPage() {
 
   const railProps = {
     savedIds,
-    onSave:       toggleSave,
-    onPlay:       setPlaying,
+    onSave:        toggleSave,
+    onPlay:        setPlaying,
     episodeThemes: episodeThemeMap,
+    whyListenMap,
     onThemeClick:  setSelectedTheme,
   };
 
@@ -410,6 +425,7 @@ export default function ListenPage() {
             dismissAlert(selectedTheme.id);
           }}
           onClose={() => setSelectedTheme(null)}
+          sourceContext="listen"
         />
       )}
     </>

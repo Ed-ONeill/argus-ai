@@ -227,7 +227,8 @@ export function useListenRails() {
     const episodes = data ?? [];
     const used = new Set<string>();
 
-    function pick(filter: (ep: Episode) => boolean, limit = 8): Episode[] {
+    // Primary picks: strict global dedup so each episode appears in at most one rail.
+    function pick(filter: (ep: Episode) => boolean, limit = 6): Episode[] {
       const result: Episode[] = [];
       for (const ep of episodes) {
         if (result.length >= limit) break;
@@ -239,14 +240,40 @@ export function useListenRails() {
       return result;
     }
 
+    // Backfill: for major rails that fall below the target, pull additional
+    // episodes from the full pool matching a broader topic filter.
+    // Allows an episode to appear in two rails — density over strict dedup.
+    function backfill(
+      primary:     Episode[],
+      broadFilter: (ep: Episode) => boolean,
+      target = 4,
+    ): Episode[] {
+      if (primary.length >= target) return primary;
+      const existingIds = new Set(primary.map(ep => ep.id));
+      const extras: Episode[] = [];
+      for (const ep of episodes) {
+        if (primary.length + extras.length >= target) break;
+        if (!existingIds.has(ep.id) && broadFilter(ep)) extras.push(ep);
+      }
+      return [...primary, ...extras];
+    }
+
+    // Primary strict picks
     const macroMarket = pick(ep => ep.topics.some(t => t === "Markets" || t === "Macro"));
     const maPrivate   = pick(ep => ep.topics.some(t => t === "M&A"     || t === "Private Markets"));
     const venture     = pick(ep => ep.topics.some(t => t === "Venture"  || t === "Tech / AI"));
     const company     = pick(ep => ep.topics.some(t => t === "Company"));
-    const quick       = pick(ep => ep.duration_seconds > 0 && ep.duration_seconds < 900);
-    const longForm    = pick(ep => ep.duration_seconds >= 2700);
+    const quick       = pick(ep => ep.duration_seconds > 0 && ep.duration_seconds < 900, 8);
+    const longForm    = pick(ep => ep.duration_seconds >= 2700, 8);
 
-    return { macroMarket, maPrivate, venture, company, quick, longForm };
+    return {
+      macroMarket: backfill(macroMarket, ep => ep.topics.some(t => ["Markets", "Macro", "Geopolitical", "Company"].includes(t))),
+      maPrivate:   backfill(maPrivate,   ep => ep.topics.some(t => ["M&A", "Private Markets", "Company", "Venture"].includes(t))),
+      venture:     backfill(venture,     ep => ep.topics.some(t => ["Venture", "Tech / AI", "Company", "Markets"].includes(t))),
+      company:     backfill(company,     ep => ep.topics.some(t => ["Company", "Tech / AI", "Markets", "M&A"].includes(t))),
+      quick,
+      longForm,
+    };
   }, [data]);
 
   return { rails, isLoading, totalEpisodes: data?.length ?? 0, allEpisodes: data ?? [] };

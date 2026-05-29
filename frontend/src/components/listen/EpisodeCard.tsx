@@ -77,20 +77,21 @@ export function hasVerifiedExternalUrl(ep: Episode): ep is Episode & { external_
 // ── Card ──────────────────────────────────────────────────────────────────────
 
 interface EpisodeCardProps {
-  episode:       Episode;
-  isSaved:       boolean;
-  onSave:        () => void;
-  onPlay:        (ep: Episode) => void;
-  variant?:      "grid" | "list";
-  index?:        number;
+  episode:        Episode;
+  isSaved:        boolean;
+  onSave:         () => void;
+  onPlay:         (ep: Episode) => void;
+  variant?:       "grid" | "list";
+  index?:         number;
   matchedThemes?: ThemeIntelligence[];
   onThemeClick?:  (theme: ThemeIntelligence) => void;
+  whyListen?:     string;
 }
 
 export function EpisodeCard({
   episode, isSaved, onSave, onPlay,
   variant = "grid", index = 0,
-  matchedThemes, onThemeClick,
+  matchedThemes, onThemeClick, whyListen,
 }: EpisodeCardProps) {
   const primaryTopic = episode.topics[0] ?? "Markets";
   const topicColor   = TOPIC_COLOR[primaryTopic] ?? "#6B7280";
@@ -165,12 +166,12 @@ export function EpisodeCard({
           </div>
 
           <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-1 mb-1.5">
-            {episode.why_it_matters}
+            {whyListen ?? episode.why_it_matters}
           </p>
 
-          {/* Theme connections */}
-          {(matchedThemes ?? []).length > 0 && onThemeClick && (
-            <div className="flex flex-wrap gap-1 mb-2">
+          {/* Theme connections + industry pill */}
+          {((matchedThemes ?? []).length > 0) && onThemeClick && (
+            <div className="flex flex-wrap items-center gap-1 mb-2">
               {(matchedThemes ?? []).map(t => {
                 const sc = THEME_SIGNAL_COLOR[t.signal_strength] ?? "#6B7280";
                 return (
@@ -184,6 +185,14 @@ export function EpisodeCard({
                   </button>
                 );
               })}
+              {matchedThemes?.[0]?.related_industries?.[0] && (
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded-full leading-none"
+                  style={{ background: "rgba(82,176,200,0.07)", color: "rgba(82,176,200,0.72)", border: "1px solid rgba(82,176,200,0.14)" }}
+                >
+                  {matchedThemes[0].related_industries[0]}
+                </span>
+              )}
             </div>
           )}
 
@@ -265,14 +274,14 @@ export function EpisodeCard({
           {episode.title}
         </h3>
 
-        {/* Why it matters */}
+        {/* Why listen — specific copy preferred over generic why_it_matters */}
         <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-2 mb-2">
-          {episode.why_it_matters}
+          {whyListen ?? episode.why_it_matters}
         </p>
 
-        {/* Theme connections */}
+        {/* Theme connections + industry pill — one consolidated intelligence row */}
         {(matchedThemes ?? []).length > 0 && onThemeClick && (
-          <div className="flex flex-wrap gap-1 mb-2">
+          <div className="flex flex-wrap items-center gap-1 mb-2">
             {(matchedThemes ?? []).map(t => {
               const sc = THEME_SIGNAL_COLOR[t.signal_strength] ?? "#6B7280";
               return (
@@ -286,19 +295,27 @@ export function EpisodeCard({
                 </button>
               );
             })}
+            {matchedThemes?.[0]?.related_industries?.[0] && (
+              <span
+                className="text-[9px] px-1.5 py-0.5 rounded-full leading-none"
+                style={{ background: "rgba(82,176,200,0.07)", color: "rgba(82,176,200,0.72)", border: "1px solid rgba(82,176,200,0.14)" }}
+              >
+                {matchedThemes[0].related_industries[0]}
+              </span>
+            )}
           </div>
         )}
 
-        {/* Key entities */}
-        {episode.entities.slice(0, 3).length > 0 && (
+        {/* Key entities — mono pills for fast context scanning */}
+        {episode.entities.slice(0, 2).length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
-            {episode.entities.slice(0, 3).map(entity => (
+            {episode.entities.slice(0, 2).map(entity => (
               <span
                 key={entity}
                 className="text-[9px] font-mono px-1.5 py-0.5 rounded"
                 style={{
                   background: "rgba(0,0,0,0.04)",
-                  color:      "rgba(0,0,0,0.38)",
+                  color:      "rgba(0,0,0,0.36)",
                   border:     "1px solid rgba(0,0,0,0.07)",
                 }}
               >
