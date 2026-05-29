@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -43,12 +44,15 @@ import {
   getIndustryAcquirers,
   getIndustrySponsors,
   getThemeNarrative,
+  getMatchingTheme,
   type EntitySignal,
   type SectorDealItem,
   type IndustryAcquirer,
   type IndustrySponsor,
 } from "@/lib/industryIntelligence";
 import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
+import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
+import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -409,9 +413,12 @@ function DetailSkeleton({ color }: { color: string }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function IndustryDetailPage() {
+  const [drawerTheme, setDrawerTheme] = useState<ThemeIntelligence | null>(null);
+
   const params   = useParams();
   const slug     = Array.isArray(params?.slug) ? params.slug[0] : (params?.slug ?? "");
   const industry = getIndustryBySlug(slug);
+  const { isWatched, toggle: toggleThemeWatch } = useThemeWatchlist();
 
   const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
   const derivedRegime = sectorData?.derived_regime ?? "";
@@ -477,6 +484,7 @@ export default function IndustryDetailPage() {
   const vcClusters           = filterVCFundingClusters(industry, feedData?.clusters ?? []);
   const keyCompanies         = getInfluentialEntities(industry, topClusters, indSignals, sectorIntel, leadership.leaders, leadership.laggards);
   const themeNarrative       = getThemeNarrative(industry, feedData?.theme_intelligence ?? []);
+  const matchingTheme        = getMatchingTheme(industry, feedData?.theme_intelligence ?? []);
   const industryAcquirers    = getIndustryAcquirers(industrySponsorDeals);
   const industrySponsors     = getIndustrySponsors(industrySponsorDeals);
 
@@ -502,6 +510,7 @@ export default function IndustryDetailPage() {
   const topStoryUrl   = bestIndSignal?.top_story_url   ?? null;
 
   return (
+    <>
     <div className="min-h-screen bg-canvas">
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
@@ -733,9 +742,20 @@ export default function IndustryDetailPage() {
               {thesis}
             </p>
             {themeNarrative && (
-              <p className="text-[11.5px] text-ink-muted/70 leading-relaxed mt-2.5 pt-2.5 border-t border-edge/40 italic">
-                {themeNarrative}
-              </p>
+              <div className="mt-2.5 pt-2.5 border-t border-edge/40 flex items-start gap-2">
+                <p className="flex-1 text-[11.5px] text-ink-muted/70 leading-relaxed italic">
+                  {themeNarrative}
+                </p>
+                {matchingTheme && (
+                  <button
+                    onClick={() => setDrawerTheme(matchingTheme)}
+                    className="shrink-0 text-[9.5px] font-semibold px-2 py-1 rounded transition-opacity hover:opacity-80 mt-0.5"
+                    style={{ background: "rgba(82,176,200,0.08)", color: "rgba(82,176,200,0.70)", border: "1px solid rgba(82,176,200,0.14)" }}
+                  >
+                    View Theme
+                  </button>
+                )}
+              </div>
             )}
           </motion.section>
         )}
@@ -1304,5 +1324,19 @@ export default function IndustryDetailPage() {
 
       </div>
     </div>
+
+    {/* ── Theme Drawer ────────────────────────────────────────────────────── */}
+    {drawerTheme && (
+      <ThemeDrawer
+        theme={drawerTheme}
+        clusters={feedData?.clusters ?? []}
+        deals={industrySponsorDeals.map(d => ({ title: d.title, sector: d.sector, dealType: d.dealType, entities: d.entities, url: d.url }))}
+        isWatched={isWatched(drawerTheme.id)}
+        hasAlert={false}
+        onToggleWatch={() => toggleThemeWatch(drawerTheme.id)}
+        onClose={() => setDrawerTheme(null)}
+      />
+    )}
+    </>
   );
 }

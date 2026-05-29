@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb, Users, Target } from "lucide-react";
 import { useMAIntelligence, type MADeal, type DealType } from "@/hooks/useMAIntelligence";
@@ -11,7 +11,10 @@ import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEM
 import { explainMAActivity, extractAcquirerProfiles, enrichSponsorProfiles } from "@/lib/themeIntelligence";
 import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
+import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
+import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { cn } from "@/lib/utils";
+import type { ThemeIntelligence } from "@/lib/types";
 
 // ── Deal type config ──────────────────────────────────────────────────────────
 
@@ -138,10 +141,13 @@ function BreakdownRow({ label, count, total, color }: { label: string; count: nu
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MAPage() {
+  const [selectedTheme, setSelectedTheme] = useState<ThemeIntelligence | null>(null);
+
   const { deals, breakdown, sponsors, sectorDistribution, totalDealCount, isLoading, isError } = useMAIntelligence();
   const { riskRegime, volRegime } = useMarketState();
   const { data: feedData }  = useFeed();
   const { data: marketData } = useMarketData();
+  const { isWatched, toggle: toggleThemeWatch } = useThemeWatchlist();
 
   const maThemes = useMemo(() => {
     const all = feedData?.theme_intelligence ?? [];
@@ -207,6 +213,7 @@ export default function MAPage() {
   const sponsorDeals = deals.filter(d => d.dealType === "sponsor");
 
   return (
+    <>
     <div className="min-h-screen pb-24" style={{ background: "#050812" }}>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}
@@ -298,9 +305,10 @@ export default function MAPage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {dealClusters.map(dc => (
-                    <div
+                    <button
                       key={dc.theme.id}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                      onClick={() => setSelectedTheme(dc.theme)}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-opacity hover:opacity-80 text-left"
                       style={{ background: "rgba(82,176,200,0.07)", border: "1px solid rgba(82,176,200,0.12)" }}
                     >
                       <span className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>
@@ -314,7 +322,7 @@ export default function MAPage() {
                           · {dc.sectors.join(", ")}
                         </span>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -529,5 +537,19 @@ export default function MAPage() {
         </div>
       </div>
     </div>
+
+    {/* ── Theme Drawer ─────────────────────────────────────────────────── */}
+    {selectedTheme && (
+      <ThemeDrawer
+        theme={selectedTheme}
+        clusters={feedData?.clusters ?? []}
+        deals={deals.map(d => ({ title: d.title, sector: d.sector, dealType: d.dealType, entities: d.entities, url: d.url }))}
+        isWatched={isWatched(selectedTheme.id)}
+        hasAlert={false}
+        onToggleWatch={() => toggleThemeWatch(selectedTheme.id)}
+        onClose={() => setSelectedTheme(null)}
+      />
+    )}
+    </>
   );
 }

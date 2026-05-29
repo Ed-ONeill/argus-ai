@@ -17,7 +17,11 @@ import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
 import { TopNav } from "@/components/layout/TopNav";
-import type { FeedItem } from "@/lib/types";
+import { ThemeTerminal } from "@/components/themes/ThemeTerminal";
+import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
+import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
+import { useThemeAlerts } from "@/hooks/useThemeAlerts";
+import type { FeedItem, ThemeIntelligence } from "@/lib/types";
 
 function formatAge(seconds: number): string {
   if (seconds < 60)   return "just now";
@@ -34,9 +38,11 @@ const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
 )}")`;
 
 export default function FeedPage() {
-  const [drawerOpen,   setDrawerOpen]   = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("");
+  const [drawerOpen,       setDrawerOpen]       = useState(false);
+  const [settingsOpen,     setSettingsOpen]     = useState(false);
+  const [terminalOpen,     setTerminalOpen]     = useState(false);
+  const [selectedTheme,    setSelectedTheme]    = useState<ThemeIntelligence | null>(null);
+  const [activeCategory,   setActiveCategory]   = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const prevIdsRef = useRef<Set<string>>(new Set());
@@ -48,6 +54,9 @@ export default function FeedPage() {
     currentGeneratedAt: data?.generated_at,
   });
   const { watchlist } = useWatchlist();
+  const { watchedIds, toggle: toggleThemeWatch, isWatched: isThemeWatched } = useThemeWatchlist();
+  const themes = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
+  const { hasAlert, alertFor, dismiss: dismissAlert } = useThemeAlerts(themes);
   const ms = useMarketState();
   const isPanic      = ms.regimeTransition && ms.riskRegime === "risk-off";
   const isEuphoric   = ms.trend.acceleration === "accelerating" && ms.riskRegime === "risk-on";
@@ -105,6 +114,7 @@ export default function FeedPage() {
       <TopNav
         onRefresh={() => refresh(true)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenThemeTerminal={() => setTerminalOpen(true)}
         isRefreshing={isFetching}
       />
 
@@ -121,6 +131,32 @@ export default function FeedPage() {
         modelName=""
         onChange={() => {}}
       />
+
+      {/* ── Theme Terminal ─────────────────────────────────────────────────── */}
+      {terminalOpen && (
+        <ThemeTerminal
+          themes={themes}
+          watchedIds={watchedIds}
+          hasAlert={hasAlert}
+          onToggleWatch={toggleThemeWatch}
+          onSelectTheme={t => { setTerminalOpen(false); setSelectedTheme(t); }}
+          onClose={() => setTerminalOpen(false)}
+        />
+      )}
+
+      {/* ── Theme Drawer ───────────────────────────────────────────────────── */}
+      {selectedTheme && (
+        <ThemeDrawer
+          theme={selectedTheme}
+          clusters={data?.clusters ?? []}
+          deals={[]}
+          isWatched={isThemeWatched(selectedTheme.id)}
+          hasAlert={hasAlert(selectedTheme.id)}
+          alertDirection={alertFor(selectedTheme.id)?.direction}
+          onToggleWatch={() => { toggleThemeWatch(selectedTheme.id); dismissAlert(selectedTheme.id); }}
+          onClose={() => setSelectedTheme(null)}
+        />
+      )}
 
       {/* ── Atmospheric dark environment — unified intelligence system ─────── */}
       <div className="relative" style={{ background: "#030710", minHeight: "calc(100vh - 3.5rem)" }}>

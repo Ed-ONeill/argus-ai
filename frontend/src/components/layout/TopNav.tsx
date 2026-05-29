@@ -7,7 +7,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   RefreshCw, Settings, Bookmark, BarChart2,
   Newspaper, Building2, LogIn, LogOut, User, Headphones,
-  GitMerge, Layers,
+  GitMerge, Layers, Network,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -24,12 +24,13 @@ const NAV_LINKS = [
 ] as const;
 
 interface TopNavProps {
-  onRefresh?:      () => void;
-  onOpenSettings?: () => void;
-  isRefreshing?:   boolean;
+  onRefresh?:           () => void;
+  onOpenSettings?:      () => void;
+  onOpenThemeTerminal?: () => void;
+  isRefreshing?:        boolean;
 }
 
-export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps) {
+export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefreshing }: TopNavProps) {
   const pathname = usePathname();
   const router   = useRouter();
   const [scrolled, setScrolled] = useState(false);
@@ -141,6 +142,17 @@ export function TopNav({ onRefresh, onOpenSettings, isRefreshing }: TopNavProps)
                 {isRefreshing ? "Refreshing…" : "Refresh"}
               </span>
             </motion.button>
+          )}
+
+          {onOpenThemeTerminal && (
+            <button
+              onClick={onOpenThemeTerminal}
+              className="p-2 rounded-lg hover:bg-white/[0.05] transition-colors"
+              style={{ color: "rgba(255,255,255,0.36)" }}
+              title="Theme Intelligence Terminal"
+            >
+              <Network size={14} />
+            </button>
           )}
 
           {onOpenSettings && (

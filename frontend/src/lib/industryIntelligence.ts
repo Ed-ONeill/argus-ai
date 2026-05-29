@@ -241,29 +241,40 @@ export function getIndustrySponsors(deals: SectorDealItem[]): IndustrySponsor[] 
 
 // ── 6. Theme Causal Narrative ─────────────────────────────────────────────────
 
+function _matchingTheme(
+  industry: IndustryConfig,
+  themes:   ThemeIntelligence[],
+): ThemeIntelligence | null {
+  const indLower = industry.name.toLowerCase();
+  const secLower = industry.sector.toLowerCase();
+
+  return themes
+    .filter(t =>
+      t.related_industries.some(i =>
+        i.toLowerCase().includes(indLower) || i.toLowerCase().includes(secLower)
+      ) ||
+      t.related_assets.some(a =>
+        industry.keyAssets.some(k => k.toUpperCase() === a.toUpperCase())
+      )
+    )
+    .sort((a, b) => (b.persistence_score ?? 0) - (a.persistence_score ?? 0))[0] ?? null;
+}
+
 export function getThemeNarrative(
   industry: IndustryConfig,
   themes:   ThemeIntelligence[],
 ): string | null {
-  const indLower = industry.name.toLowerCase();
-  const secLower = industry.sector.toLowerCase();
+  const match = _matchingTheme(industry, themes);
+  return (match?.causal_narrative && match.causal_narrative.length > 30)
+    ? match.causal_narrative
+    : null;
+}
 
-  const match = themes
-    .filter(t =>
-      t.causal_narrative &&
-      t.causal_narrative.length > 30 &&
-      (
-        t.related_industries.some(i =>
-          i.toLowerCase().includes(indLower) || i.toLowerCase().includes(secLower)
-        ) ||
-        t.related_assets.some(a =>
-          industry.keyAssets.some(k => k.toUpperCase() === a.toUpperCase())
-        )
-      )
-    )
-    .sort((a, b) => (b.persistence_score ?? 0) - (a.persistence_score ?? 0))[0];
-
-  return match?.causal_narrative ?? null;
+export function getMatchingTheme(
+  industry: IndustryConfig,
+  themes:   ThemeIntelligence[],
+): ThemeIntelligence | null {
+  return _matchingTheme(industry, themes);
 }
 
 // ── 7. MA Deal Thematic Clustering ────────────────────────────────────────────
