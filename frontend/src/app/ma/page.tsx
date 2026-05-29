@@ -9,6 +9,7 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { useFeed } from "@/hooks/useFeed";
 import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
 import { explainMAActivity, extractAcquirerProfiles, enrichSponsorProfiles } from "@/lib/themeIntelligence";
+import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
 import { cn } from "@/lib/utils";
 
@@ -179,6 +180,11 @@ export default function MAPage() {
     [deals],
   );
 
+  const dealClusters = useMemo(
+    () => clusterDealsByTheme(deals.map(d => ({ sector: d.sector, dealType: d.dealType })), maThemes),
+    [deals, maThemes],
+  );
+
   const enrichedSponsors = useMemo(
     () => enrichSponsorProfiles(sponsors, deals.map(d => ({ peFirm: d.peFirm, sector: d.sector }))),
     [sponsors, deals],
@@ -275,6 +281,39 @@ export default function MAPage() {
                 <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
                   {maRationale}
                 </p>
+              </div>
+            )}
+
+            {/* Consolidation Themes */}
+            {dealClusters.length > 0 && !isLoading && (
+              <div
+                className="rounded-xl border px-4 py-3 mb-4"
+                style={{ background: "rgba(82,176,200,0.04)", borderColor: "rgba(82,176,200,0.12)" }}
+              >
+                <p className="text-[9px] font-bold uppercase tracking-[0.13em] mb-2.5" style={{ color: "rgba(82,176,200,0.50)" }}>
+                  Consolidation Themes
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {dealClusters.map(dc => (
+                    <div
+                      key={dc.theme.id}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                      style={{ background: "rgba(82,176,200,0.07)", border: "1px solid rgba(82,176,200,0.12)" }}
+                    >
+                      <span className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>
+                        {dc.theme.name}
+                      </span>
+                      <span className="text-[9px] font-bold tabular-nums" style={{ color: "rgba(82,176,200,0.70)" }}>
+                        {dc.dealCount}
+                      </span>
+                      {dc.sectors.length > 0 && (
+                        <span className="text-[8.5px]" style={{ color: "rgba(255,255,255,0.28)" }}>
+                          · {dc.sectors.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

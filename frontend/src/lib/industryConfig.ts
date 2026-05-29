@@ -234,10 +234,12 @@ export function getTopTheme(
 export function filterIndustryClusters(
   industry: IndustryConfig,
   clusters: StoryCluster[],
-  limit     = 5,
+  limit     = 12,
 ): StoryCluster[] {
   const assetSet   = new Set(industry.keyAssets.map(a => a.toUpperCase()));
   const sectorSet  = new Set((SECTOR_ENTITIES[industry.sector] ?? []).map(e => e.toUpperCase()));
+  const indLower   = industry.name.toLowerCase();
+  const secLower   = industry.sector.toLowerCase();
 
   return clusters
     .map(cl => {
@@ -248,6 +250,9 @@ export function filterIndustryClusters(
       for (const e of cl.primary.affected_entities) {
         if (sectorSet.has(e.toUpperCase())) { score += 2; break; }
       }
+      const titleLower = cl.primary.title.toLowerCase();
+      if (titleLower.includes(indLower))       score += 2;
+      else if (titleLower.includes(secLower))  score += 1;
       return { cluster: cl, score: score * (1 + cl.cluster_score * 0.1) };
     })
     .filter(({ score }) => score > 0)

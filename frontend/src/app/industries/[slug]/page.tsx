@@ -7,11 +7,12 @@ import {
   ChevronLeft, TrendingUp, TrendingDown, Minus,
   AlertTriangle, Globe, BarChart3, Zap,
   Radio, ShieldAlert, Target, Shuffle, RefreshCw,
-  Headphones, ArrowUpRight, Activity, Network,
+  Headphones, ArrowUpRight, Activity, Network, Building2, Sprout,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
+import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import {
   getIndustryBySlug,
   getSectorIntelligence,
@@ -35,6 +36,14 @@ import {
 } from "@/lib/sectorIntelligence";
 import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
+import {
+  getInfluentialEntities,
+  filterVCFundingClusters,
+  getIndustrySponsorDeals,
+  getThemeNarrative,
+  type EntitySignal,
+  type SectorDealItem,
+} from "@/lib/industryIntelligence";
 import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
@@ -110,6 +119,40 @@ function StoryRow({ cluster, color }: { cluster: StoryCluster; color: string }) 
               +{cluster.related.length} related
             </span>
           )}
+        </div>
+      </div>
+      <ArrowUpRight size={10} className="text-ink-muted/30 group-hover:text-accent transition-colors shrink-0 mt-0.5" />
+    </a>
+  );
+}
+
+// ── Industry deal row (M&A / sponsor deals) ───────────────────────────────────
+
+function IndustryDealRow({ deal, color }: { deal: SectorDealItem; color: string }) {
+  return (
+    <a
+      href={deal.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-start gap-2.5 group py-2.5 border-b border-edge/50 last:border-0"
+    >
+      <span className="w-[2.5px] shrink-0 self-stretch rounded-full" style={{ background: `${color}60` }} />
+      <div className="flex-1 min-w-0 space-y-1">
+        <p className="text-[12px] font-medium text-ink leading-snug line-clamp-2 group-hover:text-accent transition-colors">
+          {deal.title}
+        </p>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {deal.peFirm && (
+            <span className="text-[9.5px] text-ink-muted/80 font-medium">{deal.peFirm}</span>
+          )}
+          <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-px rounded border border-edge text-ink-muted/60 bg-raised">
+            {deal.dealType}
+          </span>
+          {deal.entities.slice(0, 3).map(e => (
+            <span key={e} className="text-[8.5px] font-mono font-bold px-1 py-px rounded leading-none" style={{ color, background: `${color}14` }}>
+              {e}
+            </span>
+          ))}
         </div>
       </div>
       <ArrowUpRight size={10} className="text-ink-muted/30 group-hover:text-accent transition-colors shrink-0 mt-0.5" />
@@ -370,6 +413,7 @@ export default function IndustryDetailPage() {
   const derivedRegime = sectorData?.derived_regime ?? "";
   const { data: feedData } = useFeed({});
   const whatMattersNow = feedData?.what_matters_now ?? [];
+  const { deals: maDeals } = useMAIntelligence();
 
   // Not found state
   if (!industry) {
@@ -413,6 +457,15 @@ export default function IndustryDetailPage() {
   const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 5);
   const themeClusters = topClusters.slice(0, 4);
   const topTheme      = getTopTheme(industry, clusters, whatMattersNow);
+
+  // Phase 3 intelligence
+  const industrySponsorDeals = getIndustrySponsorDeals(
+    industry,
+    maDeals.map(d => ({ id: d.id, title: d.title, sector: d.sector, dealType: d.dealType, peFirm: d.peFirm ?? null, entities: d.entities, url: d.url, published: d.published })),
+  );
+  const vcClusters     = filterVCFundingClusters(industry, feedData?.clusters ?? []);
+  const keyCompanies   = getInfluentialEntities(industry, topClusters, indSignals, sectorIntel, leadership.leaders, leadership.laggards);
+  const themeNarrative = getThemeNarrative(industry, feedData?.theme_intelligence ?? []);
 
   const score     = sectorIntel?.signal_score     ?? 0;
   const sentiment = (
@@ -666,6 +719,11 @@ export default function IndustryDetailPage() {
             <p className="text-[13px] text-ink-secondary leading-relaxed">
               {thesis}
             </p>
+            {themeNarrative && (
+              <p className="text-[11.5px] text-ink-muted/70 leading-relaxed mt-2.5 pt-2.5 border-t border-edge/40 italic">
+                {themeNarrative}
+              </p>
+            )}
           </motion.section>
         )}
 
@@ -744,6 +802,23 @@ export default function IndustryDetailPage() {
               </motion.section>
             )}
 
+            {/* VC & Funding */}
+            {vcClusters.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18, duration: 0.25, ease: "easeOut" }}
+                className="bg-surface rounded-xl border border-edge p-5"
+              >
+                <SectionHeader icon={Sprout}>VC & Funding</SectionHeader>
+                <div>
+                  {vcClusters.map(cl => (
+                    <StoryRow key={cl.id} cluster={cl} color={industry.color} />
+                  ))}
+                </div>
+              </motion.section>
+            )}
+
             {/* M&A Activity */}
             <motion.section
               initial={{ opacity: 0, y: 10 }}
@@ -752,13 +827,24 @@ export default function IndustryDetailPage() {
               className="bg-surface rounded-xl border border-edge p-5"
             >
               <SectionHeader icon={Shuffle}>M&A Activity</SectionHeader>
-              {maClusters.length > 0 ? (
-                <div>
+              {maClusters.length > 0 && (
+                <div className="mb-3">
                   {maClusters.map(cl => (
                     <StoryRow key={cl.id} cluster={cl} color={industry.color} />
                   ))}
                 </div>
-              ) : (
+              )}
+              {industrySponsorDeals.length > 0 && (
+                <div className={maClusters.length > 0 ? "pt-2 border-t border-edge/40" : ""}>
+                  {maClusters.length > 0 && (
+                    <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-ink-muted/50 mb-2">Sponsor & PE</p>
+                  )}
+                  {industrySponsorDeals.map(d => (
+                    <IndustryDealRow key={d.id} deal={d} color={industry.color} />
+                  ))}
+                </div>
+              )}
+              {maClusters.length === 0 && industrySponsorDeals.length === 0 && (
                 <div className="space-y-2">
                   <p className="text-[11.5px] text-ink-secondary leading-relaxed">
                     {industry.maTheme}
@@ -957,6 +1043,49 @@ export default function IndustryDetailPage() {
                 </p>
               )}
             </motion.section>
+
+            {/* Key Companies */}
+            {keyCompanies.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.21, duration: 0.25, ease: "easeOut" }}
+                className="bg-surface rounded-xl border border-edge p-4"
+              >
+                <SectionHeader icon={Building2}>Key Companies</SectionHeader>
+                <div className="space-y-2">
+                  {keyCompanies.map((e: EntitySignal) => {
+                    const statusColor =
+                      e.status === "leader"  ? "#10b981" :
+                      e.status === "laggard" ? "#ef4444" :
+                      e.isKeyAsset           ? industry.color : "#94a3b8";
+                    return (
+                      <div key={e.name} className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={cn(
+                            "text-[10.5px] font-bold leading-none shrink-0",
+                            e.isTicker ? "font-mono" : "font-sans",
+                          )}
+                          style={{ color: statusColor }}
+                        >
+                          {e.name}
+                        </span>
+                        {e.status !== "neutral" && (
+                          <span className="text-[9px] font-bold shrink-0" style={{ color: statusColor }}>
+                            {e.status === "leader" ? "↑" : "↓"}
+                          </span>
+                        )}
+                        {e.headline && (
+                          <span className="text-[9px] text-ink-muted/55 truncate flex-1 min-w-0">
+                            {e.headline}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.section>
+            )}
 
             {/* Positioning */}
             <motion.section
