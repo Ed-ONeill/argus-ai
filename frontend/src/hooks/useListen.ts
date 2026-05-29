@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Episode } from "@/lib/types";
 
@@ -200,4 +201,53 @@ export function useListen(topic: string) {
   const isFallback: boolean  = data?.isFallback ?? false;
 
   return { episodes, isLoading, isFallback };
+}
+
+// ── Rail-based hook (new Listen page) ─────────────────────────────────────────
+//
+// Fetches only /api/listen/ — no briefings endpoint.  Briefings that leak through
+// (is_briefing=true) are filtered client-side.  Episodes are deduplicated and
+// partitioned into six themed rails in priority order so the same episode never
+// appears in two rails.
+
+export function useListenRails() {
+  const { data, isLoading } = useQuery<Episode[]>({
+    queryKey: ["listen-rails"],
+    queryFn: async () => {
+      const res = await fetch("/api/listen/?limit=100");
+      if (!res.ok) return [];
+      const raw: unknown = await res.json();
+      return (Array.isArray(raw) ? (raw as Episode[]) : []).filter(e => !e.is_briefing);
+    },
+    staleTime: 2 * 60_000,
+    placeholderData: (prev) => prev,
+  });
+
+  const rails = useMemo(() => {
+    const episodes = data ?? [];
+    const used = new Set<string>();
+
+    function pick(filter: (ep: Episode) => boolean, limit = 8): Episode[] {
+      const result: Episode[] = [];
+      for (const ep of episodes) {
+        if (result.length >= limit) break;
+        if (!used.has(ep.id) && filter(ep)) {
+          used.add(ep.id);
+          result.push(ep);
+        }
+      }
+      return result;
+    }
+
+    const macroMarket = pick(ep => ep.topics.some(t => t === "Markets" || t === "Macro"));
+    const maPrivate   = pick(ep => ep.topics.some(t => t === "M&A"     || t === "Private Markets"));
+    const venture     = pick(ep => ep.topics.some(t => t === "Venture"  || t === "Tech / AI"));
+    const company     = pick(ep => ep.topics.some(t => t === "Company"));
+    const quick       = pick(ep => ep.duration_seconds > 0 && ep.duration_seconds < 900);
+    const longForm    = pick(ep => ep.duration_seconds >= 2700);
+
+    return { macroMarket, maPrivate, venture, company, quick, longForm };
+  }, [data]);
+
+  return { rails, isLoading, totalEpisodes: data?.length ?? 0 };
 }

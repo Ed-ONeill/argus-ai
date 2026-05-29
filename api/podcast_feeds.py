@@ -238,6 +238,87 @@ PODCAST_FEEDS: list[dict] = [
         "source_tier":    3,
     },
 
+    # ── Tier 4: Company deep dives + institutional allocators ────────────────────
+
+    {
+        # Business Breakdowns — Colossus | detailed per-company deep dives
+        # covering unit economics, competitive moats, and operating model.
+        # Same publisher as Invest Like the Best; consistently high finance signal.
+        # NOTE: verify RSS URL before deploying if feed stops resolving.
+        "rss_url":        "https://feeds.megaphone.fm/businessbreakdowns",
+        "show_name":      "Business Breakdowns",
+        "publisher":      "Colossus",
+        "default_topics": ["Company"],
+        "source_tier":    4,
+    },
+    {
+        # Capital Allocators — Ted Seides interviews LPs, endowment CIOs, and GPs.
+        # Institutional private markets perspective; long-form, high-signal.
+        "rss_url":        "https://feeds.megaphone.fm/capitalallocators",
+        "show_name":      "Capital Allocators",
+        "publisher":      "Capital Allocators",
+        "default_topics": ["Private Markets", "Company"],
+        "source_tier":    4,
+    },
+    {
+        # The Compound and Friends — Josh Brown + Michael Batnick (Ritholtz Wealth).
+        # Daily market commentary, earnings reactions, macro takes. High cadence.
+        "rss_url":        "https://feeds.megaphone.fm/thecompoundandfriends",
+        "show_name":      "The Compound and Friends",
+        "publisher":      "Ritholtz Wealth Management",
+        "default_topics": ["Markets", "Company"],
+        "source_tier":    4,
+    },
+    {
+        # Animal Spirits — Michael Batnick + Ben Carlson on markets, portfolio
+        # construction, and investor psychology. Weekly, 45-60 min.
+        "rss_url":        "https://feeds.megaphone.fm/animalspirits",
+        "show_name":      "Animal Spirits",
+        "publisher":      "Ritholtz Wealth Management",
+        "default_topics": ["Markets", "Macro"],
+        "source_tier":    4,
+    },
+
+    # ── Tier 3: Venture / VC / Startup intelligence ───────────────────────────
+
+    {
+        # 20VC — Harry Stebbings interviews premier venture investors and founders.
+        # Covers fund dynamics, deal flow, company building. Strong VC signal.
+        # NOTE: verify RSS URL — show migrated platforms in 2023.
+        "rss_url":        "https://feeds.megaphone.fm/twentyminutevc",
+        "show_name":      "20VC",
+        "publisher":      "20VC",
+        "default_topics": ["Venture", "Private Markets"],
+        "source_tier":    3,
+    },
+    {
+        # a16z Podcast — Andreessen Horowitz institutional takes on AI, crypto,
+        # bio, and enterprise software from a venture lens.
+        "rss_url":        "https://feeds.simplecast.com/JGE3yC0V",
+        "show_name":      "a16z Podcast",
+        "publisher":      "Andreessen Horowitz",
+        "default_topics": ["Venture", "Tech / AI"],
+        "source_tier":    3,
+    },
+    {
+        # My First Million — Sam Parr + Shaan Puri on startup business models,
+        # emerging opportunities, and founder intelligence. High episode volume.
+        "rss_url":        "https://feeds.megaphone.fm/mfm",
+        "show_name":      "My First Million",
+        "publisher":      "Hubspot Podcast Network",
+        "default_topics": ["Venture", "Company"],
+        "source_tier":    3,
+    },
+    {
+        # Bankless — Ryan Sean Adams + David Hoffman on crypto markets, DeFi,
+        # and digital asset strategy from an institutional adoption lens.
+        "rss_url":        "https://feeds.megaphone.fm/bankless",
+        "show_name":      "Bankless",
+        "publisher":      "Bankless",
+        "default_topics": ["Venture", "Tech / AI"],
+        "source_tier":    3,
+    },
+
     # ── Tier 2: Broad business/culture; content filter essential ──────────────
 
     {
@@ -350,6 +431,7 @@ _MAX_AGE_GLOBAL_H    = 336   # 14d absolute max (raised from 240h/10d to keep mo
 _MAX_AGE_BY_TOPIC: dict[str, int] = {
     "M&A":             240,   # 10d — deal news cycles slowly (raised from 7d)
     "Private Markets": 240,   # 10d — fundraising/PE cycles are long (raised from 7d)
+    "Venture":         240,   # 10d — VC/startup deals cycle slowly
     "Company":         240,   # 10d — company events stay relevant longer (raised from 7d)
     "Tech / AI":       168,   # 7d  — raised from 5d
     "Geopolitical":    120,   # 5d  — keep tight; geopolitical news moves fast
@@ -377,6 +459,7 @@ _SECONDARY_MIN_SCORE = 3           # minimum score for cross-topic secondary fil
 _MIN_SCORE_BY_TOPIC: dict[str, int] = {
     "M&A":             3,    # lowered from 4 — thin category; wider candidates needed
     "Private Markets": 3,    # lowered from 4 — thin category
+    "Venture":         3,    # thin category; wider candidates needed
     "Tech / AI":       3,    # lowered from 4
     "Geopolitical":    3,    # lowered from 4
     "Macro":           3,    # lowered from 4
@@ -416,6 +499,7 @@ MAX_PER_TOPIC_ALL: dict[str, int] = {
     "Geopolitical":    5,    # raised from 3
     "M&A":             4,    # raised from 3
     "Private Markets": 3,    # raised from 2
+    "Venture":         4,    # new category — VC/startup episodes
 }
 
 # ── Show diversity cap ────────────────────────────────────────────────────────
@@ -619,9 +703,48 @@ class _TechAITopicRule(_TopicRule):
 
 _TOPIC_RULES: list[_TopicRule] = [
 
+    # ── Venture ───────────────────────────────────────────────────────────────
+    # Evaluated FIRST so startup/VC round stories own the Venture label before
+    # Private Markets can absorb them via incidental "venture capital" vocabulary.
+    _TopicRule(
+        label     = "Venture",
+        strong    = re.compile(
+            r"\b(?:"
+            r"series\s+[a-f]\s+(?:round|funding|raise|close|investment)"
+            r"|seed\s+(?:round|funding|investment|stage)"
+            r"|pre.?seed\s+(?:round|funding|raise)"
+            r"|angel\s+(?:round|investor|investment|funding)"
+            r"|y\s*combinator|ycombinator|yc\s+(?:batch|alum|backed|startup)"
+            r"|accelerator\s+(?:program|batch|backed|alum)"
+            r"|techstars\b|500\s+startups?\b"
+            r"|startup\s+(?:funding|raises?|secures?|closes?)\s+\$"
+            r"|founder.?led\b"
+            r"|venture.?backed\s+startup"
+            r"|term\s+sheet\b"
+            r"|cap\s+table\b"
+            r"|pitch\s+(?:deck|competition)"
+            r"|pre.?money\s+valuation|post.?money\s+valuation"
+            r")\b",
+            re.IGNORECASE,
+        ),
+        weak      = re.compile(
+            r"\b(?:"
+            r"startup\b|founder\b|founders\b"
+            r"|entrepreneur\b"
+            r"|vc\b"
+            r"|unicorn\b"
+            r"|pre.?ipo\b"
+            r"|incubator\b"
+            r"|exits?\s+(?:strategy|path|route|to\s+ipo)"
+            r")\b",
+            re.IGNORECASE,
+        ),
+        min_score = 2,
+    ),
+
     # ── Private Markets ────────────────────────────────────────────────────────
-    # Evaluated BEFORE M&A so that PE/credit/fundraising stories don't inherit
-    # M&A labels from incidental deal vocabulary.
+    # Evaluated AFTER Venture so institutional PE/credit/fund episodes own
+    # Private Markets without competing with startup deal vocabulary.
     _TopicRule(
         label     = "Private Markets",
         strong    = re.compile(
@@ -949,7 +1072,7 @@ _TOPIC_RULES: list[_TopicRule] = [
 #   Geopolitical before Macro   — trade/sanctions stories are geopolitical first.
 #   Markets last                — broad catch-all for price-action episodes.
 _TOPIC_ORDER = [
-    "Private Markets", "M&A", "Company", "Tech / AI",
+    "Venture", "Private Markets", "M&A", "Company", "Tech / AI",
     "Geopolitical", "Macro", "Markets",
 ]
 _TOPIC_RULE_MAP: dict[str, _TopicRule] = {r.label: r for r in _TOPIC_RULES}
@@ -1133,6 +1256,7 @@ def _classify_topics(
 _WIM: dict[str, str] = {
     "M&A":             "Deal activity signals shifting executive confidence and strategic capital allocation.",
     "Private Markets": "Private market dynamics lead public valuations and define the next wave of deal flow.",
+    "Venture":         "Venture funding rounds reveal where capital is concentrating ahead of public market repricing.",
     "Tech / AI":       "Technology shifts are rewriting competitive moats and driving outsized earnings revisions.",
     "Geopolitical":    "Geopolitical developments simultaneously reprice commodities, supply chains, and risk premia.",
     "Macro":           "Macro variables set the discount rate and risk appetite for every asset class globally.",
