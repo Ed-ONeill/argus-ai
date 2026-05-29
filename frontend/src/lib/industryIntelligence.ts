@@ -26,8 +26,8 @@ export function getInfluentialEntities(
   leaders:     string[],
   laggards:    string[],
 ): EntitySignal[] {
-  const assetSet  = new Set(industry.keyAssets.map(a => a.toUpperCase()));
-  const leaderSet = new Set(leaders.map(l => l.toUpperCase()));
+  const assetSet   = new Set(industry.keyAssets.map(a => a.toUpperCase()));
+  const leaderSet  = new Set(leaders.map(l => l.toUpperCase()));
   const laggardSet = new Set(laggards.map(l => l.toUpperCase()));
 
   const map = new Map<string, { originalName: string; mentions: number; headlines: string[] }>();
@@ -41,31 +41,35 @@ export function getInfluentialEntities(
     if (headline && e.headlines.length < 2) e.headlines.push(headline);
   }
 
-  // Cluster entity mentions
+  // Cluster entity mentions — weighted by cluster quality score
   for (const cl of topClusters) {
-    const p = cl.primary;
-    const isKey = p.affected_entities.some(e => assetSet.has(e.toUpperCase()));
+    const p       = cl.primary;
+    const clScale = 1 + Math.floor(cl.cluster_score / 25); // 1–5 scaling factor
+    const isKey   = p.affected_entities.some(e => assetSet.has(e.toUpperCase()));
     for (const entity of p.affected_entities) {
-      add(entity, p.why_it_matters || p.title, isKey ? 2 : 1);
+      add(entity, p.why_it_matters || p.title, isKey ? clScale * 2 : clScale);
     }
   }
 
-  // Industry signal top entities (high signal quality)
+  // Industry signal top entities — weighted by signal quality
   for (const sig of indSignals) {
-    if (sig.top_entity) add(sig.top_entity, sig.narrative, 4);
+    if (!sig.top_entity) continue;
+    const sigScale = 2 + Math.floor(sig.signal_score / 20); // 2–7 scaling
+    add(sig.top_entity, sig.narrative, sigScale);
   }
 
-  // Sector top entity
-  if (sectorIntel?.top_entity) add(sectorIntel.top_entity, "", 2);
+  // Sector level top entity
+  if (sectorIntel?.top_entity) add(sectorIntel.top_entity, "", 3);
 
-  // Ensure all keyAssets are represented
-  for (const asset of industry.keyAssets) {
-    add(asset, "", assetSet.has(asset.toUpperCase()) ? 1 : 0);
+  // Ensure leaders and laggards appear even if not mentioned in current stories
+  for (const asset of [...leaders, ...laggards]) {
+    const key = asset.toUpperCase();
+    if (!map.has(key)) add(asset, "", 1);
   }
 
   return Array.from(map.entries())
     .map(([key, { originalName, mentions, headlines }]) => {
-      const isTicker  = /^[A-Z]{1,6}(-[A-Z]+)?$/.test(key);
+      const isTicker   = /^[A-Z]{1,6}(-[A-Z]+)?$/.test(key);
       const isKeyAsset = assetSet.has(key);
       const displayName = isKeyAsset
         ? (industry.keyAssets.find(a => a.toUpperCase() === key) ?? originalName)
@@ -75,55 +79,69 @@ export function getInfluentialEntities(
         leaderSet.has(key)  ? "leader" :
         laggardSet.has(key) ? "laggard" : "neutral";
 
+      // Leaders and laggards get a fixed boost so they surface above neutral noise
+      const finalScore = mentions + (isKeyAsset ? 2 : 0) + (status !== "neutral" ? 4 : 0);
+
       return {
         name:       displayName,
         isTicker,
-        mentions:   mentions + (isKeyAsset ? 3 : 0) + (status !== "neutral" ? 2 : 0),
+        mentions:   finalScore,
         headline:   headlines[0] ?? "",
         isKeyAsset,
         status,
       };
     })
-    .filter(e => e.mentions > 0)
+    // Only show entities that have actual data weight, not ghost keyAssets
+    .filter(e => e.mentions > 2 || e.status !== "neutral")
     .sort((a, b) => {
-      // Leaders/laggards first, then keyAssets, then by mention count
-      const rankA = a.status !== "neutral" ? 0 : a.isKeyAsset ? 1 : 2;
-      const rankB = b.status !== "neutral" ? 0 : b.isKeyAsset ? 1 : 2;
+      const rankA = a.status !== "neutral" ? 0 : a.mentions > 4 ? 1 : 2;
+      const rankB = b.status !== "neutral" ? 0 : b.mentions > 4 ? 1 : 2;
       if (rankA !== rankB) return rankA - rankB;
       return b.mentions - a.mentions;
     })
-    .slice(0, 10);
+    .slice(0, 12);
 }
 
 // ── 2. VC & Funding Activity ──────────────────────────────────────────────────
 
 const VC_KW = [
   "raises", "funding round", "series a", "series b", "series c", "series d",
-  "venture", "growth capital", "seed round", "invested in", "backed",
-  "vc-backed", "startup", "late-stage", "led the round", "valuation",
+  "series e", "series f", "venture", "growth capital", "seed round",
+  "invested in", "backed by", "vc-backed", "startup", "late-stage",
+  "led the round", "valuation", "pre-ipo", "early stage", "angel round",
+  "equity round", "crossover round", "private placement", "unicorn",
+  "venture capital", "growth equity", "strategic investment",
 ];
 
 export function filterVCFundingClusters(
   industry:    IndustryConfig,
   allClusters: StoryCluster[],
 ): StoryCluster[] {
-  const indLower  = industry.name.toLowerCase();
-  const secLower  = industry.sector.toLowerCase();
-  const assetSet  = new Set(industry.keyAssets.map(a => a.toUpperCase()));
+  const indLower = industry.name.toLowerCase();
+  const secLower = industry.sector.toLowerCase();
+  const assetSet = new Set(industry.keyAssets.map(a => a.toUpperCase()));
 
   return allClusters
-    .filter(c => {
-      const p       = c.primary;
+    .map(c => {
+      const p        = c.primary;
       const haystack = [p.title, p.category, ...(p.affected_entities ?? [])].join(" ").toLowerCase();
-      if (!VC_KW.some(kw => haystack.includes(kw))) return false;
-      return (
+      const kwCount  = VC_KW.filter(kw => haystack.includes(kw)).length;
+      if (kwCount === 0) return null;
+
+      const industryMatch =
         haystack.includes(indLower) ||
         haystack.includes(secLower) ||
-        p.affected_entities.some(e => assetSet.has(e.toUpperCase()))
-      );
+        p.affected_entities.some(e => assetSet.has(e.toUpperCase()));
+      if (!industryMatch) return null;
+
+      // Score: keyword density (0–50) + cluster quality (0–100) + asset match bonus
+      const assetBonus = p.affected_entities.some(e => assetSet.has(e.toUpperCase())) ? 20 : 0;
+      return { cluster: c, score: kwCount * 10 + c.cluster_score + assetBonus };
     })
-    .sort((a, b) => b.cluster_score - a.cluster_score)
-    .slice(0, 4);
+    .filter((x): x is { cluster: StoryCluster; score: number } => x !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6)
+    .map(({ cluster }) => cluster);
 }
 
 // ── 3. Industry-Specific Sponsor / Deal Activity ──────────────────────────────
@@ -151,15 +169,77 @@ export function getIndustrySponsorDeals(
     .filter(d => {
       const sLower = d.sector.toLowerCase();
       return (
-        sLower.includes(secLower) ||
-        sLower.includes(indLow)   ||
+        sLower.includes(secLower)  ||
+        sLower.includes(indLow)    ||
         d.entities.some(e => assetSet.has(e.toUpperCase()))
       );
     })
+    .slice(0, 8);
+}
+
+// ── 4. Industry Acquirer Intelligence ────────────────────────────────────────
+
+export interface IndustryAcquirer {
+  name:      string;
+  dealCount: number;
+  sectors:   string[];
+  dealTypes: string[];
+}
+
+export function getIndustryAcquirers(deals: SectorDealItem[]): IndustryAcquirer[] {
+  const strategic = deals.filter(d => d.dealType === "strategic" || d.dealType === "merger");
+  const map       = new Map<string, { sectors: Set<string>; dealTypes: Set<string> }>();
+
+  for (const d of strategic) {
+    for (const entity of d.entities.slice(0, 2)) {
+      if (!entity || entity.trim().length === 0) continue;
+      if (!map.has(entity)) map.set(entity, { sectors: new Set(), dealTypes: new Set() });
+      map.get(entity)!.sectors.add(d.sector);
+      map.get(entity)!.dealTypes.add(d.dealType);
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([name, { sectors, dealTypes }]) => ({
+      name,
+      dealCount: strategic.filter(d => d.entities.includes(name)).length,
+      sectors:   Array.from(sectors),
+      dealTypes: Array.from(dealTypes),
+    }))
+    .filter(p => p.dealCount >= 1)
+    .sort((a, b) => b.dealCount - a.dealCount)
     .slice(0, 6);
 }
 
-// ── 4. Theme Causal Narrative ─────────────────────────────────────────────────
+// ── 5. Industry Sponsor Intelligence ─────────────────────────────────────────
+
+export interface IndustrySponsor {
+  firm:    string;
+  deals:   number;
+  sectors: string[];
+}
+
+export function getIndustrySponsors(deals: SectorDealItem[]): IndustrySponsor[] {
+  const sponsorDeals = deals.filter(d => d.peFirm);
+  const map          = new Map<string, Set<string>>();
+
+  for (const d of sponsorDeals) {
+    const firm = d.peFirm!;
+    if (!map.has(firm)) map.set(firm, new Set());
+    map.get(firm)!.add(d.sector);
+  }
+
+  return Array.from(map.entries())
+    .map(([firm, sectorSet]) => ({
+      firm,
+      deals:   sponsorDeals.filter(d => d.peFirm === firm).length,
+      sectors: Array.from(sectorSet).slice(0, 3),
+    }))
+    .sort((a, b) => b.deals - a.deals)
+    .slice(0, 5);
+}
+
+// ── 6. Theme Causal Narrative ─────────────────────────────────────────────────
 
 export function getThemeNarrative(
   industry: IndustryConfig,
@@ -173,8 +253,12 @@ export function getThemeNarrative(
       t.causal_narrative &&
       t.causal_narrative.length > 30 &&
       (
-        t.related_industries.some(i => i.toLowerCase().includes(indLower) || i.toLowerCase().includes(secLower)) ||
-        t.related_assets.some(a => industry.keyAssets.some(k => k.toUpperCase() === a.toUpperCase()))
+        t.related_industries.some(i =>
+          i.toLowerCase().includes(indLower) || i.toLowerCase().includes(secLower)
+        ) ||
+        t.related_assets.some(a =>
+          industry.keyAssets.some(k => k.toUpperCase() === a.toUpperCase())
+        )
       )
     )
     .sort((a, b) => (b.persistence_score ?? 0) - (a.persistence_score ?? 0))[0];
@@ -182,7 +266,7 @@ export function getThemeNarrative(
   return match?.causal_narrative ?? null;
 }
 
-// ── 5. MA Deal Thematic Clustering ────────────────────────────────────────────
+// ── 7. MA Deal Thematic Clustering ────────────────────────────────────────────
 
 export interface DealCluster {
   theme:     ThemeIntelligence;
@@ -191,17 +275,26 @@ export interface DealCluster {
 }
 
 export function clusterDealsByTheme(
-  deals:  { sector: string; dealType: string }[],
+  deals:  { sector: string; dealType: string; entities?: string[] }[],
   themes: ThemeIntelligence[],
 ): DealCluster[] {
   return themes
     .map(t => {
+      const assetSet = new Set(t.related_assets.map(a => a.toUpperCase()));
+
       const matching = deals.filter(d => {
         const sLower = d.sector.toLowerCase();
-        return t.related_industries.some(i => {
+
+        // Industry substring match
+        const indMatch = t.related_industries.some(i => {
           const iLower = i.toLowerCase();
           return sLower.includes(iLower) || iLower.includes(sLower);
         });
+
+        // Entity-level asset match (stronger signal)
+        const entityMatch = (d.entities ?? []).some(e => assetSet.has(e.toUpperCase()));
+
+        return indMatch || entityMatch;
       });
 
       const sectorSet = new Set(matching.map(d => d.sector));
@@ -211,6 +304,9 @@ export function clusterDealsByTheme(
         sectors:   Array.from(sectorSet).slice(0, 3),
       };
     })
-    .filter(c => c.dealCount > 0)
-    .sort((a, b) => b.dealCount - a.dealCount);
+    .filter(c => c.dealCount >= 2)
+    .sort((a, b) => {
+      if (b.dealCount !== a.dealCount) return b.dealCount - a.dealCount;
+      return (b.theme.persistence_score ?? 0) - (a.theme.persistence_score ?? 0);
+    });
 }

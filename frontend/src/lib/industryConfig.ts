@@ -234,7 +234,7 @@ export function getTopTheme(
 export function filterIndustryClusters(
   industry: IndustryConfig,
   clusters: StoryCluster[],
-  limit     = 12,
+  limit     = 20,
 ): StoryCluster[] {
   const assetSet   = new Set(industry.keyAssets.map(a => a.toUpperCase()));
   const sectorSet  = new Set((SECTOR_ENTITIES[industry.sector] ?? []).map(e => e.toUpperCase()));

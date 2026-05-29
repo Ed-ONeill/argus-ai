@@ -40,9 +40,13 @@ import {
   getInfluentialEntities,
   filterVCFundingClusters,
   getIndustrySponsorDeals,
+  getIndustryAcquirers,
+  getIndustrySponsors,
   getThemeNarrative,
   type EntitySignal,
   type SectorDealItem,
+  type IndustryAcquirer,
+  type IndustrySponsor,
 } from "@/lib/industryIntelligence";
 import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
 
@@ -438,7 +442,7 @@ export default function IndustryDetailPage() {
   const sectorIntel    = getSectorIntelligence(industry, sectorData?.sectors ?? []);
   const indSignals     = getIndustrySignals(industry, sectorData?.industries ?? []);
   const bestIndSignal  = indSignals[0] ?? null;
-  const topClusters    = filterIndustryClusters(industry, clusters, 8);
+  const topClusters    = filterIndustryClusters(industry, clusters);
 
   const thesis  = sectorIntel ? generateThesis(sectorIntel, indSignals, regime) : null;
   const [cxA, cxB] = sectorIntel ? getCrossAssetEffects(industry.sector, regime) : ["", ""];
@@ -453,19 +457,28 @@ export default function IndustryDetailPage() {
   const positioning     = getPositioningNarrative(industry.slug, sectorIntel, regime);
   const momentumState   = getMomentumState(sectorIntel, indSignals);
 
-  const maClusters    = topClusters.filter(c => c.primary.category === "M&A").slice(0, 3);
-  const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 5);
-  const themeClusters = topClusters.slice(0, 4);
+  const maClusters    = topClusters.filter(c => c.primary.category === "M&A").slice(0, 5);
+  const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 10);
+  const themeClusters = topClusters.slice(0, 6);
   const topTheme      = getTopTheme(industry, clusters, whatMattersNow);
 
-  // Phase 3 intelligence
-  const industrySponsorDeals = getIndustrySponsorDeals(
-    industry,
-    maDeals.map(d => ({ id: d.id, title: d.title, sector: d.sector, dealType: d.dealType, peFirm: d.peFirm ?? null, entities: d.entities, url: d.url, published: d.published })),
-  );
-  const vcClusters     = filterVCFundingClusters(industry, feedData?.clusters ?? []);
-  const keyCompanies   = getInfluentialEntities(industry, topClusters, indSignals, sectorIntel, leadership.leaders, leadership.laggards);
-  const themeNarrative = getThemeNarrative(industry, feedData?.theme_intelligence ?? []);
+  // Phase 3 + 4 intelligence
+  const dealsMapped = maDeals.map(d => ({
+    id:        d.id,
+    title:     d.title,
+    sector:    d.sector,
+    dealType:  d.dealType,
+    peFirm:    d.peFirm ?? null,
+    entities:  d.entities,
+    url:       d.url,
+    published: d.published,
+  }));
+  const industrySponsorDeals = getIndustrySponsorDeals(industry, dealsMapped);
+  const vcClusters           = filterVCFundingClusters(industry, feedData?.clusters ?? []);
+  const keyCompanies         = getInfluentialEntities(industry, topClusters, indSignals, sectorIntel, leadership.leaders, leadership.laggards);
+  const themeNarrative       = getThemeNarrative(industry, feedData?.theme_intelligence ?? []);
+  const industryAcquirers    = getIndustryAcquirers(industrySponsorDeals);
+  const industrySponsors     = getIndustrySponsors(industrySponsorDeals);
 
   const score     = sectorIntel?.signal_score     ?? 0;
   const sentiment = (
@@ -1083,6 +1096,78 @@ export default function IndustryDetailPage() {
                       </div>
                     );
                   })}
+                </div>
+              </motion.section>
+            )}
+
+            {/* Acquirer Intelligence */}
+            {industryAcquirers.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.225, duration: 0.25, ease: "easeOut" }}
+                className="bg-surface rounded-xl border border-edge p-4"
+              >
+                <SectionHeader icon={Target}>Acquirer Intelligence</SectionHeader>
+                <div className="space-y-2">
+                  {industryAcquirers.map((a: IndustryAcquirer) => (
+                    <div key={a.name} className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[10.5px] font-bold font-mono" style={{ color: industry.color }}>
+                          {a.name}
+                        </span>
+                        {a.sectors.length > 0 && (
+                          <p className="text-[9px] text-ink-muted/60 mt-0.5 truncate">
+                            {a.sectors.join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-mono text-ink-muted/50 shrink-0">
+                        ×{a.dealCount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.section>
+            )}
+
+            {/* Active Sponsors */}
+            {industrySponsors.length > 0 && (
+              <motion.section
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.24, duration: 0.25, ease: "easeOut" }}
+                className="bg-surface rounded-xl border border-edge p-4"
+              >
+                <SectionHeader icon={Building2}>Active Sponsors</SectionHeader>
+                <div className="space-y-2.5">
+                  {industrySponsors.map((s: IndustrySponsor) => (
+                    <div key={s.firm}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[11px] font-medium text-ink">{s.firm}</span>
+                        <span className="text-[10px] font-mono font-bold" style={{ color: industry.color }}>
+                          {s.deals} deal{s.deals > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      {s.sectors.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {s.sectors.map((sec, i) => (
+                            <span
+                              key={sec}
+                              className="text-[8.5px] px-1.5 py-px rounded leading-none"
+                              style={{
+                                background: i === 0 ? `${industry.color}14` : "transparent",
+                                color:      i === 0 ? industry.color : "var(--color-ink-muted)",
+                                border:     `1px solid ${i === 0 ? `${industry.color}30` : "var(--color-edge)"}`,
+                              }}
+                            >
+                              {sec}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </motion.section>
             )}

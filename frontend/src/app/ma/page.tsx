@@ -181,7 +181,10 @@ export default function MAPage() {
   );
 
   const dealClusters = useMemo(
-    () => clusterDealsByTheme(deals.map(d => ({ sector: d.sector, dealType: d.dealType })), maThemes),
+    () => clusterDealsByTheme(
+      deals.map(d => ({ sector: d.sector, dealType: d.dealType, entities: d.entities })),
+      maThemes,
+    ),
     [deals, maThemes],
   );
 

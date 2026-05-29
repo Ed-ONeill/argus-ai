@@ -10,16 +10,66 @@ import type { SectorIntelligence, IndustrySignal, StoryCluster } from "./types";
 // ── Entity and keyword maps ───────────────────────────────────────────────────
 
 export const SECTOR_ENTITIES: Record<string, string[]> = {
-  "Technology":     ["AAPL","MSFT","GOOGL","GOOG","META","NVDA","AMD","INTC","TSMC","AMZN","CRM","SNOW","NOW","WDAY","ASML","AVGO","QCOM","MU"],
-  "Financials":     ["JPM","BAC","GS","MS","C","WFC","BLK","BX","KKR","AXP","V","MA","PYPL","SCHW","ARES","APO","OWL"],
-  "Energy":         ["XOM","CVX","BP","SHEL","COP","SLB","HAL","OXY","VLO","MPC","LNG","CQP"],
-  "Industrials":    ["GE","RTX","HON","CAT","DE","LMT","NOC","BA","GD","UPS","FDX","CSX","UNP","ABB"],
-  "Healthcare":     ["JNJ","PFE","MRK","LLY","ABBV","BMY","UNH","CVS","CI","AMGN","GILD","REGN","MRNA","ISRG"],
-  "Consumer":       ["WMT","TGT","COST","HD","LOW","MCD","SBUX","NKE","PG","KO","PEP","PM","MO","TSLA"],
-  "Utilities":      ["NEE","DUK","SO","D","AEP","EXC","SRE","PCG","ED","CEG","VST"],
-  "Materials":      ["FCX","NEM","APD","LIN","NUE","X","CLF","AA","ALB","CCJ","DD"],
-  "Real Estate":    ["AMT","PLD","EQIX","SPG","PSA","AVB","EQR","VTR","ARE","DLR"],
-  "Communications": ["GOOGL","META","NFLX","DIS","CMCSA","CHTR","T","VZ","TMUS"],
+  "Technology":     [
+    "AAPL","MSFT","GOOGL","GOOG","META","NVDA","AMD","INTC","TSM","AMZN",
+    "CRM","SNOW","NOW","WDAY","ASML","AVGO","QCOM","MU","ARM","AMAT",
+    "LRCX","KLAC","MRVL","TXN","NXPI","ON","MCHP","SMCI","ADBE","PANW",
+    "ORCL","DDOG","ZS","CRWD","FTNT","PLTR","MDB","OKTA","VEEV","HUBS",
+    "ENTG","TER","GTLB","SPLK","SNPS","CDNS","ANSS","KEYS","KLAC","IPGP",
+  ],
+  "Financials":     [
+    "JPM","BAC","GS","MS","C","WFC","BLK","BX","KKR","AXP",
+    "V","MA","PYPL","SCHW","ARES","APO","OWL","PNC","COF","TROW",
+    "CG","CB","AIG","MET","PRU","AFL","ALL","TRV","BRK","USB",
+    "FITB","HBAN","KEY","RF","CFG","MTB","SIVB","ZION","CMA","SNV",
+  ],
+  "Energy":         [
+    "XOM","CVX","BP","SHEL","COP","SLB","HAL","OXY","VLO","MPC",
+    "LNG","CQP","PSX","DVN","EOG","FANG","WMB","KMI","ET","EPD",
+    "HES","MRO","APA","PXD","AR","EQT","RRC","CNX","CHK","BKR",
+  ],
+  "Industrials":    [
+    "GE","RTX","HON","CAT","DE","LMT","NOC","BA","GD","UPS",
+    "FDX","CSX","UNP","ABB","HII","KTOS","ITW","EMR","ETN","PH",
+    "ROK","XYL","GNRC","FAST","GWW","CARR","OTIS","EXPD","TDG","HEICO",
+    "BWXT","LDOS","SAIC","AXON","CW","CACI","L3H","DRS","SPR","HXL",
+  ],
+  "Healthcare":     [
+    "JNJ","PFE","MRK","LLY","ABBV","BMY","UNH","CVS","CI","AMGN",
+    "GILD","REGN","MRNA","ISRG","BIIB","VRTX","ELV","HUM","BSX","MDT",
+    "GEHC","ZTS","DGX","IQV","MCK","ABC","CAH","HSIC","PODD","DXCM",
+    "INCY","ALNY","SRPT","BLUE","EDIT","NTLA","RXRX","CRSP","BEAM","SGMO",
+  ],
+  "Consumer":       [
+    "WMT","TGT","COST","HD","LOW","MCD","SBUX","NKE","PG","KO",
+    "PEP","PM","MO","TSLA","AMZN","LULU","GM","F","YUM","CMG",
+    "DG","BURL","FIVE","TJX","RH","CHWY","ETSY","W","PTON","DPZ",
+    "QSR","EAT","DENN","JACK","RRGB","PLAY","SFM","WW","BYND","REAL",
+  ],
+  "Utilities":      [
+    "NEE","DUK","SO","D","AEP","EXC","SRE","PCG","ED","CEG",
+    "VST","AWK","ES","FE","WEC","XEL","NRG","AES","FSLR","ENPH",
+    "PPL","CNP","EIX","NI","PNW","EVRG","ATO","ONE","OGE","LNT",
+  ],
+  "Materials":      [
+    "FCX","NEM","APD","LIN","NUE","X","CLF","AA","ALB","CCJ",
+    "DD","CF","MOS","ECL","PPG","SHW","RPM","EMN","HUN","OLN",
+    "MP","LAC","LTHM","SQM","LIT","COPX","PICK","REMX","URA","DNN",
+  ],
+  "Real Estate":    [
+    "AMT","PLD","EQIX","SPG","PSA","AVB","EQR","VTR","ARE","DLR",
+    "CCI","SBAC","ESS","NNN","O","VICI","KIM","CBRE","STAG","WPC",
+    "HST","INVH","UDR","CPT","IRM","COLD","NSA","EXR","CUBE","LSI",
+  ],
+  "Communications": [
+    "GOOGL","META","NFLX","DIS","CMCSA","CHTR","T","VZ","TMUS","SNAP",
+    "PINS","WBD","PARA","TTD","ROKU","SPOT","ZM","MGNI","PUBM","IAC",
+    "LYV","WYNN","DKNG","PENN","MGM","CZR","MTCH","BMBL","SIRI","LSXMA",
+  ],
+  "Crypto":         [
+    "COIN","MSTR","MARA","RIOT","SQ","PYPL","HUT","CLSK","CORZ","BTBT",
+    "IREN","WULF","GBTC","BITO","ETHE","ARKB","FBTC","BITB","HODL","EZBC",
+  ],
 };
 
 const SECTOR_KEYWORDS: Record<string, string[]> = {
