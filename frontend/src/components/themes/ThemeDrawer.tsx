@@ -8,6 +8,7 @@ import { matchEpisodeThemes } from "@/lib/listenIntelligence";
 import {
   computeThemeMomentum, computeMomentumTrend, computeSignalChanges, parseCausalChain,
   LIFECYCLE_META,
+  type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
 
 function fmtDur(s: number): string {
@@ -15,6 +16,21 @@ function fmtDur(s: number): string {
   const m = Math.floor((s % 3600) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+
+// ── Safe fallback for missing/failed momentum computation ─────────────────────
+
+const MOMENTUM_FALLBACK: ThemeMomentumResult = {
+  lifecycleState:  "Mature",
+  momentumLabel:   "Stable",
+  momentumScore:   0,
+  signalScore:     0,
+  persistenceScore: 0,
+  breadthScore:    0,
+  components: {
+    storyActivity: 0, podcastMentions: 0,
+    industryPenetration: 0, maActivity: 0, vcActivity: 0,
+  },
+};
 
 // ── Color helpers ──────────────────────────────────────────────────────────────
 
@@ -89,12 +105,12 @@ export function ThemeDrawer({
 
   // Connected stories — clusters referenced by this theme
   const connectedClusters = clusters
-    .filter(c => theme.contributing_cluster_ids.includes(c.id))
+    .filter(c => (theme.contributing_cluster_ids ?? []).includes(c.id))
     .slice(0, 6);
 
   // Connected deals — sector or entity match
-  const assetSet = new Set(theme.related_assets.map(a => a.toUpperCase()));
-  const indTerms = theme.related_industries.map(i => i.toLowerCase());
+  const assetSet = new Set((theme.related_assets    ?? []).map(a => a.toUpperCase()));
+  const indTerms = (theme.related_industries ?? []).map(i => i.toLowerCase());
   const connectedDeals = deals
     .filter(d => {
       const sec = d.sector.toLowerCase();
@@ -111,11 +127,17 @@ export function ThemeDrawer({
     .slice(0, 5);
 
   // Momentum engine — full computation with all available context
-  const momentum = useMemo(
-    () => computeThemeMomentum(theme, { episodes, clusters, deals }),
-    [theme, episodes, clusters, deals],
-  );
-  const lcMeta       = LIFECYCLE_META[momentum.lifecycleState];
+  const momentum = useMemo((): ThemeMomentumResult => {
+    try {
+      return computeThemeMomentum(theme, { episodes, clusters, deals });
+    } catch (err) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[ThemeDrawer] momentum computation failed:", err);
+      }
+      return MOMENTUM_FALLBACK;
+    }
+  }, [theme, episodes, clusters, deals]);
+  const lcMeta       = LIFECYCLE_META[momentum.lifecycleState] ?? LIFECYCLE_META.Mature;
   const trendPoints  = useMemo(
     () => computeMomentumTrend(theme, momentum.momentumScore),
     [theme, momentum.momentumScore],

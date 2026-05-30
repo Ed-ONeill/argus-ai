@@ -8,7 +8,23 @@ import {
   computeThemeMomentum, computeSignalChanges,
   LIFECYCLE_META,
   type LifecycleState,
+  type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
+
+// ── Safe fallback for missing/failed momentum computation ─────────────────────
+
+const MOMENTUM_FALLBACK: ThemeMomentumResult = {
+  lifecycleState:  "Mature",
+  momentumLabel:   "Stable",
+  momentumScore:   0,
+  signalScore:     0,
+  persistenceScore: 0,
+  breadthScore:    0,
+  components: {
+    storyActivity: 0, podcastMentions: 0,
+    industryPenetration: 0, maActivity: 0, vcActivity: 0,
+  },
+};
 
 // ── Color helpers ──────────────────────────────────────────────────────────────
 
@@ -51,6 +67,21 @@ export function ThemeTerminal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // momentumMap MUST be declared before sorted — sorted's comparator closes over it.
+  const momentumMap = useMemo(
+    () => new Map(themes.map(t => {
+      try {
+        return [t.id, computeThemeMomentum(t)] as const;
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[ThemeTerminal] momentum computation failed for theme:", t.id, err);
+        }
+        return [t.id, MOMENTUM_FALLBACK] as const;
+      }
+    })),
+    [themes],
+  );
+
   const SIGNAL_RANK: Record<string, number>    = { strong: 3, medium: 2, weak: 1 };
   const MOMENTUM_RANK: Record<string, number>  = {
     accelerating: 5, strengthening: 4, emerging: 3, stable: 2, cooling: 1, reversing: 0,
@@ -63,8 +94,8 @@ export function ThemeTerminal({
     if (sortBy === "persistence") return (b.persistence_score ?? 0) - (a.persistence_score ?? 0);
     if (sortBy === "momentum")    return (MOMENTUM_RANK[b.momentum_label] ?? 0) - (MOMENTUM_RANK[a.momentum_label] ?? 0);
     if (sortBy === "lifecycle") {
-      const la = momentumMap.get(a.id)?.lifecycleState ?? "Mature";
-      const lb = momentumMap.get(b.id)?.lifecycleState ?? "Mature";
+      const la = (momentumMap.get(a.id) ?? MOMENTUM_FALLBACK).lifecycleState;
+      const lb = (momentumMap.get(b.id) ?? MOMENTUM_FALLBACK).lifecycleState;
       return (LIFECYCLE_RANK[lb] ?? 0) - (LIFECYCLE_RANK[la] ?? 0);
     }
     // signal: strong first, then by persistence_score
@@ -83,11 +114,6 @@ export function ThemeTerminal({
   };
 
   const alertCount = themes.filter(t => hasAlert(t.id)).length;
-
-  const momentumMap = useMemo(
-    () => new Map(themes.map(t => [t.id, computeThemeMomentum(t)])),
-    [themes],
-  );
 
   return (
     <motion.div
@@ -200,8 +226,8 @@ export function ThemeTerminal({
                 const watched        = watchedIds.includes(theme.id);
                 const alert          = hasAlert(theme.id);
                 const sColor         = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
-                const momentum       = momentumMap.get(theme.id)!;
-                const lcMeta         = LIFECYCLE_META[momentum.lifecycleState];
+                const momentum       = momentumMap.get(theme.id) ?? MOMENTUM_FALLBACK;
+                const lcMeta         = LIFECYCLE_META[momentum.lifecycleState] ?? LIFECYCLE_META.Mature;
                 const signalChanges  = computeSignalChanges(theme);
 
                 return (

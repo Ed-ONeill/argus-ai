@@ -100,14 +100,14 @@ function clamp(v: number, lo: number, hi: number): number {
 
 /** True when an episode is meaningfully related to a theme. */
 function episodeMatchesTheme(ep: Episode, theme: ThemeIntelligence): boolean {
-  const entitySet = new Set(ep.entities.map(e => e.toUpperCase()));
-  const topicSet  = new Set(ep.topics);
+  const entitySet = new Set((ep.entities ?? []).map(e => e.toUpperCase()));
+  const topicSet  = new Set(ep.topics ?? []);
 
-  if (theme.related_assets.some(a => entitySet.has(a.toUpperCase()))) return true;
-  if (theme.podcast_topics.some(pt => topicSet.has(pt))) return true;
+  if ((theme.related_assets   ?? []).some(a  => entitySet.has(a.toUpperCase()))) return true;
+  if ((theme.podcast_topics   ?? []).some(pt => topicSet.has(pt)))                return true;
 
-  const indLow = theme.related_industries.map(i => i.toLowerCase());
-  return ep.topics.some(t => {
+  const indLow = (theme.related_industries ?? []).map(i => i.toLowerCase());
+  return (ep.topics ?? []).some(t => {
     const tL = t.toLowerCase();
     return indLow.some(ind => tL.includes(ind) || ind.includes(tL));
   });
@@ -115,9 +115,9 @@ function episodeMatchesTheme(ep: Episode, theme: ThemeIntelligence): boolean {
 
 /** True when a deal touches the theme's sectors or entities. */
 function dealMatchesTheme(deal: MomentumDeal, theme: ThemeIntelligence): boolean {
-  const assetSet = new Set(theme.related_assets.map(a => a.toUpperCase()));
-  const indTerms = theme.related_industries.map(i => i.toLowerCase());
-  const secLow   = deal.sector.toLowerCase();
+  const assetSet = new Set((theme.related_assets    ?? []).map(a => a.toUpperCase()));
+  const indTerms = (theme.related_industries ?? []).map(i => i.toLowerCase());
+  const secLow   = (deal.sector ?? "").toLowerCase();
 
   if (indTerms.some(ind => secLow.includes(ind) || ind.includes(secLow))) return true;
   return (deal.entities ?? []).some(e => assetSet.has(e.toUpperCase()));
@@ -151,7 +151,7 @@ export function computeMomentumComponents(
   // ── storyActivity: story count + backend delta signal ─────────────────────
   const baseStory   = clamp((theme.contributing_story_count ?? 0) * 8, 0, 100);
   // Cluster evidence (additional cross-check beyond contributing_cluster_ids)
-  const clusterHits = clusters.filter(c => theme.contributing_cluster_ids.includes(c.id)).length;
+  const clusterHits = clusters.filter(c => (theme.contributing_cluster_ids ?? []).includes(c.id)).length;
   const clusterBoost = clamp(clusterHits * 6, 0, 30);
   // momentum_delta as a ±boost (backend computed, typically ±20)
   const deltaBoost  = clamp((theme.momentum_delta ?? 0) * 1.5, -25, 25);
@@ -162,7 +162,7 @@ export function computeMomentumComponents(
   const podcastMentions = clamp(Math.round(podcastCount * 20), 0, 100);
 
   // ── industryPenetration: breadth of sector exposure ──────────────────────
-  const indBase  = clamp(theme.related_industries.length * 18, 0, 90);
+  const indBase  = clamp((theme.related_industries ?? []).length * 18, 0, 90);
   const ccBonus  = theme.cross_category_confirmed ? 10 : 0;
   const industryPenetration = clamp(Math.round(indBase + ccBonus), 0, 100);
 
