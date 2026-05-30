@@ -454,3 +454,299 @@ export function enrichSponsorProfiles(
     return { firm: s.firm, deals: s.deals, topSector: sectors[0] ?? null, sectors: sectors.slice(0, 3) };
   });
 }
+
+// ── Phase 8: Intelligence Alerts ─────────────────────────────────────────────
+
+export interface IntelligenceAlert {
+  themeId:     string;
+  themeName:   string;
+  direction:   "up" | "down" | "neutral";
+  severity:    "major" | "notable" | "minor";
+  description: string;
+}
+
+function bestAlertForTheme(theme: ThemeIntelligence): IntelligenceAlert | null {
+  const delta     = theme.momentum_delta     ?? 0;
+  const breadth   = theme.breadth_score      ?? 0;
+  const persist   = theme.persistence_score  ?? 0;
+  const stories   = theme.contributing_story_count ?? 0;
+  const momentum  = theme.momentum_label;
+  const confirmed = theme.cross_category_confirmed;
+  const ind0      = (theme.related_industries ?? [])[0] ?? "tracked sectors";
+  const name      = theme.name;
+
+  const mk = (
+    severity: IntelligenceAlert["severity"],
+    direction: IntelligenceAlert["direction"],
+    description: string,
+  ): IntelligenceAlert => ({ themeId: theme.id, themeName: name, direction, severity, description });
+
+  // ── MAJOR ──────────────────────────────────────────────────────────────────
+  if (delta >= 15 && momentum === "accelerating") {
+    return mk("major", "up", `Signal accelerating sharply (+${delta.toFixed(0)}), breadth expanding into ${ind0}`);
+  }
+  if (delta <= -15 || momentum === "reversing") {
+    return mk("major", "down", `Signal reversal underway (${delta.toFixed(0)} delta) — ${persist < 40 ? "low persistence increases downside risk" : "persistence provides partial support"}`);
+  }
+  if (confirmed && delta > 8) {
+    return mk("major", "up", `Cross-category confirmation triggered with +${delta.toFixed(0)} delta — broadening beyond primary sector`);
+  }
+
+  // ── NOTABLE ────────────────────────────────────────────────────────────────
+  if (breadth >= 68 && delta > 5) {
+    const indCount = Math.max(2, Math.round(breadth / 18));
+    return mk("notable", "up", `Breadth expanded across ~${indCount} industries with ${delta > 0 ? "+" : ""}${delta.toFixed(0)} delta`);
+  }
+  if (persist >= 80 && delta >= 0) {
+    return mk("notable", "up", `Persistence crossed 80th percentile — ${Math.round(persist)} score suggests structural theme formation`);
+  }
+  if (delta >= 8) {
+    return mk("notable", "up", `${ind0} exposure increased materially (+${delta.toFixed(0)} signal delta)`);
+  }
+  if (breadth < 28 && delta < -5) {
+    return mk("notable", "down", `Breadth narrowing (score: ${Math.round(breadth)}) with negative delta — watch for sector exit`);
+  }
+  if (stories <= 2 && delta < -5) {
+    return mk("notable", "down", `Story activity declining — ${stories} active ${stories === 1 ? "source" : "sources"} remaining with ${delta.toFixed(0)} delta`);
+  }
+
+  // ── MINOR ──────────────────────────────────────────────────────────────────
+  if (momentum === "strengthening" && delta >= 6) {
+    return mk("minor", "up", `Momentum strengthening (+${delta.toFixed(0)}) in ${ind0}`);
+  }
+  if (momentum === "cooling" && delta <= -7) {
+    return mk("minor", "down", `Cooling signal in ${ind0} (${delta.toFixed(0)} delta) — monitor for reversal confirmation`);
+  }
+
+  return null;
+}
+
+export function generateIntelligenceAlerts(themes: ThemeIntelligence[]): IntelligenceAlert[] {
+  const SEVERITY_RANK: Record<IntelligenceAlert["severity"], number> = { major: 0, notable: 1, minor: 2 };
+
+  return themes
+    .map(bestAlertForTheme)
+    .filter((a): a is IntelligenceAlert => a !== null)
+    .sort((a, b) => {
+      const sRank = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+      if (sRank !== 0) return sRank;
+      // Within same severity: "up" alerts first for bullish themes, "down" first for bearish
+      return a.direction === "down" && b.direction !== "down" ? -1 : 0;
+    })
+    .slice(0, 8);
+}
+
+// ── Phase 8: Next Catalyst Engine ────────────────────────────────────────────
+
+export interface ThemeCatalyst {
+  label:     string;                          // "FOMC Meeting" | "CPI Report" | …
+  direction: "confirming" | "risk";           // confirming = would validate; risk = could invalidate
+  reason:    string;                          // one-line explanation
+}
+
+const CATALYST_RULES: Array<{
+  regex:     RegExp;
+  label:     string;
+  getDir:    (theme: ThemeIntelligence) => "confirming" | "risk";
+  getReason: (theme: ThemeIntelligence) => string;
+}> = [
+  {
+    regex:     /\bfed\b|fomc|federal reserve|monetary policy/,
+    label:     "FOMC Meeting",
+    getDir:    t => t.momentum_direction === "bearish" ? "confirming" : "risk",
+    getReason: t => t.momentum_direction === "bearish"
+      ? "Rate path will determine pressure on leveraged sectors"
+      : "Shift in rate guidance could disrupt current tailwind",
+  },
+  {
+    regex:     /\bcpi\b|inflation|price level|core pce/,
+    label:     "CPI Report",
+    getDir:    t => "confirming",
+    getReason: t => "Inflation data will validate or challenge macro narrative",
+  },
+  {
+    regex:     /\bnvda\b|nvidia|\bgpu\b|data center capacity/,
+    label:     "NVDA Earnings",
+    getDir:    t => t.momentum_direction === "bullish" ? "confirming" : "risk",
+    getReason: t => "Capex guidance signals downstream AI infrastructure demand",
+  },
+  {
+    regex:     /\boil\b|opec|crude|energy supply/,
+    label:     "OPEC Production Decision",
+    getDir:    t => "risk",
+    getReason: t => "Supply adjustments create direct commodity price pressure",
+  },
+  {
+    regex:     /\bjpm\b|jpmorgan|bank earnings|major bank/,
+    label:     "Major Bank Earnings",
+    getDir:    t => "confirming",
+    getReason: t => "Lending standards and credit quality will reflect macro conditions",
+  },
+  {
+    regex:     /china|pboc|yuan|rmb|prc\b/,
+    label:     "China Macro Data",
+    getDir:    t => "risk",
+    getReason: t => "Chinese demand signals affect global trade and commodities",
+  },
+  {
+    regex:     /jobs|payroll|unemployment|labor market/,
+    label:     "Nonfarm Payrolls",
+    getDir:    t => t.momentum_direction === "bullish" ? "confirming" : "risk",
+    getReason: t => "Labor market strength drives consumer demand expectations",
+  },
+  {
+    regex:     /treasury|t-bill|yield curve|10.?year/,
+    label:     "Treasury Auction",
+    getDir:    t => "risk",
+    getReason: t => "Duration demand will affect rate-sensitive sector valuations",
+  },
+  {
+    regex:     /semiconductor|chip|tsmc|asml|fab/,
+    label:     "Semiconductor Earnings",
+    getDir:    t => t.momentum_direction === "bullish" ? "confirming" : "risk",
+    getReason: t => "Capex and order backlog guidance frames the cycle outlook",
+  },
+  {
+    regex:     /\bmsft\b|microsoft|azure|cloud spending/,
+    label:     "Cloud Earnings (MSFT/AMZN)",
+    getDir:    t => "confirming",
+    getReason: t => "Enterprise AI and cloud spend confirms or undermines demand thesis",
+  },
+];
+
+export function generateNextCatalysts(theme: ThemeIntelligence): ThemeCatalyst[] {
+  const text = [
+    ...(theme.related_macro_factors ?? []),
+    ...(theme.related_industries    ?? []),
+    ...(theme.related_assets        ?? []),
+    theme.name ?? "",
+    theme.description ?? "",
+  ].join(" ").toLowerCase();
+
+  const matched: ThemeCatalyst[] = [];
+
+  for (const rule of CATALYST_RULES) {
+    if (rule.regex.test(text)) {
+      matched.push({
+        label:     rule.label,
+        direction: rule.getDir(theme),
+        reason:    rule.getReason(theme),
+      });
+      if (matched.length >= 4) break;
+    }
+  }
+
+  // Always return at least one catalyst
+  if (matched.length === 0) {
+    matched.push({
+      label:     "Macro Data Release",
+      direction: "risk",
+      reason:    "Upcoming data will test the signal durability of this theme",
+    });
+  }
+
+  return matched;
+}
+
+// ── Phase 8: Bull / Bear Cases ────────────────────────────────────────────────
+
+export interface BullBearCases {
+  bull: string;
+  bear: string;
+}
+
+function parseCausalChain(narrative: string | undefined): string[] {
+  if (!narrative) return [];
+  return narrative
+    .split(/→|->|;|\.|,/)
+    .map(s => s.trim())
+    .filter(s => s.length > 4)
+    .slice(0, 4);
+}
+
+export function generateBullBearCases(theme: ThemeIntelligence): BullBearCases {
+  const chain    = parseCausalChain(theme.causal_narrative);
+  const macros   = theme.related_macro_factors ?? [];
+  const inds     = theme.related_industries    ?? [];
+  const assets   = theme.related_assets        ?? [];
+  const dir      = theme.momentum_direction;
+  const name     = theme.name;
+
+  const driver  = chain[0] ?? macros[0] ?? "current macro environment";
+  const mech    = chain[1] ?? macros[1] ?? "transmission mechanism";
+  const ind0    = inds[0]  ?? "primary sectors";
+  const ind1    = inds[1]  ?? "adjacent sectors";
+  const macro1  = macros[1] ?? macros[0] ?? "macro backdrop";
+  const asset0  = assets[0] ?? "core holdings";
+
+  if (dir === "bullish") {
+    return {
+      bull: `If ${driver} persists and ${mech} continues, ${ind0} exposure sustains upside. Cross-category confirmation would accelerate institutional positioning.`,
+      bear: `A reversal in ${macro1} or demand slowdown in ${ind0} could pressure ${asset0}. Signal degradation beyond current delta would confirm the thesis is breaking down.`,
+    };
+  }
+
+  if (dir === "bearish") {
+    return {
+      bull: `Stabilization in ${driver} could allow ${ind0} to find a floor. If ${macro1} provides unexpected support, a tactical relief rally is possible.`,
+      bear: `If ${driver} intensifies, ${ind0} deterioration spreads into ${ind1}. Persistent negative delta with narrowing breadth confirms structural impairment.`,
+    };
+  }
+
+  // neutral
+  return {
+    bull: `A decisive catalyst from ${macros[0] ?? "macro data"} could resolve current ambiguity in favor of ${ind0}. Breadth expansion would confirm the directional shift.`,
+    bear: `Without a resolution in ${driver}, ${name} remains in limbo. Extended neutral signal erodes conviction and risks capital rotation away from ${ind0}.`,
+  };
+}
+
+// ── Phase 8: Watch Signals ────────────────────────────────────────────────────
+
+export interface WatchSignal {
+  variable:  string;   // "10Y yield trajectory"
+  condition: string;   // "> 5% = headwind for rate-sensitives"
+}
+
+const WATCH_RULES: Array<{ regex: RegExp; variable: string; condition: string }> = [
+  { regex: /rate|yield|treasury|fed|fomc/,        variable: "Fed terminal rate expectations",          condition: "Rising path = pressure on duration-sensitive positions" },
+  { regex: /\bnvda\b|nvidia|\bgpu\b|data center/, variable: "NVDA capex guidance",                     condition: "Downward revision signals reduced AI infra demand" },
+  { regex: /utility|grid|power|electricity/,       variable: "Utility capex growth rate",               condition: "Slowdown signals reduced grid buildout exposure" },
+  { regex: /china|pboc|yuan|rmb/,                 variable: "PBOC easing pace",                        condition: "Stalling stimulus risks demand-side disappointment" },
+  { regex: /bank|lending|credit|loan/,             variable: "Bank lending standards (SLOOS)",          condition: "Tightening signals deteriorating credit conditions" },
+  { regex: /\boil\b|opec|crude|energy/,            variable: "Brent crude trajectory",                  condition: "Spike > $90 transmits into margin compression for consumers" },
+  { regex: /inflation|cpi|pce|price/,              variable: "Core inflation trajectory (CPI ex-food)", condition: "Re-acceleration above 3% delays rate relief" },
+  { regex: /semiconductor|chip|tsmc|wafer/,        variable: "Semiconductor order book",                condition: "Backlog deterioration signals capex cycle peak" },
+  { regex: /consumer|retail|spending|discretion/,  variable: "US consumer confidence index",            condition: "Drop below 95 signals spending headwind for cyclicals" },
+  { regex: /jobs|payroll|labor|employment/,        variable: "Monthly nonfarm payrolls",                condition: "Miss vs consensus weakens demand narrative" },
+  { regex: /dollar|usd|dxy|currency/,              variable: "DXY trajectory",                          condition: "Strong dollar pressures EM and commodity-linked exposures" },
+  { regex: /\bcredit\b|spread|high.?yield|hy\b/,  variable: "IG/HY credit spread differential",        condition: "Spread widening > 50bp flags risk-off rotation" },
+];
+
+export function generateWatchSignals(theme: ThemeIntelligence): WatchSignal[] {
+  const text = [
+    ...(theme.related_macro_factors ?? []),
+    ...(theme.related_industries    ?? []),
+    ...(theme.related_assets        ?? []),
+    theme.name        ?? "",
+    theme.description ?? "",
+  ].join(" ").toLowerCase();
+
+  const signals: WatchSignal[] = [];
+
+  for (const rule of WATCH_RULES) {
+    if (rule.regex.test(text)) {
+      signals.push({ variable: rule.variable, condition: rule.condition });
+      if (signals.length >= 5) break;
+    }
+  }
+
+  // Always return at least one
+  if (signals.length === 0) {
+    signals.push({
+      variable:  "Macro regime classification",
+      condition: "Regime shift (risk-on ↔ risk-off) will alter theme signal quality",
+    });
+  }
+
+  return signals.slice(0, 5);
+}

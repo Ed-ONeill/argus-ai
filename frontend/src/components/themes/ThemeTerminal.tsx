@@ -11,7 +11,7 @@ import {
   type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
 import { computeConvictionScore, convictionLabel } from "@/lib/themeImpact";
-import { getThemeChangeLeaderboard, type ThemeChangeLeaderboard } from "@/lib/themeSignalDelta";
+import { generateIntelligenceAlerts, type IntelligenceAlert } from "@/lib/themeIntelligence";
 
 // ── Safe fallback for missing/failed momentum computation ─────────────────────
 
@@ -117,8 +117,8 @@ export function ThemeTerminal({
 
   const alertCount = themes.filter(t => hasAlert(t.id)).length;
 
-  const changeLeaderboard: ThemeChangeLeaderboard = useMemo(
-    () => getThemeChangeLeaderboard(themes),
+  const intelligenceAlerts: IntelligenceAlert[] = useMemo(
+    () => generateIntelligenceAlerts(themes),
     [themes],
   );
 
@@ -225,43 +225,53 @@ export function ThemeTerminal({
         </div>
       </div>
 
-      {/* ── Change Leaderboard strip ──────────────────────────────────────────── */}
-      {themes.length >= 3 && filter === "all" && (
+      {/* ── Intelligence Alerts strip ────────────────────────────────────────── */}
+      {intelligenceAlerts.length > 0 && filter === "all" && (
         <div
           className="shrink-0 px-6 py-3 hidden md:block"
-          style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.012)" }}
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.010)" }}
         >
-          <div className="max-w-5xl mx-auto grid grid-cols-4 gap-5">
-            {([
-              { key: "risers",     label: "▲ Biggest Risers",    color: "rgba(16,185,129,0.45)",  textColor: "rgba(16,185,129,0.70)",  items: changeLeaderboard.risers     },
-              { key: "decliners",  label: "▼ Biggest Decliners", color: "rgba(239,68,68,0.45)",   textColor: "rgba(239,68,68,0.70)",   items: changeLeaderboard.decliners  },
-              { key: "broadening", label: "◈ Broadening",        color: "rgba(82,176,200,0.45)",  textColor: "rgba(82,176,200,0.70)",  items: changeLeaderboard.broadening },
-              { key: "narrowing",  label: "◈ Narrowing",         color: "rgba(251,191,36,0.40)",  textColor: "rgba(251,191,36,0.65)",  items: changeLeaderboard.narrowing  },
-            ] as const).map(({ key, label, color, textColor, items }) => (
-              <div key={key}>
-                <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color }}>
-                  {label}
-                </p>
-                <div className="space-y-1">
-                  {items.length > 0 ? items.map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => onSelectTheme(t)}
-                      className="block w-full text-left group"
-                    >
-                      <span
-                        className="text-[9.5px] leading-tight group-hover:opacity-90 transition-opacity"
-                        style={{ color: textColor }}
+          <div className="max-w-5xl mx-auto">
+            <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2.5" style={{ color: "rgba(255,255,255,0.22)" }}>
+              Intelligence Alerts
+            </p>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+              {intelligenceAlerts.map(alert => {
+                const isUp       = alert.direction === "up";
+                const isMajor    = alert.severity === "major";
+                const isNotable  = alert.severity === "notable";
+                const arrowColor = isUp
+                  ? isMajor ? "#10B981" : isNotable ? "rgba(16,185,129,0.75)" : "rgba(16,185,129,0.50)"
+                  : isMajor ? "#EF4444" : isNotable ? "rgba(239,68,68,0.75)"  : "rgba(239,68,68,0.50)";
+                const theme = themes.find(t => t.id === alert.themeId);
+                return (
+                  <div key={alert.themeId} className="flex items-baseline gap-1.5 min-w-0">
+                    <span className="text-[9px] font-bold shrink-0 tabular-nums" style={{ color: arrowColor }}>
+                      {isUp ? "▲" : "▼"}
+                    </span>
+                    {theme ? (
+                      <button
+                        onClick={() => onSelectTheme(theme)}
+                        className="text-[9.5px] font-semibold shrink-0 hover:opacity-80 transition-opacity"
+                        style={{ color: isMajor ? "rgba(255,255,255,0.78)" : "rgba(255,255,255,0.55)" }}
                       >
-                        {t.name}
+                        {alert.themeName}
+                      </button>
+                    ) : (
+                      <span
+                        className="text-[9.5px] font-semibold shrink-0"
+                        style={{ color: "rgba(255,255,255,0.55)" }}
+                      >
+                        {alert.themeName}
                       </span>
-                    </button>
-                  )) : (
-                    <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.14)" }}>—</span>
-                  )}
-                </div>
-              </div>
-            ))}
+                    )}
+                    <span className="text-[9px] truncate" style={{ color: "rgba(255,255,255,0.28)" }}>
+                      · {alert.description}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

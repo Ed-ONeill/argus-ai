@@ -20,6 +20,10 @@ import {
   computeIndustryExposureRanking, computeAssetExposure,
   type SignalDelta, type AssetExposure,
 } from "@/lib/themeSignalDelta";
+import {
+  generateNextCatalysts, generateBullBearCases, generateWatchSignals,
+  type ThemeCatalyst, type BullBearCases, type WatchSignal,
+} from "@/lib/themeIntelligence";
 
 function fmtDur(s: number): string {
   const h = Math.floor(s / 3600);
@@ -161,6 +165,9 @@ export function ThemeDrawer({
   const assetExposure: AssetExposure[] = useMemo(() => computeAssetExposure(theme), [theme]);
   const conviction        = useMemo(() => computeConvictionScore(theme), [theme]);
   const cvLabel           = convictionLabel(conviction);
+  const catalysts: ThemeCatalyst[]   = useMemo(() => generateNextCatalysts(theme),  [theme]);
+  const bullBear: BullBearCases      = useMemo(() => generateBullBearCases(theme),   [theme]);
+  const watchSignals: WatchSignal[]  = useMemo(() => generateWatchSignals(theme),    [theme]);
 
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
@@ -326,6 +333,42 @@ export function ThemeDrawer({
             </p>
           </div>
 
+          {/* Next Catalyst */}
+          {catalysts.length > 0 && (
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: "rgba(251,191,36,0.030)", border: "1px solid rgba(251,191,36,0.10)" }}
+            >
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                style={{ color: "rgba(251,191,36,0.55)" }}>
+                Next Catalyst
+              </p>
+              <div className="space-y-2">
+                {catalysts.map(cat => (
+                  <div key={cat.label} className="flex items-start gap-2">
+                    <span
+                      className="text-[8.5px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5"
+                      style={{
+                        background: cat.direction === "confirming" ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                        color:      cat.direction === "confirming" ? "#10B981" : "#EF4444",
+                      }}
+                    >
+                      {cat.direction === "confirming" ? "✓ Confirming" : "⚠ Risk"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold leading-snug" style={{ color: "rgba(255,255,255,0.72)" }}>
+                        {cat.label}
+                      </p>
+                      <p className="text-[10px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                        {cat.reason}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Podcasts — hoisted here when opened from Listen */}
           {sourceContext === "listen" && connectedEpisodes.length > 0 && (
             <Section title={`Podcasts · ${connectedEpisodes.length}`}>
@@ -450,6 +493,34 @@ export function ThemeDrawer({
               >
                 {conviction}
               </span>
+            </div>
+          </div>
+
+          {/* Bull Case / Bear Case */}
+          <div className="grid grid-cols-2 gap-2">
+            <div
+              className="rounded-xl p-3"
+              style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.10)" }}
+            >
+              <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
+                style={{ color: "rgba(16,185,129,0.55)" }}>
+                Bull Case
+              </p>
+              <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
+                {bullBear.bull}
+              </p>
+            </div>
+            <div
+              className="rounded-xl p-3"
+              style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.10)" }}
+            >
+              <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
+                style={{ color: "rgba(239,68,68,0.55)" }}>
+                Bear Case
+              </p>
+              <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
+                {bullBear.bear}
+              </p>
             </div>
           </div>
 
@@ -694,6 +765,30 @@ export function ThemeDrawer({
                     </div>
                   );
                 })}
+              </div>
+            </Section>
+          )}
+
+          {/* Watch Signals */}
+          {watchSignals.length > 0 && (
+            <Section title="Watch">
+              <div className="space-y-2">
+                {watchSignals.map(sig => (
+                  <div key={sig.variable} className="flex items-start gap-2">
+                    <span
+                      className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full"
+                      style={{ background: "rgba(82,176,200,0.55)" }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold leading-snug" style={{ color: "rgba(255,255,255,0.65)" }}>
+                        {sig.variable}
+                      </p>
+                      <p className="text-[10px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.32)" }}>
+                        {sig.condition}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </Section>
           )}
