@@ -10,7 +10,8 @@ import {
   type LifecycleState,
   type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
-import { getThemeLeaderboard, type ThemeLeaderboard } from "@/lib/themeImpact";
+import { computeConvictionScore, convictionLabel } from "@/lib/themeImpact";
+import { getThemeChangeLeaderboard, type ThemeChangeLeaderboard } from "@/lib/themeSignalDelta";
 
 // ── Safe fallback for missing/failed momentum computation ─────────────────────
 
@@ -116,8 +117,13 @@ export function ThemeTerminal({
 
   const alertCount = themes.filter(t => hasAlert(t.id)).length;
 
-  const leaderboard: ThemeLeaderboard = useMemo(
-    () => getThemeLeaderboard(themes),
+  const changeLeaderboard: ThemeChangeLeaderboard = useMemo(
+    () => getThemeChangeLeaderboard(themes),
+    [themes],
+  );
+
+  const convictionMap = useMemo(
+    () => new Map(themes.map(t => [t.id, computeConvictionScore(t)] as const)),
     [themes],
   );
 
@@ -219,94 +225,43 @@ export function ThemeTerminal({
         </div>
       </div>
 
-      {/* ── Leaderboard strip ────────────────────────────────────────────────── */}
+      {/* ── Change Leaderboard strip ──────────────────────────────────────────── */}
       {themes.length >= 3 && filter === "all" && (
         <div
           className="shrink-0 px-6 py-3 hidden md:block"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.012)" }}
         >
-          <div className="max-w-5xl mx-auto grid grid-cols-3 gap-6">
-            {/* Strongest Signal */}
-            <div>
-              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2"
-                style={{ color: "rgba(255,255,255,0.22)" }}>
-                Strongest Signal
-              </p>
-              <div className="space-y-1">
-                {leaderboard.strongest.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => onSelectTheme(t)}
-                    className="block w-full text-left group"
-                  >
-                    <span
-                      className="text-[10px] leading-tight group-hover:text-white/70 transition-colors"
-                      style={{ color: "rgba(255,255,255,0.48)" }}
-                    >
-                      {t.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Accelerating */}
-            <div>
-              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2"
-                style={{ color: "rgba(16,185,129,0.40)" }}>
-                ▲ Accelerating
-              </p>
-              <div className="space-y-1">
-                {leaderboard.accelerating.length > 0 ? (
-                  leaderboard.accelerating.map(t => (
+          <div className="max-w-5xl mx-auto grid grid-cols-4 gap-5">
+            {([
+              { key: "risers",     label: "▲ Biggest Risers",    color: "rgba(16,185,129,0.45)",  textColor: "rgba(16,185,129,0.70)",  items: changeLeaderboard.risers     },
+              { key: "decliners",  label: "▼ Biggest Decliners", color: "rgba(239,68,68,0.45)",   textColor: "rgba(239,68,68,0.70)",   items: changeLeaderboard.decliners  },
+              { key: "broadening", label: "◈ Broadening",        color: "rgba(82,176,200,0.45)",  textColor: "rgba(82,176,200,0.70)",  items: changeLeaderboard.broadening },
+              { key: "narrowing",  label: "◈ Narrowing",         color: "rgba(251,191,36,0.40)",  textColor: "rgba(251,191,36,0.65)",  items: changeLeaderboard.narrowing  },
+            ] as const).map(({ key, label, color, textColor, items }) => (
+              <div key={key}>
+                <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color }}>
+                  {label}
+                </p>
+                <div className="space-y-1">
+                  {items.length > 0 ? items.map(t => (
                     <button
                       key={t.id}
                       onClick={() => onSelectTheme(t)}
                       className="block w-full text-left group"
                     >
                       <span
-                        className="text-[10px] leading-tight group-hover:opacity-90 transition-opacity"
-                        style={{ color: "rgba(16,185,129,0.65)" }}
+                        className="text-[9.5px] leading-tight group-hover:opacity-90 transition-opacity"
+                        style={{ color: textColor }}
                       >
                         {t.name}
                       </span>
                     </button>
-                  ))
-                ) : (
-                  <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.16)" }}>
-                    None above threshold
-                  </span>
-                )}
+                  )) : (
+                    <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.14)" }}>—</span>
+                  )}
+                </div>
               </div>
-            </div>
-            {/* Weakening */}
-            <div>
-              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2"
-                style={{ color: "rgba(239,68,68,0.40)" }}>
-                ▼ Weakening
-              </p>
-              <div className="space-y-1">
-                {leaderboard.weakening.length > 0 ? (
-                  leaderboard.weakening.map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => onSelectTheme(t)}
-                      className="block w-full text-left group"
-                    >
-                      <span
-                        className="text-[10px] leading-tight group-hover:opacity-90 transition-opacity"
-                        style={{ color: "rgba(239,68,68,0.65)" }}
-                      >
-                        {t.name}
-                      </span>
-                    </button>
-                  ))
-                ) : (
-                  <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.16)" }}>
-                    None below threshold
-                  </span>
-                )}
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
@@ -408,39 +363,52 @@ export function ThemeTerminal({
                       </p>
 
                       {/* Footer */}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="text-[10px] font-semibold"
-                            style={{ color: momentumColor(theme.momentum_label) }}
-                          >
-                            {momentum.momentumLabel}
-                          </span>
-                          <span
-                            className="text-[9px] font-mono tabular-nums px-1 py-0.5 rounded"
-                            style={{
-                              background: momentum.momentumScore >= 0 ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
-                              color:      momentum.momentumScore >= 0 ? "#10B981" : "#EF4444",
-                            }}
-                          >
-                            {momentum.momentumScore > 0 ? "+" : ""}{momentum.momentumScore}
-                          </span>
-                        </div>
-                        <div className="flex flex-col gap-1 items-end">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.20)" }}>P</span>
-                            <div className="w-12 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                              <div className="h-full rounded-full" style={{ width: `${theme.persistence_score ?? 0}%`, background: sColor }} />
+                      {(() => {
+                        const cv = convictionMap.get(theme.id) ?? 0;
+                        const cvColor = cv >= 70 ? "#10B981" : cv >= 45 ? "#F59E0B" : "#EF4444";
+                        return (
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className="text-[10px] font-semibold"
+                                style={{ color: momentumColor(theme.momentum_label) }}
+                              >
+                                {momentum.momentumLabel}
+                              </span>
+                              <span
+                                className="text-[9px] font-mono tabular-nums px-1 py-0.5 rounded"
+                                style={{
+                                  background: momentum.momentumScore >= 0 ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+                                  color:      momentum.momentumScore >= 0 ? "#10B981" : "#EF4444",
+                                }}
+                              >
+                                {momentum.momentumScore > 0 ? "+" : ""}{momentum.momentumScore}
+                              </span>
+                              <span
+                                className="text-[8.5px] font-bold tabular-nums px-1.5 py-0.5 rounded"
+                                style={{ background: `${cvColor}12`, color: cvColor }}
+                                title={`Conviction: ${convictionLabel(cv)}`}
+                              >
+                                CV {cv}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-1 items-end shrink-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.20)" }}>P</span>
+                                <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                                  <div className="h-full rounded-full" style={{ width: `${theme.persistence_score ?? 0}%`, background: sColor }} />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.20)" }}>B</span>
+                                <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                                  <div className="h-full rounded-full" style={{ width: `${theme.breadth_score ?? 0}%`, background: "rgba(82,176,200,0.60)" }} />
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.20)" }}>B</span>
-                            <div className="w-12 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                              <div className="h-full rounded-full" style={{ width: `${theme.breadth_score ?? 0}%`, background: "rgba(82,176,200,0.60)" }} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                        );
+                      })()}
 
                       {/* Industries (first 2) */}
                       {(theme.related_industries ?? []).length > 0 && (

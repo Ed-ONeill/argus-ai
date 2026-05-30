@@ -11,9 +11,15 @@ import {
   type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
 import {
-  computeCrossAssetImpact, getThemeBeneficiaries, getThemeHeadwinds,
+  computeCrossAssetImpact,
+  computeConvictionScore, convictionLabel,
   type CrossAssetImpact,
 } from "@/lib/themeImpact";
+import {
+  computeSignalDeltas, generateWeeklyChange,
+  computeIndustryExposureRanking, computeAssetExposure,
+  type SignalDelta, type AssetExposure,
+} from "@/lib/themeSignalDelta";
 
 function fmtDur(s: number): string {
   const h = Math.floor(s / 3600);
@@ -146,11 +152,15 @@ export function ThemeDrawer({
     () => computeMomentumTrend(theme, momentum.momentumScore),
     [theme, momentum.momentumScore],
   );
-  const signalChanges    = useMemo(() => computeSignalChanges(theme), [theme]);
-  const causalChain      = useMemo(() => parseCausalChain(theme.causal_narrative ?? ""), [theme.causal_narrative]);
+  const signalChanges     = useMemo(() => computeSignalChanges(theme), [theme]);
+  const causalChain       = useMemo(() => parseCausalChain(theme.causal_narrative ?? ""), [theme.causal_narrative]);
   const crossAssetImpacts: CrossAssetImpact[] = useMemo(() => computeCrossAssetImpact(theme), [theme]);
-  const beneficiaries    = useMemo(() => getThemeBeneficiaries(theme), [theme]);
-  const headwinds        = useMemo(() => getThemeHeadwinds(theme), [theme]);
+  const signalDeltas: SignalDelta[]            = useMemo(() => computeSignalDeltas(theme), [theme]);
+  const weeklyChange      = useMemo(() => generateWeeklyChange(theme), [theme]);
+  const industryExposure  = useMemo(() => computeIndustryExposureRanking(theme), [theme]);
+  const assetExposure: AssetExposure[] = useMemo(() => computeAssetExposure(theme), [theme]);
+  const conviction        = useMemo(() => computeConvictionScore(theme), [theme]);
+  const cvLabel           = convictionLabel(conviction);
 
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
@@ -266,6 +276,56 @@ export function ThemeDrawer({
             </p>
           )}
 
+          {/* Signal Deltas — most important: change events, not state */}
+          {signalDeltas.length > 0 && (
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}
+            >
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                style={{ color: "rgba(255,255,255,0.24)" }}>
+                Signal Delta
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {signalDeltas.map((d, i) => {
+                  const color = d.direction === "up" ? "#10B981" : "#EF4444";
+                  const arrow = d.direction === "up" ? "▲" : "▼";
+                  const opacity = d.magnitude === "strong" ? 1.0 : d.magnitude === "moderate" ? 0.80 : 0.60;
+                  return (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg"
+                      style={{
+                        background: `${color}12`,
+                        color,
+                        border:     `1px solid ${color}25`,
+                        opacity,
+                      }}
+                    >
+                      <span className="text-[9px]">{arrow}</span>
+                      <span className="text-[9px] opacity-60">{d.category}</span>
+                      <span>{d.label}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* What Changed This Week */}
+          <div
+            className="rounded-xl p-3.5"
+            style={{ background: "rgba(82,176,200,0.035)", border: "1px solid rgba(82,176,200,0.09)" }}
+          >
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
+              style={{ color: "rgba(82,176,200,0.45)" }}>
+              What Changed
+            </p>
+            <p className="text-[12px] leading-relaxed" style={{ color: "rgba(255,255,255,0.60)" }}>
+              {weeklyChange}
+            </p>
+          </div>
+
           {/* Podcasts — hoisted here when opened from Listen */}
           {sourceContext === "listen" && connectedEpisodes.length > 0 && (
             <Section title={`Podcasts · ${connectedEpisodes.length}`}>
@@ -335,21 +395,21 @@ export function ThemeDrawer({
           )}
 
           {/* Signal metrics */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-2">
             {[
-              { label: "Signal Score", value: String(momentum.signalScore),          unit: "/100"    },
-              { label: "Persistence",  value: String(theme.persistence_score ?? 0),  unit: "/100"    },
-              { label: "Breadth",      value: String(theme.breadth_score ?? 0),       unit: "/100"    },
-              { label: "Evidence",     value: String(theme.evidence_count ?? 0),      unit: " sources" },
+              { label: "Signal Score", value: String(momentum.signalScore),         unit: "/100"     },
+              { label: "Persistence",  value: String(theme.persistence_score ?? 0), unit: "/100"     },
+              { label: "Breadth",      value: String(theme.breadth_score ?? 0),      unit: "/100"     },
+              { label: "Evidence",     value: String(theme.evidence_count ?? 0),     unit: " sources" },
             ].map(m => (
               <div
                 key={m.label}
-                className="rounded-lg p-3 text-center"
+                className="rounded-lg p-2.5 text-center"
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
               >
-                <p className="text-[9px] font-bold uppercase tracking-[0.10em] mb-1"
+                <p className="text-[9px] font-bold uppercase tracking-[0.10em] mb-0.5"
                   style={{ color: "rgba(255,255,255,0.26)" }}>{m.label}</p>
-                <p className="text-[17px] font-bold tabular-nums leading-tight"
+                <p className="text-[16px] font-bold tabular-nums leading-tight"
                   style={{ color: "rgba(255,255,255,0.82)" }}>
                   {m.value}
                   <span className="text-[9px] font-normal" style={{ color: "rgba(255,255,255,0.26)" }}>
@@ -358,6 +418,39 @@ export function ThemeDrawer({
                 </p>
               </div>
             ))}
+          </div>
+
+          {/* Conviction row */}
+          <div
+            className="flex items-center justify-between px-3.5 py-2.5 rounded-xl"
+            style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.05)" }}
+          >
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5"
+                style={{ color: "rgba(255,255,255,0.26)" }}>Conviction</p>
+              <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                {cvLabel} Conviction
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${conviction}%`,
+                    background: conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444",
+                  }}
+                />
+              </div>
+              <span
+                className="text-[15px] font-black tabular-nums leading-none"
+                style={{
+                  color: conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444",
+                }}
+              >
+                {conviction}
+              </span>
+            </div>
           </div>
 
           {/* Momentum row */}
@@ -488,41 +581,39 @@ export function ThemeDrawer({
             </Section>
           )}
 
-          {/* Beneficiaries & Headwinds */}
-          {(beneficiaries.length > 0 || headwinds.length > 0) && (
+          {/* Beneficiaries & Headwinds 2.0 */}
+          {assetExposure.length > 0 && (
             <Section title="Beneficiaries / Headwinds">
-              {beneficiaries.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                  <span className="text-[8.5px] font-bold shrink-0 w-16" style={{ color: "rgba(16,185,129,0.60)" }}>
-                    ↑ Benefits
-                  </span>
-                  {beneficiaries.map(a => (
-                    <span
-                      key={a}
-                      className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
-                      style={{ background: "rgba(16,185,129,0.10)", color: "#10B981" }}
-                    >
-                      {a}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {headwinds.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[8.5px] font-bold shrink-0 w-16" style={{ color: "rgba(239,68,68,0.60)" }}>
-                    ↓ Headwinds
-                  </span>
-                  {headwinds.map(a => (
-                    <span
-                      key={a}
-                      className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
-                      style={{ background: "rgba(239,68,68,0.10)", color: "#EF4444" }}
-                    >
-                      {a}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <div className="space-y-1.5">
+                {assetExposure.map(a => {
+                  const color   = a.score > 0 ? "#10B981" : a.score < 0 ? "#EF4444" : "#94A3B8";
+                  const arrow   = a.score > 0 ? "↑" : a.score < 0 ? "↓" : "→";
+                  const absScore = Math.abs(a.score);
+                  return (
+                    <div key={a.ticker} className="flex items-center gap-2.5">
+                      <span
+                        className="font-mono font-bold text-[10.5px] shrink-0 w-10 leading-none"
+                        style={{ color }}
+                      >
+                        {a.ticker}
+                      </span>
+                      <span className="text-[9px] font-bold tabular-nums shrink-0 w-6 text-right" style={{ color }}>
+                        {arrow}{absScore}
+                      </span>
+                      <div className="flex-1 h-[2px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${absScore}%`, background: color, opacity: 0.65 }}
+                        />
+                      </div>
+                      <span className="text-[9px] shrink-0 truncate max-w-[100px]"
+                        style={{ color: "rgba(255,255,255,0.28)" }}>
+                        {a.reason}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </Section>
           )}
 
@@ -573,23 +664,36 @@ export function ThemeDrawer({
             </Section>
           )}
 
-          {/* Connected industries */}
-          {(theme.related_industries ?? []).length > 0 && (
-            <Section title="Industries">
-              <div className="flex flex-wrap gap-1.5">
-                {theme.related_industries.map(ind => (
-                  <span
-                    key={ind}
-                    className="text-[11px] font-medium px-2.5 py-0.5 rounded-full"
-                    style={{
-                      background: "rgba(82,176,200,0.08)",
-                      color:      "rgba(82,176,200,0.80)",
-                      border:     "1px solid rgba(82,176,200,0.14)",
-                    }}
-                  >
-                    {ind}
-                  </span>
-                ))}
+          {/* Industry Exposure Ranking */}
+          {industryExposure.length > 0 && (
+            <Section title="Industry Exposure">
+              <div className="space-y-2">
+                {industryExposure.map(e => {
+                  const color = e.score > 0 ? "#10B981" : e.score < 0 ? "#EF4444" : "#94A3B8";
+                  const absScore = Math.abs(e.score);
+                  return (
+                    <div key={e.industry} className="flex items-center gap-2.5">
+                      <span
+                        className="text-[10.5px] shrink-0 truncate"
+                        style={{ color: "rgba(255,255,255,0.60)", width: 120 }}
+                      >
+                        {e.industry}
+                      </span>
+                      <div className="flex-1 h-[2.5px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${absScore}%`, background: color }}
+                        />
+                      </div>
+                      <span
+                        className="text-[10px] font-bold tabular-nums shrink-0 w-8 text-right"
+                        style={{ color }}
+                      >
+                        {e.score > 0 ? "+" : ""}{e.score}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </Section>
           )}
@@ -668,11 +772,11 @@ export function ThemeDrawer({
             </Section>
           )}
 
-          {/* Theme relationship weights */}
+          {/* Relationship Strength — narrative network */}
           {topRelationships.length > 0 && (
-            <Section title="Theme Relationships">
+            <Section title="Connected Themes">
               <div className="space-y-2">
-                {topRelationships.map(([name, rel]) => {
+                {topRelationships.map(([relName, rel]) => {
                   const barColor =
                     rel.direction === "positive" ? "#10B981" :
                     rel.direction === "negative" ? "#EF4444" : "#F59E0B";
@@ -682,35 +786,28 @@ export function ThemeDrawer({
                   const typeLabel =
                     rel.type === "macro_overlap" ? "Macro" :
                     rel.type === "narrative"     ? "Narrative" :
-                    rel.type === "indirect"      ? "Indirect" : null;
+                    rel.type === "indirect"      ? "Indirect" : "Direct";
+                  const strength = Math.round(rel.weight * 100);
                   return (
-                    <div key={name} className="flex items-center gap-2.5">
-                      <span className="text-[10px] shrink-0 font-mono w-3" style={{ color: barColor }}>
+                    <div key={relName} className="flex items-center gap-2">
+                      <span className="text-[11px] shrink-0 font-mono" style={{ color: barColor }}>
                         {dirArrow}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-[12px] truncate" style={{ color: "rgba(255,255,255,0.65)" }}>{name}</p>
-                          {typeLabel && (
-                            <span
-                              className="text-[8px] font-semibold px-1 py-0.5 rounded shrink-0"
-                              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.30)" }}
-                            >
-                              {typeLabel}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="w-16 h-1 rounded-full overflow-hidden shrink-0"
-                        style={{ background: "rgba(255,255,255,0.06)" }}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${Math.round(rel.weight * 100)}%`, background: barColor }}
-                        />
-                      </div>
-                      <span className="text-[9px] font-mono w-5 text-right shrink-0"
-                        style={{ color: "rgba(255,255,255,0.28)" }}>
-                        {Math.round(rel.weight * 100)}
+                      <p className="text-[11.5px] flex-1 min-w-0 truncate"
+                        style={{ color: "rgba(255,255,255,0.68)" }}>
+                        {relName}
+                      </p>
+                      <span
+                        className="text-[8px] font-semibold px-1 py-0.5 rounded shrink-0"
+                        style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.28)" }}
+                      >
+                        {typeLabel}
+                      </span>
+                      <span
+                        className="text-[12px] font-black tabular-nums shrink-0 w-7 text-right"
+                        style={{ color: barColor }}
+                      >
+                        {strength}
                       </span>
                     </div>
                   );

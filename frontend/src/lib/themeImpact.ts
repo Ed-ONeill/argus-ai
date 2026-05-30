@@ -21,7 +21,7 @@
  */
 
 import type { ThemeIntelligence } from "./types";
-import { computeThemeMomentum } from "./themeMomentum";
+import { computeThemeMomentum, computeSignalScore, computeMomentumComponents, computeMomentumScore } from "./themeMomentum";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -261,4 +261,52 @@ export function getThemeLeaderboard(themes: ThemeIntelligence[]): ThemeLeaderboa
     .map(x => x.theme);
 
   return { strongest, accelerating, weakening };
+}
+
+// ── Conviction Model ──────────────────────────────────────────────────────────
+
+/**
+ * Conviction score (0–100) measuring how much weight to place on this theme's
+ * signal. Inputs: signal quality, momentum magnitude, persistence, breadth,
+ * relationship density, and source count.
+ */
+export function computeConvictionScore(theme: ThemeIntelligence): number {
+  const signalScore = computeSignalScore(theme);
+
+  let momentumMagnitude = 0;
+  try {
+    const comps = computeMomentumComponents(theme);
+    momentumMagnitude = clamp(Math.abs(computeMomentumScore(theme, comps)), 0, 100);
+  } catch {}
+
+  const persistence = theme.persistence_score    ?? 0;
+  const breadth     = theme.breadth_score        ?? 0;
+  const relDensity  = clamp(Object.keys(theme.relationship_weights ?? {}).length * 12, 0, 60);
+  const evidence    = clamp((theme.evidence_count ?? 0) * 8, 0, 100);
+
+  const base =
+    signalScore       * 0.30 +
+    momentumMagnitude * 0.20 +
+    persistence       * 0.20 +
+    breadth           * 0.15 +
+    relDensity        * 0.10 +
+    evidence          * 0.05;
+
+  // Competition penalty damps conviction slightly
+  const penalty = clamp((theme.competition_penalty ?? 0) / 200, 0, 0.12) * 100;
+  // Cross-category confirmation bonus
+  const bonus   = theme.cross_category_confirmed ? 5 : 0;
+
+  return Math.round(clamp(base - penalty + bonus, 0, 100));
+}
+
+/**
+ * Human-readable conviction tier from score.
+ */
+export function convictionLabel(score: number): string {
+  if (score >= 85) return "Very High";
+  if (score >= 70) return "High";
+  if (score >= 55) return "Moderate";
+  if (score >= 35) return "Weak";
+  return "Speculative";
 }
