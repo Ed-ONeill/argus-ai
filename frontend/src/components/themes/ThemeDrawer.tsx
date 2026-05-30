@@ -10,6 +10,10 @@ import {
   LIFECYCLE_META,
   type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
+import {
+  computeCrossAssetImpact, getThemeBeneficiaries, getThemeHeadwinds,
+  type CrossAssetImpact,
+} from "@/lib/themeImpact";
 
 function fmtDur(s: number): string {
   const h = Math.floor(s / 3600);
@@ -142,8 +146,11 @@ export function ThemeDrawer({
     () => computeMomentumTrend(theme, momentum.momentumScore),
     [theme, momentum.momentumScore],
   );
-  const signalChanges = useMemo(() => computeSignalChanges(theme), [theme]);
-  const causalChain   = useMemo(() => parseCausalChain(theme.causal_narrative ?? ""), [theme.causal_narrative]);
+  const signalChanges    = useMemo(() => computeSignalChanges(theme), [theme]);
+  const causalChain      = useMemo(() => parseCausalChain(theme.causal_narrative ?? ""), [theme.causal_narrative]);
+  const crossAssetImpacts: CrossAssetImpact[] = useMemo(() => computeCrossAssetImpact(theme), [theme]);
+  const beneficiaries    = useMemo(() => getThemeBeneficiaries(theme), [theme]);
+  const headwinds        = useMemo(() => getThemeHeadwinds(theme), [theme]);
 
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
@@ -448,6 +455,76 @@ export function ThemeDrawer({
               })}
             </div>
           </Section>
+
+          {/* Cross-Asset Impact */}
+          {crossAssetImpacts.length > 0 && (
+            <Section title="Cross-Asset Impact">
+              <div className="flex flex-wrap gap-3">
+                {crossAssetImpacts.map(item => {
+                  const color =
+                    item.direction === "positive" ? "#10B981" :
+                    item.direction === "negative" ? "#EF4444" : "#94A3B8";
+                  return (
+                    <div key={item.label} className="flex flex-col items-start gap-1 min-w-[76px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold leading-none" style={{ color }}>
+                          {item.direction === "positive" ? "↑" : item.direction === "negative" ? "↓" : "→"}
+                        </span>
+                        <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.52)" }}>
+                          {item.label}
+                        </span>
+                      </div>
+                      <div className="w-full h-[2.5px] rounded-full overflow-hidden"
+                        style={{ background: "rgba(255,255,255,0.06)" }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${item.magnitude}%`, background: color, opacity: 0.65 }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
+          {/* Beneficiaries & Headwinds */}
+          {(beneficiaries.length > 0 || headwinds.length > 0) && (
+            <Section title="Beneficiaries / Headwinds">
+              {beneficiaries.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                  <span className="text-[8.5px] font-bold shrink-0 w-16" style={{ color: "rgba(16,185,129,0.60)" }}>
+                    ↑ Benefits
+                  </span>
+                  {beneficiaries.map(a => (
+                    <span
+                      key={a}
+                      className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+                      style={{ background: "rgba(16,185,129,0.10)", color: "#10B981" }}
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {headwinds.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[8.5px] font-bold shrink-0 w-16" style={{ color: "rgba(239,68,68,0.60)" }}>
+                    ↓ Headwinds
+                  </span>
+                  {headwinds.map(a => (
+                    <span
+                      key={a}
+                      className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+                      style={{ background: "rgba(239,68,68,0.10)", color: "#EF4444" }}
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Section>
+          )}
 
           {/* Second order effects */}
           {(theme.second_order_effects ?? []).length > 0 && (

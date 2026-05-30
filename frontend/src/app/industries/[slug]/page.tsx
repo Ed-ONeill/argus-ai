@@ -37,6 +37,7 @@ import {
 } from "@/lib/sectorIntelligence";
 import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
+import { computeThemeImpactScore, getThemeBeneficiaries, getThemeHeadwinds } from "@/lib/themeImpact";
 import {
   getInfluentialEntities,
   filterVCFundingClusters,
@@ -970,18 +971,28 @@ export default function IndustryDetailPage() {
                     const relWeight = rel ? Math.round(rel.weight * 100) : null;
                     const relDir    = rel?.direction ?? null;
                     const relType   = rel?.type ?? null;
-                    const evState  = computeThemeEvolutionState(t);
-                    const evMeta   = THEME_EVOLUTION_META[evState];
-                    const lcStage  = computeThemeLifecycleStage(t);
-                    const lcMeta   = THEME_LIFECYCLE_META[lcStage];
+                    const evState     = computeThemeEvolutionState(t);
+                    const evMeta     = THEME_EVOLUTION_META[evState];
+                    const lcStage    = computeThemeLifecycleStage(t);
+                    const lcMeta     = THEME_LIFECYCLE_META[lcStage];
+                    const impactScore = computeThemeImpactScore(t, industry.name);
+                    const impactColor = impactScore > 0 ? "#10b981" : impactScore < 0 ? "#ef4444" : "#94a3b8";
 
                     return (
                       <div key={t.id} className="space-y-1.5 pb-4 last:pb-0 last:border-0 border-b border-edge/40">
-                        {/* Name + evolution + lifecycle + strength */}
+                        {/* Name + evolution + lifecycle + strength + impact */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
                             {t.name}
                           </span>
+                          {impactScore !== 0 && (
+                            <span
+                              className="text-[9px] font-bold font-mono tabular-nums px-1 py-px rounded shrink-0"
+                              style={{ background: `${impactColor}14`, color: impactColor }}
+                            >
+                              {impactScore > 0 ? "+" : ""}{impactScore}
+                            </span>
+                          )}
                           <span
                             className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0"
                             style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}
@@ -1076,6 +1087,59 @@ export default function IndustryDetailPage() {
                 </p>
               )}
             </motion.section>
+
+            {/* Thematic Exposure — beneficiaries & headwinds from active themes */}
+            {activeThemes.length > 0 && (() => {
+              const beneficiarySet = new Set<string>();
+              const headwindSet    = new Set<string>();
+              activeThemes.forEach((t: ThemeIntelligence) => {
+                getThemeBeneficiaries(t).forEach(a => beneficiarySet.add(a));
+                getThemeHeadwinds(t).forEach(a => { if (!beneficiarySet.has(a)) headwindSet.add(a); });
+              });
+              const bens = [...beneficiarySet].slice(0, 8);
+              const hwds = [...headwindSet].slice(0, 8);
+              if (bens.length === 0 && hwds.length === 0) return null;
+              return (
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.20, duration: 0.25, ease: "easeOut" }}
+                  className="bg-surface rounded-xl border border-edge p-4"
+                >
+                  <SectionHeader icon={Target}>Thematic Exposure</SectionHeader>
+                  <div className="space-y-2.5">
+                    {bens.length > 0 && (
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <span className="text-[8.5px] font-bold shrink-0 mt-[3px]" style={{ color: "#10b98180" }}>↑ Benefits</span>
+                        {bens.map(a => (
+                          <span
+                            key={a}
+                            className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+                            style={{ background: "rgba(16,185,129,0.09)", color: "#10b981" }}
+                          >
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {hwds.length > 0 && (
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <span className="text-[8.5px] font-bold shrink-0 mt-[3px]" style={{ color: "#ef444480" }}>↓ Headwinds</span>
+                        {hwds.map(a => (
+                          <span
+                            key={a}
+                            className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
+                            style={{ background: "rgba(239,68,68,0.09)", color: "#ef4444" }}
+                          >
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </motion.section>
+              );
+            })()}
 
             {/* Key Companies */}
             {keyCompanies.length > 0 && (

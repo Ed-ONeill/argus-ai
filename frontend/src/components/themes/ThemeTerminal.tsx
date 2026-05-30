@@ -10,6 +10,7 @@ import {
   type LifecycleState,
   type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
+import { getThemeLeaderboard, type ThemeLeaderboard } from "@/lib/themeImpact";
 
 // ── Safe fallback for missing/failed momentum computation ─────────────────────
 
@@ -115,6 +116,11 @@ export function ThemeTerminal({
 
   const alertCount = themes.filter(t => hasAlert(t.id)).length;
 
+  const leaderboard: ThemeLeaderboard = useMemo(
+    () => getThemeLeaderboard(themes),
+    [themes],
+  );
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -212,6 +218,98 @@ export function ThemeTerminal({
           </button>
         </div>
       </div>
+
+      {/* ── Leaderboard strip ────────────────────────────────────────────────── */}
+      {themes.length >= 3 && filter === "all" && (
+        <div
+          className="shrink-0 px-6 py-3 hidden md:block"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.012)" }}
+        >
+          <div className="max-w-5xl mx-auto grid grid-cols-3 gap-6">
+            {/* Strongest Signal */}
+            <div>
+              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2"
+                style={{ color: "rgba(255,255,255,0.22)" }}>
+                Strongest Signal
+              </p>
+              <div className="space-y-1">
+                {leaderboard.strongest.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => onSelectTheme(t)}
+                    className="block w-full text-left group"
+                  >
+                    <span
+                      className="text-[10px] leading-tight group-hover:text-white/70 transition-colors"
+                      style={{ color: "rgba(255,255,255,0.48)" }}
+                    >
+                      {t.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Accelerating */}
+            <div>
+              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2"
+                style={{ color: "rgba(16,185,129,0.40)" }}>
+                ▲ Accelerating
+              </p>
+              <div className="space-y-1">
+                {leaderboard.accelerating.length > 0 ? (
+                  leaderboard.accelerating.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => onSelectTheme(t)}
+                      className="block w-full text-left group"
+                    >
+                      <span
+                        className="text-[10px] leading-tight group-hover:opacity-90 transition-opacity"
+                        style={{ color: "rgba(16,185,129,0.65)" }}
+                      >
+                        {t.name}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.16)" }}>
+                    None above threshold
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* Weakening */}
+            <div>
+              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-2"
+                style={{ color: "rgba(239,68,68,0.40)" }}>
+                ▼ Weakening
+              </p>
+              <div className="space-y-1">
+                {leaderboard.weakening.length > 0 ? (
+                  leaderboard.weakening.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => onSelectTheme(t)}
+                      className="block w-full text-left group"
+                    >
+                      <span
+                        className="text-[10px] leading-tight group-hover:opacity-90 transition-opacity"
+                        style={{ color: "rgba(239,68,68,0.65)" }}
+                      >
+                        {t.name}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.16)" }}>
+                    None below threshold
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Theme grid ──────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
