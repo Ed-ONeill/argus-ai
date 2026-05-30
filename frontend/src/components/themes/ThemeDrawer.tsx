@@ -22,7 +22,9 @@ import {
 } from "@/lib/themeSignalDelta";
 import {
   generateNextCatalysts, generateBullBearCases, generateWatchSignals,
+  generateEvidenceItems, explainConviction, computeThemeHealth, generateInvalidationSignals,
   type ThemeCatalyst, type BullBearCases, type WatchSignal,
+  type EvidenceItem, type ConvictionExplanation, type ThemeHealthScore, type InvalidationSignal,
 } from "@/lib/themeIntelligence";
 
 function fmtDur(s: number): string {
@@ -122,6 +124,11 @@ export function ThemeDrawer({
     .filter(c => (theme.contributing_cluster_ids ?? []).includes(c.id))
     .slice(0, 6);
 
+  // Top 3 confirming stories by cluster_score
+  const topStories = [...connectedClusters]
+    .sort((a, b) => b.cluster_score - a.cluster_score)
+    .slice(0, 3);
+
   // Connected deals — sector or entity match
   const assetSet = new Set((theme.related_assets    ?? []).map(a => a.toUpperCase()));
   const indTerms = (theme.related_industries ?? []).map(i => i.toLowerCase());
@@ -168,6 +175,11 @@ export function ThemeDrawer({
   const catalysts: ThemeCatalyst[]   = useMemo(() => generateNextCatalysts(theme),  [theme]);
   const bullBear: BullBearCases      = useMemo(() => generateBullBearCases(theme),   [theme]);
   const watchSignals: WatchSignal[]  = useMemo(() => generateWatchSignals(theme),    [theme]);
+  const evidenceItems: EvidenceItem[]           = useMemo(() => generateEvidenceItems(theme),             [theme]);
+  const convictionExpl: ConvictionExplanation   = useMemo(() => explainConviction(theme, conviction),     [theme, conviction]);
+  const themeHealth: ThemeHealthScore           = useMemo(() => computeThemeHealth(theme),                [theme]);
+  const invalidation: InvalidationSignal[]      = useMemo(() => generateInvalidationSignals(theme),       [theme]);
+  const topPodcasts                             = connectedEpisodes.slice(0, 3);
 
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
@@ -281,6 +293,92 @@ export function ThemeDrawer({
             <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>
               {theme.description}
             </p>
+          )}
+
+          {/* Evidence Panel */}
+          {evidenceItems.length > 0 && (
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: "rgba(16,185,129,0.028)", border: "1px solid rgba(16,185,129,0.08)" }}
+            >
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                style={{ color: "rgba(16,185,129,0.48)" }}>
+                Evidence
+              </p>
+              <div className="space-y-1.5">
+                {evidenceItems.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span
+                      className="text-[10.5px] font-bold shrink-0 leading-snug"
+                      style={{ color: item.type === "positive" ? "#10B981" : "rgba(255,255,255,0.35)" }}
+                    >
+                      +
+                    </span>
+                    <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.60)" }}>
+                      {item.label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Confirming Sources — top stories + podcasts by strength */}
+          {(topStories.length > 0 || topPodcasts.length > 0) && (
+            <Section title="Confirming Sources">
+              <div className="space-y-2">
+                {topStories.map(c => (
+                  <a
+                    key={c.id}
+                    href={c.primary.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 group"
+                  >
+                    <span
+                      className="shrink-0 text-[8.5px] font-bold tabular-nums px-1.5 py-0.5 rounded mt-0.5"
+                      style={{ background: "rgba(16,185,129,0.08)", color: "rgba(16,185,129,0.65)" }}
+                    >
+                      {c.cluster_score}
+                    </span>
+                    <p
+                      className="text-[11.5px] leading-snug group-hover:text-white/75 transition-colors"
+                      style={{ color: "rgba(255,255,255,0.55)" }}
+                    >
+                      {c.primary.title}
+                      <ExternalLink size={7} className="inline ml-1 opacity-35" />
+                    </p>
+                  </a>
+                ))}
+                {topPodcasts.map(ep => (
+                  <div key={ep.id} className="flex items-start gap-2">
+                    <Headphones size={10} className="shrink-0 mt-0.5" style={{ color: "rgba(82,176,200,0.50)" }} />
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-[11.5px] leading-snug line-clamp-1"
+                        style={{ color: "rgba(255,255,255,0.55)" }}
+                      >
+                        {ep.title}
+                      </p>
+                      <p className="text-[9.5px] mt-0.5" style={{ color: "rgba(255,255,255,0.28)" }}>
+                        {ep.show_name}
+                      </p>
+                    </div>
+                    {ep.external_url && (
+                      <a
+                        href={ep.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0"
+                        style={{ color: "rgba(82,176,200,0.45)" }}
+                      >
+                        <ExternalLink size={9} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
           )}
 
           {/* Signal Deltas — most important: change events, not state */}
@@ -463,37 +561,79 @@ export function ThemeDrawer({
             ))}
           </div>
 
-          {/* Conviction row */}
+          {/* Theme Health */}
           <div
             className="flex items-center justify-between px-3.5 py-2.5 rounded-xl"
-            style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.05)" }}
+            style={{ background: "rgba(255,255,255,0.020)", border: "1px solid rgba(255,255,255,0.05)" }}
           >
             <div>
               <p className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5"
-                style={{ color: "rgba(255,255,255,0.26)" }}>Conviction</p>
-              <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-                {cvLabel} Conviction
+                style={{ color: "rgba(255,255,255,0.26)" }}>Theme Health</p>
+              <p className="text-[12px] font-semibold" style={{ color: themeHealth.color }}>
+                {themeHealth.label}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${conviction}%`,
-                    background: conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444",
-                  }}
-                />
+                <div className="h-full rounded-full" style={{ width: `${themeHealth.score}%`, background: themeHealth.color }} />
               </div>
-              <span
-                className="text-[15px] font-black tabular-nums leading-none"
-                style={{
-                  color: conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444",
-                }}
-              >
-                {conviction}
+              <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: themeHealth.color }}>
+                {themeHealth.score}
               </span>
             </div>
+          </div>
+
+          {/* Conviction row + explainer */}
+          <div
+            className="rounded-xl px-3.5 py-2.5"
+            style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.05)" }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5"
+                  style={{ color: "rgba(255,255,255,0.26)" }}>Conviction</p>
+                <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  {cvLabel} Conviction
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${conviction}%`,
+                      background: conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444",
+                    }}
+                  />
+                </div>
+                <span
+                  className="text-[15px] font-black tabular-nums leading-none"
+                  style={{ color: conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444" }}
+                >
+                  {conviction}
+                </span>
+              </div>
+            </div>
+            {convictionExpl.factors.length > 0 && (
+              <div
+                className="pt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1"
+                style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+              >
+                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.28)" }}>
+                  {convictionExpl.tone === "driven" ? "Driven by" : "Limited by"}
+                </span>
+                {convictionExpl.factors.map((f, i) => (
+                  <span
+                    key={i}
+                    className="text-[9px] font-medium"
+                    style={{ color: f.positive ? "rgba(16,185,129,0.72)" : "rgba(239,68,68,0.65)" }}
+                  >
+                    {i > 0 && <span style={{ color: "rgba(255,255,255,0.16)" }}>· </span>}
+                    {f.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Bull Case / Bear Case */}
@@ -791,6 +931,34 @@ export function ThemeDrawer({
                 ))}
               </div>
             </Section>
+          )}
+
+          {/* Thesis Invalidation */}
+          {invalidation.length > 0 && (
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: "rgba(239,68,68,0.022)", border: "1px solid rgba(239,68,68,0.08)" }}
+            >
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                style={{ color: "rgba(239,68,68,0.48)" }}>
+                Thesis Invalidated If
+              </p>
+              <div className="space-y-1.5">
+                {invalidation.map((sig, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span
+                      className="text-[10px] font-bold shrink-0 leading-snug"
+                      style={{ color: "rgba(239,68,68,0.55)" }}
+                    >
+                      —
+                    </span>
+                    <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>
+                      {sig.condition}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Connected assets */}

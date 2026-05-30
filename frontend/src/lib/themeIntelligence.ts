@@ -750,3 +750,240 @@ export function generateWatchSignals(theme: ThemeIntelligence): WatchSignal[] {
 
   return signals.slice(0, 5);
 }
+
+// ── Phase 9: Evidence & Validation Layer ────────────────────────────────────
+
+export interface EvidenceItem {
+  label: string;
+  type:  "positive" | "neutral";
+}
+
+export function generateEvidenceItems(theme: ThemeIntelligence): EvidenceItem[] {
+  const delta    = theme.momentum_delta           ?? 0;
+  const breadth  = theme.breadth_score            ?? 0;
+  const persist  = theme.persistence_score        ?? 0;
+  const cycles   = theme.persistence_cycles       ?? 0;
+  const stories  = theme.contributing_story_count ?? 0;
+  const evidence = theme.evidence_count           ?? 0;
+  const momentum = theme.momentum_label;
+  const confirmed = theme.cross_category_confirmed;
+  const inds     = theme.related_industries       ?? [];
+  const ind0     = inds[0] ?? null;
+  const ind1     = inds[1] ?? null;
+  const relCount = Object.keys(theme.relationship_weights ?? {}).length;
+  const out: EvidenceItem[] = [];
+
+  if (delta >= 14) {
+    out.push({ type: "positive", label: `Signal velocity +${Math.round(delta)} — material acceleration above baseline` });
+  } else if (delta >= 6) {
+    out.push({ type: "positive", label: `Signal trending higher (+${Math.round(delta)} vs prior cycle)` });
+  }
+
+  if (confirmed) {
+    out.push({ type: "positive", label: "Cross-category confirmation active — signal extends beyond primary sector" });
+  }
+
+  if (breadth >= 80) {
+    const indNote = ind0 && ind1 ? ` across ${ind0}, ${ind1}` : ind0 ? ` including ${ind0}` : "";
+    out.push({ type: "positive", label: `Sector breadth at ${Math.round(breadth)}%${indNote}` });
+  } else if (breadth >= 58 && !confirmed) {
+    const cnt = Math.max(2, Math.round(breadth / 18));
+    out.push({ type: "positive", label: `Coverage expanding into ~${cnt} tracked sectors` });
+  }
+
+  if (stories >= 10) {
+    out.push({ type: "positive", label: `${stories} active contributing stories — elevated coverage depth` });
+  } else if (stories >= 5) {
+    out.push({ type: "positive", label: `${stories} active stories confirming the thesis` });
+  } else if (stories >= 2) {
+    out.push({ type: "neutral", label: `${stories} contributing sources in active coverage` });
+  }
+
+  if (cycles >= 8) {
+    out.push({ type: "positive", label: `${cycles}-cycle persistence — structurally embedded theme` });
+  } else if (cycles >= 4) {
+    out.push({ type: "positive", label: `${cycles} consecutive cycles of sustained signal presence` });
+  }
+
+  if (evidence >= 8) {
+    out.push({ type: "positive", label: `${evidence} independent evidence sources corroborating` });
+  } else if (evidence >= 4) {
+    out.push({ type: "neutral", label: `${evidence} confirming sources across coverage` });
+  }
+
+  if (momentum === "accelerating" && delta < 14) {
+    out.push({ type: "positive", label: `Active acceleration phase confirmed in ${ind0 ?? "tracked sectors"}` });
+  } else if (momentum === "strengthening") {
+    out.push({ type: "positive", label: "Strengthening momentum — signal quality improving" });
+  }
+
+  if (relCount >= 4) {
+    out.push({ type: "positive", label: `${relCount} confirmed industry relationships — dense causal network` });
+  }
+
+  if (persist >= 78 && cycles < 4) {
+    out.push({ type: "positive", label: `Persistence score ${Math.round(persist)} — above structural threshold` });
+  }
+
+  return out.slice(0, 5);
+}
+
+// ── Conviction Explanation ────────────────────────────────────────────────────
+
+export interface ConvictionExplanation {
+  tone:    "driven" | "limited";
+  factors: Array<{ label: string; positive: boolean }>;
+}
+
+export function explainConviction(theme: ThemeIntelligence, conviction: number): ConvictionExplanation {
+  const breadth  = theme.breadth_score            ?? 0;
+  const persist  = theme.persistence_score        ?? 0;
+  const delta    = theme.momentum_delta           ?? 0;
+  const cycles   = theme.persistence_cycles       ?? 0;
+  const stories  = theme.contributing_story_count ?? 0;
+  const evidence = theme.evidence_count           ?? 0;
+  const penalty  = theme.competition_penalty      ?? 0;
+  const confirmed = theme.cross_category_confirmed;
+
+  const pos: string[] = [];
+  const neg: string[] = [];
+
+  if (breadth >= 65)                        pos.push("Broad sector participation");
+  if (confirmed)                             pos.push("Cross-category confirmation");
+  if (persist >= 70)                         pos.push("High persistence score");
+  if (stories >= 6)                          pos.push("Strong story velocity");
+  if (evidence >= 5)                         pos.push("Multiple evidence sources");
+  if (theme.signal_strength === "strong")   pos.push("Strong signal quality");
+  if (delta >= 8)                            pos.push("Accelerating signal delta");
+  if (cycles >= 5)                           pos.push(`${cycles}-cycle track record`);
+
+  if (breadth < 35)                         neg.push("Narrow sector participation");
+  if (persist < 30)                          neg.push("Weak persistence");
+  if (evidence < 3)                          neg.push("Few confirming sources");
+  if (penalty > 30)                          neg.push("Signal crowding detected");
+  if (stories <= 2)                          neg.push("Low story activity");
+  if (delta < -8)                            neg.push("Declining signal velocity");
+
+  const tone = conviction >= 55 ? "driven" : "limited";
+  const factors =
+    tone === "driven"
+      ? [
+          ...pos.slice(0, 3).map(l => ({ label: l, positive: true  })),
+          ...neg.slice(0, 1).map(l => ({ label: l, positive: false })),
+        ]
+      : [
+          ...neg.slice(0, 3).map(l => ({ label: l, positive: false })),
+          ...pos.slice(0, 1).map(l => ({ label: l, positive: true  })),
+        ];
+
+  return { tone, factors };
+}
+
+// ── Theme Health Score ────────────────────────────────────────────────────────
+
+export interface ThemeHealthScore {
+  label: "Excellent" | "Healthy" | "Watch" | "Fragile" | "Breaking";
+  score: number;   // 0–100
+  color: string;
+}
+
+const HEALTH_COLORS: Record<string, string> = {
+  Excellent: "#10B981",
+  Healthy:   "#34D399",
+  Watch:     "#F59E0B",
+  Fragile:   "#EF4444",
+  Breaking:  "#DC2626",
+};
+
+export function computeThemeHealth(theme: ThemeIntelligence): ThemeHealthScore {
+  const momentum = theme.momentum_label;
+  const persist  = theme.persistence_score        ?? 0;
+  const breadth  = theme.breadth_score            ?? 0;
+  const delta    = theme.momentum_delta           ?? 0;
+  const stories  = theme.contributing_story_count ?? 0;
+
+  const signalPts =
+    theme.signal_strength === "strong" ? 100 :
+    theme.signal_strength === "medium" ? 60  : 20;
+
+  const momentumPts =
+    momentum === "accelerating" ? 100 :
+    momentum === "strengthening" ? 80 :
+    momentum === "emerging"      ? 70 :
+    momentum === "stable"        ? 50 :
+    momentum === "cooling"       ? 20 :
+    momentum === "reversing"     ? 0  : 50;
+
+  let raw = signalPts * 0.35 + momentumPts * 0.25 + persist * 0.25 + breadth * 0.15;
+  if (delta < -12)     raw -= 12;
+  else if (delta < -6) raw -= 6;
+  if (stories <= 1)    raw -= 14;
+  else if (stories <= 3) raw -= 5;
+
+  const score = Math.round(Math.max(0, Math.min(100, raw)));
+  const label: ThemeHealthScore["label"] =
+    score >= 78 ? "Excellent" :
+    score >= 58 ? "Healthy"   :
+    score >= 38 ? "Watch"     :
+    score >= 20 ? "Fragile"   : "Breaking";
+
+  return { label, score, color: HEALTH_COLORS[label] };
+}
+
+// ── Thesis Invalidation Signals ───────────────────────────────────────────────
+
+export interface InvalidationSignal {
+  condition: string;
+}
+
+const INVALIDATION_RULES: Array<{ regex: RegExp; condition: string }> = [
+  { regex: /utility|grid|power.grid|electric/,   condition: "Utility capex growth decelerates materially" },
+  { regex: /\bai\b|data.center|gpu|nvidia/,       condition: "AI demand weakens or hyperscaler capex guidance misses" },
+  { regex: /\bfed\b|rate.hike|monetary|fomc/,     condition: "Policy reversal removes rate-pressure narrative" },
+  { regex: /inflation|cpi|price.level/,           condition: "Inflation normalization alters the macro regime" },
+  { regex: /credit|lending|private.credit/,       condition: "Bank lending reaccelerates, displacing alternative credit" },
+  { regex: /semiconductor|chip|wafer/,            condition: "Semiconductor inventory correction extends into demand cycle" },
+  { regex: /reshoring|supply.chain|nearshore/,    condition: "Supply chain normalization removes nearshoring urgency" },
+  { regex: /china|export|tariff|trade/,           condition: "Trade normalization reduces domestic manufacturing premium" },
+  { regex: /consumer|retail|spending/,            condition: "Consumer spending softens materially below consensus" },
+  { regex: /\boil\b|opec|crude/,                  condition: "OPEC supply increase creates energy price headwind" },
+  { regex: /biotech|pharma|drug/,                 condition: "Regulatory setback invalidates approval timeline assumptions" },
+  { regex: /real.estate|reit|property/,           condition: "Rate relief removes distress thesis in real estate" },
+];
+
+export function generateInvalidationSignals(theme: ThemeIntelligence): InvalidationSignal[] {
+  const text = [
+    ...(theme.related_macro_factors ?? []),
+    ...(theme.related_industries    ?? []),
+    ...(theme.related_assets        ?? []),
+    theme.name             ?? "",
+    theme.description      ?? "",
+    theme.causal_narrative ?? "",
+  ].join(" ").toLowerCase();
+
+  const signals: InvalidationSignal[] = [];
+  for (const rule of INVALIDATION_RULES) {
+    if (rule.regex.test(text)) {
+      signals.push({ condition: rule.condition });
+      if (signals.length >= 4) break;
+    }
+  }
+
+  if (signals.length < 2) {
+    const chain = (theme.causal_narrative ?? "")
+      .split(/→|->|;/)
+      .map(s => s.trim())
+      .filter(s => s.length > 4);
+    if (chain[0] && chain[0].length < 60) {
+      const cap = chain[0].charAt(0).toUpperCase() + chain[0].slice(1);
+      signals.push({ condition: `${cap} reversal undermines the primary driver` });
+    }
+    if (theme.momentum_direction === "bullish") {
+      signals.push({ condition: "Signal degradation below medium threshold removes conviction basis" });
+    } else if (theme.momentum_direction === "bearish") {
+      signals.push({ condition: "Macro stabilization or policy support removes the bearish catalyst" });
+    }
+  }
+
+  return signals.slice(0, 4);
+}
