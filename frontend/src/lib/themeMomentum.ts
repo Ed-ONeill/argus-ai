@@ -214,46 +214,63 @@ export function momentumOutputLabel(score: number): MomentumOutputLabel {
   return "Stable";
 }
 
-/** Deterministic lifecycle state — priority ordered decision tree. */
+/** Deterministic lifecycle state — priority ordered decision tree.
+ *
+ *  Design goal: produce a realistic distribution across all 6 states.
+ *  The previous logic used persistence_cycles<=2 as the sole Emerging trigger,
+ *  which caused most themes to cluster there.  The new logic is composite and
+ *  evaluates all four signal dimensions before falling through to Mature.
+ */
 export function computeLifecycle(
   theme:         ThemeIntelligence,
   momentumScore: number,
 ): LifecycleState {
-  // Broken: signal has collapsed
+  const persistence = theme.persistence_score  ?? 0;
+  const breadth     = theme.breadth_score      ?? 0;
+  const delta       = theme.momentum_delta     ?? 0;
+  const cycles      = theme.persistence_cycles ?? 0;
+
+  // Broken: signal has collapsed — all three pillars degraded
   if (
     theme.signal_strength === "weak" &&
-    (theme.persistence_score ?? 0) < 25 &&
-    (theme.momentum_delta ?? 0) < -10
+    persistence < 25 &&
+    delta < -10
   ) return "Broken";
 
-  // Emerging: brand-new or speculative, few cycles
-  if (
-    (theme.persistence_cycles ?? 0) <= 2 ||
-    ((theme.persistence_score ?? 0) < 30 && theme.signal_quality === "speculative")
-  ) return "Emerging";
-
-  // Dominant: peak influence — strong, wide, confirmed across sectors
-  if (
-    theme.signal_strength === "strong" &&
-    (theme.persistence_score ?? 0) >= 70 &&
-    (theme.breadth_score ?? 0) >= 65 &&
-    theme.cross_category_confirmed
-  ) return "Dominant";
-
-  // Accelerating: growing but not yet dominant
-  if (
-    (theme.momentum_label === "accelerating" || theme.momentum_label === "strengthening") &&
-    (theme.persistence_score ?? 0) < 75
-  ) return "Accelerating";
-
-  // Reversing: declining signal
+  // Reversing: clearly negative trajectory
   if (
     theme.momentum_label === "reversing" ||
     momentumScore < -30 ||
-    ((theme.momentum_delta ?? 0) < -15 && (theme.persistence_score ?? 0) < 50)
+    (delta < -15 && persistence < 60)
   ) return "Reversing";
 
-  // Mature: stable and established
+  // Dominant: peak influence — all signals aligned positive
+  if (
+    theme.signal_strength === "strong" &&
+    persistence >= 65 &&
+    breadth >= 60 &&
+    theme.cross_category_confirmed
+  ) return "Dominant";
+
+  // Accelerating: actively gaining strength (positive trajectory, real track record)
+  if (
+    (theme.momentum_label === "accelerating" || theme.momentum_label === "strengthening") &&
+    persistence >= 25
+  ) return "Accelerating";
+
+  // Mature: established + stable/cooling — confirmed slowing but not reversing
+  if (persistence >= 50 && (theme.momentum_label === "stable" || theme.momentum_label === "cooling"))
+    return "Mature";
+
+  // Mature: deep persistence, long-running regardless of momentum label
+  if (persistence >= 68 && cycles >= 3)
+    return "Mature";
+
+  // Emerging: genuinely nascent — low persistence, low breadth, unconfirmed
+  if (persistence < 40 && breadth < 50 && theme.signal_quality !== "confirmed")
+    return "Emerging";
+
+  // Default: Mature (established theme that doesn't fit a sharper pattern)
   return "Mature";
 }
 
@@ -278,4 +295,85 @@ export function computeThemeMomentum(
     lifecycleState:  lifecycle,
     components,
   };
+}
+
+// ── Momentum trend (synthetic history) ───────────────────────────────────────
+//
+// Extrapolates backwards from the current score using momentum_delta as the
+// rate-of-change proxy.  Intentionally simple — we have no stored history,
+// so we generate directionally consistent estimates rather than precise values.
+
+export interface MomentumTrendPoint {
+  period: string;   // "3M" | "1M" | "1W" | "Now"
+  score:  number;   // -100–100
+}
+
+export function computeMomentumTrend(
+  theme:         ThemeIntelligence,
+  momentumScore: number,
+): MomentumTrendPoint[] {
+  const delta  = theme.momentum_delta ?? 0;
+  const cycles = theme.persistence_cycles ?? 1;
+
+  const t1w = Math.round(clamp(momentumScore - delta * 0.40, -100, 100));
+  const t1m = Math.round(clamp(momentumScore - delta * 0.80, -100, 100));
+  const t3m = Math.round(clamp(
+    cycles >= 5
+      ? momentumScore - delta * 1.40
+      : Math.max(momentumScore - delta * 2.0, -20),
+    -100, 100,
+  ));
+
+  return [
+    { period: "3M",  score: t3m },
+    { period: "1M",  score: t1m },
+    { period: "1W",  score: t1w },
+    { period: "Now", score: momentumScore },
+  ];
+}
+
+// ── Signal change detection ───────────────────────────────────────────────────
+//
+// Derives meaningful change signals from a single snapshot.  Uses momentum_delta
+// as the rate proxy and breadth_score as the spread indicator.
+
+export interface SignalChange {
+  label:     string;
+  direction: "up" | "down";
+}
+
+export function computeSignalChanges(theme: ThemeIntelligence): SignalChange[] {
+  const delta   = theme.momentum_delta ?? 0;
+  const breadth = theme.breadth_score  ?? 0;
+  const out: SignalChange[] = [];
+
+  if      (delta >= 14)  out.push({ label: "Momentum Accelerating",  direction: "up"   });
+  else if (delta >= 6)   out.push({ label: "Strengthening",          direction: "up"   });
+  else if (delta <= -14) out.push({ label: "Momentum Deteriorating", direction: "down" });
+  else if (delta <= -6)  out.push({ label: "Weakening",              direction: "down" });
+
+  if (breadth >= 72 && delta > 0)  out.push({ label: "Broadening",  direction: "up"   });
+  if (breadth < 22  && delta < 0)  out.push({ label: "Narrowing",   direction: "down" });
+  if (theme.cross_category_confirmed && delta > 6)
+    out.push({ label: "Cross-Sector", direction: "up" });
+
+  return out.slice(0, 2);
+}
+
+// ── Causal chain parser ───────────────────────────────────────────────────────
+//
+// Splits causal_narrative into discrete chain steps for visual display.
+
+export function parseCausalChain(narrative: string): string[] {
+  if (!narrative) return [];
+  if (narrative.includes("→"))
+    return narrative.split("→").map(s => s.trim()).filter(Boolean).slice(0, 5);
+  if (narrative.includes("↓"))
+    return narrative.split("↓").map(s => s.trim()).filter(Boolean).slice(0, 5);
+  // Sentence-based fallback
+  return narrative
+    .split(/\.\s+/)
+    .map(s => s.trim().replace(/\.$/, ""))
+    .filter(s => s.length > 10)
+    .slice(0, 4);
 }

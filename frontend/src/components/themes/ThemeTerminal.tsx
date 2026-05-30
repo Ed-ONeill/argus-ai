@@ -4,7 +4,11 @@ import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { X, Network, Bookmark, BookmarkCheck, AlertCircle } from "lucide-react";
 import type { ThemeIntelligence } from "@/lib/types";
-import { computeThemeMomentum, LIFECYCLE_META } from "@/lib/themeMomentum";
+import {
+  computeThemeMomentum, computeSignalChanges,
+  LIFECYCLE_META,
+  type LifecycleState,
+} from "@/lib/themeMomentum";
 
 // ── Color helpers ──────────────────────────────────────────────────────────────
 
@@ -38,7 +42,7 @@ export function ThemeTerminal({
   themes, watchedIds, hasAlert, onToggleWatch, onSelectTheme, onClose,
 }: ThemeTerminalProps) {
   const [filter, setFilter] = useState<"all" | "watchlist">("all");
-  const [sortBy, setSortBy] = useState<"signal" | "persistence" | "momentum">("signal");
+  const [sortBy, setSortBy] = useState<"signal" | "persistence" | "momentum" | "lifecycle">("signal");
 
   // ESC to close
   useEffect(() => {
@@ -47,14 +51,22 @@ export function ThemeTerminal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const SIGNAL_RANK: Record<string, number> = { strong: 3, medium: 2, weak: 1 };
-  const MOMENTUM_RANK: Record<string, number> = {
+  const SIGNAL_RANK: Record<string, number>    = { strong: 3, medium: 2, weak: 1 };
+  const MOMENTUM_RANK: Record<string, number>  = {
     accelerating: 5, strengthening: 4, emerging: 3, stable: 2, cooling: 1, reversing: 0,
+  };
+  const LIFECYCLE_RANK: Record<LifecycleState, number> = {
+    Dominant: 5, Accelerating: 4, Emerging: 3, Mature: 2, Reversing: 1, Broken: 0,
   };
 
   const sorted = [...themes].sort((a, b) => {
     if (sortBy === "persistence") return (b.persistence_score ?? 0) - (a.persistence_score ?? 0);
     if (sortBy === "momentum")    return (MOMENTUM_RANK[b.momentum_label] ?? 0) - (MOMENTUM_RANK[a.momentum_label] ?? 0);
+    if (sortBy === "lifecycle") {
+      const la = momentumMap.get(a.id)?.lifecycleState ?? "Mature";
+      const lb = momentumMap.get(b.id)?.lifecycleState ?? "Mature";
+      return (LIFECYCLE_RANK[lb] ?? 0) - (LIFECYCLE_RANK[la] ?? 0);
+    }
     // signal: strong first, then by persistence_score
     const srank = (SIGNAL_RANK[b.signal_strength] ?? 0) - (SIGNAL_RANK[a.signal_strength] ?? 0);
     return srank !== 0 ? srank : (b.persistence_score ?? 0) - (a.persistence_score ?? 0);
@@ -113,22 +125,25 @@ export function ThemeTerminal({
             </div>
           </div>
 
-          {/* Signal legend */}
-          <div className="hidden md:flex items-center gap-4 flex-1">
-            {(["strong", "medium", "weak"] as const).map(s => (
-              <div key={s} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: SIGNAL_COLOR[s] }} />
-                <span className="text-[10px] capitalize" style={{ color: "rgba(255,255,255,0.36)" }}>{s}</span>
-                <span className="text-[10px] font-bold tabular-nums" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  {signalCounts[s]}
-                </span>
-              </div>
-            ))}
+          {/* Lifecycle distribution */}
+          <div className="hidden md:flex items-center gap-3 flex-1 flex-wrap">
+            {(["Dominant", "Accelerating", "Emerging", "Mature", "Reversing", "Broken"] as const).map(lc => {
+              const count = themes.filter(t => momentumMap.get(t.id)?.lifecycleState === lc).length;
+              if (count === 0) return null;
+              const meta = LIFECYCLE_META[lc];
+              return (
+                <div key={lc} className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: meta.color }} />
+                  <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.28)" }}>{lc}</span>
+                  <span className="text-[9px] font-bold tabular-nums" style={{ color: "rgba(255,255,255,0.48)" }}>{count}</span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Sort */}
           <div className="flex items-center gap-1">
-            {(["signal", "persistence", "momentum"] as const).map(s => (
+            {(["signal", "lifecycle", "persistence", "momentum"] as const).map(s => (
               <button
                 key={s}
                 onClick={() => setSortBy(s)}
@@ -182,11 +197,12 @@ export function ThemeTerminal({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {displayed.map((theme, i) => {
-                const watched  = watchedIds.includes(theme.id);
-                const alert    = hasAlert(theme.id);
-                const sColor   = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
-                const momentum = momentumMap.get(theme.id)!;
-                const lcMeta   = LIFECYCLE_META[momentum.lifecycleState];
+                const watched        = watchedIds.includes(theme.id);
+                const alert          = hasAlert(theme.id);
+                const sColor         = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
+                const momentum       = momentumMap.get(theme.id)!;
+                const lcMeta         = LIFECYCLE_META[momentum.lifecycleState];
+                const signalChanges  = computeSignalChanges(theme);
 
                 return (
                   <motion.div
@@ -227,6 +243,17 @@ export function ThemeTerminal({
                             >
                               {lcMeta.label}
                             </span>
+                            {signalChanges[0] && (
+                              <span
+                                className="text-[8.5px] font-semibold px-1 py-0.5 rounded"
+                                style={{
+                                  background: signalChanges[0].direction === "up" ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+                                  color:      signalChanges[0].direction === "up" ? "#10B981" : "#EF4444",
+                                }}
+                              >
+                                {signalChanges[0].direction === "up" ? "▲" : "▼"} {signalChanges[0].label}
+                              </span>
+                            )}
                             {alert && (
                               <AlertCircle size={10} style={{ color: "#F59E0B" }} aria-label="Signal changed" />
                             )}

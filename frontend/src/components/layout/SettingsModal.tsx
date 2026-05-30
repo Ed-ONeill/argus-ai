@@ -2,31 +2,57 @@
 
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
 
-const MODELS = [
-  "gemma3:12b",
-  "gemma3:4b",
-  "llama3.1:8b",
-  "mistral:7b",
-  "qwen2.5:7b",
-];
+const STORAGE_KEY = "argus_terminal_settings";
 
-interface SettingsModalProps {
-  open:       boolean;
-  onClose:    () => void;
-  modelName:  string;
-  onChange:   (model: string) => void;
+interface TerminalSettings {
+  compactMode:       boolean;
+  showAlerts:        boolean;
+  showMomentum:      boolean;
+  autoRefresh:       boolean;
 }
 
-export function SettingsModal({ open, onClose, modelName, onChange }: SettingsModalProps) {
-  const [draft, setDraft] = useState(modelName);
-
-  function save() {
-    onChange(draft);
-    onClose();
+function loadSettings(): TerminalSettings {
+  if (typeof window === "undefined") return defaults();
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? { ...defaults(), ...JSON.parse(raw) } : defaults();
+  } catch {
+    return defaults();
   }
+}
+
+function defaults(): TerminalSettings {
+  return { compactMode: false, showAlerts: true, showMomentum: true, autoRefresh: false };
+}
+
+interface SettingsModalProps {
+  open:    boolean;
+  onClose: () => void;
+}
+
+export function SettingsModal({ open, onClose }: SettingsModalProps) {
+  const [settings, setSettings] = useState<TerminalSettings>(defaults);
+
+  useEffect(() => {
+    if (open) setSettings(loadSettings());
+  }, [open]);
+
+  function toggle(key: keyof TerminalSettings) {
+    setSettings(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  const rows: { key: keyof TerminalSettings; label: string; description: string }[] = [
+    { key: "compactMode",  label: "Compact Mode",       description: "Hide theme descriptions in the terminal grid" },
+    { key: "showAlerts",   label: "Show Signal Alerts",  description: "Display alert badges when signals change"      },
+    { key: "showMomentum", label: "Momentum Changes",    description: "Show momentum score and trend history"         },
+    { key: "autoRefresh",  label: "Auto Refresh",        description: "Refresh feed data every 5 minutes"            },
+  ];
 
   return (
     <AnimatePresence>
@@ -46,65 +72,87 @@ export function SettingsModal({ open, onClose, modelName, onChange }: SettingsMo
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
           >
-            <div className="pointer-events-auto w-full max-w-sm bg-surface rounded-2xl shadow-modal
-                            border border-edge overflow-hidden">
+            <div
+              className="pointer-events-auto w-full max-w-sm rounded-2xl overflow-hidden"
+              style={{
+                background: "rgba(5,8,18,0.97)",
+                border:     "1px solid rgba(255,255,255,0.07)",
+                boxShadow:  "0 24px 64px rgba(0,0,0,0.60)",
+              }}
+            >
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-edge">
-                <h2 className="text-sm font-semibold text-ink">Settings</h2>
-                <button onClick={onClose} className="p-1.5 rounded-md hover:bg-raised text-ink-muted hover:text-ink transition-colors">
-                  <X size={15} />
+              <div
+                className="flex items-center justify-between px-5 py-4"
+                style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+              >
+                <div>
+                  <h2 className="text-[12px] font-semibold" style={{ color: "rgba(255,255,255,0.80)" }}>
+                    Terminal Settings
+                  </h2>
+                  <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.28)" }}>
+                    Intelligence display preferences
+                  </p>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded-lg transition-colors hover:bg-white/[0.05]"
+                  style={{ color: "rgba(255,255,255,0.32)" }}
+                >
+                  <X size={14} />
                 </button>
               </div>
 
-              {/* Body */}
-              <div className="p-5 space-y-5">
-                <div className="space-y-2">
-                  <label className="text-2xs font-semibold uppercase tracking-widest text-ink-muted block">
-                    LLM Model
-                  </label>
-                  <div className="space-y-1">
-                    {MODELS.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setDraft(m)}
-                        className={cn(
-                          "w-full text-left text-sm px-3 py-2 rounded-lg transition-colors font-mono",
-                          draft === m
-                            ? "bg-navy text-white"
-                            : "text-ink-secondary hover:bg-raised"
-                        )}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                    {/* Custom model entry */}
-                    <input
-                      value={!MODELS.includes(draft) ? draft : ""}
-                      onChange={e => setDraft(e.target.value)}
-                      placeholder="Custom model name…"
-                      className="w-full text-sm px-3 py-2 rounded-lg border border-edge
-                                 bg-raised text-ink placeholder:text-ink-muted
-                                 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent
-                                 font-mono mt-1"
-                    />
-                  </div>
-                </div>
+              {/* Settings rows */}
+              <div className="p-4 space-y-1">
+                {rows.map(({ key, label, description }) => (
+                  <button
+                    key={key}
+                    onClick={() => toggle(key)}
+                    className="w-full flex items-center justify-between px-3 py-3 rounded-xl transition-colors"
+                    style={{ background: settings[key] ? "rgba(82,176,200,0.06)" : "transparent" }}
+                  >
+                    <div className="text-left">
+                      <p className="text-[12px] font-medium" style={{ color: "rgba(255,255,255,0.72)" }}>
+                        {label}
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.28)" }}>
+                        {description}
+                      </p>
+                    </div>
+                    <div
+                      className="shrink-0 w-8 h-4.5 rounded-full transition-colors ml-3 relative"
+                      style={{
+                        width:      32,
+                        height:     18,
+                        background: settings[key] ? "#52b0c8" : "rgba(255,255,255,0.10)",
+                        border:     `1px solid ${settings[key] ? "rgba(82,176,200,0.40)" : "rgba(255,255,255,0.10)"}`,
+                      }}
+                    >
+                      <span
+                        className="absolute top-0.5 rounded-full transition-all"
+                        style={{
+                          width:      14,
+                          height:     14,
+                          background: "rgba(255,255,255,0.90)",
+                          left:       settings[key] ? 15 : 2,
+                        }}
+                      />
+                    </div>
+                  </button>
+                ))}
               </div>
 
               {/* Footer */}
-              <div className="flex gap-2 px-5 py-4 border-t border-edge">
+              <div
+                className="px-5 py-3.5"
+                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+              >
                 <button
                   onClick={onClose}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium text-ink-secondary hover:bg-raised transition-colors"
+                  className="w-full py-2 rounded-xl text-[12px] font-medium transition-colors"
+                  style={{ background: "rgba(82,176,200,0.10)", color: "#52b0c8" }}
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={save}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium bg-navy text-white
-                             hover:bg-navy-600 transition-colors"
-                >
-                  Save
+                  Done
                 </button>
               </div>
             </div>

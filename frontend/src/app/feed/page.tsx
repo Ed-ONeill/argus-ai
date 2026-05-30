@@ -128,8 +128,6 @@ export default function FeedPage() {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        modelName=""
-        onChange={() => {}}
       />
 
       {/* ── Theme Terminal ─────────────────────────────────────────────────── */}

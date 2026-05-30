@@ -5,7 +5,10 @@ import { motion } from "framer-motion";
 import { X, Bookmark, BookmarkCheck, ExternalLink, Headphones } from "lucide-react";
 import type { ThemeIntelligence, StoryCluster, Episode } from "@/lib/types";
 import { matchEpisodeThemes } from "@/lib/listenIntelligence";
-import { computeThemeMomentum, LIFECYCLE_META } from "@/lib/themeMomentum";
+import {
+  computeThemeMomentum, computeMomentumTrend, computeSignalChanges, parseCausalChain,
+  LIFECYCLE_META,
+} from "@/lib/themeMomentum";
 
 function fmtDur(s: number): string {
   const h = Math.floor(s / 3600);
@@ -112,7 +115,13 @@ export function ThemeDrawer({
     () => computeThemeMomentum(theme, { episodes, clusters, deals }),
     [theme, episodes, clusters, deals],
   );
-  const lcMeta = LIFECYCLE_META[momentum.lifecycleState];
+  const lcMeta       = LIFECYCLE_META[momentum.lifecycleState];
+  const trendPoints  = useMemo(
+    () => computeMomentumTrend(theme, momentum.momentumScore),
+    [theme, momentum.momentumScore],
+  );
+  const signalChanges = useMemo(() => computeSignalChanges(theme), [theme]);
+  const causalChain   = useMemo(() => parseCausalChain(theme.causal_narrative ?? ""), [theme.causal_narrative]);
 
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
@@ -178,6 +187,18 @@ export function ThemeDrawer({
                   Signal {alertDirection === "up" ? "↑" : "↓"}
                 </span>
               )}
+              {signalChanges.map(sc => (
+                <span
+                  key={sc.label}
+                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+                  style={{
+                    background: sc.direction === "up" ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+                    color:      sc.direction === "up" ? "#10B981" : "#EF4444",
+                  }}
+                >
+                  {sc.direction === "up" ? "▲" : "▼"} {sc.label}
+                </span>
+              ))}
               <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.30)" }}>
                 {theme.confidence_label}
               </span>
@@ -259,19 +280,28 @@ export function ThemeDrawer({
             </Section>
           )}
 
-          {/* Causal narrative */}
-          {theme.causal_narrative && (
+          {/* Causal chain */}
+          {causalChain.length > 0 && (
             <div
-              className="rounded-xl p-4"
-              style={{ background: "rgba(82,176,200,0.05)", border: "1px solid rgba(82,176,200,0.12)" }}
+              className="rounded-xl p-3.5"
+              style={{ background: "rgba(82,176,200,0.04)", border: "1px solid rgba(82,176,200,0.10)" }}
             >
-              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
-                style={{ color: "rgba(82,176,200,0.55)" }}>
-                Causal Narrative
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                style={{ color: "rgba(82,176,200,0.50)" }}>
+                Causal Chain
               </p>
-              <p className="text-[12.5px] leading-relaxed italic" style={{ color: "rgba(255,255,255,0.70)" }}>
-                {theme.causal_narrative}
-              </p>
+              <div className="space-y-0">
+                {causalChain.map((step, i) => (
+                  <div key={i}>
+                    <p className="text-[12px] leading-snug" style={{ color: "rgba(255,255,255,0.65)" }}>
+                      {step}
+                    </p>
+                    {i < causalChain.length - 1 && (
+                      <p className="text-[11px] leading-none my-1.5" style={{ color: "rgba(82,176,200,0.38)" }}>↓</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -364,6 +394,36 @@ export function ThemeDrawer({
                   </span>
                 </div>
               ))}
+            </div>
+          </Section>
+
+          {/* Momentum trend history */}
+          <Section title="Momentum History">
+            <div className="flex items-end gap-2">
+              {trendPoints.map(pt => {
+                const barH  = Math.max(3, Math.round(Math.abs(pt.score) / 100 * 44));
+                const color = pt.score >= 0 ? "#10B981" : "#EF4444";
+                const alpha = 0.45 + Math.abs(pt.score) / 100 * 0.50;
+                return (
+                  <div key={pt.period} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full flex items-end justify-center" style={{ height: 44 }}>
+                      <div
+                        className="w-full rounded-sm"
+                        style={{ height: barH, background: color, opacity: alpha }}
+                      />
+                    </div>
+                    <span
+                      className="text-[8.5px] font-mono tabular-nums"
+                      style={{ color }}
+                    >
+                      {pt.score > 0 ? "+" : ""}{pt.score}
+                    </span>
+                    <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.22)" }}>
+                      {pt.period}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </Section>
 
@@ -512,28 +572,45 @@ export function ThemeDrawer({
           {/* Theme relationship weights */}
           {topRelationships.length > 0 && (
             <Section title="Theme Relationships">
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {topRelationships.map(([name, rel]) => {
                   const barColor =
                     rel.direction === "positive" ? "#10B981" :
                     rel.direction === "negative" ? "#EF4444" : "#F59E0B";
+                  const dirArrow =
+                    rel.direction === "positive" ? "→" :
+                    rel.direction === "negative" ? "↙" : "~";
+                  const typeLabel =
+                    rel.type === "macro_overlap" ? "Macro" :
+                    rel.type === "narrative"     ? "Narrative" :
+                    rel.type === "indirect"      ? "Indirect" : null;
                   return (
-                    <div key={name} className="flex items-center gap-3">
+                    <div key={name} className="flex items-center gap-2.5">
+                      <span className="text-[10px] shrink-0 font-mono w-3" style={{ color: barColor }}>
+                        {dirArrow}
+                      </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[12px] truncate" style={{ color: "rgba(255,255,255,0.65)" }}>{name}</p>
-                        <p className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-                          {rel.type} · {rel.direction}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-[12px] truncate" style={{ color: "rgba(255,255,255,0.65)" }}>{name}</p>
+                          {typeLabel && (
+                            <span
+                              className="text-[8px] font-semibold px-1 py-0.5 rounded shrink-0"
+                              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.30)" }}
+                            >
+                              {typeLabel}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="w-20 h-1.5 rounded-full overflow-hidden shrink-0"
+                      <div className="w-16 h-1 rounded-full overflow-hidden shrink-0"
                         style={{ background: "rgba(255,255,255,0.06)" }}>
                         <div
-                          className="h-full rounded-full transition-all"
+                          className="h-full rounded-full"
                           style={{ width: `${Math.round(rel.weight * 100)}%`, background: barColor }}
                         />
                       </div>
-                      <span className="text-[9.5px] font-mono w-6 text-right shrink-0"
-                        style={{ color: "rgba(255,255,255,0.32)" }}>
+                      <span className="text-[9px] font-mono w-5 text-right shrink-0"
+                        style={{ color: "rgba(255,255,255,0.28)" }}>
                         {Math.round(rel.weight * 100)}
                       </span>
                     </div>
