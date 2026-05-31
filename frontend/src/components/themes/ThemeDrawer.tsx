@@ -26,6 +26,10 @@ import {
   type ThemeCatalyst, type BullBearCases, type WatchSignal,
   type EvidenceItem, type ConvictionExplanation, type ThemeHealthScore, type InvalidationSignal,
 } from "@/lib/themeIntelligence";
+import {
+  computeCompanyExposures, computeTransmissionPaths,
+  type CompanyExposure, type TransmissionPath,
+} from "@/lib/themeCompany";
 
 function fmtDur(s: number): string {
   const h = Math.floor(s / 3600);
@@ -180,6 +184,14 @@ export function ThemeDrawer({
   const themeHealth: ThemeHealthScore           = useMemo(() => computeThemeHealth(theme),                [theme]);
   const invalidation: InvalidationSignal[]      = useMemo(() => generateInvalidationSignals(theme),       [theme]);
   const topPodcasts                             = connectedEpisodes.slice(0, 3);
+  const companyExposures: CompanyExposure[]     = useMemo(() => computeCompanyExposures(theme),           [theme]);
+  const transmissionPaths: TransmissionPath[]   = useMemo(
+    () => computeTransmissionPaths(theme, companyExposures),
+    [theme, companyExposures],
+  );
+  const beneficiaries  = companyExposures.filter(c => c.direction === "beneficiary");
+  const headwinds      = companyExposures.filter(c => c.direction === "headwind");
+  const rankingChanges = companyExposures.filter(c => c.rankChange !== 0).slice(0, 4);
 
   // Top relationship weights
   const topRelationships = Object.entries(theme.relationship_weights ?? {})
@@ -1116,6 +1128,257 @@ export function ThemeDrawer({
                         <ExternalLink size={11} />
                       </a>
                     )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Company Exposure ─────────────────────────────────────────── */}
+          {companyExposures.length > 0 && (
+            <Section title="Company Exposure">
+              <div className="space-y-4">
+                {/* Beneficiaries */}
+                {beneficiaries.length > 0 && (
+                  <div>
+                    <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-2"
+                      style={{ color: "rgba(16,185,129,0.52)" }}>
+                      Beneficiaries
+                    </p>
+                    <div className="space-y-3">
+                      {beneficiaries.map(c => (
+                        <div key={c.ticker}>
+                          {/* Header row */}
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className="font-mono font-black text-[12px] shrink-0 w-12"
+                              style={{ color: "#10B981" }}
+                            >
+                              {c.ticker}
+                            </span>
+                            <div className="flex-1 h-[3px] rounded-full overflow-hidden"
+                              style={{ background: "rgba(255,255,255,0.06)" }}>
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${c.score}%`, background: "#10B981", opacity: 0.70 }}
+                              />
+                            </div>
+                            <span
+                              className="text-[11px] font-bold tabular-nums shrink-0 w-6 text-right"
+                              style={{ color: "#10B981" }}
+                            >
+                              {c.score}
+                            </span>
+                            <span
+                              className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                              style={{
+                                background: c.sensitivity === "High" ? "rgba(16,185,129,0.12)" :
+                                            c.sensitivity === "Medium" ? "rgba(251,191,36,0.12)" :
+                                            "rgba(107,114,128,0.12)",
+                                color:      c.sensitivity === "High" ? "#10B981" :
+                                            c.sensitivity === "Medium" ? "#F59E0B" : "#6B7280",
+                              }}
+                            >
+                              {c.sensitivity}
+                            </span>
+                          </div>
+                          {/* Descriptor */}
+                          <p className="text-[9.5px] mb-1 ml-14"
+                            style={{ color: "rgba(255,255,255,0.28)" }}>
+                            {c.descriptor}
+                          </p>
+                          {/* Rationale */}
+                          <p className="text-[11px] leading-snug mb-1.5 ml-14"
+                            style={{ color: "rgba(255,255,255,0.55)" }}>
+                            {c.rationale}
+                          </p>
+                          {/* Drivers + Risks */}
+                          {(c.drivers.length > 0 || c.risks.length > 0) && (
+                            <div className="ml-14 flex flex-wrap gap-1">
+                              {c.drivers.map((d, i) => (
+                                <span key={i}
+                                  className="text-[8.5px] px-1.5 py-0.5 rounded"
+                                  style={{ background: "rgba(16,185,129,0.07)", color: "rgba(16,185,129,0.60)" }}>
+                                  + {d}
+                                </span>
+                              ))}
+                              {c.risks.map((r, i) => (
+                                <span key={i}
+                                  className="text-[8.5px] px-1.5 py-0.5 rounded"
+                                  style={{ background: "rgba(239,68,68,0.07)", color: "rgba(239,68,68,0.55)" }}>
+                                  – {r}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Headwinds */}
+                {headwinds.length > 0 && (
+                  <div>
+                    <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-2"
+                      style={{ color: "rgba(239,68,68,0.52)" }}>
+                      Headwinds
+                    </p>
+                    <div className="space-y-3">
+                      {headwinds.map(c => (
+                        <div key={c.ticker}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className="font-mono font-black text-[12px] shrink-0 w-12"
+                              style={{ color: "#EF4444" }}
+                            >
+                              {c.ticker}
+                            </span>
+                            <div className="flex-1 h-[3px] rounded-full overflow-hidden"
+                              style={{ background: "rgba(255,255,255,0.06)" }}>
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${c.score}%`, background: "#EF4444", opacity: 0.65 }}
+                              />
+                            </div>
+                            <span className="text-[11px] font-bold tabular-nums shrink-0 w-6 text-right"
+                              style={{ color: "#EF4444" }}>
+                              {c.score}
+                            </span>
+                            <span
+                              className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                              style={{
+                                background: c.sensitivity === "High" ? "rgba(239,68,68,0.12)" : "rgba(107,114,128,0.10)",
+                                color:      c.sensitivity === "High" ? "#EF4444" : "#6B7280",
+                              }}
+                            >
+                              {c.sensitivity}
+                            </span>
+                          </div>
+                          <p className="text-[9.5px] mb-1 ml-14"
+                            style={{ color: "rgba(255,255,255,0.28)" }}>
+                            {c.descriptor}
+                          </p>
+                          <p className="text-[11px] leading-snug ml-14"
+                            style={{ color: "rgba(255,255,255,0.55)" }}>
+                            {c.rationale}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Transmission Map ─────────────────────────────────────────── */}
+          {transmissionPaths.length > 0 && (
+            <Section title="Transmission Map">
+              <div className="space-y-3">
+                {transmissionPaths.map((path, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <div className="flex flex-col items-center shrink-0" style={{ marginTop: 2 }}>
+                      <div
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ background: "rgba(82,176,200,0.55)" }}
+                      />
+                      <div
+                        className="w-px flex-1 mt-1"
+                        style={{ background: "rgba(82,176,200,0.18)", minHeight: 36 }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 pb-1">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.10em] mb-1"
+                        style={{ color: "rgba(255,255,255,0.22)" }}>
+                        {theme.name}
+                      </p>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-[9.5px]" style={{ color: "rgba(82,176,200,0.55)" }}>↓</span>
+                        <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.48)" }}>
+                          {path.industry}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9.5px]" style={{ color: "rgba(82,176,200,0.55)" }}>↓</span>
+                        <span
+                          className="font-mono font-black text-[13px]"
+                          style={{ color: "rgba(255,255,255,0.82)" }}
+                        >
+                          {path.ticker}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Ranking Changes ───────────────────────────────────────────── */}
+          {rankingChanges.length > 0 && (
+            <Section title="Ranking Changes">
+              <div className="space-y-2">
+                {rankingChanges.map(c => {
+                  const isUp  = c.rankChange > 0;
+                  const color = isUp ? "#10B981" : "#EF4444";
+                  return (
+                    <div key={c.ticker} className="flex items-start gap-2.5">
+                      <span
+                        className="font-mono font-black text-[11.5px] shrink-0 w-10"
+                        style={{ color }}
+                      >
+                        {c.ticker}
+                      </span>
+                      <span
+                        className="text-[10px] font-bold tabular-nums shrink-0"
+                        style={{ color }}
+                      >
+                        {isUp ? "↑" : "↓"} {isUp ? "+" : ""}{c.rankChange}
+                      </span>
+                      <p className="text-[10.5px] leading-snug flex-1"
+                        style={{ color: "rgba(255,255,255,0.38)" }}>
+                        {c.rankReason}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Company Watch ──────────────────────────────────────────────── */}
+          {companyExposures.slice(0, 3).some(c => c.watchItems.length > 0) && (
+            <Section title="Company Watch">
+              <div className="space-y-3">
+                {companyExposures.slice(0, 3).map(c => (
+                  <div key={c.ticker}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span
+                        className="font-mono font-bold text-[11px]"
+                        style={{
+                          color: c.direction === "beneficiary" ? "#10B981" :
+                                 c.direction === "headwind"    ? "#EF4444" :
+                                 "rgba(255,255,255,0.55)",
+                        }}
+                      >
+                        {c.ticker}
+                      </span>
+                      <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.22)" }}>
+                        {c.sector}
+                      </span>
+                    </div>
+                    <div className="space-y-1 ml-1">
+                      {c.watchItems.map((item, i) => (
+                        <div key={i} className="flex items-start gap-1.5">
+                          <span className="text-[9px] shrink-0 mt-0.5"
+                            style={{ color: "rgba(82,176,200,0.50)" }}>·</span>
+                          <p className="text-[11px] leading-snug"
+                            style={{ color: "rgba(255,255,255,0.48)" }}>
+                            {item}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
