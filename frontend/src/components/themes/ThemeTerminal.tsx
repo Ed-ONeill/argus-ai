@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { X, Network, Bookmark, BookmarkCheck, AlertCircle } from "lucide-react";
 import type { ThemeIntelligence } from "@/lib/types";
 import {
-  computeThemeMomentum, computeSignalChanges,
+  computeThemeMomentum,
   LIFECYCLE_META,
   type LifecycleState,
   type ThemeMomentumResult,
@@ -288,10 +288,9 @@ export function ThemeTerminal({
               {displayed.map((theme, i) => {
                 const watched        = watchedIds.includes(theme.id);
                 const alert          = hasAlert(theme.id);
-                const sColor         = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
-                const momentum       = momentumMap.get(theme.id) ?? MOMENTUM_FALLBACK;
-                const lcMeta         = LIFECYCLE_META[momentum.lifecycleState] ?? LIFECYCLE_META.Mature;
-                const signalChanges  = computeSignalChanges(theme);
+                const sColor   = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
+                const momentum = momentumMap.get(theme.id) ?? MOMENTUM_FALLBACK;
+                const lcMeta   = LIFECYCLE_META[momentum.lifecycleState] ?? LIFECYCLE_META.Mature;
 
                 return (
                   <motion.div
@@ -332,17 +331,6 @@ export function ThemeTerminal({
                             >
                               {lcMeta.label}
                             </span>
-                            {signalChanges[0] && (
-                              <span
-                                className="text-[8.5px] font-semibold px-1 py-0.5 rounded"
-                                style={{
-                                  background: signalChanges[0].direction === "up" ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
-                                  color:      signalChanges[0].direction === "up" ? "#10B981" : "#EF4444",
-                                }}
-                              >
-                                {signalChanges[0].direction === "up" ? "▲" : "▼"} {signalChanges[0].label}
-                              </span>
-                            )}
                             {alert && (
                               <AlertCircle size={10} style={{ color: "#F59E0B" }} aria-label="Signal changed" />
                             )}
