@@ -185,6 +185,8 @@ export function ThemeDrawer({
     .sort(([, a], [, b]) => b.weight - a.weight)
     .slice(0, 5);
 
+  const primaryDriver = causalChain[0] ?? (theme.related_macro_factors ?? [])[0];
+
   const cvColor = conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444";
 
   return (
@@ -359,68 +361,165 @@ export function ThemeDrawer({
           {/* ── OVERVIEW ─────────────────────────────────────────────────── */}
           {activeTab === "Overview" && (<>
 
-            {thesis && (
-              <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.58)" }}>
-                {thesis}
+            {/* ── Decision Snapshot ─────────────────────────────────────── */}
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}
+            >
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-3"
+                style={{ color: "rgba(255,255,255,0.22)" }}>
+                Decision Snapshot
               </p>
+              <div className="flex items-center gap-2.5 mb-3 flex-wrap">
+                <span
+                  className="text-[9px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-full"
+                  style={{ background: `${sColor}18`, color: sColor, border: `1px solid ${sColor}30` }}
+                >
+                  {theme.signal_strength}
+                </span>
+                <span className="text-[10px] font-semibold capitalize"
+                  style={{ color: momentumColor(theme.momentum_label) }}>
+                  {theme.momentum_label}
+                </span>
+                <span className="text-[9.5px] ml-auto tabular-nums" style={{ color: cvColor }}>
+                  CV <span className="font-bold">{conviction}</span>
+                  <span className="ml-1 font-normal" style={{ color: "rgba(255,255,255,0.32)" }}>· {cvLabel}</span>
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {primaryDriver && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-px"
+                      style={{ color: "rgba(82,176,200,0.55)", width: 52 }}>Driver</span>
+                    <p className="text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.62)" }}>
+                      {primaryDriver}
+                    </p>
+                  </div>
+                )}
+                {invalidation[0] && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-px"
+                      style={{ color: "rgba(239,68,68,0.55)", width: 52 }}>Risk</span>
+                    <p className="text-[10.5px] leading-snug" style={{ color: "rgba(239,68,68,0.62)" }}>
+                      {invalidation[0].condition}
+                    </p>
+                  </div>
+                )}
+                {catalysts[0] && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-px"
+                      style={{ color: "rgba(251,191,36,0.55)", width: 52 }}>Catalyst</span>
+                    <p className="text-[10.5px] leading-snug" style={{ color: "rgba(251,191,36,0.72)" }}>
+                      {catalysts[0].label}
+                      {catalysts[0].sensitivity === "High" && (
+                        <span className="ml-1.5 text-[8px] font-bold"
+                          style={{ color: "rgba(239,68,68,0.75)" }}>HIGH</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Thesis ────────────────────────────────────────────────── */}
+            {thesis && (
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-1.5"
+                  style={{ color: "rgba(255,255,255,0.22)" }}>Thesis</p>
+                <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.58)" }}>
+                  {thesis}
+                </p>
+              </div>
             )}
 
+            {/* ── Why Now ───────────────────────────────────────────────── */}
             {whyNow.length > 0 && (
               <div
-                className="rounded-xl p-3.5"
+                className="rounded-xl p-3"
                 style={{ background: "rgba(82,176,200,0.03)", border: "1px solid rgba(82,176,200,0.08)" }}
               >
-                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
-                  style={{ color: "rgba(82,176,200,0.45)" }}>
-                  Why It Matters Now
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-1.5"
+                  style={{ color: "rgba(82,176,200,0.45)" }}>Why Now</p>
+                <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.60)" }}>
+                  {whyNow[0]}
                 </p>
+              </div>
+            )}
+
+            {/* ── Winners ───────────────────────────────────────────────── */}
+            {beneficiaries.length > 0 && (
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
+                  style={{ color: "rgba(16,185,129,0.48)" }}>Winners</p>
                 <div className="space-y-2">
-                  {whyNow.map((bullet, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="text-[9px] shrink-0 mt-0.5" style={{ color: "rgba(82,176,200,0.50)" }}>·</span>
-                      <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>{bullet}</p>
+                  {beneficiaries.slice(0, 3).map(c => (
+                    <div key={c.ticker} className="flex items-start gap-2.5">
+                      <span className="font-mono font-black text-[11px] shrink-0 pt-0.5"
+                        style={{ color: "#10B981", width: 44 }}>{c.ticker}</span>
+                      <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.52)" }}>
+                        {c.rationale}
+                      </p>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {(beneficiaries.length > 0 || headwinds.length > 0) && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg p-2.5"
-                  style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.08)" }}>
-                  <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-1.5"
-                    style={{ color: "rgba(16,185,129,0.45)" }}>Winners</p>
-                  <div className="space-y-1">
-                    {beneficiaries.slice(0, 3).map(c => (
-                      <div key={c.ticker} className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-[10.5px]" style={{ color: "#10B981" }}>{c.ticker}</span>
-                        <span className="text-[9px] tabular-nums font-semibold" style={{ color: "rgba(16,185,129,0.55)" }}>{c.score}</span>
-                      </div>
-                    ))}
-                    {beneficiaries.length === 0 && (
-                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.22)" }}>—</p>
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-lg p-2.5"
-                  style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.08)" }}>
-                  <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-1.5"
-                    style={{ color: "rgba(239,68,68,0.45)" }}>At Risk</p>
-                  <div className="space-y-1">
-                    {headwinds.slice(0, 3).map(c => (
-                      <div key={c.ticker} className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-[10.5px]" style={{ color: "#EF4444" }}>{c.ticker}</span>
-                        <span className="text-[9px] tabular-nums font-semibold" style={{ color: "rgba(239,68,68,0.55)" }}>{c.score}</span>
-                      </div>
-                    ))}
-                    {headwinds.length === 0 && (
-                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.22)" }}>—</p>
-                    )}
-                  </div>
+            {/* ── Losers ────────────────────────────────────────────────── */}
+            {headwinds.length > 0 && (
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
+                  style={{ color: "rgba(239,68,68,0.48)" }}>Losers</p>
+                <div className="space-y-2">
+                  {headwinds.slice(0, 3).map(c => (
+                    <div key={c.ticker} className="flex items-start gap-2.5">
+                      <span className="font-mono font-black text-[11px] shrink-0 pt-0.5"
+                        style={{ color: "#EF4444", width: 44 }}>{c.ticker}</span>
+                      <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.52)" }}>
+                        {c.rationale}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
+
+            {/* ── Watch Next ────────────────────────────────────────────── */}
+            {catalysts.length > 0 && (
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                  style={{ color: "rgba(251,191,36,0.52)" }}>Watch Next</p>
+                <div className="space-y-3">
+                  {catalysts.map(cat => (
+                    <div key={cat.label}>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-[11px] font-semibold leading-snug flex-1"
+                          style={{ color: "rgba(255,255,255,0.72)" }}>{cat.label}</p>
+                        <span
+                          className="text-[7.5px] font-bold px-1 py-0.5 rounded shrink-0"
+                          style={{
+                            background: cat.sensitivity === "High" ? "rgba(239,68,68,0.10)" : cat.sensitivity === "Medium" ? "rgba(251,191,36,0.10)" : "rgba(107,114,128,0.10)",
+                            color:      cat.sensitivity === "High" ? "#EF4444" : cat.sensitivity === "Medium" ? "#F59E0B" : "#6B7280",
+                          }}
+                        >{cat.sensitivity}</span>
+                      </div>
+                      <p className="text-[10.5px] leading-snug"
+                        style={{ color: cat.direction === "confirming" ? "rgba(16,185,129,0.65)" : "rgba(239,68,68,0.60)" }}>
+                        {cat.direction === "confirming" ? "↑ Bullish: " : "↓ Bearish: "}{cat.reason}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Advanced Intelligence ─────────────────────────────────── */}
+            <div className="flex items-center gap-3 pt-1">
+              <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
+              <span className="text-[8px] font-bold uppercase tracking-[0.16em] shrink-0"
+                style={{ color: "rgba(255,255,255,0.18)" }}>Advanced Intelligence</span>
+              <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
+            </div>
 
             {signalDeltas.length > 0 && (
               <div
@@ -464,52 +563,6 @@ export function ThemeDrawer({
                 {weeklyChange}
               </p>
             </div>
-
-            {catalysts.length > 0 && (
-              <div
-                className="rounded-xl p-3.5"
-                style={{ background: "rgba(251,191,36,0.030)", border: "1px solid rgba(251,191,36,0.10)" }}
-              >
-                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
-                  style={{ color: "rgba(251,191,36,0.55)" }}>
-                  Next Catalyst
-                </p>
-                <div className="space-y-2">
-                  {catalysts.map(cat => (
-                    <div key={cat.label} className="flex items-start gap-2">
-                      <span
-                        className="text-[8.5px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5"
-                        style={{
-                          background: cat.direction === "confirming" ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
-                          color:      cat.direction === "confirming" ? "#10B981" : "#EF4444",
-                        }}
-                      >
-                        {cat.direction === "confirming" ? "✓" : "⚠"}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <p className="text-[11px] font-semibold leading-snug" style={{ color: "rgba(255,255,255,0.72)" }}>
-                            {cat.label}
-                          </p>
-                          <span
-                            className="text-[7.5px] font-bold px-1 py-0.5 rounded shrink-0"
-                            style={{
-                              background: cat.sensitivity === "High" ? "rgba(239,68,68,0.10)" : cat.sensitivity === "Medium" ? "rgba(251,191,36,0.10)" : "rgba(107,114,128,0.10)",
-                              color:      cat.sensitivity === "High" ? "#EF4444" : cat.sensitivity === "Medium" ? "#F59E0B" : "#6B7280",
-                            }}
-                          >
-                            {cat.sensitivity}
-                          </span>
-                        </div>
-                        <p className="text-[10px] leading-snug" style={{ color: "rgba(255,255,255,0.35)" }}>
-                          {cat.reason}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {sourceContext === "listen" && connectedEpisodes.length > 0 && (
               <Section title={`Podcasts · ${connectedEpisodes.length}`}>
