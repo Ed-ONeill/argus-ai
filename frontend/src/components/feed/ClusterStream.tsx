@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { ClusterCard } from "./ClusterCard";
-import type { StoryCluster, FeedItem } from "@/lib/types";
+import type { StoryCluster, FeedItem, ThemeIntelligence } from "@/lib/types";
 
 function clusterTier(cluster: StoryCluster): 1 | 2 | 3 {
   const score    = Math.round(cluster.primary.signal_score);
@@ -13,16 +13,17 @@ function clusterTier(cluster: StoryCluster): 1 | 2 | 3 {
 }
 
 interface ClusterStreamProps {
-  clusters:    StoryCluster[];
-  savedIds:    string[];
-  newIds?:     Set<string>;
-  onSave:      (item: FeedItem) => void;
-  isLoading:   boolean;
+  clusters:         StoryCluster[];
+  savedIds:         string[];
+  newIds?:          Set<string>;
+  onSave:           (item: FeedItem) => void;
+  isLoading:        boolean;
   watchedEntities?: Set<string>;
+  themes?:          ThemeIntelligence[];
 }
 
 export function ClusterStream({
-  clusters, savedIds, newIds, onSave, isLoading, watchedEntities,
+  clusters, savedIds, newIds, onSave, isLoading, watchedEntities, themes,
 }: ClusterStreamProps) {
   const newCount = newIds?.size ?? 0;
 
@@ -66,7 +67,10 @@ export function ClusterStream({
           variants={{ visible: { transition: { staggerChildren: 0.04 } } }}
         >
           {clusters.map((cluster, i) => {
-            const tier = clusterTier(cluster);
+            const tier         = clusterTier(cluster);
+            const matchedTheme = themes?.find(t =>
+              (t.contributing_cluster_ids ?? []).includes(cluster.id)
+            );
             return (
               <motion.div
                 key={cluster.id}
@@ -92,6 +96,7 @@ export function ClusterStream({
                       : false
                   }
                   watchedEntities={watchedEntities}
+                  matchedTheme={matchedTheme}
                 />
               </motion.div>
             );

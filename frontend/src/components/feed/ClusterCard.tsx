@@ -8,7 +8,25 @@ import {
 } from "lucide-react";
 import { cn, catColor } from "@/lib/utils";
 import { analyzeItemDeep } from "@/lib/api";
-import type { StoryCluster, FeedItem, RelatedStory, DeepAnalysis } from "@/lib/types";
+import type { StoryCluster, FeedItem, RelatedStory, DeepAnalysis, ThemeIntelligence } from "@/lib/types";
+
+const MOMENTUM_COLOR: Record<string, string> = {
+  accelerating:  "#10B981",
+  strengthening: "#34D399",
+  emerging:      "#52b0c8",
+  stable:        "rgba(255,255,255,0.38)",
+  cooling:       "#F59E0B",
+  reversing:     "#EF4444",
+};
+
+const MOMENTUM_BG: Record<string, string> = {
+  accelerating:  "rgba(16,185,129,0.10)",
+  strengthening: "rgba(52,211,153,0.10)",
+  emerging:      "rgba(82,176,200,0.10)",
+  stable:        "rgba(255,255,255,0.05)",
+  cooling:       "rgba(245,158,11,0.10)",
+  reversing:     "rgba(239,68,68,0.10)",
+};
 
 interface ClusterCardProps {
   cluster:          StoryCluster;
@@ -17,10 +35,11 @@ interface ClusterCardProps {
   isNew?:           boolean;
   isWatched?:       boolean;
   watchedEntities?: Set<string>;
+  matchedTheme?:    ThemeIntelligence;
 }
 
 export function ClusterCard({
-  cluster, isSaved, onSave, isNew, isWatched, watchedEntities,
+  cluster, isSaved, onSave, isNew, isWatched, watchedEntities, matchedTheme,
 }: ClusterCardProps) {
   const { primary: item, related, story_count, theme_label, id } = cluster;
 
@@ -149,13 +168,47 @@ export function ClusterCard({
     >
       <div className={cn("px-3.5", tier === 1 ? "pt-4 pb-4" : "pt-2.5 pb-3")}>
 
-        {/* ── Theme label (multi-story clusters only) ─────────────────── */}
-        {story_count > 1 && (
+        {/* ── Theme intelligence row ───────────────────────────────────── */}
+        {matchedTheme ? (
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span
+              className="text-[9.5px] font-medium truncate"
+              style={{ color: "rgba(82,176,200,0.80)", maxWidth: 200 }}
+            >
+              {matchedTheme.name}
+            </span>
+            <span
+              className="text-[7.5px] font-bold px-1.5 py-0.5 rounded capitalize shrink-0"
+              style={{
+                background: MOMENTUM_BG[matchedTheme.momentum_label]  ?? "rgba(255,255,255,0.05)",
+                color:      MOMENTUM_COLOR[matchedTheme.momentum_label] ?? "rgba(255,255,255,0.38)",
+              }}
+            >
+              {matchedTheme.momentum_label}
+            </span>
+            {(matchedTheme.momentum_delta ?? 0) !== 0 && (
+              <span
+                className="text-[8.5px] font-mono font-semibold tabular-nums shrink-0"
+                style={{
+                  color: (matchedTheme.momentum_delta ?? 0) > 0 ? "#10B981" : "#EF4444",
+                }}
+              >
+                {(matchedTheme.momentum_delta ?? 0) > 0 ? "+" : ""}{Math.round(matchedTheme.momentum_delta ?? 0)}
+              </span>
+            )}
+            <span
+              className="text-[8px] ml-auto shrink-0"
+              style={{ color: "rgba(255,255,255,0.26)" }}
+            >
+              CV {Math.round(matchedTheme.confidence ?? 0)}
+            </span>
+          </div>
+        ) : story_count > 1 ? (
           <p className="text-[9.5px] font-medium uppercase tracking-[0.08em] mb-1.5 truncate"
             style={{ color: `${color}c0` }}>
             {theme_label}
           </p>
-        )}
+        ) : null}
 
         {/* ── Header row ──────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 mb-2">
@@ -215,6 +268,25 @@ export function ClusterCard({
               <span className="opacity-60"> +{item.affected_entities.length - 4}</span>
             )}
           </p>
+        )}
+
+        {/* ── Impact preview — theme industry exposure ─────────────────── */}
+        {matchedTheme && (matchedTheme.related_industries ?? []).length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            {(matchedTheme.related_industries ?? []).slice(0, 3).map(ind => {
+              const dir    = matchedTheme.momentum_direction;
+              const clr    = dir === "bullish"  ? "rgba(16,185,129,0.62)" :
+                             dir === "bearish"  ? "rgba(239,68,68,0.58)" :
+                                                  "rgba(255,255,255,0.32)";
+              const prefix = dir === "bullish"  ? "+" :
+                             dir === "bearish"  ? "−" : "→";
+              return (
+                <span key={ind} className="text-[9.5px] font-medium" style={{ color: clr }}>
+                  {prefix} {ind}
+                </span>
+              );
+            })}
+          </div>
         )}
 
         {/* ── AI summary + desk-note ──────────────────────────────────── */}

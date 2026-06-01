@@ -12,6 +12,7 @@ import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
+import { IntelligenceStrip } from "@/components/feed/IntelligenceStrip";
 import { MarketNarrativeNetwork } from "@/components/feed/MarketNarrativeNetwork";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
@@ -241,6 +242,11 @@ export default function FeedPage() {
             trendLabel={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
           />
 
+          {/* ── Intelligence strip — leaderboard + change feed ─────────── */}
+          {!isLoading && themes.length > 0 && (
+            <IntelligenceStrip themes={themes} />
+          )}
+
           {/* ── Category filter strip ──────────────────────────────────── */}
           <FilterChips
             activeCategory={activeCategory}
@@ -268,6 +274,7 @@ export default function FeedPage() {
             onSave={handleSave}
             isLoading={isLoading}
             watchedEntities={watchedEntities.size > 0 ? watchedEntities : undefined}
+            themes={themes}
           />
 
           {/* ── Signal Picks — after stream, by type ─────────────────── */}
