@@ -1180,3 +1180,120 @@ export function generateWhyItMattersNow(theme: ThemeIntelligence): string[] {
 
   return bullets;
 }
+
+// ── Phase 18: Intelligence Briefing & Score ───────────────────────────────────
+
+export function generateIntelligenceBriefing(theme: ThemeIntelligence): string[] {
+  const chain   = parseCausalChain(theme.causal_narrative);
+  const macros  = theme.related_macro_factors ?? [];
+  const inds    = theme.related_industries    ?? [];
+  const assets  = theme.related_assets        ?? [];
+  const delta   = theme.momentum_delta        ?? 0;
+  const breadth = theme.breadth_score         ?? 0;
+  const persist = theme.persistence_score     ?? 0;
+  const cycles  = theme.persistence_cycles    ?? 0;
+  const dir     = theme.momentum_direction;
+  const ml      = theme.momentum_label;
+  const ss      = theme.signal_strength;
+  const name    = theme.name;
+
+  const driver = chain[0]  ?? macros[0] ?? null;
+  const mech   = chain[1]  ?? macros[1] ?? null;
+  const ind0   = inds[0]   ?? "primary sectors";
+  const ind1   = inds[1]   ?? null;
+  const asset0 = assets[0] ?? null;
+
+  const sentences: string[] = [];
+
+  // Sentence 1: What is happening — theme state and primary driver
+  const stateVerb =
+    ml === "accelerating"  ? "continues to accelerate" :
+    ml === "strengthening" ? "is strengthening"        :
+    ml === "emerging"      ? "is emerging as a structural theme" :
+    ml === "cooling"       ? "is showing signs of cooling" :
+    ml === "reversing"     ? "is reversing" : "remains active";
+
+  const driverClause = driver && driver.length > 4
+    ? `, driven by ${driver.charAt(0).toLowerCase() + driver.slice(1)}`
+    : "";
+
+  sentences.push(`${name} ${stateVerb}${driverClause}.`);
+
+  // Sentence 2: Why it matters — mechanism and market impact
+  if (mech && mech.length > 8) {
+    const mechCap   = mech.charAt(0).toUpperCase() + mech.slice(1);
+    const impactVerb = dir === "bullish" ? "creating a structural advantage for"
+      : dir === "bearish" ? "creating material headwinds for" : "with cascading effects across";
+    const indScope   = ind1 ? `${ind0} and ${ind1}` : ind0;
+    sentences.push(`${mechCap}, ${impactVerb} ${indScope}.`);
+  } else {
+    const verbPhrase = dir === "bullish" ? `creating pricing power in ${ind0}`
+      : dir === "bearish" ? `creating structural headwinds in ${ind0}`
+      : `with complex implications across ${ind0}`;
+    const assetClause = asset0 ? `, with direct exposure in ${asset0}` : "";
+    const indExt = ind1 ? ` and ${ind1}` : "";
+    sentences.push(`This dynamic is ${verbPhrase}${indExt}${assetClause}.`);
+  }
+
+  // Sentence 3: Why NOW — the market gap or timing urgency
+  if (ml === "accelerating" && delta >= 10) {
+    sentences.push(`Signal velocity (+${Math.round(delta)}) is above institutional attention thresholds — the market may not yet have fully priced the structural implications.`);
+  } else if (ml === "accelerating" && delta >= 5) {
+    sentences.push(`Momentum is building ahead of what could become a broader market catalyst — the positioning window is open but narrowing.`);
+  } else if (theme.cross_category_confirmed && breadth >= 60) {
+    const cnt = Math.max(2, Math.round(breadth / 18));
+    sentences.push(`Cross-category confirmation has emerged across ~${cnt} sectors — this is no longer a single-sector story.`);
+  } else if (ml === "reversing") {
+    sentences.push(`The reversal is accelerating — with ${cycles} cycle${cycles !== 1 ? "s" : ""} of prior strength now unwinding, the downside could be significant.`);
+  } else if (cycles >= 6) {
+    sentences.push(`With ${cycles} consecutive signal cycles, this has transitioned from a trade to a structural theme — duration exposure is warranted.`);
+  } else if (persist >= 70 && ss === "strong") {
+    sentences.push(`Persistence at ${Math.round(persist)} with strong signal classification suggests the thesis has proven durable across multiple market conditions.`);
+  } else if (ml === "strengthening" && delta >= 5) {
+    sentences.push(`The strengthening trend (+${Math.round(delta)} delta) suggests the thesis is gaining institutional traction ahead of broader consensus.`);
+  } else {
+    sentences.push(`Current conditions are creating a positioning window that may narrow as the theme reaches broader market consensus.`);
+  }
+
+  return sentences;
+}
+
+export interface IntelligenceScore {
+  score: number;
+  label: "High confidence narrative" | "Moderate confidence" | "Developing narrative" | "Early signal";
+}
+
+export function computeIntelligenceScore(theme: ThemeIntelligence): IntelligenceScore {
+  const ss      = theme.signal_strength;
+  const ml      = theme.momentum_label;
+  const breadth = theme.breadth_score    ?? 0;
+  const persist = theme.persistence_score ?? 0;
+  const evidence = theme.evidence_count  ?? 0;
+
+  const signalPts =
+    ss === "strong" ? 30 :
+    ss === "medium" ? 15 : 5;
+
+  const momentumPts =
+    ml === "accelerating"  ? 20 :
+    ml === "strengthening" ? 18 :
+    ml === "emerging"      ? 14 :
+    ml === "stable"        ? 10 :
+    ml === "cooling"       ? 4  : 0;
+
+  const breadthPts  = Math.round(breadth  * 0.15);
+  const persistPts  = Math.round(persist  * 0.10);
+  const evidencePts = Math.min(Math.round(evidence * 5), 20);
+  const crossPts    = theme.cross_category_confirmed ? 5 : 0;
+
+  const score = Math.min(100, Math.round(
+    signalPts + momentumPts + breadthPts + persistPts + evidencePts + crossPts,
+  ));
+
+  const label =
+    score >= 80 ? "High confidence narrative" :
+    score >= 60 ? "Moderate confidence"       :
+    score >= 40 ? "Developing narrative"      : "Early signal";
+
+  return { score, label };
+}
