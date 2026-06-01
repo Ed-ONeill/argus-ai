@@ -103,7 +103,8 @@ export function ThemeDrawer({
   onToggleWatch, onClose, sourceContext,
 }: ThemeDrawerProps) {
 
-  const [activeTab, setActiveTab] = useState<"Overview" | "Companies" | "Evidence" | "Risks">("Overview");
+  const [activeTab,    setActiveTab]    = useState<"Overview" | "Companies" | "Evidence" | "Risks">("Overview");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -186,6 +187,44 @@ export function ThemeDrawer({
     .slice(0, 5);
 
   const primaryDriver = causalChain[0] ?? (theme.related_macro_factors ?? [])[0];
+
+  const thesisStatus = useMemo(() => {
+    const delta   = theme.momentum_delta ?? 0;
+    const ml      = theme.momentum_label;
+    const ss      = theme.signal_strength;
+    const breadth = theme.breadth_score ?? 0;
+    if (ml === "reversing" && delta < -15 && ss === "weak")
+      return { label: "Breaking",      icon: "✕", color: "#EF4444" };
+    if ((ml === "reversing" || ml === "cooling") && delta < -8)
+      return { label: "At Risk",       icon: "⚠", color: "#F59E0B" };
+    if ((ml === "accelerating" && delta > 8) || (ml === "strengthening" && delta > 5 && breadth >= 50))
+      return { label: "Strengthening", icon: "✓", color: "#10B981" };
+    if (theme.cross_category_confirmed && ss === "strong" && delta >= 0)
+      return { label: "Confirmed",     icon: "✓", color: "#10B981" };
+    if (ml === "strengthening" && delta > 3)
+      return { label: "Strengthening", icon: "✓", color: "#52b0c8" };
+    return   { label: "Mixed",         icon: "⚠", color: "#94A3B8" };
+  }, [theme]);
+
+  const primaryMonitor = useMemo(() => {
+    const highCat = catalysts.find(c => c.sensitivity === "High");
+    if (highCat) return highCat.label;
+    if (watchSignals.length > 0) return watchSignals[0].variable;
+    if (catalysts.length > 0) return catalysts[0].label;
+    return (theme.related_macro_factors ?? [])[0] ?? null;
+  }, [catalysts, watchSignals, theme.related_macro_factors]);
+
+  const bearishItems = useMemo(() => {
+    const hws   = companyExposures.filter(c => c.direction === "headwind");
+    const items = hws.slice(0, 3).map(c => c.ticker);
+    if (items.length < 3) {
+      crossAssetImpacts
+        .filter(ca => ca.direction === "negative")
+        .slice(0, 3 - items.length)
+        .forEach(ca => items.push(ca.label));
+    }
+    return items.slice(0, 3);
+  }, [companyExposures, crossAssetImpacts]);
 
   const cvColor = conviction >= 70 ? "#10B981" : conviction >= 45 ? "#F59E0B" : "#EF4444";
 
@@ -421,6 +460,59 @@ export function ThemeDrawer({
               </div>
             </div>
 
+            {/* ── So What? ──────────────────────────────────────────────── */}
+            {(beneficiaries.length > 0 || bearishItems.length > 0 || !!primaryMonitor || !!invalidation[0]) && (
+              <div className="rounded-xl p-3.5"
+                style={{ background: "rgba(251,191,36,0.025)", border: "1px solid rgba(251,191,36,0.10)" }}>
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
+                  style={{ color: "rgba(251,191,36,0.55)" }}>So What?</p>
+                <div className="space-y-2">
+                  {beneficiaries.length > 0 && (
+                    <div className="flex items-start gap-2.5">
+                      <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-0.5"
+                        style={{ color: "rgba(16,185,129,0.55)", width: 48 }}>Bullish</span>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        {beneficiaries.slice(0, 3).map(c => (
+                          <span key={c.ticker} className="font-mono font-black text-[11px]"
+                            style={{ color: "#10B981" }}>{c.ticker}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {bearishItems.length > 0 && (
+                    <div className="flex items-start gap-2.5">
+                      <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-0.5"
+                        style={{ color: "rgba(239,68,68,0.55)", width: 48 }}>Bearish</span>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        {bearishItems.map((item, i) => (
+                          <span key={i} className="font-mono font-black text-[11px]"
+                            style={{ color: "#EF4444" }}>{item}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {primaryMonitor && (
+                    <div className="flex items-start gap-2.5">
+                      <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-0.5"
+                        style={{ color: "rgba(82,176,200,0.55)", width: 48 }}>Monitor</span>
+                      <p className="text-[10.5px] leading-snug" style={{ color: "rgba(82,176,200,0.82)" }}>
+                        {primaryMonitor}
+                      </p>
+                    </div>
+                  )}
+                  {invalidation[0] && (
+                    <div className="flex items-start gap-2.5">
+                      <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-0.5"
+                        style={{ color: "rgba(239,68,68,0.45)", width: 48 }}>Risk</span>
+                      <p className="text-[10.5px] leading-snug" style={{ color: "rgba(239,68,68,0.62)" }}>
+                        {invalidation[0].condition}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* ── Thesis ────────────────────────────────────────────────── */}
             {thesis && (
               <div>
@@ -446,6 +538,29 @@ export function ThemeDrawer({
               </div>
             )}
 
+            {/* ── Thesis Status ─────────────────────────────────────────── */}
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl"
+              style={{ background: `${thesisStatus.color}10`, border: `1px solid ${thesisStatus.color}28` }}>
+              <div>
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.12em] mb-0.5"
+                  style={{ color: "rgba(255,255,255,0.26)" }}>Thesis Status</p>
+                <p className="text-[12px] font-semibold" style={{ color: thesisStatus.color }}>
+                  {thesisStatus.icon} {thesisStatus.label}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] capitalize" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  {theme.momentum_label}
+                </p>
+                {(theme.momentum_delta ?? 0) !== 0 && (
+                  <p className="text-[9.5px] font-mono tabular-nums font-bold"
+                    style={{ color: (theme.momentum_delta ?? 0) > 0 ? "#10B981" : "#EF4444" }}>
+                    Δ{(theme.momentum_delta ?? 0) > 0 ? "+" : ""}{Math.round(theme.momentum_delta ?? 0)}
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* ── Winners ───────────────────────────────────────────────── */}
             {beneficiaries.length > 0 && (
               <div>
@@ -453,12 +568,14 @@ export function ThemeDrawer({
                   style={{ color: "rgba(16,185,129,0.48)" }}>Winners</p>
                 <div className="space-y-2">
                   {beneficiaries.slice(0, 3).map(c => (
-                    <div key={c.ticker} className="flex items-start gap-2.5">
-                      <span className="font-mono font-black text-[11px] shrink-0 pt-0.5"
+                    <div key={c.ticker} className="flex items-center gap-2.5">
+                      <span className="font-mono font-black text-[12px] shrink-0"
                         style={{ color: "#10B981", width: 44 }}>{c.ticker}</span>
-                      <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.52)" }}>
-                        {c.rationale}
-                      </p>
+                      <span className="text-[9.5px] font-bold shrink-0"
+                        style={{ color: "rgba(16,185,129,0.65)" }}>↑</span>
+                      <span className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.50)" }}>
+                        {c.descriptor}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -472,12 +589,14 @@ export function ThemeDrawer({
                   style={{ color: "rgba(239,68,68,0.48)" }}>Losers</p>
                 <div className="space-y-2">
                   {headwinds.slice(0, 3).map(c => (
-                    <div key={c.ticker} className="flex items-start gap-2.5">
-                      <span className="font-mono font-black text-[11px] shrink-0 pt-0.5"
+                    <div key={c.ticker} className="flex items-center gap-2.5">
+                      <span className="font-mono font-black text-[12px] shrink-0"
                         style={{ color: "#EF4444", width: 44 }}>{c.ticker}</span>
-                      <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.52)" }}>
-                        {c.rationale}
-                      </p>
+                      <span className="text-[9.5px] font-bold shrink-0"
+                        style={{ color: "rgba(239,68,68,0.65)" }}>↓</span>
+                      <span className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.50)" }}>
+                        {c.descriptor}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -513,13 +632,45 @@ export function ThemeDrawer({
               </div>
             )}
 
+            {/* ── Conviction Explanation ────────────────────────────────── */}
+            {convictionExpl.factors.length > 0 && (
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
+                  style={{ color: "rgba(255,255,255,0.22)" }}>
+                  {convictionExpl.tone === "driven" ? "Conviction Built From" : "Conviction Limited By"}
+                </p>
+                <div className="space-y-1.5">
+                  {convictionExpl.factors.map((f, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-[10px] shrink-0 mt-0.5"
+                        style={{ color: f.positive ? "rgba(16,185,129,0.70)" : "rgba(245,158,11,0.65)" }}>
+                        {f.positive ? "✓" : "⚠"}
+                      </span>
+                      <p className="text-[11px] leading-snug"
+                        style={{ color: f.positive ? "rgba(16,185,129,0.72)" : "rgba(245,158,11,0.68)" }}>
+                        {f.label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── Advanced Intelligence ─────────────────────────────────── */}
-            <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={() => setAdvancedOpen(v => !v)}
+              className="flex items-center gap-3 w-full pt-1 text-left"
+            >
               <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
-              <span className="text-[8px] font-bold uppercase tracking-[0.16em] shrink-0"
-                style={{ color: "rgba(255,255,255,0.18)" }}>Advanced Intelligence</span>
+              <span className="text-[8px] font-bold uppercase tracking-[0.16em] shrink-0 flex items-center gap-1.5"
+                style={{ color: "rgba(255,255,255,0.28)" }}>
+                Advanced Intelligence
+                <span style={{ color: "rgba(255,255,255,0.20)" }}>{advancedOpen ? "▲" : "▼"}</span>
+              </span>
               <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
-            </div>
+            </button>
+
+            {advancedOpen && (<>
 
             {signalDeltas.length > 0 && (
               <div
@@ -664,7 +815,7 @@ export function ThemeDrawer({
               className="rounded-xl px-3.5 py-2.5"
               style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.05)" }}
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5"
                     style={{ color: "rgba(255,255,255,0.26)" }}>Conviction</p>
@@ -679,24 +830,6 @@ export function ThemeDrawer({
                   </span>
                 </div>
               </div>
-              {convictionExpl.factors.length > 0 && (
-                <div className="pt-2 space-y-1.5"
-                  style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                  <p className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.28)" }}>
-                    {convictionExpl.tone === "driven" ? "High conviction because" : "Conviction limited because"}:
-                  </p>
-                  {convictionExpl.factors.map((f, i) => (
-                    <div key={i} className="flex items-start gap-1.5">
-                      <span className="text-[9px] shrink-0 mt-0.5"
-                        style={{ color: f.positive ? "rgba(16,185,129,0.55)" : "rgba(239,68,68,0.50)" }}>•</span>
-                      <p className="text-[10.5px] leading-snug"
-                        style={{ color: f.positive ? "rgba(16,185,129,0.72)" : "rgba(239,68,68,0.65)" }}>
-                        {f.label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -814,6 +947,8 @@ export function ThemeDrawer({
                 </div>
               </Section>
             )}
+
+            </>)}
 
           </>)}
 
