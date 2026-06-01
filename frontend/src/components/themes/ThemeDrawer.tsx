@@ -23,6 +23,7 @@ import {
 import {
   generateNextCatalysts, generateBullBearCases, generateWatchSignals,
   generateEvidenceItems, explainConviction, computeThemeHealth, generateInvalidationSignals,
+  generateThesis, generateWhyItMattersNow,
   type ThemeCatalyst, type BullBearCases, type WatchSignal,
   type EvidenceItem, type ConvictionExplanation, type ThemeHealthScore, type InvalidationSignal,
 } from "@/lib/themeIntelligence";
@@ -168,6 +169,8 @@ export function ThemeDrawer({
   const convictionExpl:    ConvictionExplanation                    = useMemo(() => explainConviction(theme, conviction), [theme, conviction]);
   const themeHealth:       ThemeHealthScore                         = useMemo(() => computeThemeHealth(theme),      [theme]);
   const invalidation:      InvalidationSignal[]                     = useMemo(() => generateInvalidationSignals(theme), [theme]);
+  const thesis                                                       = useMemo(() => generateThesis(theme),           [theme]);
+  const whyNow                                                       = useMemo(() => generateWhyItMattersNow(theme),  [theme]);
   const topPodcasts                                                  = connectedEpisodes.slice(0, 3);
   const companyExposures:  CompanyExposure[]                        = useMemo(() => computeCompanyExposures(theme), [theme]);
   const transmissionPaths: TransmissionPath[]                       = useMemo(
@@ -356,10 +359,67 @@ export function ThemeDrawer({
           {/* ── OVERVIEW ─────────────────────────────────────────────────── */}
           {activeTab === "Overview" && (<>
 
-            {theme.description && (
-              <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>
-                {theme.description}
+            {thesis && (
+              <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.58)" }}>
+                {thesis}
               </p>
+            )}
+
+            {whyNow.length > 0 && (
+              <div
+                className="rounded-xl p-3.5"
+                style={{ background: "rgba(82,176,200,0.03)", border: "1px solid rgba(82,176,200,0.08)" }}
+              >
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
+                  style={{ color: "rgba(82,176,200,0.45)" }}>
+                  Why It Matters Now
+                </p>
+                <div className="space-y-2">
+                  {whyNow.map((bullet, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-[9px] shrink-0 mt-0.5" style={{ color: "rgba(82,176,200,0.50)" }}>·</span>
+                      <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>{bullet}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(beneficiaries.length > 0 || headwinds.length > 0) && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg p-2.5"
+                  style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.08)" }}>
+                  <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-1.5"
+                    style={{ color: "rgba(16,185,129,0.45)" }}>Winners</p>
+                  <div className="space-y-1">
+                    {beneficiaries.slice(0, 3).map(c => (
+                      <div key={c.ticker} className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-[10.5px]" style={{ color: "#10B981" }}>{c.ticker}</span>
+                        <span className="text-[9px] tabular-nums font-semibold" style={{ color: "rgba(16,185,129,0.55)" }}>{c.score}</span>
+                      </div>
+                    ))}
+                    {beneficiaries.length === 0 && (
+                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.22)" }}>—</p>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg p-2.5"
+                  style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.08)" }}>
+                  <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-1.5"
+                    style={{ color: "rgba(239,68,68,0.45)" }}>At Risk</p>
+                  <div className="space-y-1">
+                    {headwinds.slice(0, 3).map(c => (
+                      <div key={c.ticker} className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-[10.5px]" style={{ color: "#EF4444" }}>{c.ticker}</span>
+                        <span className="text-[9px] tabular-nums font-semibold" style={{ color: "rgba(239,68,68,0.55)" }}>{c.score}</span>
+                      </div>
+                    ))}
+                    {headwinds.length === 0 && (
+                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.22)" }}>—</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
 
             {signalDeltas.length > 0 && (
@@ -424,13 +484,24 @@ export function ThemeDrawer({
                           color:      cat.direction === "confirming" ? "#10B981" : "#EF4444",
                         }}
                       >
-                        {cat.direction === "confirming" ? "✓ Confirming" : "⚠ Risk"}
+                        {cat.direction === "confirming" ? "✓" : "⚠"}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-semibold leading-snug" style={{ color: "rgba(255,255,255,0.72)" }}>
-                          {cat.label}
-                        </p>
-                        <p className="text-[10px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <p className="text-[11px] font-semibold leading-snug" style={{ color: "rgba(255,255,255,0.72)" }}>
+                            {cat.label}
+                          </p>
+                          <span
+                            className="text-[7.5px] font-bold px-1 py-0.5 rounded shrink-0"
+                            style={{
+                              background: cat.sensitivity === "High" ? "rgba(239,68,68,0.10)" : cat.sensitivity === "Medium" ? "rgba(251,191,36,0.10)" : "rgba(107,114,128,0.10)",
+                              color:      cat.sensitivity === "High" ? "#EF4444" : cat.sensitivity === "Medium" ? "#F59E0B" : "#6B7280",
+                            }}
+                          >
+                            {cat.sensitivity}
+                          </span>
+                        </div>
+                        <p className="text-[10px] leading-snug" style={{ color: "rgba(255,255,255,0.35)" }}>
                           {cat.reason}
                         </p>
                       </div>
@@ -556,17 +627,20 @@ export function ThemeDrawer({
                 </div>
               </div>
               {convictionExpl.factors.length > 0 && (
-                <div className="pt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1"
+                <div className="pt-2 space-y-1.5"
                   style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-                    {convictionExpl.tone === "driven" ? "Driven by" : "Limited by"}
-                  </span>
+                  <p className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.28)" }}>
+                    {convictionExpl.tone === "driven" ? "High conviction because" : "Conviction limited because"}:
+                  </p>
                   {convictionExpl.factors.map((f, i) => (
-                    <span key={i} className="text-[9px] font-medium"
-                      style={{ color: f.positive ? "rgba(16,185,129,0.72)" : "rgba(239,68,68,0.65)" }}>
-                      {i > 0 && <span style={{ color: "rgba(255,255,255,0.16)" }}>· </span>}
-                      {f.label}
-                    </span>
+                    <div key={i} className="flex items-start gap-1.5">
+                      <span className="text-[9px] shrink-0 mt-0.5"
+                        style={{ color: f.positive ? "rgba(16,185,129,0.55)" : "rgba(239,68,68,0.50)" }}>•</span>
+                      <p className="text-[10.5px] leading-snug"
+                        style={{ color: f.positive ? "rgba(16,185,129,0.72)" : "rgba(239,68,68,0.65)" }}>
+                        {f.label}
+                      </p>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1178,9 +1252,12 @@ export function ThemeDrawer({
                   style={{ color: "rgba(239,68,68,0.48)" }}>Thesis Invalidated If</p>
                 <div className="space-y-1.5">
                   {invalidation.map((sig, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>—</span>
-                      <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>{sig.condition}</p>
+                    <div key={i} className="space-y-0.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>—</span>
+                        <p className="text-[11.5px] leading-snug font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>{sig.condition}</p>
+                      </div>
+                      <p className="text-[10.5px] leading-snug ml-4" style={{ color: "rgba(255,255,255,0.30)" }}>{sig.impact}</p>
                     </div>
                   ))}
                 </div>
