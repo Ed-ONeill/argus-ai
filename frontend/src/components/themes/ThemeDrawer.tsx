@@ -308,11 +308,14 @@ export function ThemeDrawer({
             <div className="flex items-center gap-1 shrink-0 mt-0.5">
               <button
                 onClick={onToggleWatch}
-                className="p-2 rounded-lg transition-colors hover:bg-white/[0.05]"
-                style={{ color: isWatched ? "#F59E0B" : "rgba(255,255,255,0.28)" }}
-                title={isWatched ? "Remove from watchlist" : "Add to watchlist"}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors hover:bg-white/[0.05]"
+                style={{
+                  color:  isWatched ? "#F59E0B" : "rgba(255,255,255,0.36)",
+                  border: isWatched ? "1px solid rgba(251,191,36,0.22)" : "1px solid rgba(255,255,255,0.08)",
+                }}
               >
-                {isWatched ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                {isWatched ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
+                <span className="text-[9.5px] font-semibold">{isWatched ? "Watching" : "Watch"}</span>
               </button>
               <button
                 onClick={onClose}

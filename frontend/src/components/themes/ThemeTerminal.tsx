@@ -12,6 +12,7 @@ import {
 } from "@/lib/themeMomentum";
 import { computeConvictionScore, convictionLabel } from "@/lib/themeImpact";
 import { generateIntelligenceAlerts, type IntelligenceAlert } from "@/lib/themeIntelligence";
+import { useWatchlistIntelligence } from "@/hooks/useWatchlistIntelligence";
 
 // ── Safe fallback for missing/failed momentum computation ─────────────────────
 
@@ -62,6 +63,8 @@ export function ThemeTerminal({
   const [filter, setFilter] = useState<"all" | "watchlist">("all");
   const [sortBy, setSortBy] = useState<"signal" | "persistence" | "momentum" | "lifecycle">("signal");
 
+  const { deltas, weeklyChanges, watchedRanked } = useWatchlistIntelligence(themes, watchedIds);
+
   // ESC to close
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -106,7 +109,9 @@ export function ThemeTerminal({
   });
 
   const displayed = filter === "watchlist"
-    ? sorted.filter(t => watchedIds.includes(t.id))
+    ? [...themes]
+        .filter(t => watchedIds.includes(t.id))
+        .sort((a, b) => (deltas[b.id]?.priorityScore ?? 0) - (deltas[a.id]?.priorityScore ?? 0))
     : sorted;
 
   const signalCounts = {
@@ -210,7 +215,7 @@ export function ThemeTerminal({
                   border:     filter === f ? "1px solid rgba(251,191,36,0.18)" : "1px solid transparent",
                 }}
               >
-                {f === "watchlist" ? `Watchlist (${watchedIds.length})` : "All"}
+                {f === "watchlist" ? `Watched${watchedIds.length > 0 ? ` (${watchedIds.length})` : ""}` : "All"}
               </button>
             ))}
           </div>
@@ -224,6 +229,50 @@ export function ThemeTerminal({
           </button>
         </div>
       </div>
+
+      {/* ── Watchlist Summary Bar ───────────────────────────────────────────── */}
+      {watchedRanked.length > 0 && (
+        <div
+          className="shrink-0 px-6 py-2.5"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(251,191,36,0.015)" }}
+        >
+          <div className="max-w-5xl mx-auto">
+            <div className="flex items-center gap-2 mb-1.5">
+              <p className="text-[8px] font-bold uppercase tracking-[0.16em]"
+                style={{ color: "rgba(251,191,36,0.45)" }}>Watched Themes</p>
+              {watchedIds.length > 5 && (
+                <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.22)" }}>
+                  +{watchedIds.length - 5} more
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-5 flex-wrap">
+              {watchedRanked.map(t => {
+                const d     = t.momentum_delta ?? 0;
+                const color = d > 0 ? "#10B981" : d < 0 ? "#EF4444" : "rgba(255,255,255,0.38)";
+                const arrow = d > 0 ? "▲" : d < 0 ? "▼" : "·";
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => onSelectTheme(t)}
+                    className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+                  >
+                    <span className="text-[9px] font-bold" style={{ color }}>{arrow}</span>
+                    <span className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.65)" }}>
+                      {t.name}
+                    </span>
+                    {d !== 0 && (
+                      <span className="text-[8.5px] font-mono tabular-nums" style={{ color }}>
+                        ({d > 0 ? "+" : ""}{Math.round(d)})
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Intelligence Alerts strip ────────────────────────────────────────── */}
       {intelligenceAlerts.length > 0 && filter === "all" && (
@@ -279,6 +328,34 @@ export function ThemeTerminal({
       {/* ── Theme grid ──────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-6">
+
+          {/* ── This Week's Changes ─────────────────────────────────────────── */}
+          {filter === "watchlist" && weeklyChanges.length > 0 && (
+            <div className="mb-5 rounded-xl p-4"
+              style={{ background: "rgba(255,255,255,0.018)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-3"
+                style={{ color: "rgba(255,255,255,0.28)" }}>This Week&apos;s Changes</p>
+              <div className="space-y-1.5">
+                {weeklyChanges.map(({ theme: t, sentence, direction }) => (
+                  <button
+                    key={t.id}
+                    onClick={() => onSelectTheme(t)}
+                    className="flex items-center gap-2 w-full text-left hover:opacity-80 transition-opacity"
+                  >
+                    <span
+                      className="text-[9px] font-bold shrink-0"
+                      style={{ color: direction === "up" ? "#10B981" : "#EF4444" }}
+                    >
+                      {direction === "up" ? "▲" : "▼"}
+                    </span>
+                    <span className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.58)" }}>
+                      {sentence}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {displayed.length === 0 ? (
             <p className="text-center py-16 text-sm" style={{ color: "rgba(255,255,255,0.28)" }}>
               {filter === "watchlist" ? "No themes on your watchlist." : "No active themes."}
@@ -334,6 +411,19 @@ export function ThemeTerminal({
                             {alert && (
                               <AlertCircle size={10} style={{ color: "#F59E0B" }} aria-label="Signal changed" />
                             )}
+                            {watched && deltas[theme.id]?.alertChip && (() => {
+                              const chip = deltas[theme.id]?.alertChip;
+                              if (!chip) return null;
+                              const chipColor = chip.direction === "up" ? "#10B981" : "#EF4444";
+                              return (
+                                <span
+                                  className="text-[8.5px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{ background: `${chipColor}14`, color: chipColor }}
+                                >
+                                  {chip.direction === "up" ? "▲" : "▼"} {chip.label}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <h3
                             className="text-[12.5px] font-semibold leading-snug group-hover:text-white/90 transition-colors"
