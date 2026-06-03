@@ -43,7 +43,6 @@ export default function FeedPage() {
   const [settingsOpen,     setSettingsOpen]     = useState(false);
   const [terminalOpen,     setTerminalOpen]     = useState(false);
   const [selectedTheme,    setSelectedTheme]    = useState<ThemeIntelligence | null>(null);
-  const [activeCategory,   setActiveCategory]   = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const prevIdsRef = useRef<Set<string>>(new Set());
@@ -77,33 +76,14 @@ export default function FeedPage() {
     prevIdsRef.current = current;
   }, [data?.clusters]);
 
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [activeCategory, data?.generated_at]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [params.categories, data?.generated_at]);
 
-  const allClusters = useMemo(() => {
-    const clusters = data?.clusters ?? [];
-    return activeCategory
-      ? clusters.filter(c => c.primary.category === activeCategory)
-      : clusters;
-  }, [data?.clusters, activeCategory]);
+  const allClusters = data?.clusters ?? [];
 
   useEffect(() => {
-    if (error) {
-      console.error("[feed page] ✗ query error:", error);
-    } else if (!isLoading && data === undefined) {
-      console.error("[feed page] ✗ data is undefined after load — query failed silently");
-    } else {
-      console.log(
-        "[feed page] raw clusters:", data?.clusters?.length ?? 0,
-        "| category filter:", activeCategory || "(none)",
-        "| visible:", allClusters.length,
-      );
-    }
-    console.log(
-      "[feed page] market_take:",
-      data === undefined ? "(no data yet)" : JSON.stringify(data.market_take),
-      "| isLoading:", isLoading,
-    );
-  }, [data, error, isLoading, activeCategory, allClusters.length]);
+    if (error) console.error("[feed page] ✗ query error:", error);
+    else if (!isLoading && data === undefined) console.error("[feed page] ✗ data is undefined after load");
+  }, [data, error, isLoading]);
 
   const visibleClusters = allClusters.slice(0, visibleCount);
   const hasMore         = visibleCount < allClusters.length;
@@ -249,8 +229,8 @@ export default function FeedPage() {
 
           {/* ── Category filter strip ──────────────────────────────────── */}
           <FilterChips
-            activeCategory={activeCategory}
-            onChange={setActiveCategory}
+            activeCategory={params.categories ?? ""}
+            onChange={(cat) => updateParams({ categories: cat })}
             onOpenDrawer={() => setDrawerOpen(true)}
             totalCount={data?.total}
             filteredCount={visibleClusters.length}
