@@ -43,6 +43,19 @@ export interface IndustryRotationSignal {
   count:    number;   // themes referencing this industry
 }
 
+export interface SignalBalance {
+  bullish:    number;   // accelerating + strengthening + emerging
+  bearish:    number;   // reversing + cooling
+  netSignal:  number;   // bullish - bearish
+  confidence: number;   // mean theme confidence (0–100)
+}
+
+export interface TodayChange {
+  direction: "up" | "down";
+  text:      string;
+  priority:  number;
+}
+
 // ── computeScorecard ──────────────────────────────────────────────────────────
 
 export function computeScorecard(themes: ThemeIntelligence[]): BriefingScorecard {
@@ -197,4 +210,73 @@ export function computeIndustryRotation(
     .filter(x => x.count >= 2 || Math.abs(x.delta) >= 5)
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, limit);
+}
+
+// ── computeSignalBalance ──────────────────────────────────────────────────────
+
+/** Bullish / bearish counts and average conviction across all themes. */
+export function computeSignalBalance(
+  themes:    ThemeIntelligence[],
+  scorecard: BriefingScorecard,
+): SignalBalance {
+  const bullish   = scorecard.accelerating + scorecard.strengthening + scorecard.emerging;
+  const bearish   = scorecard.reversing + scorecard.cooling;
+  const netSignal = bullish - bearish;
+  const confidence = themes.length > 0
+    ? Math.round(themes.reduce((s, t) => s + (t.confidence ?? 50), 0) / themes.length)
+    : 50;
+  return { bullish, bearish, netSignal, confidence };
+}
+
+// ── computeTodaysChanges ──────────────────────────────────────────────────────
+
+/**
+ * Derive a ranked list of today's notable momentum changes.
+ * Returns up-changes first (sorted by priority), then down-changes.
+ */
+export function computeTodaysChanges(
+  themes:   ThemeIntelligence[],
+  rotation: IndustryRotationSignal[],
+): TodayChange[] {
+  const ups:   TodayChange[] = [];
+  const downs: TodayChange[] = [];
+  const seen   = new Set<string>();
+
+  for (const t of themes) {
+    const delta = t.momentum_delta ?? 0;
+    const ind0  = (t.related_industries ?? [])[0];
+
+    if (t.momentum_label === "accelerating" && delta >= 8) {
+      ups.push({ direction: "up", text: `${t.name} accelerated`, priority: delta });
+      seen.add(t.name);
+    } else if (t.cross_category_confirmed && (t.breadth_score ?? 0) >= 60 && ind0) {
+      ups.push({ direction: "up", text: `${t.name} confirmed cross-sector into ${ind0}`, priority: delta + 5 });
+      seen.add(t.name);
+    } else if (t.momentum_label === "strengthening" && delta >= 10) {
+      ups.push({ direction: "up", text: `${t.name} strengthened`, priority: delta });
+      seen.add(t.name);
+    } else if (t.momentum_label === "emerging" && delta >= 5) {
+      ups.push({ direction: "up", text: `${t.name} is emerging`, priority: delta });
+      seen.add(t.name);
+    } else if (t.momentum_label === "reversing") {
+      downs.push({ direction: "down", text: `${t.name} reversed`, priority: Math.abs(delta) + 10 });
+      seen.add(t.name);
+    } else if (t.momentum_label === "cooling" && delta <= -7) {
+      downs.push({ direction: "down", text: `${t.name} weakened`, priority: Math.abs(delta) });
+      seen.add(t.name);
+    }
+  }
+
+  // Top industry rotation moves as additional context
+  for (const r of rotation.slice(0, 3)) {
+    const label = r.industry;
+    if (r.delta >= 25 && !seen.has(label))
+      ups.push({ direction: "up", text: `${label} moved into leadership`, priority: r.delta * 0.6 });
+    else if (r.delta <= -15 && !seen.has(label))
+      downs.push({ direction: "down", text: `${label} lost leadership`, priority: Math.abs(r.delta) * 0.6 });
+  }
+
+  const sortedUps   = ups.sort((a, b)   => b.priority - a.priority).slice(0, 3);
+  const sortedDowns = downs.sort((a, b) => b.priority - a.priority).slice(0, 3);
+  return [...sortedUps, ...sortedDowns];
 }
