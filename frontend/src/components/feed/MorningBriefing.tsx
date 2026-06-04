@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { useNarrativeNetwork } from "@/hooks/useNarrativeNetwork";
 import { useMarketState } from "@/hooks/useMarketState";
-import type { MarketBrief, GraphNode, PropagationChain } from "@/lib/types";
+import type { MarketBrief, PropagationChain } from "@/lib/types";
 
 interface MorningBriefingProps {
   brief:     MarketBrief | undefined | null;
@@ -24,18 +24,13 @@ function getRegimeColor(regime: string): string {
   return REGIME_COLOR[regime] ?? "#8898b8";
 }
 
-function buildTransmissionPath(
+function getTransmissionNarrative(
   chain: PropagationChain | undefined,
-  nodes: GraphNode[],
 ): string | null {
-  if (!chain || chain.nodes.length < 2) return null;
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  const labels  = chain.nodes
-    .slice(0, 5)
-    .map(id => nodeMap.get(id)?.label)
-    .filter((l): l is string => Boolean(l));
-  if (labels.length < 2) return null;
-  return labels.join(" → ");
+  if (!chain) return null;
+  const text = chain.summary?.trim() || chain.title?.trim();
+  if (!text || text.length < 15) return null;
+  return text;
 }
 
 export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
@@ -43,8 +38,8 @@ export function MorningBriefing({ brief, isLoading }: MorningBriefingProps) {
   const ms                = useMarketState();
 
   const transmission = useMemo(
-    () => buildTransmissionPath(netData?.chains?.[0], netData?.nodes ?? []),
-    [netData?.chains, netData?.nodes],
+    () => getTransmissionNarrative(netData?.chains?.[0]),
+    [netData?.chains],
   );
 
   if (isLoading) return <MorningBriefingSkeleton />;
