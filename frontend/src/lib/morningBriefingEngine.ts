@@ -290,27 +290,66 @@ export function computeTodaysChanges(
   const downs: TodayChange[] = [];
   const seen   = new Set<string>();
 
+  // Strips chain paths from theme names — "A → B → C" → "C"
+  const tname = (t: ThemeIntelligence): string =>
+    t.name.includes(" → ") ? t.name.split(" → ").pop()!.trim() : t.name;
+
   for (const t of themes) {
     const delta = t.momentum_delta ?? 0;
     const ind0  = (t.related_industries ?? [])[0];
+    const name  = tname(t);
 
     if (t.momentum_label === "accelerating" && delta >= 8) {
-      ups.push({ direction: "up", text: `${t.name} accelerated`, priority: delta });
+      ups.push({
+        direction: "up",
+        text: ind0
+          ? `${name} is accelerating — ${ind0} is the primary beneficiary`
+          : `${name} momentum is accelerating with improving signal breadth`,
+        priority: delta,
+      });
       seen.add(t.name);
     } else if (t.cross_category_confirmed && (t.breadth_score ?? 0) >= 60 && ind0) {
-      ups.push({ direction: "up", text: `${t.name} confirmed cross-sector into ${ind0}`, priority: delta + 5 });
+      ups.push({
+        direction: "up",
+        text: `${name} confirms cross-sector into ${ind0} — structural breadth building`,
+        priority: delta + 5,
+      });
       seen.add(t.name);
     } else if (t.momentum_label === "strengthening" && delta >= 10) {
-      ups.push({ direction: "up", text: `${t.name} strengthened`, priority: delta });
+      ups.push({
+        direction: "up",
+        text: ind0
+          ? `${name} strengthening — ${ind0} conviction improving`
+          : `${name} signal quality is strengthening across tracked cycles`,
+        priority: delta,
+      });
       seen.add(t.name);
     } else if (t.momentum_label === "emerging" && delta >= 5) {
-      ups.push({ direction: "up", text: `${t.name} is emerging`, priority: delta });
+      ups.push({
+        direction: "up",
+        text: ind0
+          ? `${name} establishing presence in ${ind0} — watch for confirmation`
+          : `${name} is building early signal presence across tracked cycles`,
+        priority: delta,
+      });
       seen.add(t.name);
     } else if (t.momentum_label === "reversing") {
-      downs.push({ direction: "down", text: `${t.name} reversed`, priority: Math.abs(delta) + 10 });
+      downs.push({
+        direction: "down",
+        text: ind0
+          ? `${name} enters reversal — ${ind0} positioning faces compression risk`
+          : `${name} has entered reversal — signal deterioration is accelerating`,
+        priority: Math.abs(delta) + 10,
+      });
       seen.add(t.name);
     } else if (t.momentum_label === "cooling" && delta <= -7) {
-      downs.push({ direction: "down", text: `${t.name} weakened`, priority: Math.abs(delta) });
+      downs.push({
+        direction: "down",
+        text: ind0
+          ? `${name} deteriorating — ${ind0} momentum is fading`
+          : `${name} signal quality is declining across tracked cycles`,
+        priority: Math.abs(delta),
+      });
       seen.add(t.name);
     }
   }
@@ -319,9 +358,17 @@ export function computeTodaysChanges(
   for (const r of rotation.slice(0, 3)) {
     const label = r.industry;
     if (r.delta >= 25 && !seen.has(label))
-      ups.push({ direction: "up", text: `${label} moved into leadership`, priority: r.delta * 0.6 });
+      ups.push({
+        direction: "up",
+        text: `${label} rotating into sector leadership — capital flows strengthening`,
+        priority: r.delta * 0.6,
+      });
     else if (r.delta <= -15 && !seen.has(label))
-      downs.push({ direction: "down", text: `${label} lost leadership`, priority: Math.abs(r.delta) * 0.6 });
+      downs.push({
+        direction: "down",
+        text: `${label} losing sector leadership — capital rotating into alternatives`,
+        priority: Math.abs(r.delta) * 0.6,
+      });
   }
 
   const sortedUps   = ups.sort((a, b)   => b.priority - a.priority).slice(0, 3);

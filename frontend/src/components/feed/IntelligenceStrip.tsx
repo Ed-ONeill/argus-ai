@@ -170,16 +170,44 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
   if (causal && causal.length > 20) return causal;
 
   const ind0     = (theme.related_industries ?? [])[0] ?? "the sector";
+  const ind1     = (theme.related_industries ?? [])[1];
   const eff0     = (theme.second_order_effects ?? [])[0];
   const safeName = chainTerminal(theme.name).toLowerCase();
+  const persist  = theme.persistence_cycles ?? 0;
+  const breadth  = theme.breadth_score ?? 0;
+  const delta    = theme.momentum_delta ?? 0;
 
-  if (theme.momentum_label === "accelerating")
-    return `Accelerating ${safeName} dynamics are improving earnings visibility and positioning in ${ind0}.`;
-  if (theme.cross_category_confirmed)
-    return `Cross-sector confirmation signals structural breadth — ${ind0} is the primary beneficiary.`;
-  if (theme.momentum_label === "strengthening")
-    return `Strengthening signal quality across ${theme.persistence_cycles} cycles supports continued positioning in ${ind0}.`;
-  return eff0 ?? `${ind0} is benefiting from improving ${safeName} momentum.`;
+  // Second-order effects are analyst-written — prefer over templates when substantive
+  if (eff0 && !isRawChain(eff0) && eff0.length > 25) return eff0;
+
+  if (theme.momentum_label === "accelerating") {
+    if (ind1)
+      return `${ind0} and ${ind1} are both gaining as ${safeName} accelerates, improving earnings visibility across both sectors.`;
+    if (persist >= 5)
+      return `${ind0} is in a sustained ${safeName} upswing — ${persist} consecutive cycles of signal strength support a high-conviction long.`;
+    if (breadth >= 70)
+      return `${ind0} benefits from broad ${safeName} signal — above-average breadth confirms this is a structural rather than isolated move.`;
+    return `${ind0} is gaining ground as ${safeName} accelerates — signal quality and breadth are both expanding.`;
+  }
+
+  if (theme.cross_category_confirmed) {
+    if (ind1)
+      return `Cross-sector confirmation across ${ind0} and ${ind1} signals structural momentum — this is a multi-sector, not single-category, move.`;
+    return `${ind0} is the primary beneficiary of cross-sector confirmation — structural breadth is extending beyond single-category leadership.`;
+  }
+
+  if (theme.momentum_label === "strengthening") {
+    if (persist >= 4)
+      return `${ind0} signal has strengthened for ${persist} consecutive cycles — persistence at this level supports continued positioning.`;
+    if (delta >= 15)
+      return `${ind0} is building meaningful momentum — a delta of +${delta} signals accelerating capital interest in the sector.`;
+    return `${ind0} signal quality is improving as ${safeName} gains conviction across tracked sources.`;
+  }
+
+  if (theme.momentum_label === "emerging")
+    return `${ind0} is establishing early signal presence in ${safeName} — monitor for cross-sector confirmation before sizing up.`;
+
+  return `${ind0} is benefiting from ${safeName} tailwinds — improving signal quality supports continued positioning.`;
 }
 
 /**
@@ -191,14 +219,30 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
   if (causal && causal.length > 20) return causal;
 
   const ind0     = (theme.related_industries ?? [])[0] ?? "the sector";
+  const ind1     = (theme.related_industries ?? [])[1];
   const eff0     = (theme.second_order_effects ?? [])[0];
   const safeName = chainTerminal(theme.name);
+  const delta    = Math.round(theme.momentum_delta ?? 0);
+  const persist  = theme.persistence_cycles ?? 0;
 
-  if (theme.momentum_label === "reversing")
-    return `${ind0} positioning faces multiple compression risk as signal quality degrades rapidly.`;
-  if (theme.momentum_label === "cooling")
-    return `${ind0} momentum is fading — delta at ${Math.round(theme.momentum_delta ?? 0)}, with risk of further deterioration.`;
-  return eff0 ?? `${ind0} is facing headwinds as ${safeName} weakens.`;
+  if (eff0 && !isRawChain(eff0) && eff0.length > 25) return eff0;
+
+  if (theme.momentum_label === "reversing") {
+    if (ind1)
+      return `${ind0} and ${ind1} face compression risk as ${safeName} enters reversal — reduce exposure across both sectors.`;
+    return `${ind0} positioning faces compression risk as ${safeName} enters reversal — signal deterioration is accelerating.`;
+  }
+
+  if (theme.momentum_label === "cooling") {
+    if (persist >= 3)
+      return `${ind0} has been cooling for ${persist} cycles with a delta of ${delta} — exit timing is becoming critical.`;
+    return `${ind0} momentum is fading — a delta of ${delta} signals weakening conviction and deteriorating positioning.`;
+  }
+
+  if (!(theme.cross_category_confirmed) && (theme.breadth_score ?? 0) < 40)
+    return `${ind0} signal lacks cross-sector confirmation — narrow breadth increases single-sector concentration risk.`;
+
+  return `${ind0} faces headwinds as ${safeName} weakens — monitor for further deterioration before adding to existing exposure.`;
 }
 
 /**
@@ -434,7 +478,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
               Leaders
             </p>
             <div className="space-y-[4px]">
-              {leaders.map((sig, i) => <RotationRow key={i} sig={sig} />)}
+              {leaders.map((sig, i) => <RotationRow key={i} sig={sig} themes={themes} isLeader={true} />)}
             </div>
           </div>
 
@@ -447,7 +491,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
               Laggards
             </p>
             <div className="space-y-[4px]">
-              {laggards.map((sig, i) => <RotationRow key={i} sig={sig} />)}
+              {laggards.map((sig, i) => <RotationRow key={i} sig={sig} themes={themes} isLeader={false} />)}
               {laggards.length === 0 && (
                 <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.20)" }}>
                   No laggards identified
@@ -555,24 +599,62 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
 
 // ── Rotation row ──────────────────────────────────────────────────────────────
 
-function RotationRow({ sig }: { sig: IndustryRotationSignal }) {
+function deriveRotationExplanation(
+  sig:      IndustryRotationSignal,
+  themes:   ThemeIntelligence[],
+  isLeader: boolean,
+): string {
+  const related  = themes.filter(t => (t.related_industries ?? []).includes(sig.industry));
+  const topName  = related[0] ? chainTerminal(related[0].name) : null;
+  const count    = related.length || sig.count;
+
+  if (isLeader) {
+    if (count >= 3)
+      return `${count} converging signals are directing capital inflows — broad sector leadership.`;
+    if (topName && count >= 2)
+      return `${topName} and related dynamics are strengthening flows into this sector.`;
+    if (topName)
+      return `${topName} is the primary driver of capital inflows.`;
+    if (sig.delta >= 30)
+      return "Strong cross-theme momentum is concentrating capital here.";
+    return "Improving signal quality is attracting rotation into this sector.";
+  } else {
+    if (topName && count >= 2)
+      return `${topName} and related deterioration are driving capital outflows.`;
+    if (topName)
+      return `${topName} deterioration is the primary driver of outflows.`;
+    if (sig.delta <= -25)
+      return "Weakening signals across multiple themes are accelerating outflows.";
+    return "Signal quality is declining, reducing conviction in this sector.";
+  }
+}
+
+function RotationRow({
+  sig, themes, isLeader,
+}: { sig: IndustryRotationSignal; themes: ThemeIntelligence[]; isLeader: boolean }) {
   const isPos = sig.delta > 0;
   const color = isPos ? "#10B981" : "#EF4444";
+  const expl  = deriveRotationExplanation(sig, themes, isLeader);
 
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span
-        className="text-[11.5px] truncate"
-        style={{ color: "rgba(255,255,255,0.78)" }}
-      >
-        {sig.industry}
-      </span>
-      <span
-        className="text-[10.5px] font-bold tabular-nums shrink-0"
-        style={{ color, fontVariantNumeric: "tabular-nums" }}
-      >
-        {isPos ? "+" : ""}{sig.delta}
-      </span>
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <span
+          className="text-[11.5px] truncate"
+          style={{ color: "rgba(255,255,255,0.78)" }}
+        >
+          {sig.industry}
+        </span>
+        <span
+          className="text-[10.5px] font-bold tabular-nums shrink-0"
+          style={{ color, fontVariantNumeric: "tabular-nums" }}
+        >
+          {isPos ? "+" : ""}{sig.delta}
+        </span>
+      </div>
+      <p className="text-[10px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.34)" }}>
+        {expl}
+      </p>
     </div>
   );
 }
