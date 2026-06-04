@@ -9,7 +9,7 @@ export function useFeed(initialParams: FeedParams = {}) {
   const [params, setParams] = useState<FeedParams>(initialParams);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isFetching, error } = useQuery<FeedResponse>({
+  const { data, isLoading, isPending, isFetching, error } = useQuery<FeedResponse>({
     queryKey: ["feed", params],
     queryFn: async () => {
       try {
@@ -42,6 +42,7 @@ export function useFeed(initialParams: FeedParams = {}) {
   return {
     data,
     isLoading,
+    isPending,
     isFetching,
     error,
     params,

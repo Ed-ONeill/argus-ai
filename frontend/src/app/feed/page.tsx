@@ -48,7 +48,7 @@ export default function FeedPage() {
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isFetching, error, params, refresh, updateParams } = useFeed();
+  const { data, isLoading, isPending, isFetching, error, params, refresh, updateParams } = useFeed();
   const { savedIds, toggleSave } = useSaved();
   const { hasNew, cacheAgeSeconds } = useFeedFreshness({
     currentGeneratedAt: data?.generated_at,
@@ -78,15 +78,25 @@ export default function FeedPage() {
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [params.categories, data?.generated_at]);
 
-  const allClusters = data?.clusters ?? [];
-
-  useEffect(() => {
-    if (error) console.error("[feed page] ✗ query error:", error);
-    else if (!isLoading && data === undefined) console.error("[feed page] ✗ data is undefined after load");
-  }, [data, error, isLoading]);
-
+  const allClusters    = data?.clusters ?? [];
   const visibleClusters = allClusters.slice(0, visibleCount);
   const hasMore         = visibleCount < allClusters.length;
+
+  useEffect(() => {
+    console.log("[feed]", {
+      isPending,
+      isLoading,
+      isFetching,
+      hasError: !!error,
+      errorMsg:  error instanceof Error ? error.message : String(error ?? ""),
+      dataKeys:  data ? Object.keys(data).join(", ") : "undefined",
+      clusters:  data?.clusters?.length ?? "n/a",
+      allClusters: allClusters.length,
+      visible:   visibleClusters.length,
+      params:    JSON.stringify(params),
+    });
+    if (error) console.error("[feed] ✗ query error:", error);
+  }, [data, error, isPending, isLoading, isFetching, allClusters.length, visibleClusters.length, params]);
 
   const handleSave = useCallback((item: FeedItem) => toggleSave(item), [toggleSave]);
 
@@ -252,7 +262,7 @@ export default function FeedPage() {
             savedIds={savedIds}
             newIds={newIds}
             onSave={handleSave}
-            isLoading={isLoading}
+            isLoading={isPending}
             watchedEntities={watchedEntities.size > 0 ? watchedEntities : undefined}
             themes={themes}
           />

@@ -7,7 +7,7 @@ async function get<T>(path: string, params?: Record<string, string | boolean>): 
   if (params) {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== "") qs.set(k, String(v));
+      if (v !== undefined && v !== "" && v !== false) qs.set(k, String(v));
     });
     const qstr = qs.toString();
     if (qstr) url += "?" + qstr;
