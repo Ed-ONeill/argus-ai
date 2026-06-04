@@ -2,15 +2,24 @@
 
 import { useMemo } from "react";
 import type { ThemeIntelligence } from "@/lib/types";
-import { getThemeChangeLeaderboard } from "@/lib/themeSignalDelta";
+import {
+  computeScorecard,
+  computeOpportunities,
+  computeRisks,
+  detectTransitions,
+  type BriefingScorecard,
+  type BriefingOpportunity,
+  type BriefingRisk,
+  type MomentumTransition,
+} from "@/lib/morningBriefingEngine";
 
-// ── Bloomberg-style change sentences from deterministic theme data ─────────────
+// ── Change sentence generation (deterministic, no API) ────────────────────────
 
 function generateThemeChanges(themes: ThemeIntelligence[]): string[] {
   const updates: string[] = [];
 
   for (const t of themes) {
-    if (updates.length >= 7) break;
+    if (updates.length >= 6) break;
 
     const name  = t.name;
     const delta = t.momentum_delta   ?? 0;
@@ -39,9 +48,9 @@ function generateThemeChanges(themes: ThemeIntelligence[]): string[] {
   }
 
   // Backfill if few high-signal events
-  if (updates.length < 4) {
+  if (updates.length < 3) {
     for (const t of themes) {
-      if (updates.length >= 6) break;
+      if (updates.length >= 5) break;
       const stories = t.contributing_story_count ?? 0;
       const ind0    = (t.related_industries ?? [])[0] ?? null;
       if (stories >= 5 && ind0) {
@@ -50,10 +59,38 @@ function generateThemeChanges(themes: ThemeIntelligence[]): string[] {
     }
   }
 
-  return updates.slice(0, 7);
+  return updates.slice(0, 6);
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Label helpers ─────────────────────────────────────────────────────────────
+
+const CONFIDENCE_ABBR: Record<string, string> = {
+  "High Conviction": "HC",
+  "Elevated":        "EL",
+  "Moderate":        "MO",
+  "Developing":      "DE",
+  "Speculative":     "SP",
+};
+
+const MOMENTUM_COLORS: Record<string, string> = {
+  accelerating:  "#10B981",
+  strengthening: "#34D399",
+  stable:        "rgba(255,255,255,0.30)",
+  cooling:       "#F59E0B",
+  reversing:     "#EF4444",
+  emerging:      "#A78BFA",
+};
+
+function confAbbr(label: string | undefined): string {
+  if (!label) return "—";
+  return CONFIDENCE_ABBR[label] ?? label.slice(0, 2).toUpperCase();
+}
+
+function momentumColor(label: string): string {
+  return MOMENTUM_COLORS[label] ?? "rgba(255,255,255,0.30)";
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 interface IntelligenceStripProps {
   themes: ThemeIntelligence[];
@@ -62,22 +99,17 @@ interface IntelligenceStripProps {
 export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
   if (themes.length === 0) return null;
 
-  const board   = useMemo(() => getThemeChangeLeaderboard(themes), [themes]);
-  const changes = useMemo(() => generateThemeChanges(themes),      [themes]);
+  const scorecard     = useMemo(() => computeScorecard(themes),     [themes]);
+  const opportunities = useMemo(() => computeOpportunities(themes), [themes]);
+  const risks         = useMemo(() => computeRisks(themes),         [themes]);
+  const transitions   = useMemo(() => detectTransitions(themes),    [themes]);
+  const changes       = useMemo(() => generateThemeChanges(themes), [themes]);
 
-  const newEvidence = useMemo(
-    () => [...themes]
-      .filter(t => (t.evidence_count ?? 0) >= 6 && (t.momentum_delta ?? 0) > 3)
-      .sort((a, b) => (b.evidence_count ?? 0) - (a.evidence_count ?? 0))
-      .slice(0, 3),
-    [themes],
-  );
+  const upgrades   = transitions.filter(t => t.direction === "upgrade");
+  const downgrades = transitions.filter(t => t.direction === "downgrade");
 
-  const hasBoard =
-    board.risers.length > 0 || board.decliners.length > 0 ||
-    board.broadening.length > 0 || board.narrowing.length > 0;
-
-  if (!hasBoard && changes.length === 0) return null;
+  const hasOppsOrRisks = opportunities.length > 0 || risks.length > 0;
+  if (!hasOppsOrRisks && changes.length === 0) return null;
 
   return (
     <div
@@ -87,71 +119,104 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
         border:     "1px solid rgba(255,255,255,0.07)",
       }}
     >
-      {/* Header */}
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div
-        className="px-4 py-2 flex items-center gap-2"
+        className="px-4 py-2 flex items-center justify-between"
         style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
       >
-        <div className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0"
-          style={{ background: "#52b0c8" }} />
+        <div className="flex items-center gap-2">
+          <div
+            className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0"
+            style={{ background: "#52b0c8" }}
+          />
+          <span
+            className="text-[8.5px] font-bold uppercase tracking-[0.20em]"
+            style={{ color: "rgba(255,255,255,0.35)" }}
+          >
+            Morning Briefing
+          </span>
+        </div>
         <span
-          className="text-[8.5px] font-bold uppercase tracking-[0.20em]"
-          style={{ color: "rgba(255,255,255,0.35)" }}
+          className="text-[8px] tabular-nums"
+          style={{ color: "rgba(255,255,255,0.18)" }}
         >
-          Today's Intelligence
+          {scorecard.total} themes
         </span>
       </div>
 
-      {/* Leaderboard rows */}
-      {hasBoard && (
-        <div className="px-4 py-3 space-y-2">
-          {board.risers.length > 0 && (
-            <BoardRow icon="▲" color="#10B981" label="Risers"
-              items={board.risers.map(t => ({
-                name:  t.name,
-                value: `+${Math.round(t.momentum_delta ?? 0)}`,
-              }))} />
+      {/* ── Scorecard ──────────────────────────────────────────────────────── */}
+      <ScorecardRow scorecard={scorecard} />
+
+      {/* ── Opportunities + Risks ───────────────────────────────────────────── */}
+      {hasOppsOrRisks && (
+        <div
+          style={{
+            display:             "grid",
+            gridTemplateColumns: "1fr 1fr",
+            borderTop:           "1px solid rgba(255,255,255,0.05)",
+          }}
+        >
+          <div
+            className="px-4 py-3"
+            style={{ borderRight: "1px solid rgba(255,255,255,0.05)" }}
+          >
+            <p
+              className="text-[7.5px] font-bold uppercase tracking-[0.18em] mb-2"
+              style={{ color: "rgba(16,185,129,0.55)" }}
+            >
+              ▲ Opportunities
+            </p>
+            {opportunities.length > 0
+              ? opportunities.map((opp, i) => <OpportunityRow key={i} opp={opp} />)
+              : <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.18)" }}>None identified</p>
+            }
+          </div>
+          <div className="px-4 py-3">
+            <p
+              className="text-[7.5px] font-bold uppercase tracking-[0.18em] mb-2"
+              style={{ color: "rgba(239,68,68,0.55)" }}
+            >
+              ▼ Risks
+            </p>
+            {risks.length > 0
+              ? risks.map((risk, i) => <RiskRow key={i} risk={risk} />)
+              : <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.18)" }}>No active risks</p>
+            }
+          </div>
+        </div>
+      )}
+
+      {/* ── Transition engine ──────────────────────────────────────────────── */}
+      {(upgrades.length > 0 || downgrades.length > 0) && (
+        <div
+          className="px-4 py-2.5 space-y-1.5"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+        >
+          {upgrades.length > 0 && (
+            <TransitionLine
+              label="↑ Upgrades"
+              labelColor="rgba(16,185,129,0.70)"
+              items={upgrades}
+              signalColor="#10B981"
+            />
           )}
-          {board.decliners.length > 0 && (
-            <BoardRow icon="▼" color="#EF4444" label="Decliners"
-              items={board.decliners.map(t => ({
-                name:  t.name,
-                value: `${Math.round(t.momentum_delta ?? 0)}`,
-              }))} />
-          )}
-          {board.broadening.length > 0 && (
-            <BoardRow icon="◈" color="#52b0c8" label="Broadening"
-              items={board.broadening.map(t => ({
-                name:  t.name,
-                value: t.cross_category_confirmed
-                  ? `${Math.round(t.breadth_score ?? 0)} ✓`
-                  : `${Math.round(t.breadth_score ?? 0)}`,
-              }))} />
-          )}
-          {board.narrowing.length > 0 && (
-            <BoardRow icon="▼" color="#F59E0B" label="Narrowing"
-              items={board.narrowing.map(t => ({
-                name:  t.name,
-                value: `${Math.round(t.breadth_score ?? 0)}`,
-              }))} />
-          )}
-          {newEvidence.length > 0 && (
-            <BoardRow icon="★" color="#A78BFA" label="Evidence"
-              items={newEvidence.map(t => ({
-                name:  t.name,
-                value: `${t.evidence_count ?? 0}e`,
-              }))} />
+          {downgrades.length > 0 && (
+            <TransitionLine
+              label="↓ Downgrades"
+              labelColor="rgba(239,68,68,0.70)"
+              items={downgrades}
+              signalColor="#EF4444"
+            />
           )}
         </div>
       )}
 
-      {/* Change feed */}
+      {/* ── Change feed ────────────────────────────────────────────────────── */}
       {changes.length > 0 && (
         <div
           className="px-4 py-3"
-          style={{
-            borderTop: hasBoard ? "1px solid rgba(255,255,255,0.05)" : undefined,
-          }}
+          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
         >
           <p
             className="text-[7.5px] font-bold uppercase tracking-[0.18em] mb-2"
@@ -162,10 +227,16 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
           <div className="space-y-1.5">
             {changes.map((line, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className="text-[8px] shrink-0 mt-px"
-                  style={{ color: "rgba(255,255,255,0.22)" }}>·</span>
-                <p className="text-[11.5px] leading-snug"
-                  style={{ color: "rgba(255,255,255,0.60)" }}>
+                <span
+                  className="text-[8px] shrink-0 mt-px"
+                  style={{ color: "rgba(255,255,255,0.22)" }}
+                >
+                  ·
+                </span>
+                <p
+                  className="text-[11.5px] leading-snug"
+                  style={{ color: "rgba(255,255,255,0.60)" }}
+                >
                   {line}
                 </p>
               </div>
@@ -173,49 +244,136 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
           </div>
         </div>
       )}
+
     </div>
   );
 }
 
-// ── BoardRow ──────────────────────────────────────────────────────────────────
+// ── Scorecard row ─────────────────────────────────────────────────────────────
 
-function BoardRow({
-  icon, color, label, items,
+function ScorecardRow({ scorecard }: { scorecard: BriefingScorecard }) {
+  const items = [
+    { label: "Accelerating",  count: scorecard.accelerating,   color: "#10B981"              },
+    { label: "Strengthening", count: scorecard.strengthening,  color: "#34D399"              },
+    { label: "Cooling",       count: scorecard.cooling,        color: "#F59E0B"              },
+    { label: "Reversing",     count: scorecard.reversing,      color: "#EF4444"              },
+    { label: "Emerging",      count: scorecard.emerging,       color: "#A78BFA"              },
+    { label: "High Conv",     count: scorecard.highConviction, color: "rgba(167,139,250,0.85)" },
+  ].filter(x => x.count > 0);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="px-4 py-2.5 flex items-center flex-wrap gap-x-5 gap-y-1.5">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span
+            className="text-[12px] font-bold tabular-nums"
+            style={{ color: item.color }}
+          >
+            {item.count}
+          </span>
+          <span
+            className="text-[8.5px]"
+            style={{ color: "rgba(255,255,255,0.30)" }}
+          >
+            {item.label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Opportunity row ───────────────────────────────────────────────────────────
+
+function OpportunityRow({ opp }: { opp: BriefingOpportunity }) {
+  const { theme } = opp;
+  const delta     = theme.momentum_delta ?? 0;
+
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span
+        className="text-[10.5px] truncate flex-1 min-w-0"
+        style={{ color: "rgba(255,255,255,0.72)" }}
+      >
+        {theme.name}
+      </span>
+      <span
+        className="text-[8px] font-bold shrink-0"
+        style={{ color: "rgba(255,255,255,0.26)", fontFamily: "monospace" }}
+      >
+        {confAbbr(theme.confidence_label)}
+      </span>
+      <span
+        className="text-[9px] font-bold tabular-nums shrink-0"
+        style={{ color: momentumColor(theme.momentum_label), minWidth: 26, textAlign: "right" }}
+      >
+        +{Math.round(delta)}
+      </span>
+    </div>
+  );
+}
+
+// ── Risk row ──────────────────────────────────────────────────────────────────
+
+function RiskRow({ risk }: { risk: BriefingRisk }) {
+  const { theme } = risk;
+  const delta     = theme.momentum_delta ?? 0;
+
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span
+        className="text-[10.5px] truncate flex-1 min-w-0"
+        style={{ color: "rgba(255,255,255,0.72)" }}
+      >
+        {theme.name}
+      </span>
+      <span
+        className="text-[8px] font-bold shrink-0 uppercase tracking-wide"
+        style={{ color: "rgba(239,68,68,0.55)", fontFamily: "monospace" }}
+      >
+        {theme.momentum_label === "reversing" ? "REV" : "COOL"}
+      </span>
+      <span
+        className="text-[9px] font-bold tabular-nums shrink-0"
+        style={{ color: "#EF4444", minWidth: 26, textAlign: "right" }}
+      >
+        {Math.round(delta)}
+      </span>
+    </div>
+  );
+}
+
+// ── Transition line ───────────────────────────────────────────────────────────
+
+function TransitionLine({
+  label, labelColor, items, signalColor,
 }: {
-  icon:  string;
-  color: string;
-  label: string;
-  items: Array<{ name: string; value: string }>;
+  label:       string;
+  labelColor:  string;
+  items:       MomentumTransition[];
+  signalColor: string;
 }) {
   return (
-    <div className="flex items-start gap-2">
-      <div className="flex items-center gap-1.5 shrink-0" style={{ width: 90 }}>
-        <span className="text-[9px]" style={{ color }}>{icon}</span>
-        <span
-          className="text-[8.5px] font-bold uppercase tracking-[0.08em]"
-          style={{ color: "rgba(255,255,255,0.28)" }}
-        >
-          {label}
+    <div className="flex items-center flex-wrap gap-x-4 gap-y-1">
+      <span
+        className="text-[7.5px] font-bold uppercase tracking-[0.14em] shrink-0"
+        style={{ color: labelColor }}
+      >
+        {label}
+      </span>
+      {items.map((item, i) => (
+        <span key={i} className="text-[10.5px]">
+          <span style={{ color: "rgba(255,255,255,0.75)", fontWeight: 500 }}>
+            {item.theme.name}
+          </span>
+          {" "}
+          <span style={{ color: signalColor, opacity: 0.75 }}>
+            {item.label}
+          </span>
         </span>
-      </div>
-      <div className="flex items-center flex-wrap gap-x-5 gap-y-1 flex-1 min-w-0">
-        {items.map((item, i) => (
-          <div key={i} className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="text-[10.5px] truncate"
-              style={{ color: "rgba(255,255,255,0.68)", maxWidth: 140 }}
-            >
-              {item.name}
-            </span>
-            <span
-              className="text-[8.5px] font-mono font-bold tabular-nums shrink-0"
-              style={{ color }}
-            >
-              {item.value}
-            </span>
-          </div>
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
