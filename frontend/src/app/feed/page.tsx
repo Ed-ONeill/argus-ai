@@ -22,7 +22,18 @@ import { ThemeTerminal } from "@/components/themes/ThemeTerminal";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
-import type { FeedItem, ThemeIntelligence } from "@/lib/types";
+import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
+
+function itemsToFallbackClusters(items: FeedItem[]): StoryCluster[] {
+  return items.map(item => ({
+    id:            item.id,
+    primary:       item,
+    related:       [],
+    cluster_score: item.signal_score / 100,
+    theme_label:   item.category,
+    story_count:   1,
+  }));
+}
 
 function formatAge(seconds: number): string {
   if (seconds < 60)   return "just now";
@@ -78,7 +89,9 @@ export default function FeedPage() {
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [params.categories, data?.generated_at]);
 
-  const allClusters    = data?.clusters ?? [];
+  const allClusters    = data?.clusters?.length
+    ? data.clusters
+    : itemsToFallbackClusters(data?.items ?? []);
   const visibleClusters = allClusters.slice(0, visibleCount);
   const hasMore         = visibleCount < allClusters.length;
 
