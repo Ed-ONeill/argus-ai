@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { ThemeIntelligence } from "@/lib/types";
+import type { MarketState } from "@/hooks/useMarketState";
 import { useMarketState } from "@/hooks/useMarketState";
 import {
   computeScorecard,
@@ -12,6 +13,7 @@ import {
   type BriefingScorecard,
   type BriefingOpportunity,
   type BriefingRisk,
+  type MomentumTransition,
   type IndustryRotationSignal,
 } from "@/lib/morningBriefingEngine";
 
@@ -20,10 +22,16 @@ import {
 const REGIME_COLOR: Record<string, string> = {
   "risk-on":  "#52b0c8",
   "risk-off": "#c05858",
-  "neutral":  "#8898b8",
+  "neutral":  "#7888a8",
 };
 
-const CONFIDENCE_ABBR: Record<string, string> = {
+const REGIME_LABEL: Record<string, string> = {
+  "risk-on":  "Risk-On",
+  "risk-off": "Risk-Off",
+  "neutral":  "Neutral",
+};
+
+const CONF_ABBR: Record<string, string> = {
   "High Conviction": "HC",
   "Elevated":        "EL",
   "Moderate":        "MO",
@@ -31,68 +39,91 @@ const CONFIDENCE_ABBR: Record<string, string> = {
   "Speculative":     "SP",
 };
 
-const MOMENTUM_COLOR: Record<string, string> = {
-  accelerating:  "#10B981",
-  strengthening: "#34D399",
-  stable:        "rgba(255,255,255,0.32)",
-  cooling:       "#F59E0B",
-  reversing:     "#EF4444",
-  emerging:      "#A78BFA",
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const MOMENTUM_ABBR: Record<string, string> = {
-  accelerating:  "ACCEL",
-  strengthening: "STRNG",
-  stable:        "STBL",
-  cooling:       "COOL",
-  reversing:     "REV",
-  emerging:      "EMRG",
-};
+function deriveToneLabel(ms: MarketState): string | null {
+  const { riskRegime, ratesRegime, dollarRegime, volRegime } = ms;
+  if (riskRegime === "risk-on"  && ratesRegime === "falling") return "Dovish";
+  if (riskRegime === "risk-on"  && ratesRegime === "rising")  return "Hawkish";
+  if (riskRegime === "risk-off" && ratesRegime === "rising")  return "Hawkish";
+  if (riskRegime === "risk-off" && dollarRegime === "strong") return "Dollar Bid";
+  if (volRegime === "elevated"  || volRegime === "high")
+    return ratesRegime === "rising" ? "Yield Shock" : "Vol Elevated";
+  if (ratesRegime === "falling") return "Easing";
+  if (dollarRegime === "strong") return "Dollar Bid";
+  if (dollarRegime === "weak")   return "Dollar Soft";
+  return null;
+}
 
-// ── Change sentence generation ────────────────────────────────────────────────
+// ── What Changed Today — analyst-observation prose ────────────────────────────
 
-function generateThemeChanges(themes: ThemeIntelligence[]): string[] {
+function generateWhatChangedToday(
+  themes:     ThemeIntelligence[],
+  upgrades:   MomentumTransition[],
+  downgrades: MomentumTransition[],
+): string[] {
   const updates: string[] = [];
+  const seen    = new Set<string>();
 
+  const push = (s: string, key: string) => {
+    if (!seen.has(key) && updates.length < 3) { seen.add(key); updates.push(s); }
+  };
+
+  // Priority: transition signals read naturally as analyst observations
+  for (const tr of [...downgrades, ...upgrades].slice(0, 2)) {
+    const ind0 = (tr.theme.related_industries ?? [])[0];
+    const name = tr.theme.name;
+    const state = tr.label.replace("→ ", "").toLowerCase();
+    if (tr.direction === "downgrade" && ind0) {
+      push(`${ind0} weakened as ${name} turned ${state}.`, name + "-dn");
+    } else if (tr.direction === "upgrade" && ind0) {
+      push(`${ind0} gained momentum as ${name} turned ${state}.`, name + "-up");
+    } else if (tr.direction === "downgrade") {
+      push(`${name} turned ${state} — watch for further deterioration.`, name + "-dn");
+    } else {
+      push(`${name} turned ${state} — momentum building.`, name + "-up");
+    }
+  }
+
+  // Theme-level observations
   for (const t of themes) {
-    if (updates.length >= 5) break;
+    if (updates.length >= 3) break;
     const delta = t.momentum_delta ?? 0;
     const inds  = t.related_industries ?? [];
-    const ind0  = inds[0] ?? null;
-    const ind1  = inds[1] ?? null;
+    const ind0  = inds[0];
+    const ind1  = inds[1];
+    const name  = t.name;
 
-    if (t.momentum_label === "accelerating" && delta >= 10) {
-      updates.push(`${t.name} accelerated${ind0 ? ` — ${ind0} leading` : ""}`);
-    } else if (t.cross_category_confirmed && (t.breadth_score ?? 0) >= 65 && ind0 && ind1) {
-      updates.push(`${t.name} broadened into ${ind0} and ${ind1}`);
-    } else if (t.cross_category_confirmed && ind0) {
-      updates.push(`${t.name} confirmed cross-sector into ${ind0}`);
-    } else if (t.momentum_label === "reversing" || delta <= -12) {
-      updates.push(`${t.name} reversal — delta ${Math.round(delta)}`);
-    } else if ((t.persistence_cycles ?? 0) >= 8) {
-      updates.push(`${t.name} — ${t.persistence_cycles}-cycle persistence`);
-    } else if ((t.evidence_count ?? 0) >= 8 && delta > 0) {
-      updates.push(`${t.name} — ${t.evidence_count} confirming sources`);
-    } else if ((t.breadth_score ?? 0) < 25 && delta < -5 && ind0) {
-      updates.push(`${t.name} narrowing to ${ind0}`);
-    } else if (t.momentum_label === "strengthening" && t.signal_strength === "strong") {
-      updates.push(`${t.name} strengthening — elevated signal quality`);
-    }
+    if (t.momentum_label === "accelerating" && delta >= 10 && ind0)
+      push(`${ind0} gained leadership as ${name} accelerated.`, name);
+    else if (t.cross_category_confirmed && (t.breadth_score ?? 0) >= 65 && ind0)
+      push(`${ind1 ? `${ind0} and ${ind1}` : ind0} breadth improved on ${name} cross-sector confirmation.`, name);
+    else if (t.momentum_label === "reversing" && ind0)
+      push(`${ind0} weakened as ${name} entered reversal territory.`, name);
+    else if (delta <= -12 && ind0)
+      push(`${ind0} signals deteriorated on ${name} decline.`, name);
+    else if ((t.persistence_cycles ?? 0) >= 8 && ind0)
+      push(`${name} held structural signal for ${t.persistence_cycles} cycles — ${ind0} primary exposure.`, name);
+    else if ((t.evidence_count ?? 0) >= 8 && delta > 0 && ind0)
+      push(`${ind0} sources broadened on ${name} confirmation.`, name);
+    else if (t.momentum_label === "cooling" && delta < -5 && ind0)
+      push(`${ind0} momentum softened as ${name} cooled.`, name);
+    else if (t.momentum_label === "strengthening" && t.signal_strength === "strong" && ind0)
+      push(`${ind0} signal quality improved on ${name} strengthening.`, name);
   }
 
   // Backfill
-  if (updates.length < 3) {
+  if (updates.length < 2) {
     for (const t of themes) {
-      if (updates.length >= 4) break;
+      if (updates.length >= 3) break;
+      const ind0    = (t.related_industries ?? [])[0];
       const stories = t.contributing_story_count ?? 0;
-      const ind0    = (t.related_industries ?? [])[0] ?? null;
-      if (stories >= 5 && ind0) {
-        updates.push(`${t.name} — ${stories} sources, ${ind0}`);
-      }
+      if (stories >= 4 && ind0)
+        push(`${t.name} drawing ${stories} sources across ${ind0}.`, t.name + "-bf");
     }
   }
 
-  return updates.slice(0, 5);
+  return updates;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -104,161 +135,183 @@ interface IntelligenceStripProps {
 export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
   const ms = useMarketState();
 
-  const scorecard  = useMemo(() => computeScorecard(themes),         [themes]);
-  const opps       = useMemo(() => computeOpportunities(themes),     [themes]);
-  const risks      = useMemo(() => computeRisks(themes),             [themes]);
-  const rotation   = useMemo(() => computeIndustryRotation(themes),  [themes]);
-  const transitions= useMemo(() => detectTransitions(themes),        [themes]);
-  const changes    = useMemo(() => generateThemeChanges(themes),     [themes]);
-
-  if (themes.length === 0) return null;
-
-  const regimeColor  = REGIME_COLOR[ms.riskRegime] ?? "#8898b8";
-  const regimeLabel  = ms.riskRegime === "risk-on"  ? "Risk-On"  :
-                       ms.riskRegime === "risk-off" ? "Risk-Off" : "Neutral";
-  const volLabel     = ms.volRegime === "high" || ms.volRegime === "elevated"
-                         ? " · Vol↑"
-                         : ms.volRegime === "low" ? " · Vol↓" : "";
-  const trendLabel   = ms.trend.riskDirection !== "stable" ? ` · ${ms.trend.label}` : "";
+  const scorecard   = useMemo(() => computeScorecard(themes),        [themes]);
+  const opps        = useMemo(() => computeOpportunities(themes),    [themes]);
+  const risks       = useMemo(() => computeRisks(themes),            [themes]);
+  const rotation    = useMemo(() => computeIndustryRotation(themes), [themes]);
+  const transitions = useMemo(() => detectTransitions(themes),       [themes]);
 
   const upgrades   = transitions.filter(t => t.direction === "upgrade");
   const downgrades = transitions.filter(t => t.direction === "downgrade");
-  const hasTransitions = upgrades.length > 0 || downgrades.length > 0;
+  const changes    = useMemo(
+    () => generateWhatChangedToday(themes, upgrades, downgrades),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [themes, transitions],
+  );
+
+  if (themes.length === 0) return null;
+
+  const regimeColor = REGIME_COLOR[ms.riskRegime] ?? "#7888a8";
+  const regimeLabel = REGIME_LABEL[ms.riskRegime] ?? "Neutral";
+  const toneLabel   = deriveToneLabel(ms);
+
+  const scorecardChips = [
+    { label: "Accel",  count: scorecard.accelerating,   color: "#10B981" },
+    { label: "Strng",  count: scorecard.strengthening,  color: "#34D399" },
+    { label: "Emrg",   count: scorecard.emerging,       color: "#A78BFA" },
+    { label: "Cool",   count: scorecard.cooling,        color: "#F59E0B" },
+    { label: "Rev",    count: scorecard.reversing,      color: "#EF4444" },
+    { label: "HC",     count: scorecard.highConviction, color: "rgba(167,139,250,0.90)" },
+  ].filter(x => x.count > 0);
+
+  // Top rotation: 2-3 positive, 1-2 negative, max 4 total
+  const rotationPos = rotation.filter(r => r.delta > 0).slice(0, 3);
+  const rotationNeg = rotation.filter(r => r.delta < 0).slice(0, 2);
+  const rotationDisplay = [...rotationPos, ...rotationNeg].slice(0, 4);
 
   return (
     <div
       className="rounded-xl mb-5 overflow-hidden"
       style={{
-        background:  "rgba(3,6,15,0.96)",
-        border:      "1px solid rgba(255,255,255,0.07)",
-        borderLeft:  `2px solid ${regimeColor}40`,
+        background: "rgba(3,6,15,0.96)",
+        border:     "1px solid rgba(255,255,255,0.07)",
+        borderLeft: `2px solid ${regimeColor}50`,
       }}
     >
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Market Regime header ─────────────────────────────────────────────── */}
       <div
-        className="px-4 py-2 flex items-center justify-between"
+        className="px-4 pt-2.5 pb-2"
         style={{ borderBottom: "1px solid rgba(255,255,255,0.055)" }}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse"
-            style={{ background: regimeColor }} />
-          <span className="text-[8.5px] font-bold uppercase tracking-[0.20em]"
-            style={{ color: "rgba(255,255,255,0.35)" }}>
-            Morning Briefing
+        {/* Row 1: label + theme count */}
+        <div className="flex items-center justify-between mb-1">
+          <span
+            className="text-[7px] font-bold uppercase tracking-[0.22em]"
+            style={{ color: "rgba(255,255,255,0.22)" }}
+          >
+            Market Regime
           </span>
-          <div className="h-3 w-px shrink-0" style={{ background: "rgba(255,255,255,0.08)" }} />
-          <span className="text-[10px] font-semibold" style={{ color: regimeColor }}>
-            {regimeLabel}
+          <span className="text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.18)" }}>
+            {scorecard.total} themes
           </span>
-          {(volLabel || trendLabel) && (
-            <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-              {volLabel}{trendLabel}
+        </div>
+        {/* Row 2: regime value + scorecard chips */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              className="w-2 h-2 rounded-full shrink-0 animate-pulse"
+              style={{ background: regimeColor }}
+            />
+            <span
+              className="text-[13px] font-bold leading-none"
+              style={{ color: regimeColor }}
+            >
+              {regimeLabel}
             </span>
+            {toneLabel && (
+              <>
+                <span style={{ color: "rgba(255,255,255,0.20)", fontSize: 11 }}>·</span>
+                <span
+                  className="text-[11px] font-medium leading-none"
+                  style={{ color: "rgba(255,255,255,0.55)" }}
+                >
+                  {toneLabel}
+                </span>
+              </>
+            )}
+          </div>
+          {scorecardChips.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              {scorecardChips.map((c, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <span
+                    className="text-[11px] font-bold tabular-nums leading-none"
+                    style={{ color: c.color }}
+                  >
+                    {c.count}
+                  </span>
+                  <span
+                    className="text-[7.5px]"
+                    style={{ color: "rgba(255,255,255,0.26)" }}
+                  >
+                    {c.label}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-        <span className="text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.18)" }}>
-          {scorecard.total} themes
-        </span>
       </div>
 
-      {/* ── Scorecard ────────────────────────────────────────────────────────── */}
-      <ScorecardRow scorecard={scorecard} />
+      {/* ── Industry Rotation ─────────────────────────────────────────────────── */}
+      {rotationDisplay.length > 0 && (
+        <div
+          className="px-4 py-2"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+        >
+          <p
+            className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
+            style={{ color: "rgba(255,255,255,0.20)" }}
+          >
+            Rotation
+          </p>
+          {rotationDisplay.map((sig, i) => (
+            <RotationRow key={i} sig={sig} />
+          ))}
+        </div>
+      )}
 
       {/* ── Opportunities | Risks ────────────────────────────────────────────── */}
-      <div style={{
-        display:             "grid",
-        gridTemplateColumns: "1fr 1fr",
-        borderTop:           "1px solid rgba(255,255,255,0.05)",
-      }}>
-
-        {/* Opportunities */}
-        <div className="px-4 py-2.5"
-          style={{ borderRight: "1px solid rgba(255,255,255,0.05)" }}>
-          <p className="text-[7px] font-bold uppercase tracking-[0.20em] mb-1.5"
-            style={{ color: "rgba(16,185,129,0.55)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+        <div
+          className="px-4 py-2.5"
+          style={{ borderRight: "1px solid rgba(255,255,255,0.05)" }}
+        >
+          <p
+            className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
+            style={{ color: "rgba(16,185,129,0.55)" }}
+          >
             ▲ Opportunities
           </p>
           {opps.map((opp, i) => <OppRow key={i} opp={opp} />)}
         </div>
-
-        {/* Risks */}
         <div className="px-4 py-2.5">
-          <p className="text-[7px] font-bold uppercase tracking-[0.20em] mb-1.5"
-            style={{ color: "rgba(239,68,68,0.55)" }}>
+          <p
+            className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
+            style={{ color: "rgba(239,68,68,0.55)" }}
+          >
             ▼ Risks
           </p>
           {risks.map((risk, i) => <RiskRow key={i} risk={risk} />)}
         </div>
-
       </div>
 
-      {/* ── Industry Rotation ─────────────────────────────────────────────────── */}
-      {rotation.length > 0 && (
-        <div className="px-4 py-2"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[7px] font-bold uppercase tracking-[0.18em] shrink-0"
-              style={{ color: "rgba(255,255,255,0.22)" }}>
-              Rotation
-            </span>
-            {rotation.map((sig, i) => (
-              <RotationChip key={i} sig={sig} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Transitions (only when present) ─────────────────────────────────── */}
-      {hasTransitions && (
-        <div className="px-4 py-2 space-y-1"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-          {upgrades.length > 0 && (
-            <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5">
-              <span className="text-[7px] font-bold uppercase tracking-[0.14em] shrink-0"
-                style={{ color: "rgba(16,185,129,0.65)" }}>
-                ↑ Upgrades
-              </span>
-              {upgrades.map((u, i) => (
-                <span key={i} className="text-[10px]">
-                  <span style={{ color: "rgba(255,255,255,0.72)", fontWeight: 500 }}>{u.theme.name}</span>
-                  {" "}<span style={{ color: "#10B981", opacity: 0.70 }}>{u.label}</span>
-                </span>
-              ))}
-            </div>
-          )}
-          {downgrades.length > 0 && (
-            <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5">
-              <span className="text-[7px] font-bold uppercase tracking-[0.14em] shrink-0"
-                style={{ color: "rgba(239,68,68,0.65)" }}>
-                ↓ Downgrades
-              </span>
-              {downgrades.map((d, i) => (
-                <span key={i} className="text-[10px]">
-                  <span style={{ color: "rgba(255,255,255,0.72)", fontWeight: 500 }}>{d.theme.name}</span>
-                  {" "}<span style={{ color: "#EF4444", opacity: 0.70 }}>{d.label}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Change feed ──────────────────────────────────────────────────────── */}
+      {/* ── What Changed Today ────────────────────────────────────────────────── */}
       {changes.length > 0 && (
-        <div className="px-4 py-2.5"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-          <p className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
-            style={{ color: "rgba(255,255,255,0.18)" }}>
-            Changes
+        <div
+          className="px-4 py-2.5"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+        >
+          <p
+            className="text-[7px] font-bold uppercase tracking-[0.18em] mb-1.5"
+            style={{ color: "rgba(255,255,255,0.20)" }}
+          >
+            What Changed Today
           </p>
           <div className="space-y-1">
             {changes.map((line, i) => (
               <div key={i} className="flex items-start gap-1.5">
-                <span className="text-[8px] shrink-0 mt-px"
-                  style={{ color: "rgba(255,255,255,0.20)" }}>·</span>
-                <p className="text-[11px] leading-snug"
-                  style={{ color: "rgba(255,255,255,0.58)" }}>
+                <span
+                  className="text-[8px] shrink-0 mt-[2px]"
+                  style={{ color: "rgba(255,255,255,0.20)" }}
+                >
+                  ·
+                </span>
+                <p
+                  className="text-[11px] leading-snug"
+                  style={{ color: "rgba(255,255,255,0.60)" }}
+                >
                   {line}
                 </p>
               </div>
@@ -271,34 +324,29 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
   );
 }
 
-// ── Scorecard row ─────────────────────────────────────────────────────────────
+// ── Rotation row (vertical, distinct positive/negative) ───────────────────────
 
-function ScorecardRow({ scorecard }: { scorecard: BriefingScorecard }) {
-  const items = [
-    { label: "Accel",  count: scorecard.accelerating,   color: "#10B981"              },
-    { label: "Strong", count: scorecard.strengthening,  color: "#34D399"              },
-    { label: "Emrg",   count: scorecard.emerging,       color: "#A78BFA"              },
-    { label: "Cooling",count: scorecard.cooling,        color: "#F59E0B"              },
-    { label: "Rev",    count: scorecard.reversing,      color: "#EF4444"              },
-    { label: "HC",     count: scorecard.highConviction, color: "rgba(167,139,250,0.80)" },
-  ].filter(x => x.count > 0);
-
-  if (items.length === 0) return null;
+function RotationRow({ sig }: { sig: IndustryRotationSignal }) {
+  const isPos = sig.delta > 0;
+  const color = isPos ? "#10B981" : "#EF4444";
 
   return (
-    <div className="px-4 py-2 flex items-center flex-wrap gap-x-4 gap-y-1">
-      {items.map((item, i) => (
-        <div key={i} className="flex items-center gap-1">
-          <span className="text-[11.5px] font-bold tabular-nums"
-            style={{ color: item.color, fontVariantNumeric: "tabular-nums" }}>
-            {item.count}
-          </span>
-          <span className="text-[8px] font-medium"
-            style={{ color: "rgba(255,255,255,0.28)" }}>
-            {item.label}
-          </span>
-        </div>
-      ))}
+    <div className="flex items-center gap-2 py-[1px]">
+      <span className="text-[10px] font-bold w-3 shrink-0 leading-none" style={{ color }}>
+        {isPos ? "↑" : "↓"}
+      </span>
+      <span
+        className="text-[11px] flex-1 leading-none"
+        style={{ color: "rgba(255,255,255,0.72)" }}
+      >
+        {sig.industry}
+      </span>
+      <span
+        className="text-[10px] font-bold tabular-nums shrink-0 leading-none"
+        style={{ color }}
+      >
+        {isPos ? "+" : ""}{sig.delta}
+      </span>
     </div>
   );
 }
@@ -307,29 +355,43 @@ function ScorecardRow({ scorecard }: { scorecard: BriefingScorecard }) {
 
 function OppRow({ opp }: { opp: BriefingOpportunity }) {
   const { theme } = opp;
-  const delta     = theme.momentum_delta ?? 0;
-  const abbr      = CONFIDENCE_ABBR[theme.confidence_label ?? ""] ?? "—";
-  const momColor  = MOMENTUM_COLOR[theme.momentum_label] ?? "rgba(255,255,255,0.32)";
-  const momAbbr   = MOMENTUM_ABBR[theme.momentum_label] ?? "—";
+  const delta  = theme.momentum_delta ?? 0;
+  const conf   = Math.max(0, Math.min(100, theme.confidence ?? 0));
+  const abbr   = CONF_ABBR[theme.confidence_label ?? ""] ?? "—";
+  const dColor = delta >= 0 ? "#10B981" : "#F59E0B";
 
   return (
-    <div className="flex items-center gap-1.5 py-[2px]">
-      <span className="text-[10.5px] truncate flex-1 min-w-0"
-        style={{ color: "rgba(255,255,255,0.72)" }}>
-        {theme.name}
-      </span>
-      <span className="text-[7.5px] font-bold shrink-0 tabular-nums"
-        style={{ color: "rgba(255,255,255,0.24)", fontFamily: "monospace" }}>
-        {abbr}
-      </span>
-      <span className="text-[7.5px] font-bold shrink-0 tabular-nums"
-        style={{ color: momColor, fontFamily: "monospace", minWidth: 30, textAlign: "right" }}>
-        {momAbbr}
-      </span>
-      <span className="text-[9px] font-bold tabular-nums shrink-0"
-        style={{ color: delta >= 0 ? "#10B981" : "#F59E0B", minWidth: 22, textAlign: "right" }}>
-        {delta >= 0 ? "+" : ""}{Math.round(delta)}
-      </span>
+    <div className="py-[2px]">
+      <div className="flex items-center gap-1.5">
+        <span
+          className="text-[10.5px] truncate flex-1 min-w-0 leading-none"
+          style={{ color: "rgba(255,255,255,0.75)" }}
+        >
+          {theme.name}
+        </span>
+        <span
+          className="text-[7.5px] font-bold shrink-0"
+          style={{ color: "rgba(255,255,255,0.25)", fontFamily: "monospace" }}
+        >
+          {abbr}
+        </span>
+        {/* Conviction bar */}
+        <div
+          className="shrink-0 rounded-full overflow-hidden"
+          style={{ width: 34, height: 3, background: "rgba(255,255,255,0.06)" }}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${conf}%`, background: "#10B981", opacity: 0.40 }}
+          />
+        </div>
+        <span
+          className="text-[9px] font-bold tabular-nums shrink-0 leading-none"
+          style={{ color: dColor, minWidth: 24, textAlign: "right" }}
+        >
+          {delta >= 0 ? "+" : ""}{Math.round(delta)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -338,53 +400,56 @@ function OppRow({ opp }: { opp: BriefingOpportunity }) {
 
 function RiskRow({ risk }: { risk: BriefingRisk }) {
   const { theme } = risk;
-  const delta     = theme.momentum_delta ?? 0;
-  const momAbbr   = MOMENTUM_ABBR[theme.momentum_label] ?? "—";
-  const isActive  = theme.momentum_label === "reversing" || theme.momentum_label === "cooling";
+  const delta    = theme.momentum_delta ?? 0;
+  const conf     = Math.max(0, Math.min(100, theme.confidence ?? 0));
+  const isActive = theme.momentum_label === "reversing" || theme.momentum_label === "cooling";
+  const abbr     = theme.momentum_label === "reversing" ? "REV"
+                 : theme.momentum_label === "cooling"   ? "COOL"
+                 : theme.momentum_label === "stable"    ? "STBL" : "—";
 
   return (
-    <div className="flex items-center gap-1.5 py-[2px]">
-      <span className="text-[10.5px] truncate flex-1 min-w-0"
-        style={{ color: "rgba(255,255,255,0.72)" }}>
-        {theme.name}
-      </span>
-      <span className="text-[7.5px] font-bold shrink-0"
-        style={{
-          color:       isActive ? "rgba(239,68,68,0.65)" : "rgba(255,255,255,0.24)",
-          fontFamily:  "monospace",
-          minWidth:    30,
-          textAlign:   "right",
-        }}>
-        {momAbbr}
-      </span>
-      <span className="text-[9px] font-bold tabular-nums shrink-0"
-        style={{ color: delta < 0 ? "#EF4444" : "rgba(255,255,255,0.32)", minWidth: 22, textAlign: "right" }}>
-        {delta >= 0 ? "+" : ""}{Math.round(delta)}
-      </span>
-    </div>
-  );
-}
-
-// ── Rotation chip ─────────────────────────────────────────────────────────────
-
-function RotationChip({ sig }: { sig: IndustryRotationSignal }) {
-  const arrow = sig.delta > 3 ? "↑" : sig.delta < -3 ? "↓" : "→";
-  const color = sig.delta > 3 ? "#10B981" : sig.delta < -3 ? "#EF4444" : "rgba(255,255,255,0.32)";
-
-  return (
-    <div className="flex items-center gap-0.5">
-      <span className="text-[9.5px] font-medium"
-        style={{ color: "rgba(255,255,255,0.52)" }}>
-        {sig.industry}
-      </span>
-      <span className="text-[9px] font-bold" style={{ color }}>
-        {arrow}
-      </span>
-      {Math.abs(sig.delta) >= 3 && (
-        <span className="text-[8px] tabular-nums font-bold" style={{ color }}>
-          {Math.abs(sig.delta)}
+    <div className="py-[2px]">
+      <div className="flex items-center gap-1.5">
+        <span
+          className="text-[10.5px] truncate flex-1 min-w-0 leading-none"
+          style={{ color: "rgba(255,255,255,0.75)" }}
+        >
+          {theme.name}
         </span>
-      )}
+        <span
+          className="text-[7.5px] font-bold shrink-0"
+          style={{
+            color:      isActive ? "rgba(239,68,68,0.65)" : "rgba(255,255,255,0.25)",
+            fontFamily: "monospace",
+          }}
+        >
+          {abbr}
+        </span>
+        {/* Severity bar (inverted: lower confidence = more fill) */}
+        <div
+          className="shrink-0 rounded-full overflow-hidden"
+          style={{ width: 34, height: 3, background: "rgba(255,255,255,0.06)" }}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{
+              width:      `${100 - conf}%`,
+              background: "#EF4444",
+              opacity:    0.40,
+            }}
+          />
+        </div>
+        <span
+          className="text-[9px] font-bold tabular-nums shrink-0 leading-none"
+          style={{
+            color:    delta < 0 ? "#EF4444" : "rgba(255,255,255,0.30)",
+            minWidth: 24,
+            textAlign: "right",
+          }}
+        >
+          {delta >= 0 ? "+" : ""}{Math.round(delta)}
+        </span>
+      </div>
     </div>
   );
 }
