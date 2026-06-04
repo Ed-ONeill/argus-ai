@@ -44,6 +44,30 @@ function firstSentence(text: string | undefined | null): string | null {
   return text.slice(0, 110).trim();
 }
 
+/** True when a string is an internal graph-path chain (e.g. "A → B → C"). */
+function isRawChain(text: string): boolean {
+  return text.includes(" → ");
+}
+
+/**
+ * Return the final segment of a chain, or the string unchanged if not a chain.
+ * Used to clean theme names that may arrive as "Source → Target".
+ */
+function chainTerminal(name: string): string {
+  if (!isRawChain(name)) return name;
+  return name.split(" → ").pop()!.trim();
+}
+
+/**
+ * Extract the first natural-language sentence from causal_narrative.
+ * Returns null if the narrative is a raw graph chain rather than prose.
+ */
+function causalSentence(text: string | undefined | null): string | null {
+  const s = firstSentence(text);
+  if (!s || isRawChain(s)) return null;
+  return s;
+}
+
 // ── Narrative generators ──────────────────────────────────────────────────────
 
 /**
@@ -73,8 +97,8 @@ function deriveRegimeNarrative(
       topOpp.momentum_label === "accelerating"  ? "continue to strengthen" :
       topOpp.momentum_label === "strengthening" ? "are gaining momentum"   : "maintain positive momentum";
 
-    // Prefer causal_narrative first sentence as the mechanism
-    const mechanism = firstSentence(topOpp.causal_narrative);
+    // Prefer causal_narrative first sentence as the mechanism (skip raw chains)
+    const mechanism = causalSentence(topOpp.causal_narrative);
     if (mechanism && mechanism.length > 20) {
       sentences.push(`${ind} ${verb} as ${mechanism.charAt(0).toLowerCase()}${mechanism.slice(1)}.`);
     } else {
@@ -106,7 +130,7 @@ function deriveRegimeNarrative(
     const deterioVerb =
       topRisk.momentum_label === "reversing" ? "enters reversal" : "shows signs of deterioration";
     sentences.push(
-      `However, ${riskInd} faces increasing risk as ${topRisk.name} ${deterioVerb}, creating headwinds for that positioning.`
+      `However, ${riskInd} faces increasing risk as ${chainTerminal(topRisk.name)} ${deterioVerb}, creating headwinds for that positioning.`
     );
   } else if (dollarRegime === "strong" && riskRegime !== "risk-on") {
     sentences.push(
@@ -142,19 +166,20 @@ function deriveRegimeNarrative(
  * Prioritises causal_narrative, falls back to template.
  */
 function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
-  const causal = firstSentence(theme.causal_narrative);
+  const causal = causalSentence(theme.causal_narrative);
   if (causal && causal.length > 20) return causal;
 
-  const ind0 = (theme.related_industries ?? [])[0] ?? "the sector";
-  const eff0 = (theme.second_order_effects ?? [])[0];
+  const ind0     = (theme.related_industries ?? [])[0] ?? "the sector";
+  const eff0     = (theme.second_order_effects ?? [])[0];
+  const safeName = chainTerminal(theme.name).toLowerCase();
 
   if (theme.momentum_label === "accelerating")
-    return `Accelerating ${theme.name.toLowerCase()} dynamics are improving earnings visibility and positioning in ${ind0}.`;
+    return `Accelerating ${safeName} dynamics are improving earnings visibility and positioning in ${ind0}.`;
   if (theme.cross_category_confirmed)
     return `Cross-sector confirmation signals structural breadth — ${ind0} is the primary beneficiary.`;
   if (theme.momentum_label === "strengthening")
     return `Strengthening signal quality across ${theme.persistence_cycles} cycles supports continued positioning in ${ind0}.`;
-  return eff0 ?? `${ind0} is benefiting from improving ${theme.name.toLowerCase()} momentum.`;
+  return eff0 ?? `${ind0} is benefiting from improving ${safeName} momentum.`;
 }
 
 /**
@@ -162,17 +187,18 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
  * Prioritises causal_narrative, falls back to template.
  */
 function deriveRiskExplanation(theme: ThemeIntelligence): string {
-  const causal = firstSentence(theme.causal_narrative);
+  const causal = causalSentence(theme.causal_narrative);
   if (causal && causal.length > 20) return causal;
 
-  const ind0 = (theme.related_industries ?? [])[0] ?? "the sector";
-  const eff0 = (theme.second_order_effects ?? [])[0];
+  const ind0     = (theme.related_industries ?? [])[0] ?? "the sector";
+  const eff0     = (theme.second_order_effects ?? [])[0];
+  const safeName = chainTerminal(theme.name);
 
   if (theme.momentum_label === "reversing")
     return `${ind0} positioning faces multiple compression risk as signal quality degrades rapidly.`;
   if (theme.momentum_label === "cooling")
     return `${ind0} momentum is fading — delta at ${Math.round(theme.momentum_delta ?? 0)}, with risk of further deterioration.`;
-  return eff0 ?? `${ind0} is facing headwinds as ${theme.name} weakens.`;
+  return eff0 ?? `${ind0} is facing headwinds as ${safeName} weakens.`;
 }
 
 /**
@@ -196,15 +222,17 @@ function deriveOneSentence(
 
   if (ind0 && topOpp) {
     const leaderVerb = scorecard.accelerating >= 3 ? "are assuming leadership" : "are gaining momentum";
-    // Use first clause of causal_narrative as the mechanism, fallback to theme name
-    const causal = firstSentence(topOpp.causal_narrative);
-    const mechStr = causal
+    // Use first clause of causal_narrative as the mechanism (skip raw chains), fallback to theme name
+    const causal      = causalSentence(topOpp.causal_narrative);
+    const oppSafeName = chainTerminal(topOpp.name);
+    const mechStr     = causal
       ? causal.charAt(0).toLowerCase() + causal.slice(1)
-      : `${topOpp.name} ${topOpp.momentum_label === "accelerating" ? "accelerates" : "advances"}`;
+      : `${oppSafeName} ${topOpp.momentum_label === "accelerating" ? "accelerates" : "advances"}`;
     sentence = `${ind0} ${leaderVerb} as ${mechStr}`;
   } else if (topOpp) {
-    const verb = topOpp.momentum_label === "accelerating" ? "accelerates" : "advances";
-    sentence   = `${topOpp.name} ${verb} as the dominant intelligence signal`;
+    const verb        = topOpp.momentum_label === "accelerating" ? "accelerates" : "advances";
+    const oppSafeName = chainTerminal(topOpp.name);
+    sentence   = `${oppSafeName} ${verb} as the dominant intelligence signal`;
   } else {
     sentence = "Markets are showing selective leadership across tracked themes";
   }
@@ -215,10 +243,11 @@ function deriveOneSentence(
   } else if (volRegime === "elevated" || volRegime === "high") {
     sentence += ", while elevated volatility limits the breadth of participation";
   } else if (topRisk) {
-    const riskInd = (topRisk.related_industries ?? [])[0];
+    const riskInd      = (topRisk.related_industries ?? [])[0];
+    const riskSafeName = chainTerminal(topRisk.name);
     sentence += riskInd
-      ? `, while ${riskInd} faces headwinds as ${topRisk.name} weakens`
-      : `, while ${topRisk.name} presents the primary downside risk`;
+      ? `, while ${riskInd} faces headwinds as ${riskSafeName} weakens`
+      : `, while ${riskSafeName} presents the primary downside risk`;
   } else if (riskRegime === "risk-on") {
     sentence += " amid broadly constructive market conditions";
   } else {
@@ -482,7 +511,7 @@ function ChangeRow({ change }: { change: TodayChange }) {
 function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean }) {
   const accentColor  = isOpp ? "#10B981" : "#EF4444";
   // Title: the industry/sector where capital should be positioned (or risk avoided)
-  const industryTitle = (theme.related_industries ?? [])[0] ?? theme.name;
+  const industryTitle = (theme.related_industries ?? [])[0] ?? chainTerminal(theme.name);
   const explanation   = isOpp
     ? deriveOpportunityExplanation(theme)
     : deriveRiskExplanation(theme);
@@ -508,7 +537,7 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
         className="text-[9px]"
         style={{ color: "rgba(255,255,255,0.24)", fontStyle: "normal" }}
       >
-        Theme: {theme.name}
+        Theme: {chainTerminal(theme.name)}
       </p>
       {/* Confidence accent line */}
       <div
