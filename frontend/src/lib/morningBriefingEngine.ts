@@ -228,6 +228,54 @@ export function computeSignalBalance(
   return { bullish, bearish, netSignal, confidence };
 }
 
+// ── computeConvictionTier ─────────────────────────────────────────────────────
+
+/**
+ * Qualitative conviction label derived from signal breadth, agreement,
+ * acceleration strength, cross-category confirmation, and persistence.
+ * Replaces raw confidence% with a tier that reflects signal quality.
+ */
+export function computeConvictionTier(
+  themes:    ThemeIntelligence[],
+  scorecard: BriefingScorecard,
+  balance:   SignalBalance,
+): string {
+  const total      = Math.max(1, scorecard.total);
+  const net        = Math.abs(balance.netSignal);
+  const crossConf  = themes.filter(t => t.cross_category_confirmed).length;
+  const highDelta  = themes.filter(t => Math.abs(t.momentum_delta ?? 0) >= 12).length;
+  const highPersist= themes.filter(t => (t.persistence_cycles ?? 0) >= 5).length;
+
+  let score = 0;
+
+  // Signal agreement (0–3 pts)
+  if (net >= 6) score += 3;
+  else if (net >= 4) score += 2;
+  else if (net >= 2) score += 1;
+
+  // Cross-category breadth (0–2 pts)
+  if (crossConf >= 3) score += 2;
+  else if (crossConf >= 1) score += 1;
+
+  // Acceleration strength (0–2 pts)
+  if (scorecard.accelerating >= 4) score += 2;
+  else if (scorecard.accelerating >= 2) score += 1;
+
+  // Persistence quality (0–1 pt)
+  if (highPersist >= 3) score += 1;
+
+  // High-delta themes (0–1 pt)
+  if (highDelta >= 3) score += 1;
+
+  // Penalty: low net-to-total ratio → mixed / low-conviction market
+  if (net / total < 0.15) score = Math.max(0, score - 2);
+
+  if (score >= 7) return "Strong Conviction";
+  if (score >= 5) return "High Conviction";
+  if (score >= 3) return "Moderate Conviction";
+  return "Low Conviction";
+}
+
 // ── computeTodaysChanges ──────────────────────────────────────────────────────
 
 /**

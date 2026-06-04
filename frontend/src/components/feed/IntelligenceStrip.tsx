@@ -11,6 +11,7 @@ import {
   computeIndustryRotation,
   computeSignalBalance,
   computeTodaysChanges,
+  computeConvictionTier,
   type BriefingScorecard,
   type BriefingOpportunity,
   type BriefingRisk,
@@ -33,109 +34,198 @@ const REGIME_HEADLINE: Record<string, string> = {
   "neutral":  "Neutral Market",
 };
 
-// ── Narrative helpers ─────────────────────────────────────────────────────────
+// ── Text utilities ────────────────────────────────────────────────────────────
 
+/** Extract the first complete sentence from a block of text. */
+function firstSentence(text: string | undefined | null): string | null {
+  if (!text || text.length < 15) return null;
+  const idx = text.indexOf(".");
+  if (idx > 15) return text.slice(0, idx).trim();
+  return text.slice(0, 110).trim();
+}
+
+// ── Narrative generators ──────────────────────────────────────────────────────
+
+/**
+ * 2-3 sentence strategist summary.
+ * S1: what is leading and why (positive dynamic).
+ * S2: the primary headwind or counterforce.
+ * S3: breadth / conviction meta-assessment.
+ */
 function deriveRegimeNarrative(
-  ms:       MarketState,
-  rotation: IndustryRotationSignal[],
-  opps:     BriefingOpportunity[],
+  ms:        MarketState,
+  rotation:  IndustryRotationSignal[],
+  opps:      BriefingOpportunity[],
+  risks:     BriefingRisk[],
+  scorecard: BriefingScorecard,
 ): string {
   const { riskRegime, ratesRegime, volRegime, dollarRegime } = ms;
-  const topInd = rotation.filter(r => r.delta > 0)[0];
-  const topOpp = opps[0]?.theme;
+  const topOpp    = opps[0]?.theme;
+  const topRisk   = risks[0]?.theme;
+  const topInd    = rotation.filter(r => r.delta > 0)[0];
+  const riskInd   = (topRisk?.related_industries ?? [])[0];
+  const sentences: string[] = [];
 
-  // Opening clause — rate / vol environment
-  let opening =
-    ratesRegime === "rising" && riskRegime !== "risk-on"
-      ? "Yield pressure is limiting upside"
-    : ratesRegime === "falling"
-      ? "Easing conditions are supporting risk appetite"
-    : volRegime === "elevated" || volRegime === "high"
-      ? "Elevated volatility is creating selective opportunities"
-    : dollarRegime === "strong" && riskRegime !== "risk-on"
-      ? "Dollar strength is weighing on risk assets"
-    : riskRegime === "risk-on"
-      ? "Risk appetite is broadening across sectors"
-      : "Mixed conditions are creating uneven leadership";
+  // ── S1: Positive dynamic ──────────────────────────────────────────────────
+  if (topOpp && topInd) {
+    const ind  = topInd.industry;
+    const verb =
+      topOpp.momentum_label === "accelerating"  ? "continue to strengthen" :
+      topOpp.momentum_label === "strengthening" ? "are gaining momentum"   : "maintain positive momentum";
 
-  // Second clause — sector / theme leadership
-  if (topInd && topOpp) {
-    const verb = topOpp.momentum_label === "accelerating" ? "accelerating" :
-                 topOpp.momentum_label === "strengthening" ? "strengthening" : "advancing";
-    return `${opening} while ${topInd.industry} assume leadership through ${verb} ${topOpp.name}.`;
+    // Prefer causal_narrative first sentence as the mechanism
+    const mechanism = firstSentence(topOpp.causal_narrative);
+    if (mechanism && mechanism.length > 20) {
+      sentences.push(`${ind} ${verb} as ${mechanism.charAt(0).toLowerCase()}${mechanism.slice(1)}.`);
+    } else {
+      const ind0 = (topOpp.related_industries ?? [])[0] ?? ind;
+      const ctx  =
+        topOpp.momentum_label === "accelerating"
+          ? "expanding activity and improving earnings visibility"
+          : topOpp.cross_category_confirmed
+          ? "cross-sector confirmation that signals structural breadth"
+          : "strengthening signal quality across tracked cycles";
+      sentences.push(`${ind0} ${verb} through ${ctx}.`);
+    }
+  } else if (riskRegime === "risk-on") {
+    sentences.push("Broad risk appetite is supporting participation across multiple sectors.");
+  } else {
+    sentences.push("Mixed conditions are producing selective leadership across tracked themes.");
   }
-  if (topOpp) {
-    const verb = topOpp.momentum_label === "accelerating" ? "accelerates" : "advances";
-    return `${opening} while ${topOpp.name} ${verb}.`;
+
+  // ── S2: Headwind / counterforce ───────────────────────────────────────────
+  if (ratesRegime === "rising" && riskRegime !== "risk-on") {
+    sentences.push(
+      "However, elevated yields remain a headwind for long-duration growth assets, keeping overall conditions neutral."
+    );
+  } else if (volRegime === "elevated" || volRegime === "high") {
+    sentences.push(
+      "However, elevated volatility is suppressing conviction and limiting the breadth of participation."
+    );
+  } else if (topRisk && riskInd) {
+    const deterioVerb =
+      topRisk.momentum_label === "reversing" ? "enters reversal" : "shows signs of deterioration";
+    sentences.push(
+      `However, ${riskInd} faces increasing risk as ${topRisk.name} ${deterioVerb}, creating headwinds for that positioning.`
+    );
+  } else if (dollarRegime === "strong" && riskRegime !== "risk-on") {
+    sentences.push(
+      "Dollar strength is creating headwinds for international exposure and commodity-linked assets."
+    );
   }
-  return `${opening}.`;
+
+  // ── S3: Breadth / conviction meta-assessment ──────────────────────────────
+  const net = scorecard.accelerating - scorecard.reversing;
+  if (net >= 4 && scorecard.highConviction >= 3) {
+    sentences.push(
+      "Leadership is broadening with elevated conviction — signal quality favors continued participation."
+    );
+  } else if (net >= 2) {
+    sentences.push(
+      "Leadership is broadening, but conviction remains concentrated in a handful of themes."
+    );
+  } else if (net <= -2) {
+    sentences.push(
+      "Deteriorating signals are outpacing new leadership — selective positioning is warranted."
+    );
+  } else {
+    sentences.push(
+      "Signal dispersion remains high, favoring active monitoring over broad positioning."
+    );
+  }
+
+  return sentences.join(" ");
 }
 
-function deriveWhyItMatters(theme: ThemeIntelligence, isOpp: boolean): string {
-  // Use causal_narrative if it's substantive (first sentence only)
-  if (theme.causal_narrative && theme.causal_narrative.length > 20) {
-    const first = theme.causal_narrative.split(".")[0];
-    if (first && first.length > 15) return first.trim() + ".";
-  }
+/**
+ * Sector-focused explanation for opportunity cards.
+ * Prioritises causal_narrative, falls back to template.
+ */
+function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
+  const causal = firstSentence(theme.causal_narrative);
+  if (causal && causal.length > 20) return causal;
 
-  const ind0 = (theme.related_industries ?? [])[0] ?? "tracked sectors";
+  const ind0 = (theme.related_industries ?? [])[0] ?? "the sector";
   const eff0 = (theme.second_order_effects ?? [])[0];
 
-  if (isOpp) {
-    if (theme.momentum_label === "accelerating")
-      return `${ind0} benefiting from expanding ${theme.name} dynamics.`;
-    if (theme.cross_category_confirmed)
-      return `Cross-sector confirmation signals structural breadth — ${ind0} as primary vector.`;
-    if (theme.momentum_label === "strengthening")
-      return `${ind0} signal quality improving across ${theme.persistence_cycles} consecutive cycles.`;
-    return eff0 ?? `${ind0} positioned for continued momentum as conviction builds.`;
-  } else {
-    if (theme.momentum_label === "reversing")
-      return `${ind0} positioning vulnerable to multiple compression as signal degrades.`;
-    if (theme.momentum_label === "cooling")
-      return `${ind0} momentum fading — delta at ${Math.round(theme.momentum_delta ?? 0)}, risk of further deterioration.`;
-    return eff0 ?? `${ind0} signal weakening — monitor for confirmation of trend break.`;
-  }
+  if (theme.momentum_label === "accelerating")
+    return `Accelerating ${theme.name.toLowerCase()} dynamics are improving earnings visibility and positioning in ${ind0}.`;
+  if (theme.cross_category_confirmed)
+    return `Cross-sector confirmation signals structural breadth — ${ind0} is the primary beneficiary.`;
+  if (theme.momentum_label === "strengthening")
+    return `Strengthening signal quality across ${theme.persistence_cycles} cycles supports continued positioning in ${ind0}.`;
+  return eff0 ?? `${ind0} is benefiting from improving ${theme.name.toLowerCase()} momentum.`;
 }
 
+/**
+ * Sector-focused explanation for risk cards.
+ * Prioritises causal_narrative, falls back to template.
+ */
+function deriveRiskExplanation(theme: ThemeIntelligence): string {
+  const causal = firstSentence(theme.causal_narrative);
+  if (causal && causal.length > 20) return causal;
+
+  const ind0 = (theme.related_industries ?? [])[0] ?? "the sector";
+  const eff0 = (theme.second_order_effects ?? [])[0];
+
+  if (theme.momentum_label === "reversing")
+    return `${ind0} positioning faces multiple compression risk as signal quality degrades rapidly.`;
+  if (theme.momentum_label === "cooling")
+    return `${ind0} momentum is fading — delta at ${Math.round(theme.momentum_delta ?? 0)}, with risk of further deterioration.`;
+  return eff0 ?? `${ind0} is facing headwinds as ${theme.name} weakens.`;
+}
+
+/**
+ * Single sell-side strategist sentence.
+ * Uses industry as the subject — not the theme name.
+ */
 function deriveOneSentence(
-  rotation: IndustryRotationSignal[],
-  opps:     BriefingOpportunity[],
-  risks:    BriefingRisk[],
-  ms:       MarketState,
+  rotation:  IndustryRotationSignal[],
+  opps:      BriefingOpportunity[],
+  risks:     BriefingRisk[],
+  ms:        MarketState,
+  scorecard: BriefingScorecard,
 ): string {
   const { ratesRegime, volRegime, riskRegime } = ms;
   const topRot  = rotation.filter(r => r.delta > 0)[0];
   const topOpp  = opps[0]?.theme;
   const topRisk = risks[0]?.theme;
+  const ind0    = topRot?.industry ?? (topOpp?.related_industries ?? [])[0];
 
-  const parts: string[] = [];
+  let sentence: string;
 
-  if (topRot && topOpp) {
-    const verb = topOpp.momentum_label === "accelerating" ? "accelerates" :
-                 topOpp.momentum_label === "strengthening" ? "strengthens" : "advances";
-    parts.push(`${topRot.industry} are leading as ${topOpp.name} ${verb}`);
+  if (ind0 && topOpp) {
+    const leaderVerb = scorecard.accelerating >= 3 ? "are assuming leadership" : "are gaining momentum";
+    // Use first clause of causal_narrative as the mechanism, fallback to theme name
+    const causal = firstSentence(topOpp.causal_narrative);
+    const mechStr = causal
+      ? causal.charAt(0).toLowerCase() + causal.slice(1)
+      : `${topOpp.name} ${topOpp.momentum_label === "accelerating" ? "accelerates" : "advances"}`;
+    sentence = `${ind0} ${leaderVerb} as ${mechStr}`;
   } else if (topOpp) {
     const verb = topOpp.momentum_label === "accelerating" ? "accelerates" : "advances";
-    parts.push(`${topOpp.name} ${verb} as the dominant intelligence signal`);
+    sentence   = `${topOpp.name} ${verb} as the dominant intelligence signal`;
   } else {
-    parts.push("Markets are showing mixed sector leadership");
+    sentence = "Markets are showing selective leadership across tracked themes";
   }
 
-  if (ratesRegime === "rising" && riskRegime !== "risk-on")
-    parts.push("while elevated yields continue to suppress long-duration growth assets");
-  else if (ratesRegime === "falling")
-    parts.push("while easing conditions provide a tailwind for risk assets");
-  else if (volRegime === "elevated" || volRegime === "high")
-    parts.push("while elevated volatility limits conviction in growth exposures");
-  else if (topRisk)
-    parts.push(`while ${topRisk.name} presents the primary downside risk`);
-  else if (riskRegime === "risk-on")
-    parts.push("amid broadly constructive market conditions");
-  else
-    parts.push("amid mixed conditions and selective sector participation");
+  // Counterforce clause
+  if (ratesRegime === "rising" && riskRegime !== "risk-on") {
+    sentence += ", while elevated yields continue to suppress long-duration growth assets";
+  } else if (volRegime === "elevated" || volRegime === "high") {
+    sentence += ", while elevated volatility limits the breadth of participation";
+  } else if (topRisk) {
+    const riskInd = (topRisk.related_industries ?? [])[0];
+    sentence += riskInd
+      ? `, while ${riskInd} faces headwinds as ${topRisk.name} weakens`
+      : `, while ${topRisk.name} presents the primary downside risk`;
+  } else if (riskRegime === "risk-on") {
+    sentence += " amid broadly constructive market conditions";
+  } else {
+    sentence += " amid mixed conditions and selective sector participation";
+  }
 
-  return parts.join(" ") + ".";
+  return sentence + ".";
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -147,19 +237,20 @@ interface IntelligenceStripProps {
 export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
   const ms = useMarketState();
 
-  const scorecard = useMemo(() => computeScorecard(themes),        [themes]);
-  const opps      = useMemo(() => computeOpportunities(themes, 2), [themes]);
-  const risks     = useMemo(() => computeRisks(themes, 2),         [themes]);
-  const rotation  = useMemo(() => computeIndustryRotation(themes), [themes]);
-  const balance   = useMemo(() => computeSignalBalance(themes, scorecard), [themes, scorecard]);
-  const changes   = useMemo(() => computeTodaysChanges(themes, rotation), [themes, rotation]);
+  const scorecard  = useMemo(() => computeScorecard(themes),        [themes]);
+  const opps       = useMemo(() => computeOpportunities(themes, 2), [themes]);
+  const risks      = useMemo(() => computeRisks(themes, 2),         [themes]);
+  const rotation   = useMemo(() => computeIndustryRotation(themes), [themes]);
+  const balance    = useMemo(() => computeSignalBalance(themes, scorecard), [themes, scorecard]);
+  const changes    = useMemo(() => computeTodaysChanges(themes, rotation), [themes, rotation]);
+  const conviction = useMemo(() => computeConvictionTier(themes, scorecard, balance), [themes, scorecard, balance]);
 
   if (themes.length === 0) return null;
 
   const regimeColor    = REGIME_COLOR[ms.riskRegime]    ?? "#8898b8";
   const regimeHeadline = REGIME_HEADLINE[ms.riskRegime] ?? "Neutral Market";
-  const narrative      = deriveRegimeNarrative(ms, rotation, opps);
-  const oneSentence    = deriveOneSentence(rotation, opps, risks, ms);
+  const narrative      = deriveRegimeNarrative(ms, rotation, opps, risks, scorecard);
+  const oneSentence    = deriveOneSentence(rotation, opps, risks, ms, scorecard);
 
   const leaders  = rotation.filter(r => r.delta > 0).slice(0, 3);
   const laggards = rotation.filter(r => r.delta < 0).slice(0, 3);
@@ -191,10 +282,10 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
             Market Regime
           </span>
           <span
-            className="text-[9px] font-semibold tabular-nums"
+            className="text-[9px] font-semibold"
             style={{ color: "rgba(255,255,255,0.30)" }}
           >
-            Confidence {balance.confidence}%
+            {conviction}
           </span>
         </div>
 
@@ -206,7 +297,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
           {regimeHeadline.toUpperCase()}
         </p>
 
-        {/* Narrative */}
+        {/* 2-3 sentence strategist narrative */}
         <p
           className="text-[12px] leading-relaxed mb-3"
           style={{ color: "rgba(255,255,255,0.60)", maxWidth: "640px" }}
@@ -217,10 +308,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
         {/* Signal balance */}
         <div
           className="flex items-center gap-5"
-          style={{
-            paddingTop:  "10px",
-            borderTop:   "1px solid rgba(255,255,255,0.07)",
-          }}
+          style={{ paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.07)" }}
         >
           <div>
             <span
@@ -282,11 +370,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
           </p>
           <div className="space-y-3">
             {opps.map((opp, i) => (
-              <ThemeEntry
-                key={i}
-                theme={opp.theme}
-                isOpp={true}
-              />
+              <ThemeEntry key={i} theme={opp.theme} isOpp={true} />
             ))}
           </div>
         </div>
@@ -301,11 +385,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
           </p>
           <div className="space-y-3">
             {risks.map((risk, i) => (
-              <ThemeEntry
-                key={i}
-                theme={risk.theme}
-                isOpp={false}
-              />
+              <ThemeEntry key={i} theme={risk.theme} isOpp={false} />
             ))}
           </div>
         </div>
@@ -400,29 +480,42 @@ function ChangeRow({ change }: { change: TodayChange }) {
 // ── Theme entry (opportunity / risk) ─────────────────────────────────────────
 
 function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean }) {
-  const accentColor = isOpp ? "#10B981" : "#EF4444";
-  const why         = deriveWhyItMatters(theme, isOpp);
+  const accentColor  = isOpp ? "#10B981" : "#EF4444";
+  // Title: the industry/sector where capital should be positioned (or risk avoided)
+  const industryTitle = (theme.related_industries ?? [])[0] ?? theme.name;
+  const explanation   = isOpp
+    ? deriveOpportunityExplanation(theme)
+    : deriveRiskExplanation(theme);
 
   return (
     <div>
+      {/* Industry / sector — the actionable title */}
       <p
         className="text-[11.5px] font-semibold leading-snug mb-0.5"
         style={{ color: "rgba(255,255,255,0.88)" }}
       >
-        {theme.name}
+        {industryTitle}
       </p>
+      {/* Why it matters */}
       <p
-        className="text-[10.5px] leading-snug"
+        className="text-[10.5px] leading-snug mb-1"
         style={{ color: "rgba(255,255,255,0.44)" }}
       >
-        {why}
+        {explanation}
       </p>
-      {/* Momentum accent line */}
+      {/* Theme metadata */}
+      <p
+        className="text-[9px]"
+        style={{ color: "rgba(255,255,255,0.24)", fontStyle: "normal" }}
+      >
+        Theme: {theme.name}
+      </p>
+      {/* Confidence accent line */}
       <div
         className="mt-1.5 rounded-full"
         style={{
           height:     "2px",
-          width:      `${Math.max(15, Math.min(100, (theme.confidence ?? 50)))}%`,
+          width:      `${Math.max(15, Math.min(100, theme.confidence ?? 50))}%`,
           background: accentColor,
           opacity:    0.30,
         }}
