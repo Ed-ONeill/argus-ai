@@ -35,7 +35,10 @@ async function proxy(
   console.log(`[proxy] ${req.method} ${req.nextUrl.pathname} → ${upstream}`);
 
   const headers = new Headers(req.headers);
-  headers.delete("host"); // let the upstream set its own Host
+  headers.delete("host");            // let the upstream set its own Host
+  headers.delete("accept-encoding"); // prevent backend from compressing; Node fetch auto-decompresses
+                                     // but forwards the original Content-Encoding header, causing
+                                     // ERR_CONTENT_DECODING_FAILED in the browser (double decompression)
 
   const body =
     req.method !== "GET" && req.method !== "HEAD"
@@ -64,6 +67,8 @@ async function proxy(
 
   const resHeaders = new Headers(res.headers);
   resHeaders.delete("transfer-encoding"); // Next.js handles this itself
+  resHeaders.delete("content-encoding");  // body already decoded by Node fetch; header would lie to browser
+  resHeaders.delete("content-length");    // decoded body length differs from compressed; let Next.js recalculate
 
   return new NextResponse(res.body, {
     status: res.status,
