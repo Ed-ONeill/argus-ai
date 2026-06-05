@@ -72,9 +72,9 @@ function causalSentence(text: string | undefined | null): string | null {
 
 /**
  * 2-3 sentence strategist summary.
- * S1: what is leading and why (positive dynamic).
- * S2: the primary headwind or counterforce.
- * S3: breadth / conviction meta-assessment.
+ * S1: highest-conviction bullish theme — uses causal narrative when available.
+ * S2: highest-conviction bearish theme (preferred over generic macro signals).
+ * S3: breadth / conviction — names real themes, not signal counts.
  */
 function deriveRegimeNarrative(
   ms:        MarketState,
@@ -84,41 +84,84 @@ function deriveRegimeNarrative(
   scorecard: BriefingScorecard,
 ): string {
   const { riskRegime, ratesRegime, volRegime, dollarRegime } = ms;
-  const topOpp    = opps[0]?.theme;
-  const topRisk   = risks[0]?.theme;
-  const topInd    = rotation.filter(r => r.delta > 0)[0];
-  const riskInd   = (topRisk?.related_industries ?? [])[0];
+  const topOpp  = opps[0]?.theme;
+  const topRisk = risks[0]?.theme;
+  const opp2    = opps[1]?.theme;
+  const topInd  = rotation.filter(r => r.delta > 0)[0];
   const sentences: string[] = [];
 
-  // ── S1: Positive dynamic ──────────────────────────────────────────────────
-  if (topOpp && topInd) {
-    const ind  = topInd.industry;
-    const verb =
+  const oppName  = topOpp  ? chainTerminal(topOpp.name)  : null;
+  const riskName = topRisk ? chainTerminal(topRisk.name) : null;
+  const riskInd  = (topRisk?.related_industries ?? [])[0];
+  const oppInd   = (topOpp?.related_industries  ?? [])[0] ?? topInd?.industry;
+
+  // ── S1: Lead with the highest-conviction bullish theme ────────────────────
+  if (topOpp && oppName) {
+    const causal = causalSentence(topOpp.causal_narrative);
+    const eff    = (topOpp.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15);
+    const verb   =
       topOpp.momentum_label === "accelerating"  ? "continue to strengthen" :
       topOpp.momentum_label === "strengthening" ? "are gaining momentum"   : "maintain positive momentum";
 
-    // Prefer causal_narrative first sentence as the mechanism (skip raw chains)
-    const mechanism = causalSentence(topOpp.causal_narrative);
-    if (mechanism && mechanism.length > 20) {
-      sentences.push(`${ind} ${verb} as ${mechanism.charAt(0).toLowerCase()}${mechanism.slice(1)}.`);
+    if (causal && oppInd) {
+      const lc = causal.charAt(0).toLowerCase() + causal.slice(1).replace(/\.$/, "");
+      sentences.push(`${oppInd} ${verb} as ${lc}.`);
+    } else if (causal) {
+      sentences.push(causal.endsWith(".") ? causal : causal + ".");
+    } else if (eff && oppInd) {
+      const lc = eff.charAt(0).toLowerCase() + eff.slice(1).replace(/\.$/, "");
+      sentences.push(`${oppInd} ${verb} as ${lc}.`);
+    } else if (oppInd) {
+      const ind2 = (topOpp.related_industries ?? [])[1];
+      if (ind2 && topOpp.cross_category_confirmed) {
+        sentences.push(`${oppInd} and ${ind2} ${verb} as ${oppName} expands across sectors.`);
+      } else {
+        const opp2Name = opp2 ? chainTerminal(opp2.name) : null;
+        sentences.push(opp2Name
+          ? `${oppInd} ${verb} as ${oppName} builds — ${opp2Name} provides secondary support.`
+          : `${oppInd} ${verb} as ${oppName} continues to build.`);
+      }
     } else {
-      const ind0 = (topOpp.related_industries ?? [])[0] ?? ind;
-      const ctx  =
-        topOpp.momentum_label === "accelerating"
-          ? "expanding activity and improving earnings visibility"
-          : topOpp.cross_category_confirmed
-          ? "cross-sector confirmation that signals structural breadth"
-          : "strengthening signal quality across tracked cycles";
-      sentences.push(`${ind0} ${verb} through ${ctx}.`);
+      const vb = topOpp.momentum_label === "accelerating" ? "accelerating" : "strengthening";
+      sentences.push(`${oppName} is ${vb} as the dominant market signal.`);
     }
+  } else if (topInd) {
+    sentences.push(`${topInd.industry} is leading rotation as cross-theme momentum builds.`);
   } else if (riskRegime === "risk-on") {
     sentences.push("Broad risk appetite is supporting participation across multiple sectors.");
   } else {
     sentences.push("Mixed conditions are producing selective leadership across tracked themes.");
   }
 
-  // ── S2: Headwind / counterforce ───────────────────────────────────────────
-  if (ratesRegime === "rising" && riskRegime !== "risk-on") {
+  // ── S2: Risk theme first — only fall back to macro signals when none exist ─
+  if (topRisk && riskName) {
+    // Only use narrative prose when the theme is genuinely deteriorating.
+    // Backfill risks (stable/strengthening themes) have positive effects — using
+    // them as headwind copy produces semantically incorrect sentences.
+    const genuineRisk = topRisk.momentum_label === "reversing"
+      || topRisk.momentum_label === "cooling"
+      || (topRisk.momentum_delta ?? 0) < 0;
+    const riskCausal  = genuineRisk ? causalSentence(topRisk.causal_narrative) : null;
+    const riskEff     = genuineRisk
+      ? (topRisk.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15)
+      : null;
+    const deterioVerb = topRisk.momentum_label === "reversing" ? "enters reversal" : "shows signs of deterioration";
+
+    if (riskCausal && riskInd) {
+      const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
+      sentences.push(`However, ${riskInd} faces headwinds as ${lc}.`);
+    } else if (riskCausal) {
+      const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
+      sentences.push(`However, ${lc}, creating headwinds for current positioning.`);
+    } else if (riskEff && riskInd) {
+      const lc = riskEff.charAt(0).toLowerCase() + riskEff.slice(1).replace(/\.$/, "");
+      sentences.push(`However, ${riskInd} faces pressure as ${lc}.`);
+    } else if (riskInd) {
+      sentences.push(`However, ${riskInd} faces increasing risk as ${riskName} ${deterioVerb}.`);
+    } else {
+      sentences.push(`However, ${riskName} ${deterioVerb}, creating headwinds for current positioning.`);
+    }
+  } else if (ratesRegime === "rising" && riskRegime !== "risk-on") {
     sentences.push(
       "However, elevated yields remain a headwind for long-duration growth assets, keeping overall conditions neutral."
     );
@@ -126,36 +169,36 @@ function deriveRegimeNarrative(
     sentences.push(
       "However, elevated volatility is suppressing conviction and limiting the breadth of participation."
     );
-  } else if (topRisk && riskInd) {
-    const deterioVerb =
-      topRisk.momentum_label === "reversing" ? "enters reversal" : "shows signs of deterioration";
-    sentences.push(
-      `However, ${riskInd} faces increasing risk as ${chainTerminal(topRisk.name)} ${deterioVerb}, creating headwinds for that positioning.`
-    );
   } else if (dollarRegime === "strong" && riskRegime !== "risk-on") {
     sentences.push(
       "Dollar strength is creating headwinds for international exposure and commodity-linked assets."
     );
   }
 
-  // ── S3: Breadth / conviction meta-assessment ──────────────────────────────
-  const net = scorecard.accelerating - scorecard.reversing;
+  // ── S3: Names real themes — no signal-count language ─────────────────────
+  const net      = scorecard.accelerating - scorecard.reversing;
+  const opp2Name = opp2 ? chainTerminal(opp2.name) : null;
+
   if (net >= 4 && scorecard.highConviction >= 3) {
-    sentences.push(
-      "Leadership is broadening with elevated conviction — signal quality favors continued participation."
-    );
+    sentences.push(oppName && opp2Name
+      ? `${oppName} and ${opp2Name} are both accelerating — elevated conviction supports continued participation.`
+      : oppName
+      ? `${oppName} leads a broadening advance with elevated conviction supporting further participation.`
+      : "Leadership is broadening with elevated conviction — signal quality favors continued participation.");
   } else if (net >= 2) {
-    sentences.push(
-      "Leadership is broadening, but conviction remains concentrated in a handful of themes."
-    );
+    sentences.push(oppName
+      ? `${oppName} leads the advance, though conviction has not yet spread broadly across sectors.`
+      : "Leadership is broadening, but conviction remains concentrated in a handful of themes.");
   } else if (net <= -2) {
-    sentences.push(
-      "Deteriorating signals are outpacing new leadership — selective positioning is warranted."
-    );
+    sentences.push(riskName
+      ? `${riskName} and related deterioration are outpacing new leadership — selective positioning is warranted.`
+      : "Deteriorating signals are outpacing new leadership — selective positioning is warranted.");
   } else {
-    sentences.push(
-      "Signal dispersion remains high, favoring active monitoring over broad positioning."
-    );
+    sentences.push(oppName && riskName
+      ? `${oppName} and ${riskName} are pulling in opposite directions — active monitoring over broad exposure is warranted.`
+      : oppName
+      ? `${oppName} is the clearest signal in an otherwise dispersed environment.`
+      : "Signal dispersion remains high — active monitoring over broad positioning is warranted.");
   }
 
   return sentences.join(" ");
@@ -247,7 +290,7 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
 
 /**
  * Single sell-side strategist sentence.
- * Uses industry as the subject — not the theme name.
+ * Leads with the causal mechanism — reads as a strategist note, not a label mapping.
  */
 function deriveOneSentence(
   rotation:  IndustryRotationSignal[],
@@ -257,45 +300,68 @@ function deriveOneSentence(
   scorecard: BriefingScorecard,
 ): string {
   const { ratesRegime, volRegime, riskRegime } = ms;
-  const topRot  = rotation.filter(r => r.delta > 0)[0];
   const topOpp  = opps[0]?.theme;
   const topRisk = risks[0]?.theme;
-  const ind0    = topRot?.industry ?? (topOpp?.related_industries ?? [])[0];
 
   let sentence: string;
 
-  if (ind0 && topOpp) {
-    const leaderVerb = scorecard.accelerating >= 3 ? "are assuming leadership" : "are gaining momentum";
-    // Use first clause of causal_narrative as the mechanism (skip raw chains), fallback to theme name
-    const causal      = causalSentence(topOpp.causal_narrative);
-    const oppSafeName = chainTerminal(topOpp.name);
-    const mechStr     = causal
-      ? causal.charAt(0).toLowerCase() + causal.slice(1)
-      : `${oppSafeName} ${topOpp.momentum_label === "accelerating" ? "accelerates" : "advances"}`;
-    sentence = `${ind0} ${leaderVerb} as ${mechStr}`;
-  } else if (topOpp) {
-    const verb        = topOpp.momentum_label === "accelerating" ? "accelerates" : "advances";
-    const oppSafeName = chainTerminal(topOpp.name);
-    sentence   = `${oppSafeName} ${verb} as the dominant intelligence signal`;
+  // Lead clause — prefer the actual mechanism (causal prose) as the subject
+  if (topOpp) {
+    const oppName  = chainTerminal(topOpp.name);
+    const oppInd   = (topOpp.related_industries ?? [])[0];
+    const causal   = causalSentence(topOpp.causal_narrative);
+    const eff      = (topOpp.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15);
+
+    if (causal) {
+      sentence = causal.replace(/\.$/, "");
+    } else if (eff) {
+      sentence = eff.replace(/\.$/, "");
+    } else if (oppInd) {
+      const verb =
+        topOpp.momentum_label === "accelerating"  ? "is accelerating across" :
+        topOpp.momentum_label === "strengthening" ? "is deepening its hold on" : "is extending gains across";
+      sentence = `${oppName} ${verb} ${oppInd}`;
+    } else {
+      const verb = topOpp.momentum_label === "accelerating" ? "is accelerating" : "is advancing";
+      sentence = `${oppName} ${verb} as the dominant signal`;
+    }
   } else {
     sentence = "Markets are showing selective leadership across tracked themes";
   }
 
-  // Counterforce clause
-  if (ratesRegime === "rising" && riskRegime !== "risk-on") {
+  // Counterforce — risk theme narrative before macro templates
+  if (topRisk) {
+    const riskName    = chainTerminal(topRisk.name);
+    const riskInd     = (topRisk.related_industries ?? [])[0];
+    const genuineRisk = topRisk.momentum_label === "reversing"
+      || topRisk.momentum_label === "cooling"
+      || (topRisk.momentum_delta ?? 0) < 0;
+    const riskCausal  = genuineRisk ? causalSentence(topRisk.causal_narrative) : null;
+    const riskEff     = genuineRisk
+      ? (topRisk.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15)
+      : null;
+
+    if (riskCausal) {
+      const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
+      sentence += `, while ${lc}`;
+    } else if (riskEff) {
+      const lc = riskEff.charAt(0).toLowerCase() + riskEff.slice(1).replace(/\.$/, "");
+      sentence += `, while ${lc}`;
+    } else if (riskInd) {
+      const riskVerb = topRisk.momentum_label === "reversing" ? "enters reversal" : "deteriorates";
+      sentence += `, while ${riskInd} faces compression as ${riskName} ${riskVerb}`;
+    } else {
+      const riskVerb = topRisk.momentum_label === "reversing" ? "enters reversal" : "creates downside risk";
+      sentence += `, while ${riskName} ${riskVerb}`;
+    }
+  } else if (ratesRegime === "rising" && riskRegime !== "risk-on") {
     sentence += ", while elevated yields continue to suppress long-duration growth assets";
   } else if (volRegime === "elevated" || volRegime === "high") {
-    sentence += ", while elevated volatility limits the breadth of participation";
-  } else if (topRisk) {
-    const riskInd      = (topRisk.related_industries ?? [])[0];
-    const riskSafeName = chainTerminal(topRisk.name);
-    sentence += riskInd
-      ? `, while ${riskInd} faces headwinds as ${riskSafeName} weakens`
-      : `, while ${riskSafeName} presents the primary downside risk`;
+    sentence += ", while elevated volatility limits breadth";
   } else if (riskRegime === "risk-on") {
-    sentence += " amid broadly constructive market conditions";
+    sentence += " amid constructive cross-asset conditions";
   } else {
-    sentence += " amid mixed conditions and selective sector participation";
+    sentence += " amid mixed conditions";
   }
 
   return sentence + ".";
