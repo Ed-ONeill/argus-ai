@@ -304,14 +304,14 @@ export function computeTodaysChanges(
         direction: "up",
         text: ind0
           ? `${name} accelerating — ${ind0} earnings estimates are moving higher`
-          : `${name} is accelerating across multiple sectors`,
+          : `${name} is accelerating — both earnings and demand signals are strengthening`,
         priority: delta,
       });
       seen.add(t.name);
     } else if (t.cross_category_confirmed && (t.breadth_score ?? 0) >= 60 && ind0) {
       ups.push({
         direction: "up",
-        text: `${name} spreading into ${ind0} — multi-sector positioning is now supported`,
+        text: `${name} spreading into ${ind0} — earnings exposure is widening beyond a single-sector catalyst`,
         priority: delta + 5,
       });
       seen.add(t.name);
@@ -319,8 +319,8 @@ export function computeTodaysChanges(
       ups.push({
         direction: "up",
         text: ind0
-          ? `${name} strengthening — improved risk/reward in ${ind0}`
-          : `${name} is improving — conditions in the sector are becoming more favourable`,
+          ? `${name} strengthening — earnings estimates in ${ind0} are inflecting higher`
+          : `${name} is strengthening — demand conditions and order trends are both improving`,
         priority: delta,
       });
       seen.add(t.name);
@@ -328,8 +328,8 @@ export function computeTodaysChanges(
       ups.push({
         direction: "up",
         text: ind0
-          ? `${name} establishing a foothold in ${ind0} — watch for multi-sector adoption`
-          : `${name} is emerging — watch for adoption to accelerate before adding exposure`,
+          ? `${name} establishing a foothold in ${ind0} — supply-chain and order data are beginning to reflect the theme`
+          : `${name} is emerging — early supply and demand indicators are beginning to shift in its favour`,
         priority: delta,
       });
       seen.add(t.name);
@@ -338,7 +338,7 @@ export function computeTodaysChanges(
         direction: "down",
         text: ind0
           ? `${name} entering reversal — ${ind0} earnings and margin assumptions under pressure`
-          : `${name} entering reversal — valuation risk in the sector is rising`,
+          : `${name} entering reversal — the earnings and demand assumptions supporting the thesis are being revised lower`,
         priority: Math.abs(delta) + 10,
       });
       seen.add(t.name);
@@ -347,7 +347,7 @@ export function computeTodaysChanges(
         direction: "down",
         text: ind0
           ? `${name} fading — earnings revisions in ${ind0} are turning negative`
-          : `${name} is fading — the risk/reward has deteriorated`,
+          : `${name} is fading — earnings estimates are being revised lower and the demand outlook has weakened`,
         priority: Math.abs(delta),
       });
       seen.add(t.name);
@@ -360,13 +360,13 @@ export function computeTodaysChanges(
     if (r.delta >= 25 && !seen.has(label))
       ups.push({
         direction: "up",
-        text: `${label} gaining as risk appetite and earnings revisions both improve`,
+        text: `${label} seeing earnings estimate upgrades — capital spending and demand trends are turning constructive`,
         priority: r.delta * 0.6,
       });
     else if (r.delta <= -15 && !seen.has(label))
       downs.push({
         direction: "down",
-        text: `${label} under pressure — risk appetite is rotating away from the sector`,
+        text: `${label} under pressure — earnings revision momentum has turned negative and the sector faces multiple compression`,
         priority: Math.abs(r.delta) * 0.6,
       });
   }

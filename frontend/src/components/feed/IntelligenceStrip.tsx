@@ -130,38 +130,34 @@ function deriveRegimeNarrative(
   if (topOpp && oppName) {
     const causal = causalSentence(topOpp.causal_narrative);
     const eff    = (topOpp.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15);
-    const verb   =
-      topOpp.momentum_label === "accelerating"  ? "continue to strengthen" :
-      topOpp.momentum_label === "strengthening" ? "are gaining momentum"   : "maintain positive momentum";
 
     if (causal && oppInd) {
       const lc = causal.charAt(0).toLowerCase() + causal.slice(1).replace(/\.$/, "");
-      sentences.push(`${oppInd} ${verb} as ${lc}.`);
+      sentences.push(`${oppInd} is benefiting — ${lc}.`);
     } else if (causal) {
       sentences.push(causal.endsWith(".") ? causal : causal + ".");
     } else if (eff && oppInd) {
       const lc = eff.charAt(0).toLowerCase() + eff.slice(1).replace(/\.$/, "");
-      sentences.push(`${oppInd} ${verb} as ${lc}.`);
+      sentences.push(`${oppInd} is benefiting — ${lc}.`);
     } else if (oppInd) {
       const ind2 = (topOpp.related_industries ?? [])[1];
       if (ind2 && topOpp.cross_category_confirmed) {
-        sentences.push(`${oppInd} and ${ind2} ${verb} as ${oppName} expands across sectors.`);
+        sentences.push(`${oppInd} and ${ind2} are both seeing earnings upgrades as ${oppName} expands across categories.`);
       } else {
         const opp2Name = opp2 ? chainTerminal(opp2.name) : null;
         sentences.push(opp2Name
-          ? `${oppInd} ${verb} as ${oppName} builds — ${opp2Name} provides secondary support.`
-          : `${oppInd} ${verb} as ${oppName} continues to build.`);
+          ? `${oppInd} earnings are improving as ${oppName} builds — ${opp2Name} is adding to the demand picture.`
+          : `${oppName} is building in ${oppInd} — earnings and order trends are moving in the same direction.`);
       }
     } else {
-      const vb = topOpp.momentum_label === "accelerating" ? "accelerating" : "strengthening";
-      sentences.push(`${oppName} is ${vb} as the dominant market signal.`);
+      sentences.push(`${oppName} is accelerating — the breadth of evidence across sectors is expanding.`);
     }
   } else if (topInd) {
-    sentences.push(`${topInd.industry} is attracting capital as the macro backdrop shifts in its favour.`);
+    sentences.push(`${topInd.industry} is seeing the largest earnings revision uplift — capital spending and demand trends are both turning in its favour.`);
   } else if (riskRegime === "risk-on") {
-    sentences.push("Breadth is improving — cyclicals and risk assets are both responding to easing macro headwinds.");
+    sentences.push("Cyclicals and credit-sensitive sectors are both participating — the advance is consistent with an earnings-driven rather than multiple-expansion move.");
   } else {
-    sentences.push("Mixed conditions are producing selective leadership across the market.");
+    sentences.push("No single economic driver is dominating — earnings and policy signals are pulling in different directions.");
   }
 
   // ── S2: Risk theme first — only fall back to macro signals when none exist ─
@@ -183,18 +179,26 @@ function deriveRegimeNarrative(
       sentences.push(`However, ${riskInd} faces headwinds as ${lc}.`);
     } else if (riskCausal) {
       const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-      sentences.push(`However, ${lc}, creating headwinds for current positioning.`);
+      sentences.push(`However, ${lc}, pressuring margins and earnings estimates in exposed sectors.`);
     } else if (riskEff && riskInd) {
       const lc = riskEff.charAt(0).toLowerCase() + riskEff.slice(1).replace(/\.$/, "");
       sentences.push(`However, ${riskInd} faces pressure as ${lc}.`);
     } else if (riskInd) {
-      sentences.push(`However, ${riskInd} faces increasing risk as ${riskName} ${deterioVerb}.`);
+      if (topRisk.momentum_label === "reversing") {
+        sentences.push(`However, ${riskInd} is facing margin compression as ${riskName} enters reversal.`);
+      } else {
+        sentences.push(`However, ${riskInd} is seeing earnings estimates cut as ${riskName} deteriorates.`);
+      }
     } else {
-      sentences.push(`However, ${riskName} ${deterioVerb}, creating headwinds for current positioning.`);
+      if (topRisk.momentum_label === "reversing") {
+        sentences.push(`However, ${riskName} is entering reversal — earnings and margin assumptions are being repriced.`);
+      } else {
+        sentences.push(`However, ${riskName} is deteriorating — earnings estimates across exposed sectors are being marked down.`);
+      }
     }
   } else if (ratesRegime === "rising" && riskRegime !== "risk-on") {
     sentences.push(
-      "However, elevated yields remain a headwind for long-duration growth assets, keeping overall conditions neutral."
+      "However, rising yields are compressing equity risk premiums in long-duration growth and technology — valuations are adjusting to a higher discount rate."
     );
   } else if (volRegime === "elevated" || volRegime === "high") {
     sentences.push(
@@ -202,7 +206,7 @@ function deriveRegimeNarrative(
     );
   } else if (dollarRegime === "strong" && riskRegime !== "risk-on") {
     sentences.push(
-      "Dollar strength is creating headwinds for international exposure and commodity-linked assets."
+      "Dollar strength is eroding foreign earnings translations and weighing on commodity prices — internationally exposed sectors face FX headwinds at the margin."
     );
   }
 
@@ -212,24 +216,24 @@ function deriveRegimeNarrative(
 
   if (net >= 4 && scorecard.highConviction >= 3) {
     sentences.push(oppName && opp2Name
-      ? `${oppName} and ${opp2Name} are both accelerating — the advance has breadth and earnings support.`
+      ? `${oppName} and ${opp2Name} are both accelerating — earnings upgrades are broadening across the industrial base.`
       : oppName
-      ? `${oppName} is leading a broad advance — earnings and demand trends are both supportive.`
-      : "Leadership is broad — accelerating themes outnumber reversals by a material margin.");
+      ? `${oppName} is leading a broad advance — earnings revision momentum is positive and the demand picture is confirming.`
+      : "The advance is broad — accelerating earnings themes outnumber reversals, and the revision cycle is tilted positive.");
   } else if (net >= 2) {
     sentences.push(oppName
-      ? `${oppName} leads, but the advance lacks breadth — wait for more sectors to confirm before adding exposure.`
-      : "Leadership is building but narrow — one or two sectors are driving the tape without broader confirmation.");
+      ? `${oppName} leads, but earnings improvement has yet to spread beyond the primary sector — the advance is narrow.`
+      : "Leadership is narrow — the earnings improvement story has not yet spread across the broader industrial base.");
   } else if (net <= -2) {
     sentences.push(riskName
-      ? `${riskName} deterioration is outpacing new leadership — reduce exposure to lagging sectors and concentrate in the strongest names.`
-      : "Deterioration is outpacing new leadership — reduce exposure to the weakest sectors and concentrate in the strongest names.");
+      ? `${riskName} deterioration is outpacing new leadership — earnings revision momentum is negative and the number of cuts is broadening.`
+      : "Deterioration is outpacing new leadership — more themes are seeing earnings cuts than upgrades.");
   } else {
     sentences.push(oppName && riskName
-      ? `${oppName} is advancing while ${riskName} deteriorates — the divergence is the market story.`
+      ? `${oppName} is seeing earnings upgrades while ${riskName} faces cuts — the market is pricing a structural rotation, not a broad cycle.`
       : oppName
-      ? `${oppName} is the strongest theme in a mixed tape — sector selection matters more than broad market exposure.`
-      : "No theme is establishing durable leadership — the tape is in a holding pattern.");
+      ? `${oppName} has the clearest earnings upgrade story in a mixed tape — the drivers are idiosyncratic rather than macro.`
+      : "No theme has sufficient earnings or demand evidence to anchor a durable move — the macro catalysts are stale.");
   }
 
   return sentences.join(" ");
@@ -256,32 +260,32 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
 
   if (theme.momentum_label === "accelerating") {
     if (ind1)
-      return `${ind0} and ${ind1} are both gaining as ${safeName} accelerates, improving earnings visibility across both sectors.`;
+      return `${ind0} and ${ind1} are both seeing earnings upgrades as ${safeName} accelerates — the improvement is spread across the supply chain, not concentrated in a single name.`;
     if (persist >= 5)
-      return `${ind0} is in a sustained ${safeName} upswing — ${persist} consecutive periods of improving conditions support continued exposure.`;
+      return `${ind0} has seen ${persist} consecutive periods of earnings upgrades as ${safeName} builds — the trend has duration and is not a single-quarter event.`;
     if (breadth >= 70)
-      return `${ind0} benefits from broad ${safeName} tailwinds — above-average participation confirms this is a structural rather than isolated move.`;
-    return `${ind0} is gaining ground as ${safeName} accelerates — improving conditions are expanding across the sector.`;
+      return `${ind0} benefits from ${safeName} with unusually broad participation — earnings improvement is spread across the sector rather than concentrated in a few names.`;
+    return `${ind0} earnings estimates are being revised higher as ${safeName} accelerates — both top-line growth and margin assumptions are moving in the same direction.`;
   }
 
   if (theme.cross_category_confirmed) {
     if (ind1)
-      return `Cross-sector confirmation across ${ind0} and ${ind1} signals structural momentum — this is a multi-sector, not single-category, move.`;
-    return `${ind0} is the primary beneficiary as ${safeName} spreads across sectors — momentum is extending beyond single-category leadership.`;
+      return `${ind0} and ${ind1} are both seeing earnings upgrades from ${safeName} — the driver is structural, not a single-sector or single-company catalyst.`;
+    return `${ind0} is the primary beneficiary as ${safeName} spreads — earnings exposure is extending across supply chains and adjacent sectors.`;
   }
 
   if (theme.momentum_label === "strengthening") {
     if (persist >= 4)
-      return `${ind0} has strengthened for ${persist} consecutive periods — persistence at this level supports continued positioning.`;
+      return `${ind0} has seen ${persist} consecutive periods of improving earnings — persistence of this length typically reflects a durable demand shift rather than a one-off catalyst.`;
     if (delta >= 15)
-      return `${ind0} is building meaningful momentum — improving conditions signal accelerating capital interest in the sector.`;
-    return `${ind0} conditions are improving as ${safeName} builds evidence across the market.`;
+      return `${ind0} earnings revisions are inflecting sharply — the rate of change is accelerating and capital spending in related sectors is following.`;
+    return `${ind0} is seeing incremental earnings upgrades as ${safeName} builds — the improvement is measured but consistent.`;
   }
 
   if (theme.momentum_label === "emerging")
-    return `${ind0} is establishing an early position in ${safeName} — monitor for broader sector participation before sizing up.`;
+    return `${ind0} is showing early evidence of ${safeName} exposure — supply chains and order books are beginning to reflect the theme, though at low penetration.`;
 
-  return `${ind0} is benefiting from ${safeName} tailwinds — improving conditions support continued positioning.`;
+  return `${ind0} earnings are exposed to ${safeName} — the primary driver is a shift in end-demand rather than multiple expansion.`;
 }
 
 /**
@@ -303,20 +307,20 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
 
   if (theme.momentum_label === "reversing") {
     if (ind1)
-      return `${ind0} and ${ind1} face compression risk as ${safeName} enters reversal — reduce exposure across both sectors.`;
-    return `${ind0} positioning faces compression risk as ${safeName} enters reversal — deterioration is accelerating.`;
+      return `${ind0} and ${ind1} earnings estimates are both being cut as ${safeName} enters reversal — the original thesis is unwinding faster than consensus expected.`;
+    return `${ind0} earnings estimates are being cut as ${safeName} reverses — the initial thesis is unwinding and margin assumptions are the most exposed.`;
   }
 
   if (theme.momentum_label === "cooling") {
     if (persist >= 3)
-      return `${ind0} has been cooling for ${persist} consecutive periods — exit timing is becoming critical.`;
-    return `${ind0} momentum is fading — conviction is weakening and positioning is deteriorating.`;
+      return `${ind0} has seen ${persist} consecutive periods of falling earnings estimates — the deterioration is persistent, not cyclical noise.`;
+    return `${ind0} earnings estimates are being marked down — demand assumptions that supported the original thesis are no longer holding.`;
   }
 
   if (!(theme.cross_category_confirmed) && (theme.breadth_score ?? 0) < 40)
-    return `${ind0} lacks broader sector support — the absence of cross-sector participation increases concentration risk.`;
+    return `${ind0} earnings exposure is narrow — the improvement is concentrated in too few names to support a sector-level view without broader confirmation.`;
 
-  return `${ind0} faces headwinds as ${safeName} weakens — monitor for further deterioration before adding to existing exposure.`;
+  return `${ind0} earnings are exposed to ${safeName} weakness — margin assumptions are the most vulnerable if the theme continues to deteriorate.`;
 }
 
 /**
@@ -393,19 +397,19 @@ function deriveOneSentence(
     if (dollarRegime === "strong")
       return cap(`${oppName} is advancing in ${oppInd} despite dollar strength — domestic demand is driving the move.`);
     const macroEnd = riskRegime === "risk-on"
-      ? "as credit conditions and earnings both improve"
-      : "as the tape searches for durable leadership";
-    return cap(`${oppName} is the strongest theme in the tape ${macroEnd}.`);
+      ? "as credit conditions ease and earnings revisions broaden"
+      : "on idiosyncratic earnings drivers rather than a macro catalyst";
+    return cap(`${oppName} is leading on earnings revision breadth ${macroEnd}.`);
   }
 
   // No clear theme — describe the balance of the tape
   if (balance.netSignal >= 3)
-    return cap(`Accelerating themes outnumber reversals — earnings and demand trends are broadly supportive.`);
+    return cap(`More themes are seeing earnings upgrades than cuts — the cycle is in an expansionary phase, with demand and supply conditions broadly aligned.`);
   if (balance.netSignal <= -3)
-    return cap(`Deteriorating themes outnumber advancing ones — earnings pressure is widening across sectors.`);
+    return cap(`Earnings cuts outnumber upgrades across the tracked set — the deterioration is broad-based rather than sector-specific.`);
   if (ratesRegime === "rising")
     return cap(`The tape is mixed — rising yields are compressing multiples across rate-sensitive sectors.`);
-  return cap(`The tape is mixed — no dominant sector is establishing durable leadership.`);
+  return cap(`The tape is mixed — earnings revision momentum is split between cyclical recovery names and defensive assets.`);
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -741,33 +745,33 @@ function deriveRotationExplanation(
     .find(e => e && !isRawChain(e) && e.length >= 15);
   if (eff) return toShort(eff);
 
-  // Template — uses actual theme names and momentum direction, not signal counts
+  // Template — ties mechanism to earnings/demand/supply-chain language
   if (isLeader) {
     if (ml === "accelerating") {
-      if (name2) return `${name} is accelerating alongside ${name2}, both boosting ${sig.industry}.`;
-      if (top.cross_category_confirmed) return `${name} is accelerating with improving participation across ${sig.industry}.`;
-      return `${name} is accelerating, strengthening the fundamental backdrop for ${sig.industry}.`;
+      if (name2) return `${name} and ${name2} are both strengthening the earnings outlook for ${sig.industry}.`;
+      if (top.cross_category_confirmed) return `${name} is accelerating with supply-chain confirmation in ${sig.industry} — the earnings uplift is not limited to a single part of the value chain.`;
+      return `${name} is accelerating — earnings and order trends in ${sig.industry} are moving in the same direction.`;
     }
     if (ml === "strengthening") {
-      if (name2) return `${name} and ${name2} are both strengthening, supporting ${sig.industry} positioning.`;
-      return `${name} is strengthening, improving the investment case for ${sig.industry}.`;
+      if (name2) return `${name} and ${name2} are both improving the earnings case for ${sig.industry}.`;
+      return `${name} is strengthening — demand trends in ${sig.industry} are improving and the earnings revision cycle is turning positive.`;
     }
     if (ml === "emerging") {
-      return `${name} is emerging as a driver of early positioning in ${sig.industry}.`;
+      return `${name} is in early stages in ${sig.industry} — capital spending and order book data suggest the theme is beginning to take hold.`;
     }
-    if (name2) return `${name} and ${name2} are supporting the ${sig.industry} thesis.`;
-    return `${name} is the dominant driver of the current ${sig.industry} rotation.`;
+    if (name2) return `${name} and ${name2} are both generating earnings tailwinds for ${sig.industry}.`;
+    return `${name} is driving the ${sig.industry} earnings revision cycle — demand and supply conditions are both aligned with the theme.`;
   } else {
     if (ml === "reversing") {
-      if (name2) return `${name} is reversing while ${name2} adds further pressure on ${sig.industry}.`;
-      return `${name} entering reversal is the primary headwind for ${sig.industry}.`;
+      if (name2) return `${name} is reversing — earnings estimates in ${sig.industry} are being cut, and ${name2} is adding to the pressure.`;
+      return `${name} is reversing — the earnings assumptions underpinning ${sig.industry} are being revised lower.`;
     }
     if (ml === "cooling") {
-      if (name2) return `${name} and ${name2} are both cooling, reducing ${sig.industry} conviction.`;
-      return `${name} is cooling, removing a key support for ${sig.industry} positioning.`;
+      if (name2) return `${name} and ${name2} are both cooling — the earnings and demand tailwinds that supported ${sig.industry} are becoming less reliable.`;
+      return `${name} is cooling — demand indicators in ${sig.industry} are no longer confirming the original earnings thesis.`;
     }
-    if (name2) return `${name} and ${name2} deterioration are weighing on ${sig.industry}.`;
-    return `${name} deterioration is the primary driver of ${sig.industry} weakness.`;
+    if (name2) return `${name} and ${name2} weakness is eroding the earnings case for ${sig.industry}.`;
+    return `${name} deterioration is cutting through ${sig.industry} earnings estimates — the supply/demand backdrop has shifted against the sector.`;
   }
 }
 
