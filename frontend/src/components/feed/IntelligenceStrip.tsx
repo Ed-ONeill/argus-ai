@@ -604,28 +604,67 @@ function deriveRotationExplanation(
   themes:   ThemeIntelligence[],
   isLeader: boolean,
 ): string {
-  const related  = themes.filter(t => (t.related_industries ?? []).includes(sig.industry));
-  const topName  = related[0] ? chainTerminal(related[0].name) : null;
-  const count    = related.length || sig.count;
+  // Sort by confidence so the most-substantiated theme leads
+  const related = themes
+    .filter(t => (t.related_industries ?? []).includes(sig.industry))
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
 
+  const top  = related[0];
+  const top2 = related[1];
+
+  // No theme context available
+  if (!top) {
+    return isLeader
+      ? `${sig.industry} is gaining traction as cross-theme momentum improves.`
+      : `${sig.industry} is weakening as underlying theme support deteriorates.`;
+  }
+
+  const name  = chainTerminal(top.name);
+  const name2 = top2 ? chainTerminal(top2.name) : null;
+  const ml    = top.momentum_label;
+
+  // Trim prose to ≤ 22 words and ensure terminal punctuation
+  const toShort = (text: string): string => {
+    const words = text.trim().split(/\s+/);
+    const t = words.length > 22 ? words.slice(0, 22).join(" ") + "…" : text.trim();
+    return t.endsWith(".") || t.endsWith("…") ? t : t + ".";
+  };
+
+  // Prefer real narrative prose over any template
+  const causal = causalSentence(top.causal_narrative);
+  if (causal) return toShort(causal);
+
+  const eff = (top.second_order_effects ?? [])
+    .find(e => e && !isRawChain(e) && e.length >= 15);
+  if (eff) return toShort(eff);
+
+  // Template — uses actual theme names and momentum direction, not signal counts
   if (isLeader) {
-    if (count >= 3)
-      return `${count} converging signals are directing capital inflows — broad sector leadership.`;
-    if (topName && count >= 2)
-      return `${topName} and related dynamics are strengthening flows into this sector.`;
-    if (topName)
-      return `${topName} is the primary driver of capital inflows.`;
-    if (sig.delta >= 30)
-      return "Strong cross-theme momentum is concentrating capital here.";
-    return "Improving signal quality is attracting rotation into this sector.";
+    if (ml === "accelerating") {
+      if (name2) return `${name} is accelerating alongside ${name2}, both boosting ${sig.industry}.`;
+      if (top.cross_category_confirmed) return `${name} is accelerating with cross-sector breadth confirmed in ${sig.industry}.`;
+      return `${name} is accelerating, strengthening the fundamental backdrop for ${sig.industry}.`;
+    }
+    if (ml === "strengthening") {
+      if (name2) return `${name} and ${name2} are both strengthening, supporting ${sig.industry} positioning.`;
+      return `${name} is strengthening, improving the investment case for ${sig.industry}.`;
+    }
+    if (ml === "emerging") {
+      return `${name} is emerging as a driver of early positioning in ${sig.industry}.`;
+    }
+    if (name2) return `${name} and ${name2} are supporting the ${sig.industry} thesis.`;
+    return `${name} is the dominant driver of the current ${sig.industry} rotation.`;
   } else {
-    if (topName && count >= 2)
-      return `${topName} and related deterioration are driving capital outflows.`;
-    if (topName)
-      return `${topName} deterioration is the primary driver of outflows.`;
-    if (sig.delta <= -25)
-      return "Weakening signals across multiple themes are accelerating outflows.";
-    return "Signal quality is declining, reducing conviction in this sector.";
+    if (ml === "reversing") {
+      if (name2) return `${name} is reversing while ${name2} adds further pressure on ${sig.industry}.`;
+      return `${name} entering reversal is the primary headwind for ${sig.industry}.`;
+    }
+    if (ml === "cooling") {
+      if (name2) return `${name} and ${name2} are both cooling, reducing ${sig.industry} conviction.`;
+      return `${name} is cooling, removing a key support for ${sig.industry} positioning.`;
+    }
+    if (name2) return `${name} and ${name2} deterioration are weighing on ${sig.industry}.`;
+    return `${name} deterioration is the primary driver of ${sig.industry} weakness.`;
   }
 }
 
