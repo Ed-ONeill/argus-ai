@@ -303,8 +303,8 @@ export function computeTodaysChanges(
       ups.push({
         direction: "up",
         text: ind0
-          ? `${name} gaining traction — ${ind0} earnings outlook is improving`
-          : `${name} gaining traction across multiple sectors`,
+          ? `${name} accelerating — ${ind0} earnings estimates are moving higher`
+          : `${name} is accelerating across multiple sectors`,
         priority: delta,
       });
       seen.add(t.name);
@@ -329,7 +329,7 @@ export function computeTodaysChanges(
         direction: "up",
         text: ind0
           ? `${name} establishing a foothold in ${ind0} — watch for multi-sector adoption`
-          : `${name} is emerging — early positioning warranted ahead of broader adoption`,
+          : `${name} is emerging — watch for adoption to accelerate before adding exposure`,
         priority: delta,
       });
       seen.add(t.name);
@@ -346,8 +346,8 @@ export function computeTodaysChanges(
       downs.push({
         direction: "down",
         text: ind0
-          ? `${name} losing momentum — earnings outlook for ${ind0} is fading`
-          : `${name} is losing momentum — risk/reward has deteriorated`,
+          ? `${name} fading — earnings revisions in ${ind0} are turning negative`
+          : `${name} is fading — the risk/reward has deteriorated`,
         priority: Math.abs(delta),
       });
       seen.add(t.name);
