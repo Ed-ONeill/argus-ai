@@ -175,30 +175,30 @@ function deriveRegimeNarrative(
     );
   }
 
-  // ── S3: Names real themes — no signal-count language ─────────────────────
+  // ── S3: Reads like commentary, not diagnostics ────────────────────────────
   const net      = scorecard.accelerating - scorecard.reversing;
   const opp2Name = opp2 ? chainTerminal(opp2.name) : null;
 
   if (net >= 4 && scorecard.highConviction >= 3) {
     sentences.push(oppName && opp2Name
-      ? `${oppName} and ${opp2Name} are both accelerating — elevated conviction supports continued participation.`
+      ? `${oppName} and ${opp2Name} are both accelerating — the advance has breadth and substance.`
       : oppName
-      ? `${oppName} leads a broadening advance with elevated conviction supporting further participation.`
-      : "Leadership is broadening with elevated conviction — signal quality favors continued participation.");
+      ? `${oppName} leads a broadening rally — high conviction across multiple sectors.`
+      : "Leadership is broadening with high-conviction signals across the theme set.");
   } else if (net >= 2) {
     sentences.push(oppName
-      ? `${oppName} leads the advance, though conviction has not yet spread broadly across sectors.`
-      : "Leadership is broadening, but conviction remains concentrated in a handful of themes.");
+      ? `${oppName} leads, but follow-through is needed — breadth is not yet broad enough to add aggressively.`
+      : "Leadership is building, but not yet broad enough to add aggressively.");
   } else if (net <= -2) {
     sentences.push(riskName
-      ? `${riskName} and related deterioration are outpacing new leadership — selective positioning is warranted.`
-      : "Deteriorating signals are outpacing new leadership — selective positioning is warranted.");
+      ? `${riskName} deterioration is outpacing new leadership — stay selective, favor quality over breadth.`
+      : "Deteriorating signals are outpacing new leadership — favor quality, stay selective.");
   } else {
     sentences.push(oppName && riskName
-      ? `${oppName} and ${riskName} are pulling in opposite directions — active monitoring over broad exposure is warranted.`
+      ? `${oppName} and ${riskName} are sending conflicting signals — own the leaders, fade the laggards.`
       : oppName
-      ? `${oppName} is the clearest signal in an otherwise dispersed environment.`
-      : "Signal dispersion remains high — active monitoring over broad positioning is warranted.");
+      ? `${oppName} is the clearest signal — lean in while the broader tape consolidates.`
+      : "No dominant theme is leading — let the tape develop before adding risk.");
   }
 
   return sentences.join(" ");
@@ -364,7 +364,9 @@ function deriveOneSentence(
     sentence += " amid mixed conditions";
   }
 
-  return sentence + ".";
+  // Cap the footer to 26 words — prose from second_order_effects can run long
+  const words = (sentence + ".").split(/\s+/);
+  return words.length <= 26 ? words.join(" ") : words.slice(0, 26).join(" ") + ".";
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -410,19 +412,24 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
     >
 
       {/* ══ SECTION 1 — Market Regime (hero) ══════════════════════════════════ */}
-      <div className="px-5 pt-4 pb-3.5" style={DIV}>
+      <div className="px-5 pt-5 pb-4" style={DIV}>
 
         {/* Label row */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <span
             className="text-[7px] font-bold uppercase tracking-[0.28em]"
-            style={{ color: "rgba(255,255,255,0.28)" }}
+            style={{ color: "rgba(255,255,255,0.32)" }}
           >
             Market Regime
           </span>
+          {/* Conviction pill */}
           <span
-            className="text-[9px] font-semibold"
-            style={{ color: "rgba(255,255,255,0.30)" }}
+            className="text-[8px] font-semibold px-2 py-0.5 rounded-full"
+            style={{
+              color:      regimeColor,
+              background: `${regimeColor}18`,
+              letterSpacing: "0.03em",
+            }}
           >
             {conviction}
           </span>
@@ -430,7 +437,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
 
         {/* Regime headline — the dominant element */}
         <p
-          className="font-black leading-none tracking-tight mb-2"
+          className="font-black leading-none tracking-tight mb-3"
           style={{ fontSize: "22px", color: regimeColor, letterSpacing: "-0.02em" }}
         >
           {regimeHeadline.toUpperCase()}
@@ -438,38 +445,28 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
 
         {/* 2-3 sentence strategist narrative */}
         <p
-          className="text-[12px] leading-relaxed mb-3"
-          style={{ color: "rgba(255,255,255,0.60)", maxWidth: "640px" }}
+          className="leading-relaxed mb-4"
+          style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.64)", maxWidth: "640px" }}
         >
           {narrative}
         </p>
 
-        {/* Signal balance */}
+        {/* Signal balance — numbers only, no sub-label noise */}
         <div
-          className="flex items-center gap-5"
+          className="flex items-center gap-4"
           style={{ paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.07)" }}
         >
-          <div>
+          <SignalStat label="Bullish" count={balance.bullish} color="#10B981" />
+          <SignalStat label="Bearish" count={balance.bearish} color="#EF4444" />
+          <div className="h-3 w-px shrink-0" style={{ background: "rgba(255,255,255,0.10)" }} />
+          <div className="flex items-center gap-1">
             <span
-              className="text-[7px] font-bold uppercase tracking-[0.18em] block mb-0.5"
-              style={{ color: "rgba(255,255,255,0.22)" }}
+              className="text-[11px] font-bold tabular-nums"
+              style={{ color: balance.netSignal > 0 ? "#10B981" : balance.netSignal < 0 ? "#EF4444" : "rgba(255,255,255,0.40)" }}
             >
-              Signal Balance
+              {balance.netSignal > 0 ? "+" : ""}{balance.netSignal}
             </span>
-            <div className="flex items-center gap-4">
-              <SignalStat label="Bullish" count={balance.bullish} color="#10B981" />
-              <SignalStat label="Bearish" count={balance.bearish} color="#EF4444" />
-              <div className="h-3 w-px shrink-0" style={{ background: "rgba(255,255,255,0.10)" }} />
-              <div className="flex items-center gap-1">
-                <span
-                  className="text-[11px] font-bold tabular-nums"
-                  style={{ color: balance.netSignal > 0 ? "#10B981" : balance.netSignal < 0 ? "#EF4444" : "rgba(255,255,255,0.40)" }}
-                >
-                  {balance.netSignal > 0 ? "+" : ""}{balance.netSignal}
-                </span>
-                <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.28)" }}>Net</span>
-              </div>
-            </div>
+            <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.28)" }}>Net</span>
           </div>
         </div>
 
@@ -500,14 +497,14 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
       <div style={{ ...DIV, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
 
         {/* Opportunities */}
-        <div className="px-5 py-3" style={{ borderRight: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="px-5 py-3.5" style={{ borderRight: "1px solid rgba(255,255,255,0.06)" }}>
           <p
-            className="text-[7px] font-bold uppercase tracking-[0.28em] mb-2.5"
-            style={{ color: "rgba(16,185,129,0.65)" }}
+            className="text-[7.5px] font-bold uppercase tracking-[0.22em] mb-3"
+            style={{ color: "rgba(16,185,129,0.70)" }}
           >
             Opportunity
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {opps.map((opp, i) => (
               <ThemeEntry key={i} theme={opp.theme} isOpp={true} />
             ))}
@@ -515,14 +512,14 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
         </div>
 
         {/* Risks */}
-        <div className="px-5 py-3">
+        <div className="px-5 py-3.5">
           <p
-            className="text-[7px] font-bold uppercase tracking-[0.28em] mb-2.5"
-            style={{ color: "rgba(239,68,68,0.65)" }}
+            className="text-[7.5px] font-bold uppercase tracking-[0.22em] mb-3"
+            style={{ color: "rgba(239,68,68,0.70)" }}
           >
             Risk
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {risks.map((risk, i) => (
               <ThemeEntry key={i} theme={risk.theme} isOpp={false} />
             ))}
@@ -570,10 +567,10 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
       )}
 
       {/* ══ SECTION 5 — Market In One Sentence ════════════════════════════════ */}
-      <div className="px-5 py-3" style={DIV}>
+      <div className="px-5 py-3.5" style={{ ...DIV, borderLeft: `2px solid ${regimeColor}28` }}>
         <p
-          className="text-[12px] leading-relaxed italic font-medium"
-          style={{ color: "rgba(255,255,255,0.52)" }}
+          className="leading-relaxed"
+          style={{ fontSize: "12px", color: "rgba(255,255,255,0.58)", fontStyle: "italic", paddingLeft: "10px" }}
         >
           {oneSentence}
         </p>
@@ -628,26 +625,26 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
 
   return (
     <div>
-      {/* Industry / sector — the actionable title */}
+      {/* Industry / sector — dominant, actionable title */}
       <p
-        className="text-[11.5px] font-semibold leading-snug mb-0.5"
-        style={{ color: "rgba(255,255,255,0.88)" }}
+        className="font-semibold leading-snug mb-1"
+        style={{ fontSize: "13px", color: "rgba(255,255,255,0.94)", letterSpacing: "-0.01em" }}
       >
         {industryTitle}
       </p>
       {/* Why it matters */}
       <p
-        className="text-[10.5px] leading-snug mb-1"
-        style={{ color: "rgba(255,255,255,0.44)" }}
+        className="leading-snug mb-1.5"
+        style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)", lineHeight: "1.5" }}
       >
         {explanation}
       </p>
-      {/* Theme metadata */}
+      {/* Theme name — no "Theme:" prefix noise, just the name */}
       <p
-        className="text-[9px]"
-        style={{ color: "rgba(255,255,255,0.24)", fontStyle: "normal" }}
+        className="text-[9px] font-medium truncate"
+        style={{ color: "rgba(255,255,255,0.32)" }}
       >
-        Theme: {chainTerminal(theme.name)}
+        {chainTerminal(theme.name)}
       </p>
       {/* Confidence accent line */}
       <div
@@ -656,7 +653,7 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
           height:     "2px",
           width:      `${Math.max(15, Math.min(100, theme.confidence ?? 50))}%`,
           background: accentColor,
-          opacity:    0.30,
+          opacity:    0.35,
         }}
       />
     </div>
