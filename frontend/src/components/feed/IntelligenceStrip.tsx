@@ -130,7 +130,7 @@ function deriveRegimeNarrative(
   } else if (riskRegime === "risk-on") {
     sentences.push("Broad risk appetite is supporting participation across multiple sectors.");
   } else {
-    sentences.push("Mixed conditions are producing selective leadership across tracked themes.");
+    sentences.push("Mixed conditions are producing selective leadership across the market.");
   }
 
   // ── S2: Risk theme first — only fall back to macro signals when none exist ─
@@ -183,8 +183,8 @@ function deriveRegimeNarrative(
     sentences.push(oppName && opp2Name
       ? `${oppName} and ${opp2Name} are both accelerating — the advance has breadth and substance.`
       : oppName
-      ? `${oppName} leads a broadening rally — high conviction across multiple sectors.`
-      : "Leadership is broadening with high-conviction signals across the theme set.");
+      ? `${oppName} leads a broadening rally — conviction is improving across multiple sectors.`
+      : "Leadership is broadening with improving conviction across multiple sectors.");
   } else if (net >= 2) {
     sentences.push(oppName
       ? `${oppName} leads, but follow-through is needed — breadth is not yet broad enough to add aggressively.`
@@ -192,7 +192,7 @@ function deriveRegimeNarrative(
   } else if (net <= -2) {
     sentences.push(riskName
       ? `${riskName} deterioration is outpacing new leadership — stay selective, favor quality over breadth.`
-      : "Deteriorating signals are outpacing new leadership — favor quality, stay selective.");
+      : "Deterioration is outpacing new leadership — favor quality, stay selective.");
   } else {
     sentences.push(oppName && riskName
       ? `${oppName} and ${riskName} are sending conflicting signals — own the leaders, fade the laggards.`
@@ -227,30 +227,30 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
     if (ind1)
       return `${ind0} and ${ind1} are both gaining as ${safeName} accelerates, improving earnings visibility across both sectors.`;
     if (persist >= 5)
-      return `${ind0} is in a sustained ${safeName} upswing — ${persist} consecutive cycles of signal strength support a high-conviction long.`;
+      return `${ind0} is in a sustained ${safeName} upswing — ${persist} consecutive periods of improving conditions support a high-conviction long.`;
     if (breadth >= 70)
-      return `${ind0} benefits from broad ${safeName} signal — above-average breadth confirms this is a structural rather than isolated move.`;
-    return `${ind0} is gaining ground as ${safeName} accelerates — signal quality and breadth are both expanding.`;
+      return `${ind0} benefits from broad ${safeName} tailwinds — above-average participation confirms this is a structural rather than isolated move.`;
+    return `${ind0} is gaining ground as ${safeName} accelerates — improving conditions are expanding across the sector.`;
   }
 
   if (theme.cross_category_confirmed) {
     if (ind1)
       return `Cross-sector confirmation across ${ind0} and ${ind1} signals structural momentum — this is a multi-sector, not single-category, move.`;
-    return `${ind0} is the primary beneficiary of cross-sector confirmation — structural breadth is extending beyond single-category leadership.`;
+    return `${ind0} is the primary beneficiary as ${safeName} spreads across sectors — momentum is extending beyond single-category leadership.`;
   }
 
   if (theme.momentum_label === "strengthening") {
     if (persist >= 4)
-      return `${ind0} signal has strengthened for ${persist} consecutive cycles — persistence at this level supports continued positioning.`;
+      return `${ind0} has strengthened for ${persist} consecutive periods — persistence at this level supports continued positioning.`;
     if (delta >= 15)
-      return `${ind0} is building meaningful momentum — a delta of +${delta} signals accelerating capital interest in the sector.`;
-    return `${ind0} signal quality is improving as ${safeName} gains conviction across tracked sources.`;
+      return `${ind0} is building meaningful momentum — improving conditions signal accelerating capital interest in the sector.`;
+    return `${ind0} conditions are improving as ${safeName} gains conviction across the market.`;
   }
 
   if (theme.momentum_label === "emerging")
-    return `${ind0} is establishing early signal presence in ${safeName} — monitor for cross-sector confirmation before sizing up.`;
+    return `${ind0} is establishing an early position in ${safeName} — monitor for broader sector participation before sizing up.`;
 
-  return `${ind0} is benefiting from ${safeName} tailwinds — improving signal quality supports continued positioning.`;
+  return `${ind0} is benefiting from ${safeName} tailwinds — improving conditions support continued positioning.`;
 }
 
 /**
@@ -273,17 +273,17 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
   if (theme.momentum_label === "reversing") {
     if (ind1)
       return `${ind0} and ${ind1} face compression risk as ${safeName} enters reversal — reduce exposure across both sectors.`;
-    return `${ind0} positioning faces compression risk as ${safeName} enters reversal — signal deterioration is accelerating.`;
+    return `${ind0} positioning faces compression risk as ${safeName} enters reversal — deterioration is accelerating.`;
   }
 
   if (theme.momentum_label === "cooling") {
     if (persist >= 3)
-      return `${ind0} has been cooling for ${persist} cycles with a delta of ${delta} — exit timing is becoming critical.`;
-    return `${ind0} momentum is fading — a delta of ${delta} signals weakening conviction and deteriorating positioning.`;
+      return `${ind0} has been cooling for ${persist} consecutive periods — exit timing is becoming critical.`;
+    return `${ind0} momentum is fading — conviction is weakening and positioning is deteriorating.`;
   }
 
   if (!(theme.cross_category_confirmed) && (theme.breadth_score ?? 0) < 40)
-    return `${ind0} signal lacks cross-sector confirmation — narrow breadth increases single-sector concentration risk.`;
+    return `${ind0} lacks broader sector support — the absence of cross-sector participation increases concentration risk.`;
 
   return `${ind0} faces headwinds as ${safeName} weakens — monitor for further deterioration before adding to existing exposure.`;
 }
@@ -326,7 +326,7 @@ function deriveOneSentence(
       sentence = `${oppName} ${verb} as the dominant signal`;
     }
   } else {
-    sentence = "Markets are showing selective leadership across tracked themes";
+    sentence = "Markets are showing selective leadership across the tape";
   }
 
   // Counterforce — risk theme narrative before macro templates
@@ -678,8 +678,8 @@ function deriveRotationExplanation(
   // No theme context available
   if (!top) {
     return isLeader
-      ? `${sig.industry} is gaining traction as cross-theme momentum improves.`
-      : `${sig.industry} is weakening as underlying theme support deteriorates.`;
+      ? `${sig.industry} is gaining traction as the fundamental backdrop improves.`
+      : `${sig.industry} is weakening as fundamental support deteriorates.`;
   }
 
   const name  = chainTerminal(top.name);
@@ -705,7 +705,7 @@ function deriveRotationExplanation(
   if (isLeader) {
     if (ml === "accelerating") {
       if (name2) return `${name} is accelerating alongside ${name2}, both boosting ${sig.industry}.`;
-      if (top.cross_category_confirmed) return `${name} is accelerating with cross-sector breadth confirmed in ${sig.industry}.`;
+      if (top.cross_category_confirmed) return `${name} is accelerating with improving participation across ${sig.industry}.`;
       return `${name} is accelerating, strengthening the fundamental backdrop for ${sig.industry}.`;
     }
     if (ml === "strengthening") {

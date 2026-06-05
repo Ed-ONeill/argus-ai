@@ -303,15 +303,15 @@ export function computeTodaysChanges(
       ups.push({
         direction: "up",
         text: ind0
-          ? `${name} is accelerating — ${ind0} is the primary beneficiary`
-          : `${name} momentum is accelerating with improving signal breadth`,
+          ? `${name} gaining traction — ${ind0} earnings outlook is improving`
+          : `${name} gaining traction across multiple sectors`,
         priority: delta,
       });
       seen.add(t.name);
     } else if (t.cross_category_confirmed && (t.breadth_score ?? 0) >= 60 && ind0) {
       ups.push({
         direction: "up",
-        text: `${name} confirms cross-sector into ${ind0} — structural breadth building`,
+        text: `${name} spreading into ${ind0} — multi-sector positioning is now supported`,
         priority: delta + 5,
       });
       seen.add(t.name);
@@ -319,8 +319,8 @@ export function computeTodaysChanges(
       ups.push({
         direction: "up",
         text: ind0
-          ? `${name} strengthening — ${ind0} conviction improving`
-          : `${name} signal quality is strengthening across tracked cycles`,
+          ? `${name} strengthening — improved risk/reward in ${ind0}`
+          : `${name} is improving — conditions in the sector are becoming more favourable`,
         priority: delta,
       });
       seen.add(t.name);
@@ -328,8 +328,8 @@ export function computeTodaysChanges(
       ups.push({
         direction: "up",
         text: ind0
-          ? `${name} establishing presence in ${ind0} — watch for confirmation`
-          : `${name} is building early signal presence across tracked cycles`,
+          ? `${name} establishing a foothold in ${ind0} — watch for multi-sector adoption`
+          : `${name} is emerging — early positioning warranted ahead of broader adoption`,
         priority: delta,
       });
       seen.add(t.name);
@@ -337,8 +337,8 @@ export function computeTodaysChanges(
       downs.push({
         direction: "down",
         text: ind0
-          ? `${name} enters reversal — ${ind0} positioning faces compression risk`
-          : `${name} has entered reversal — signal deterioration is accelerating`,
+          ? `${name} entering reversal — ${ind0} earnings and margin assumptions under pressure`
+          : `${name} entering reversal — valuation risk in the sector is rising`,
         priority: Math.abs(delta) + 10,
       });
       seen.add(t.name);
@@ -346,8 +346,8 @@ export function computeTodaysChanges(
       downs.push({
         direction: "down",
         text: ind0
-          ? `${name} deteriorating — ${ind0} momentum is fading`
-          : `${name} signal quality is declining across tracked cycles`,
+          ? `${name} losing momentum — earnings outlook for ${ind0} is fading`
+          : `${name} is losing momentum — risk/reward has deteriorated`,
         priority: Math.abs(delta),
       });
       seen.add(t.name);
@@ -360,13 +360,13 @@ export function computeTodaysChanges(
     if (r.delta >= 25 && !seen.has(label))
       ups.push({
         direction: "up",
-        text: `${label} rotating into sector leadership — capital flows strengthening`,
+        text: `${label} gaining as risk appetite and earnings revisions both improve`,
         priority: r.delta * 0.6,
       });
     else if (r.delta <= -15 && !seen.has(label))
       downs.push({
         direction: "down",
-        text: `${label} losing sector leadership — capital rotating into alternatives`,
+        text: `${label} under pressure — risk appetite is rotating away from the sector`,
         priority: Math.abs(r.delta) * 0.6,
       });
   }
