@@ -507,6 +507,12 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
   const leaders  = rotation.filter(r => r.delta > 0).slice(0, 3);
   const laggards = rotation.filter(r => r.delta < 0).slice(0, 3);
 
+  // Pre-compute rotation explanations with a shared deduplication set so the
+  // same effect sentence cannot appear for two different industries.
+  const usedRotationExpls = new Set<string>();
+  const leaderExpls  = leaders.map(sig  => sanitize(deriveRotationExplanation(sig, themes, true,  usedRotationExpls)));
+  const laggardExpls = laggards.map(sig => sanitize(deriveRotationExplanation(sig, themes, false, usedRotationExpls)));
+
   const changesUp   = changes.filter(c => c.direction === "up");
   const changesDown = changes.filter(c => c.direction === "down");
 
@@ -652,7 +658,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
               Leaders
             </p>
             <div className="space-y-[4px]">
-              {leaders.map((sig, i) => <RotationRow key={i} sig={sig} themes={themes} isLeader={true} />)}
+              {leaders.map((sig, i) => <RotationRow key={i} sig={sig} expl={leaderExpls[i]} />)}
             </div>
           </div>
 
@@ -665,7 +671,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
               Laggards
             </p>
             <div className="space-y-[4px]">
-              {laggards.map((sig, i) => <RotationRow key={i} sig={sig} themes={themes} isLeader={false} />)}
+              {laggards.map((sig, i) => <RotationRow key={i} sig={sig} expl={laggardExpls[i]} />)}
               {laggards.length === 0 && (
                 <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.20)" }}>
                   No laggards identified
@@ -774,9 +780,10 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
 // ── Rotation row ──────────────────────────────────────────────────────────────
 
 function deriveRotationExplanation(
-  sig:      IndustryRotationSignal,
-  themes:   ThemeIntelligence[],
-  isLeader: boolean,
+  sig:       IndustryRotationSignal,
+  themes:    ThemeIntelligence[],
+  isLeader:  boolean,
+  usedTexts: Set<string>,
 ): string {
   const related = themes
     .filter(t => (t.related_industries ?? []).includes(sig.industry))
@@ -798,28 +805,34 @@ function deriveRotationExplanation(
 
   const toShort = (text: string): string => {
     const words = text.trim().split(/\s+/);
-    const t = words.length > 18 ? words.slice(0, 18).join(" ") + "…" : text.trim();
-    return t.endsWith(".") || t.endsWith("…") ? t : t + ".";
+    const t = words.length > 18 ? words.slice(0, 18).join(" ") + "." : text.trim();
+    return t.endsWith(".") ? t : t + ".";
   };
 
   // Rotation rows answer "why outperforming/underperforming right now?"
-  // Source: second_order_effects (NOT causal_narrative — that is the opportunity
-  // card's territory). Skip effects[0] when causal_narrative is absent, because
-  // the opportunity card would have used it, creating duplicate copy.
+  // Pull from second_order_effects — skip causal_narrative (used by opp/risk cards).
+  // Only use an effect string if it has not already been used by another industry
+  // in this render pass — prevents duplicate explanations across rotation rows.
   const hasCausal = !!causalSentence(top.causal_narrative);
   const effStart  = hasCausal ? 0 : 1;
   const eff = (top.second_order_effects ?? []).slice(effStart)
     .find(e => e && !isRawChain(e) && e.length >= 15);
-  if (eff) return toShort(eff);
+  if (eff) {
+    const candidate = toShort(eff);
+    if (!usedTexts.has(candidate)) {
+      usedTexts.add(candidate);
+      return candidate;
+    }
+    // Already used by another industry — fall through to industry-named template.
+  }
 
-  // Templates use only sector names and observable economic events.
-  // Theme names never appear in output strings.
+  // All templates include sig.industry so they are inherently unique per row.
   if (isLeader) {
     if (ml === "accelerating") {
       if (top2) return `${sig.industry} revenue is rising as multiple demand drivers converge across the supply chain.`;
       if (top.cross_category_confirmed) return `Cross-category confirmation is translating into ${sig.industry} revenue upside.`;
       if (pdays >= 10) return `${sig.industry} has outperformed for ${pdays} days as order data remains positive.`;
-      if (breadth >= 70) return `${sig.industry} gains are broad-based. No single name is distorting the sector outperformance.`;
+      if (breadth >= 70) return `${sig.industry} gains are broad-based, with improvement distributed across the sector.`;
       return `${sig.industry} revenue is rising on pricing power and volume gains.`;
     }
     if (ml === "strengthening") {
@@ -828,7 +841,7 @@ function deriveRotationExplanation(
       return `${sig.industry} margins are widening as the cost structure normalises.`;
     }
     if (ml === "emerging") {
-      return `${sig.industry} is seeing first procurement orders. Institutional adoption is beginning.`;
+      return `${sig.industry} is seeing first procurement orders as institutional adoption begins.`;
     }
     if (top2) return `${sig.industry} is benefiting from improving demand across multiple fronts.`;
     return `${sig.industry} is outperforming as demand shifts in the sector's favour.`;
@@ -848,11 +861,10 @@ function deriveRotationExplanation(
 }
 
 function RotationRow({
-  sig, themes, isLeader,
-}: { sig: IndustryRotationSignal; themes: ThemeIntelligence[]; isLeader: boolean }) {
+  sig, expl,
+}: { sig: IndustryRotationSignal; expl: string }) {
   const isPos = sig.delta > 0;
   const color = isPos ? "#10B981" : "#EF4444";
-  const expl  = sanitize(deriveRotationExplanation(sig, themes, isLeader));
 
   return (
     <div>

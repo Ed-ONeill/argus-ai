@@ -294,12 +294,16 @@ export function computeTodaysChanges(
   const downs: TodayChange[] = [];
   const seen   = new Set<string>();
 
-  // First clean prose sentence; rejects raw graph chains
+  // First clean prose sentence; rejects raw graph chains and truncated text.
+  // Only returns text when a sentence-ending period exists and the sentence fits
+  // within 90 chars — guaranteeing a complete, renderable sentence every time.
   const prose = (text: string | null | undefined): string | null => {
     if (!text || text.length < 20 || text.includes(" → ")) return null;
     const idx = text.indexOf(".");
-    const s = idx > 15 ? text.slice(0, idx).trim() : text.slice(0, 120).trim();
-    return s.length >= 20 ? s : null;
+    if (idx < 15) return null;
+    const s = text.slice(0, idx).trim();
+    if (s.length < 20 || s.length > 90) return null;
+    return s;
   };
 
   // Best available causal prose: causal_narrative first, then first substantive effect
@@ -321,14 +325,17 @@ export function computeTodaysChanges(
 
   const dot = (s: string): string => s.endsWith(".") ? s : s + ".";
 
-  // Hard 90-char cap at word boundaries. No em-dash break — we no longer use em-dashes.
+  // Hard 90-char cap. Prefers cutting at the first complete sentence so the
+  // result is always a grammatically finished statement.
   const cap90 = (s: string): string => {
     const t = s.endsWith(".") ? s : s + ".";
     if (t.length <= 90) return t;
-    const semi = t.lastIndexOf(";", 87);
-    if (semi > 40) return t.slice(0, semi) + ".";
+    // Prefer first sentence boundary within the allowed window
+    const sent = t.indexOf(".", 20);
+    if (sent >= 20 && sent <= 87) return t.slice(0, sent + 1);
+    // Fall back to last word boundary — still appends a period
     const word = t.lastIndexOf(" ", 87);
-    return word > 40 ? t.slice(0, word) + "." : t.slice(0, 87) + "…";
+    return word > 40 ? t.slice(0, word) + "." : t.slice(0, 87) + ".";
   };
 
   const addUp   = (text: string, priority: number) =>
