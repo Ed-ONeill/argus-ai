@@ -68,6 +68,39 @@ function causalSentence(text: string | undefined | null): string | null {
   return s;
 }
 
+/**
+ * Converts theme intelligence into a short economic noun phrase describing the
+ * underlying mechanism. Never exposes the internal theme label. Extracts the
+ * causal subject by detecting the first main verb in causal_narrative; falls
+ * back to macro factor / industry combinations.
+ */
+function describeThemeImpact(theme: ThemeIntelligence): string {
+  const causal = theme.causal_narrative;
+  if (causal && !causal.includes(" → ") && causal.length >= 20) {
+    const end      = causal.indexOf(".");
+    const sentence = (end > 15 ? causal.slice(0, end) : causal.slice(0, 100)).trim();
+    const words    = sentence.split(/\s+/);
+    const verbAt   = words.findIndex((w, i) =>
+      i >= 1 &&
+      /^(is|are|has|have|continues?|remains?|drives?|creates?|pushes?|compresses?|expands?|reduces?|increases?|supports?|pressures?|causes?|lifts?|cuts?|raises?|lowers?|enables?|limits?)s?$/i.test(w)
+    );
+    if (verbAt >= 2 && verbAt <= 7) {
+      const p = words.slice(0, verbAt).join(" ");
+      return p.charAt(0).toLowerCase() + p.slice(1);
+    }
+    if (words.length >= 4) {
+      const p = words.slice(0, 4).join(" ");
+      return p.charAt(0).toLowerCase() + p.slice(1);
+    }
+  }
+  const ind0   = (theme.related_industries   ?? [])[0];
+  const macro0 = (theme.related_macro_factors ?? [])[0];
+  if (macro0 && ind0) return `${macro0.toLowerCase()} conditions in ${ind0}`;
+  if (macro0)          return `${macro0.toLowerCase()} conditions`;
+  if (ind0)            return `${ind0} sector dynamics`;
+  return "sector-level demand trends";
+}
+
 // ── Regime reconciliation ─────────────────────────────────────────────────────
 
 /**
@@ -121,14 +154,12 @@ function deriveRegimeNarrative(
   const topInd  = rotation.filter(r => r.delta > 0)[0];
   const sentences: string[] = [];
 
-  const oppName  = topOpp  ? chainTerminal(topOpp.name)  : null;
-  const riskName = topRisk ? chainTerminal(topRisk.name) : null;
   const riskInd  = (topRisk?.related_industries ?? [])[0];
   const oppInd   = (topOpp?.related_industries  ?? [])[0] ?? topInd?.industry;
   const opp2Ind  = (opp2?.related_industries ?? [])[0];
 
   // ── S1: Lead with the highest-conviction bullish theme ────────────────────
-  if (topOpp && oppName) {
+  if (topOpp) {
     const causal = causalSentence(topOpp.causal_narrative);
     const eff    = (topOpp.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15);
 
@@ -143,7 +174,7 @@ function deriveRegimeNarrative(
     } else if (oppInd) {
       const ind2 = (topOpp.related_industries ?? [])[1];
       if (ind2 && topOpp.cross_category_confirmed) {
-        sentences.push(`${oppInd} and ${ind2} are both seeing earnings upgrades as ${oppName} expands across categories.`);
+        sentences.push(`${oppInd} and ${ind2} are both seeing earnings upgrades as the driver extends across categories.`);
       } else {
         sentences.push(opp2Ind
           ? `${oppInd} earnings are improving, with ${opp2Ind} providing additional sector support.`
@@ -161,7 +192,7 @@ function deriveRegimeNarrative(
   }
 
   // ── S2: Risk theme first — only fall back to macro signals when none exist ─
-  if (topRisk && riskName) {
+  if (topRisk) {
     const genuineRisk = topRisk.momentum_label === "reversing"
       || topRisk.momentum_label === "cooling"
       || (topRisk.momentum_delta ?? 0) < 0;
@@ -247,31 +278,30 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
   const causal = causalSentence(theme.causal_narrative);
   if (causal && causal.length > 20) return causal;
 
-  const ind0     = (theme.related_industries ?? [])[0] ?? "the sector";
-  const ind1     = (theme.related_industries ?? [])[1];
-  const eff0     = (theme.second_order_effects ?? [])[0];
-  const safeName = chainTerminal(theme.name).toLowerCase();
-  const persist  = theme.persistence_cycles ?? 0;
-  const breadth  = theme.breadth_score ?? 0;
-  const delta    = theme.momentum_delta ?? 0;
+  const ind0    = (theme.related_industries ?? [])[0] ?? "the sector";
+  const ind1    = (theme.related_industries ?? [])[1];
+  const eff0    = (theme.second_order_effects ?? [])[0];
+  const persist = theme.persistence_cycles ?? 0;
+  const breadth = theme.breadth_score ?? 0;
+  const delta   = theme.momentum_delta ?? 0;
 
   // Second-order effects are analyst-written — prefer over templates when substantive
   if (eff0 && !isRawChain(eff0) && eff0.length > 25) return eff0;
 
   if (theme.momentum_label === "accelerating") {
     if (ind1)
-      return `${ind0} and ${ind1} are both seeing earnings upgrades as ${safeName} accelerates. The improvement spans the supply chain rather than concentrating in a single name.`;
+      return `${ind0} and ${ind1} are both seeing earnings upgrades as the underlying driver picks up pace. The improvement spans the supply chain rather than concentrating in a single name.`;
     if (persist >= 5)
-      return `${ind0} has seen ${persist} consecutive periods of earnings upgrades. The trend has duration and is not a single-quarter anomaly.`;
+      return `${ind0} has seen ${persist} consecutive periods of earnings upgrades without reverting. The trend has duration and is not a single-quarter anomaly.`;
     if (breadth >= 70)
-      return `${ind0} benefits from ${safeName} with unusually broad participation. Earnings improvement spans the sector rather than concentrating in a few names.`;
-    return `${ind0} earnings estimates are being revised higher as ${safeName} accelerates. Both top-line growth and margin assumptions are moving in the same direction.`;
+      return `${ind0} is benefiting with unusually broad participation across the sector. Earnings improvement spans multiple names rather than concentrating in a few.`;
+    return `${ind0} earnings estimates are being revised higher. Both top-line growth and margin assumptions are moving in the same direction.`;
   }
 
   if (theme.cross_category_confirmed) {
     if (ind1)
-      return `${ind0} and ${ind1} are both seeing earnings upgrades from ${safeName}. The driver is structural, not isolated to a single company or catalyst.`;
-    return `${ind0} is the primary beneficiary as ${safeName} spreads into adjacent sectors. Earnings exposure is extending across the supply chain.`;
+      return `${ind0} and ${ind1} are both seeing earnings upgrades from the same underlying driver. The move is structural, not isolated to a single company or catalyst.`;
+    return `${ind0} is the primary beneficiary as the driver spreads into adjacent sectors. Earnings exposure is extending across the supply chain.`;
   }
 
   if (theme.momentum_label === "strengthening") {
@@ -279,13 +309,13 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
       return `${ind0} has seen ${persist} consecutive periods of improving earnings. Persistence at this length typically reflects a durable demand shift.`;
     if (delta >= 15)
       return `${ind0} earnings revisions are inflecting sharply. The rate of change is picking up and capital spending in related sectors is following.`;
-    return `${ind0} is seeing incremental earnings upgrades as ${safeName} builds. The improvement is measured but consistent.`;
+    return `${ind0} is seeing incremental earnings upgrades. The improvement is measured but consistent.`;
   }
 
   if (theme.momentum_label === "emerging")
-    return `${ind0} is showing early evidence of ${safeName} exposure. Supply chains and order books are beginning to reflect the theme at low penetration.`;
+    return `${ind0} is showing early evidence of ${describeThemeImpact(theme)} exposure. Supply chains and order books are beginning to reflect it at low penetration.`;
 
-  return `${ind0} earnings are exposed to ${safeName}. The primary driver is a shift in end-demand rather than multiple expansion.`;
+  return `${ind0} earnings have direct exposure to ${describeThemeImpact(theme)}. The primary mechanism is a shift in end-demand rather than multiple expansion.`;
 }
 
 /**
@@ -296,19 +326,17 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
   const causal = causalSentence(theme.causal_narrative);
   if (causal && causal.length > 20) return causal;
 
-  const ind0     = (theme.related_industries ?? [])[0] ?? "the sector";
-  const ind1     = (theme.related_industries ?? [])[1];
-  const eff0     = (theme.second_order_effects ?? [])[0];
-  const safeName = chainTerminal(theme.name);
-  const delta    = Math.round(theme.momentum_delta ?? 0);
-  const persist  = theme.persistence_cycles ?? 0;
+  const ind0    = (theme.related_industries ?? [])[0] ?? "the sector";
+  const ind1    = (theme.related_industries ?? [])[1];
+  const eff0    = (theme.second_order_effects ?? [])[0];
+  const persist = theme.persistence_cycles ?? 0;
 
   if (eff0 && !isRawChain(eff0) && eff0.length > 25) return eff0;
 
   if (theme.momentum_label === "reversing") {
     if (ind1)
-      return `${ind0} and ${ind1} earnings estimates are both being cut as ${safeName} enters reversal. The original thesis is unwinding faster than consensus expected.`;
-    return `${ind0} earnings estimates are being cut as ${safeName} reverses. The initial thesis is unwinding, with margin assumptions most exposed.`;
+      return `${ind0} and ${ind1} earnings estimates are both being cut as ${describeThemeImpact(theme)} enters reversal. The original thesis is unwinding faster than consensus expected.`;
+    return `${ind0} earnings estimates are being cut as ${describeThemeImpact(theme)} reverses. The initial thesis is unwinding, with margin assumptions most exposed.`;
   }
 
   if (theme.momentum_label === "cooling") {
@@ -320,7 +348,7 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
   if (!(theme.cross_category_confirmed) && (theme.breadth_score ?? 0) < 40)
     return `${ind0} earnings exposure is narrow. The improvement is concentrated in too few names to support a sector-level view.`;
 
-  return `${ind0} earnings are exposed to ${safeName} weakness. Margin assumptions are the most vulnerable.`;
+  return `${ind0} earnings are exposed to ${describeThemeImpact(theme)} weakness. Margin assumptions are the most vulnerable.`;
 }
 
 /**
@@ -343,10 +371,8 @@ function deriveOneSentence(
   const topOpp  = opps[0]?.theme;
   const topRisk = risks[0]?.theme;
 
-  const oppInd   = topOpp  ? (topOpp.related_industries  ?? [])[0] : null;
-  const riskInd  = topRisk ? (topRisk.related_industries ?? [])[0] : null;
-  const oppName  = topOpp  ? chainTerminal(topOpp.name)  : null;
-  const riskName = topRisk ? chainTerminal(topRisk.name) : null;
+  const oppInd  = topOpp  ? (topOpp.related_industries  ?? [])[0] : null;
+  const riskInd = topRisk ? (topRisk.related_industries ?? [])[0] : null;
 
   const genuineRisk = !!topRisk && (
     topRisk.momentum_label === "reversing" ||
@@ -370,29 +396,29 @@ function deriveOneSentence(
   }
 
   // Opp narrative + risk without prose
-  if (oppCausal && genuineRisk && riskInd && riskName) {
+  if (oppCausal && genuineRisk && riskInd) {
     const lc      = oppCausal.charAt(0).toLowerCase() + oppCausal.slice(1).replace(/\.$/, "");
-    const riskAct = topRisk!.momentum_label === "reversing" ? "compresses margins" : "softens revenue assumptions";
-    return cap(`${lc}, while ${riskInd} faces pressure as ${riskName} ${riskAct}.`);
+    const riskDesc = topRisk!.momentum_label === "reversing" ? "margin compression" : "softening revenue assumptions";
+    return cap(`${lc}, while ${riskInd} faces ${riskDesc}.`);
   }
 
   // Risk narrative + opp without prose
-  if (riskCausal && oppInd && oppName) {
+  if (riskCausal && oppInd && topOpp) {
     const lc   = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-    const verb = topOpp!.momentum_label === "accelerating" ? "outperforms" : "maintains its earnings case";
+    const verb = topOpp.momentum_label === "accelerating" ? "outperforms" : "maintains its earnings case";
     return cap(`${oppInd} ${verb} even as ${lc}.`);
   }
 
-  // Both themes, no narratives — synthesise the divergence directly
-  if (oppInd && riskInd && oppName && riskName && genuineRisk) {
-    const oppAct  = topOpp!.momentum_label === "accelerating" ? "drives pricing power in" : "is widening margins in";
-    const riskAct = topRisk!.momentum_label === "reversing"   ? "compresses margins in"   : "softens revenue assumptions in";
-    return cap(`${oppName} ${oppAct} ${oppInd} as ${riskName} ${riskAct} ${riskInd}.`);
+  // Both themes, no narratives — synthesise using only industry names
+  if (oppInd && riskInd && genuineRisk) {
+    const oppDesc  = topOpp!.momentum_label === "accelerating" ? "pricing power gains" : "margin improvement";
+    const riskDesc = topRisk!.momentum_label === "reversing" ? "margin compression" : "softening revenue";
+    return cap(`${oppInd} is seeing ${oppDesc} as ${riskInd} faces ${riskDesc}.`);
   }
 
   // Opp only — frame against the macro backdrop rather than restate the card
-  if (oppInd ?? oppName) {
-    const anchor = oppInd ?? oppName!;
+  const anchor = oppInd ?? (topOpp ? describeThemeImpact(topOpp) : null);
+  if (anchor) {
     if (ratesRegime === "rising")
       return cap(`${anchor} is outperforming despite rising yields. Earnings revisions are offsetting duration pressure.`);
     if (dollarRegime === "strong" && oppInd)
@@ -725,65 +751,59 @@ function deriveRotationExplanation(
       : `${sig.industry} is underperforming as the earnings and demand case weakens.`;
   }
 
-  const name    = chainTerminal(top.name);
-  const name2   = top2 ? chainTerminal(top2.name) : null;
   const ml      = top.momentum_label;
   const persist = top.persistence_cycles ?? 0;
   const pdays   = top.persistence_days   ?? 0;
   const breadth = Math.round(top.breadth_score ?? 0);
 
-  // Trim to ≤ 18 words
   const toShort = (text: string): string => {
     const words = text.trim().split(/\s+/);
     const t = words.length > 18 ? words.slice(0, 18).join(" ") + "…" : text.trim();
     return t.endsWith(".") || t.endsWith("…") ? t : t + ".";
   };
 
-  // Rotation rows answer a different question from opportunity cards.
-  // Opportunity: why is this sector attractive/vulnerable?
-  // Rotation: why is this sector outperforming/underperforming right now?
-  //
-  // Source priority: second_order_effects (NOT causal_narrative — that is the
-  // opportunity card's territory). Skip effects[0] if opportunity card would
-  // have used it (i.e. when causal_narrative is absent, opportunity falls back
-  // to effects[0] — skip it here to prevent exact duplication).
+  // Rotation rows answer "why outperforming/underperforming right now?"
+  // Source: second_order_effects (NOT causal_narrative — that is the opportunity
+  // card's territory). Skip effects[0] when causal_narrative is absent, because
+  // the opportunity card would have used it, creating duplicate copy.
   const hasCausal = !!causalSentence(top.causal_narrative);
   const effStart  = hasCausal ? 0 : 1;
   const eff = (top.second_order_effects ?? []).slice(effStart)
     .find(e => e && !isRawChain(e) && e.length >= 15);
   if (eff) return toShort(eff);
 
-  // Templates answer "why outperforming?" or "why underperforming?" with observable drivers.
+  // Templates use only sector names and observable economic events.
+  // Theme names never appear in output strings.
   if (isLeader) {
     if (ml === "accelerating") {
-      if (name2) return `${name} and ${name2} are both lifting ${sig.industry} revenue — the demand shift is visible across the supply chain.`;
-      if (top.cross_category_confirmed) return `${name} confirmation across multiple categories is translating into ${sig.industry} revenue upside.`;
-      if (pdays >= 10) return `${sig.industry} has outperformed for ${pdays} days as ${name} order data remains positive.`;
-      if (breadth >= 70) return `${sig.industry} gains are broad-based — no single name is distorting the sector outperformance.`;
-      return `${name} is driving ${sig.industry} revenue upside through pricing power and volume.`;
+      if (top2) return `${sig.industry} revenue is rising as multiple demand drivers converge across the supply chain.`;
+      if (top.cross_category_confirmed) return `Cross-category confirmation is translating into ${sig.industry} revenue upside.`;
+      if (pdays >= 10) return `${sig.industry} has outperformed for ${pdays} days as order data remains positive.`;
+      if (breadth >= 70) return `${sig.industry} gains are broad-based. No single name is distorting the sector outperformance.`;
+      return `${sig.industry} revenue is rising on pricing power and volume gains.`;
     }
     if (ml === "strengthening") {
-      if (name2) return `${name} and ${name2} are both improving the revenue outlook for ${sig.industry}.`;
-      if (persist >= 4) return `${sig.industry} has outperformed for ${persist} consecutive periods as ${name} financing costs ease.`;
-      return `${name} is widening ${sig.industry} margins as the cost structure normalises.`;
+      if (top2) return `${sig.industry} revenue outlook is improving from multiple supporting factors.`;
+      if (persist >= 4) return `${sig.industry} has outperformed for ${persist} consecutive periods as financing costs ease.`;
+      return `${sig.industry} margins are widening as the cost structure normalises.`;
     }
     if (ml === "emerging") {
-      return `${sig.industry} is seeing first procurement orders tied to ${name} — institutional adoption is beginning.`;
+      return `${sig.industry} is seeing first procurement orders. Institutional adoption is beginning.`;
     }
-    if (name2) return `${name} and ${name2} are both generating revenue tailwinds for ${sig.industry}.`;
-    return `${sig.industry} is outperforming as ${name} demand shifts in the sector's favour.`;
+    if (top2) return `${sig.industry} is benefiting from improving demand across multiple fronts.`;
+    return `${sig.industry} is outperforming as demand shifts in the sector's favour.`;
   } else {
     if (ml === "reversing") {
-      if (name2) return `${name} is in reversal and ${name2} is adding pressure — ${sig.industry} margin guidance is being cut.`;
-      return `${sig.industry} is underperforming as ${name} pricing assumptions are being walked back.`;
+      if (top2) return `${sig.industry} margin guidance is being cut as multiple headwinds converge.`;
+      return `${sig.industry} is underperforming as pricing assumptions are being walked back.`;
     }
     if (ml === "cooling") {
-      if (name2) return `${sig.industry} is under pressure as ${name} and ${name2} order rates have both slowed.`;
-      if (persist >= 3) return `${sig.industry} has underperformed for ${persist} consecutive periods as ${name} order rates slow.`;
-      return `${sig.industry} is under pressure as ${name} end-demand weakens faster than supply is adjusting.`;
+      if (top2) return `${sig.industry} is under pressure as order rates slow across the supply chain.`;
+      if (persist >= 3) return `${sig.industry} has underperformed for ${persist} consecutive periods as order rates slow.`;
+      return `${sig.industry} is under pressure as end-demand weakens faster than supply is adjusting.`;
     }
-    if (name2) return `${name} and ${name2} softness is cutting ${sig.industry} revenue estimates.`;
-    return `${sig.industry} is underperforming as ${name} pricing power erodes.`;
+    if (top2) return `Multiple revenue headwinds are cutting ${sig.industry} estimates.`;
+    return `${sig.industry} is underperforming as sector pricing power erodes.`;
   }
 }
 
