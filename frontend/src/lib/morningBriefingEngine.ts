@@ -325,6 +325,26 @@ export function computeTodaysChanges(
   const lc  = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);
   const dot = (s: string): string => s.endsWith(".") ? s : s + ".";
 
+  // Hard 90-char cap at natural word boundaries — never clips mid-word
+  const cap90 = (s: string): string => {
+    const t = s.endsWith(".") ? s : s + ".";
+    if (t.length <= 90) return t;
+    // Prefer breaking at a semicolon (clause boundary used heavily in templates)
+    const semi = t.lastIndexOf(";", 87);
+    if (semi > 40) return t.slice(0, semi) + ".";
+    // Break at em-dash separator when it falls early enough to be meaningful
+    const dash = t.indexOf(" — ");
+    if (dash > 0 && dash <= 60) return t.slice(0, dash) + ".";
+    // Word boundary fallback
+    const word = t.lastIndexOf(" ", 87);
+    return word > 40 ? t.slice(0, word) + "." : t.slice(0, 87) + "…";
+  };
+
+  const addUp   = (text: string, priority: number) =>
+    ups.push({ direction: "up",   text: cap90(text), priority });
+  const addDown = (text: string, priority: number) =>
+    downs.push({ direction: "down", text: cap90(text), priority });
+
   for (const t of themes) {
     const delta   = t.momentum_delta ?? 0;
     const ind0    = (t.related_industries ?? [])[0];
@@ -366,7 +386,7 @@ export function computeTodaysChanges(
           ? `${name} — supply constraints in ${ind0} are tightening pricing power; lead times are extending and spot premiums are widening`
           : `${name} — supply lead times are extending and spot premiums are widening as demand outpaces current capacity`;
       }
-      ups.push({ direction: "up", text, priority: delta });
+      addUp(text, delta);
       seen.add(t.name);
 
     // ── Cross-category confirmed ─────────────────────────────────────────────
@@ -375,11 +395,11 @@ export function computeTodaysChanges(
       if (ptext) {
         text = dot(`${ind0} — ${lc(ptext)}`);
       } else if (ind1) {
-        text = `${name} — the same supply-demand logic is confirmed independently in both ${ind0} and ${ind1}, ruling out a single-sector distortion`;
+        text = `${name} — confirmed in both ${ind0} and ${ind1}; the same driver applies across the supply chain`;
       } else {
-        text = `${name} — cross-sector confirmation in ${ind0} rules out a single catalyst; the driver is visible across the supply chain`;
+        text = `${name} — confirmed in ${ind0}; the driver is present across the supply chain, not a single catalyst`;
       }
-      ups.push({ direction: "up", text, priority: delta + 5 });
+      addUp(text, delta + 5);
       seen.add(t.name);
 
     // ── Strengthening ────────────────────────────────────────────────────────
@@ -389,22 +409,22 @@ export function computeTodaysChanges(
         text = dot(ind0 ? `${ind0} — ${lc(ptext)}` : ptext);
       } else if (hasMacro(t, "credit", "financ", "spread", "lending")) {
         text = ind0
-          ? `${name} — credit spreads in ${ind0} are tightening, lowering project financing costs and supporting the capex cycle`
-          : `${name} — tightening credit spreads are reducing the financing hurdle for projects tied to the theme`;
+          ? `${name} — credit spreads in ${ind0} are tightening, lowering financing costs and supporting the capex cycle`
+          : `${name} — tightening credit spreads are lowering the financing hurdle for projects tied to the theme`;
       } else if (hasMacro(t, "commodity", "oil", "metals", "input cost")) {
         text = ind0
-          ? `${name} — input commodity costs for ${ind0} are easing; the margin benefit is now showing up in forward guidance`
+          ? `${name} — input costs for ${ind0} are easing; the margin benefit is showing in forward guidance`
           : `${name} — input cost deflation is flowing through to margins faster than the market had priced`;
       } else if (persist >= 4) {
         text = ind0
-          ? `${name} — ${ind0} has improved for ${persist} consecutive readings; the rate of change has been consistent, not mean-reverting`
+          ? `${name} — ${ind0} has improved for ${persist} consecutive readings without mean-reverting`
           : `${name} — ${persist} consecutive readings of improvement; the trend has duration, not just velocity`;
       } else {
         text = ind0
-          ? `${name} — pricing power in ${ind0} is recovering as the cost base normalises and volume throughput increases`
+          ? `${name} — pricing power in ${ind0} is recovering as the cost base normalises and volumes increase`
           : `${name} — the cost-to-revenue spread is widening as input costs fall and volume recovers`;
       }
-      ups.push({ direction: "up", text, priority: delta });
+      addUp(text, delta);
       seen.add(t.name);
 
     // ── Emerging ─────────────────────────────────────────────────────────────
@@ -414,14 +434,14 @@ export function computeTodaysChanges(
         text = dot(ind0 ? `${ind0} — ${lc(ptext)}` : ptext);
       } else if (hasMacro(t, "regulat", "policy", "legislat", "government")) {
         text = ind0
-          ? `${name} — regulatory approval or policy allocation in ${ind0} is creating the first commercial-scale demand signal`
+          ? `${name} — policy allocation in ${ind0} is creating the first commercial-scale demand signal`
           : `${name} — government policy is generating initial contract flow; procurement is moving from pilot to programme`;
       } else {
         text = ind0
-          ? `${name} — ${ind0} procurement data shows first signs of commercial adoption; unit volumes are crossing from pilot to initial production scale`
+          ? `${name} — ${ind0} procurement data shows first commercial orders; unit volumes are crossing from pilot to production`
           : `${name} — early order-book data confirms the theme is crossing from concept to initial commercial volumes`;
       }
-      ups.push({ direction: "up", text, priority: delta });
+      addUp(text, delta);
       seen.add(t.name);
 
     // ── Reversing ────────────────────────────────────────────────────────────
@@ -431,22 +451,22 @@ export function computeTodaysChanges(
         text = dot(ind0 ? `${ind0} — ${lc(ptext)}` : ptext);
       } else if (hasMacro(t, "rate", "yield", "monetary")) {
         text = ind0
-          ? `${name} — rising rates are repricing the duration-sensitive ${ind0} thesis; the discount rate adjustment is compressing the valuation floor`
+          ? `${name} — rising rates are compressing ${ind0} valuations; the discount rate now sits above the assumed underwrite`
           : `${name} — the rate-sensitive valuation thesis is unwinding as the discount rate has moved above the assumed underwrite`;
       } else if (hasEffect(t, "margin", "compress", "cost pressure")) {
         text = ind0
-          ? `${name} — margin compression in ${ind0} is deepening as input costs outpace the ability to reprice; unit economics are deteriorating`
+          ? `${name} — input costs in ${ind0} are outpacing pricing power; unit margins are in compression`
           : `${name} — input costs have outrun pricing power; the margin structure that supported the move is now inverted`;
       } else if (vol > 65) {
         text = ind0
-          ? `${name} — the ${ind0} reversal is at ${Math.round(vol)}-percentile volatility, consistent with involuntary position unwinds rather than orderly rotation`
-          : `${name} — elevated volatility during the reversal is consistent with forced unwinds rather than voluntary selling`;
+          ? `${name} — the ${ind0} reversal is at ${Math.round(vol)}-percentile vol; involuntary unwinds, not orderly rotation`
+          : `${name} — elevated volatility during the reversal is consistent with forced unwinds, not voluntary selling`;
       } else {
         text = ind0
           ? `${name} — ${ind0} order cancellations and inventory builds are rising together; the demand thesis has broken`
           : `${name} — rising order cancellations and inventory accumulation are inverting the core supply/demand thesis`;
       }
-      downs.push({ direction: "down", text, priority: Math.abs(delta) + 10 });
+      addDown(text, Math.abs(delta) + 10);
       seen.add(t.name);
 
     // ── Cooling ──────────────────────────────────────────────────────────────
@@ -456,18 +476,18 @@ export function computeTodaysChanges(
         text = dot(ind0 ? `${ind0} — ${lc(ptext)}` : ptext);
       } else if (hasMacro(t, "commodity", "oil", "energy", "metals", "input")) {
         text = ind0
-          ? `${name} — commodity input costs in ${ind0} are rising faster than the ability to pass them through; margin guidance is being cut`
-          : `${name} — rising input costs are outpacing pricing power; forward margin guidance is being revised lower`;
+          ? `${name} — commodity inputs in ${ind0} are rising faster than pass-through ability; margin guidance is being cut`
+          : `${name} — rising input costs are outpacing pricing power; forward margin guidance is moving lower`;
       } else if (persist >= 3) {
         text = ind0
-          ? `${name} — ${ind0} has deteriorated for ${persist} consecutive readings; the correction is structural, not a single-period anomaly`
-          : `${name} — ${persist} consecutive readings of deterioration; the thesis is in structural correction, not noise`;
+          ? `${name} — ${ind0} has weakened for ${persist} consecutive readings; the correction is structural`
+          : `${name} — ${persist} consecutive readings of weakness; the thesis is in structural correction, not noise`;
       } else {
         text = ind0
-          ? `${name} — end-market demand in ${ind0} is softening faster than supply is contracting, putting channel inventory at risk of building`
-          : `${name} — demand is softening faster than the supply side is adjusting; channel inventory is beginning to accumulate`;
+          ? `${name} — end-market demand in ${ind0} is softening faster than supply; channel inventory is building`
+          : `${name} — demand is softening faster than the supply side is adjusting; channel inventory is accumulating`;
       }
-      downs.push({ direction: "down", text, priority: Math.abs(delta) });
+      addDown(text, Math.abs(delta));
       seen.add(t.name);
     }
   }
@@ -476,17 +496,15 @@ export function computeTodaysChanges(
   for (const r of rotation.slice(0, 3)) {
     const label = r.industry;
     if (r.delta >= 25 && !seen.has(label))
-      ups.push({
-        direction: "up",
-        text: `${label} — multiple converging themes are lifting the sector simultaneously; order books, supply-chain activity, and project financing are all moving in the same direction`,
-        priority: r.delta * 0.6,
-      });
+      addUp(
+        `${label} — multiple converging themes are lifting the sector; order books and project financing are moving in the same direction`,
+        r.delta * 0.6,
+      );
     else if (r.delta <= -15 && !seen.has(label))
-      downs.push({
-        direction: "down",
-        text: `${label} — cross-theme deterioration is broadening; inventory builds, order cancellations, and margin compression are all visible in sector-level data`,
-        priority: Math.abs(r.delta) * 0.6,
-      });
+      addDown(
+        `${label} — cross-theme softness is broadening; inventory builds and order cancellations are both visible in sector data`,
+        Math.abs(r.delta) * 0.6,
+      );
   }
 
   const sortedUps   = ups.sort((a, b)   => b.priority - a.priority).slice(0, 3);
