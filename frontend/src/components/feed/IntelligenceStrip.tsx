@@ -68,6 +68,33 @@ function causalSentence(text: string | undefined | null): string | null {
   return s;
 }
 
+// ── Text sanitizer ────────────────────────────────────────────────────────────
+
+const THEME_LABEL_BLOCKLIST: string[] = [
+  "Higher-for-Longer Repricing",
+  "Grid Bottleneck Trade",
+  "Baseload Scarcity Premium",
+  "Credit Transmission Breakdown",
+  "Metabolic Disease Repricing",
+  "Crypto Market Structure",
+  "Non-Bank Lending Ascendancy",
+  "PBOC Easing Rotation",
+  "NATO Rearmament Cycle",
+  "Silicon Sovereignty Capex",
+];
+
+/** Final defensive pass before any public-facing narrative string is rendered. */
+function sanitize(text: string): string {
+  let s = text;
+  s = s.replace(/ — /g, ", ");
+  s = s.replace(/—/g, "");
+  for (const label of THEME_LABEL_BLOCKLIST) {
+    s = s.replace(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "this driver");
+  }
+  s = s.replace(/  +/g, " ").trim();
+  return s;
+}
+
 /**
  * Converts theme intelligence into a short economic noun phrase describing the
  * underlying mechanism. Never exposes the internal theme label. Extracts the
@@ -352,22 +379,17 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
 }
 
 /**
- * Synthesises the opportunity and risk themes into a single strategist sentence.
- * Does not restate the top opportunity card — frames the tape as a tension
- * between the strongest advancing theme and the most material headwind.
- * Maximum 25 words.
+ * One-sentence footer: synthesises the top opportunity sector and top risk sector.
+ * Max 22 words, no em dashes, no theme names.
  */
 function deriveOneSentence(
-  rotation:        IndustryRotationSignal[],
   opps:            BriefingOpportunity[],
   risks:           BriefingRisk[],
   ms:              MarketState,
-  scorecard:       BriefingScorecard,
   balance:         SignalBalance,
   effectiveRegime: RiskRegime,
 ): string {
-  const { ratesRegime, dollarRegime } = ms;
-  const riskRegime = effectiveRegime;
+  const { ratesRegime } = ms;
   const topOpp  = opps[0]?.theme;
   const topRisk = risks[0]?.theme;
 
@@ -380,63 +402,34 @@ function deriveOneSentence(
     (topRisk.momentum_delta ?? 0) < 0
   );
 
-  const oppCausal  = topOpp  ? causalSentence(topOpp.causal_narrative)  : null;
-  const riskCausal = genuineRisk ? causalSentence(topRisk!.causal_narrative) : null;
-
-  const cap = (s: string): string => {
-    const w = (s.endsWith(".") ? s : s + ".").split(/\s+/);
-    return w.length <= 25 ? w.join(" ") : w.slice(0, 25).join(" ") + ".";
+  const cap22 = (s: string): string => {
+    const t = s.endsWith(".") ? s : s + ".";
+    const w = t.split(/\s+/);
+    return w.length <= 22 ? w.join(" ") : w.slice(0, 22).join(" ") + ".";
   };
 
-  // Both sides have causal prose — synthesise as a tension sentence
-  if (oppCausal && riskCausal) {
-    const lc1 = oppCausal.charAt(0).toLowerCase() + oppCausal.slice(1).replace(/\.$/, "");
-    const lc2 = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-    return cap(`${lc1}, even as ${lc2}.`);
-  }
-
-  // Opp narrative + risk without prose
-  if (oppCausal && genuineRisk && riskInd) {
-    const lc      = oppCausal.charAt(0).toLowerCase() + oppCausal.slice(1).replace(/\.$/, "");
-    const riskDesc = topRisk!.momentum_label === "reversing" ? "margin compression" : "softening revenue assumptions";
-    return cap(`${lc}, while ${riskInd} faces ${riskDesc}.`);
-  }
-
-  // Risk narrative + opp without prose
-  if (riskCausal && oppInd && topOpp) {
-    const lc   = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-    const verb = topOpp.momentum_label === "accelerating" ? "outperforms" : "maintains its earnings case";
-    return cap(`${oppInd} ${verb} even as ${lc}.`);
-  }
-
-  // Both themes, no narratives — synthesise using only industry names
   if (oppInd && riskInd && genuineRisk) {
-    const oppDesc  = topOpp!.momentum_label === "accelerating" ? "pricing power gains" : "margin improvement";
-    const riskDesc = topRisk!.momentum_label === "reversing" ? "margin compression" : "softening revenue";
-    return cap(`${oppInd} is seeing ${oppDesc} as ${riskInd} faces ${riskDesc}.`);
+    const riskVerb = topRisk!.momentum_label === "reversing" ? "compression" : "weakness";
+    return cap22(`${oppInd} resilience is offsetting ${riskInd} ${riskVerb}, leaving the market constructive but uneven.`);
   }
 
-  // Opp only — frame against the macro backdrop rather than restate the card
-  const anchor = oppInd ?? (topOpp ? describeThemeImpact(topOpp) : null);
-  if (anchor) {
+  if (oppInd && genuineRisk) {
+    return cap22(`${oppInd} is advancing even as other areas of the market soften.`);
+  }
+
+  if (oppInd) {
     if (ratesRegime === "rising")
-      return cap(`${anchor} is outperforming despite rising yields. Earnings revisions are offsetting duration pressure.`);
-    if (dollarRegime === "strong" && oppInd)
-      return cap(`${oppInd} is advancing despite dollar strength. Domestic demand is driving the move.`);
-    const macroEnd = riskRegime === "risk-on"
-      ? "as credit conditions ease and earnings revisions broaden"
-      : "on idiosyncratic earnings drivers rather than a macro catalyst";
-    return cap(`${anchor} is leading on earnings revision breadth ${macroEnd}.`);
+      return cap22(`${oppInd} is outperforming despite rising yields, supported by earnings revisions.`);
+    return cap22(`Leadership remains concentrated in ${oppInd}, with broader confirmation still developing.`);
   }
 
-  // No clear theme — describe the balance of the market
   if (balance.netSignal >= 3)
-    return cap(`More sectors are seeing earnings upgrades than cuts. The cycle is in an expansionary phase, with demand and supply conditions aligned.`);
+    return cap22(`More sectors are seeing upgrades than cuts, with earnings revision momentum tilted positive.`);
   if (balance.netSignal <= -3)
-    return cap(`Earnings cuts outnumber upgrades. The pressure is broad-based rather than sector-specific.`);
+    return cap22(`Earnings cuts outnumber upgrades. The pressure is broad-based rather than sector-specific.`);
   if (ratesRegime === "rising")
-    return cap(`The market is mixed. Rising yields are compressing multiples across rate-sensitive sectors.`);
-  return cap(`The market is mixed. Earnings revision momentum is split between cyclical recovery and defensive names.`);
+    return cap22(`The market is mixed. Rising yields are compressing rate-sensitive valuations.`);
+  return cap22(`The market is mixed, with earnings momentum split across sectors.`);
 }
 
 // ── Public driver label ───────────────────────────────────────────────────────
@@ -496,11 +489,20 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
 
   if (themes.length === 0) return null;
 
+  // Deduplicate: if a sector already heads the Opportunity column, exclude it from Risk
+  const oppSectors = new Set(
+    opps.map(o => (o.theme.related_industries ?? [])[0]).filter(Boolean) as string[]
+  );
+  const deduplicatedRisks = risks.filter(r => {
+    const s = (r.theme.related_industries ?? [])[0];
+    return !s || !oppSectors.has(s);
+  });
+
   const effectiveRegime = deriveEffectiveRegime(ms.riskRegime, balance, scorecard);
   const regimeColor     = REGIME_COLOR[effectiveRegime]    ?? "#8898b8";
   const regimeHeadline  = REGIME_HEADLINE[effectiveRegime] ?? "Neutral Market";
-  const narrative       = deriveRegimeNarrative(ms, rotation, opps, risks, scorecard, effectiveRegime);
-  const oneSentence     = deriveOneSentence(rotation, opps, risks, ms, scorecard, balance, effectiveRegime);
+  const narrative       = sanitize(deriveRegimeNarrative(ms, rotation, opps, deduplicatedRisks, scorecard, effectiveRegime));
+  const oneSentence     = sanitize(deriveOneSentence(opps, deduplicatedRisks, ms, balance, effectiveRegime));
 
   const leaders  = rotation.filter(r => r.delta > 0).slice(0, 3);
   const laggards = rotation.filter(r => r.delta < 0).slice(0, 3);
@@ -629,7 +631,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
             Risk
           </p>
           <div className="space-y-4">
-            {risks.map((risk, i) => (
+            {deduplicatedRisks.map((risk, i) => (
               <ThemeEntry key={i} theme={risk.theme} isOpp={false} />
             ))}
           </div>
@@ -716,7 +718,7 @@ function ChangeRow({ change }: { change: TodayChange }) {
         {isUp ? "↑" : "↓"}
       </span>
       <p className="text-[11.5px] leading-snug" style={{ color: "rgba(255,255,255,0.72)" }}>
-        {change.text}
+        {sanitize(change.text)}
       </p>
     </div>
   );
@@ -728,9 +730,9 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
   const accentColor  = isOpp ? "#10B981" : "#EF4444";
   // Title: the industry/sector where capital should be positioned (or risk avoided)
   const industryTitle = (theme.related_industries ?? [])[0] ?? getPublicDriverLabel(theme);
-  const explanation   = isOpp
+  const explanation   = sanitize(isOpp
     ? deriveOpportunityExplanation(theme)
-    : deriveRiskExplanation(theme);
+    : deriveRiskExplanation(theme));
 
   return (
     <div>
@@ -850,7 +852,7 @@ function RotationRow({
 }: { sig: IndustryRotationSignal; themes: ThemeIntelligence[]; isLeader: boolean }) {
   const isPos = sig.delta > 0;
   const color = isPos ? "#10B981" : "#EF4444";
-  const expl  = deriveRotationExplanation(sig, themes, isLeader);
+  const expl  = sanitize(deriveRotationExplanation(sig, themes, isLeader));
 
   return (
     <div>
