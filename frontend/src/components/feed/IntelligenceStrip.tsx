@@ -439,6 +439,44 @@ function deriveOneSentence(
   return cap(`The market is mixed. Earnings revision momentum is split between cyclical recovery and defensive names.`);
 }
 
+// ── Public driver label ───────────────────────────────────────────────────────
+
+const KNOWN_DRIVER_LABELS: Record<string, string> = {
+  "Higher-for-Longer Repricing":   "Interest Rates",
+  "Grid Bottleneck Trade":          "Power Infrastructure",
+  "Baseload Scarcity Premium":      "Utility Capacity",
+  "Credit Transmission Breakdown":  "Bank Credit Conditions",
+  "Metabolic Disease Repricing":    "Healthcare Demand Shift",
+  "Crypto Market Structure":        "Digital Asset Flows",
+  "Non-Bank Lending Ascendancy":    "Private Credit",
+  "PBOC Easing Rotation":           "China Policy Support",
+  "NATO Rearmament Cycle":          "Defense Spending",
+  "Silicon Sovereignty Capex":      "Semiconductor Capex",
+};
+
+/**
+ * Returns a clean public-facing driver label. Checks known mappings first,
+ * then derives from related_macro_factors / related_industries.
+ * Never returns the raw internal theme name.
+ */
+function getPublicDriverLabel(theme: ThemeIntelligence): string {
+  const canonical = chainTerminal(theme.name);
+  const known     = KNOWN_DRIVER_LABELS[canonical];
+  if (known) return known;
+
+  const macro0 = (theme.related_macro_factors ?? [])[0];
+  const ind0   = (theme.related_industries   ?? [])[0];
+  if (macro0) return macro0;
+  if (ind0)   return ind0;
+
+  const causal = theme.causal_narrative;
+  if (causal && !causal.includes(" → ") && causal.length >= 20) {
+    const words = causal.split(/\s+/);
+    if (words.length >= 2) return words.slice(0, 3).join(" ");
+  }
+  return "Macro Driver";
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface IntelligenceStripProps {
@@ -689,7 +727,7 @@ function ChangeRow({ change }: { change: TodayChange }) {
 function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean }) {
   const accentColor  = isOpp ? "#10B981" : "#EF4444";
   // Title: the industry/sector where capital should be positioned (or risk avoided)
-  const industryTitle = (theme.related_industries ?? [])[0] ?? chainTerminal(theme.name);
+  const industryTitle = (theme.related_industries ?? [])[0] ?? getPublicDriverLabel(theme);
   const explanation   = isOpp
     ? deriveOpportunityExplanation(theme)
     : deriveRiskExplanation(theme);
@@ -710,12 +748,12 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
       >
         {explanation}
       </p>
-      {/* Theme name — no "Theme:" prefix noise, just the name */}
+      {/* Public driver label — never exposes raw internal theme name */}
       <p
         className="text-[9px] font-medium truncate"
         style={{ color: "rgba(255,255,255,0.32)" }}
       >
-        {chainTerminal(theme.name)}
+        {`Driver: ${getPublicDriverLabel(theme)}`}
       </p>
       {/* Confidence accent line */}
       <div
