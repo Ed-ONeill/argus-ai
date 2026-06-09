@@ -36,12 +36,16 @@ const REGIME_HEADLINE: Record<string, string> = {
 
 // ── Text utilities ────────────────────────────────────────────────────────────
 
-/** Extract the first complete sentence from a block of text. */
+/**
+ * Extract the first complete sentence from a block of text, including its
+ * trailing period. Returns null when no sentence boundary is found at idx > 15,
+ * preventing fragment fallback entirely.
+ */
 function firstSentence(text: string | undefined | null): string | null {
   if (!text || text.length < 15) return null;
   const idx = text.indexOf(".");
-  if (idx > 15) return text.slice(0, idx).trim();
-  return text.slice(0, 110).trim();
+  if (idx > 15) return text.slice(0, idx + 1).trim();
+  return null;
 }
 
 /** True when a string is an internal graph-path chain (e.g. "A → B → C"). */
@@ -94,6 +98,33 @@ function sanitize(text: string): string {
   s = s.replace(/  +/g, " ").trim();
   return s;
 }
+
+// ── Direction helpers ─────────────────────────────────────────────────────────
+
+const BULLISH_LABELS = new Set(["accelerating", "strengthening", "emerging"]);
+const BEARISH_LABELS = new Set(["reversing", "cooling"]);
+
+function isThemeBullish(t: ThemeIntelligence): boolean {
+  return t.momentum_direction === "bullish" || BULLISH_LABELS.has(t.momentum_label);
+}
+
+function isThemeBearish(t: ThemeIntelligence): boolean {
+  return t.momentum_direction === "bearish" || BEARISH_LABELS.has(t.momentum_label);
+}
+
+// Detects stale bullish prose in a causal_narrative that belongs to a now-bearish theme.
+// A theme can flip direction while the API narrative lags — this prevents that text
+// from surfacing on a Risk card.
+const STALE_BULLISH_RE = /\b(strong(?:ly)?|growing|improving|improvement|uplift|tailwind|recovering|recovery|upgrade|expanding|benefiting|accelerating|supporting|supporting|durable|resilient|positive)\b/i;
+function hasBullishProse(text: string): boolean {
+  return STALE_BULLISH_RE.test(text);
+}
+
+/**
+ * Sector-name pattern used to detect when an effect string opens with a named
+ * sector that is NOT the industry currently being described.
+ */
+const SECTOR_NAME_RE = /^(Financials?|Banks?|Insurance|Utilities?|Consumer|Healthcare|Technology|Tech|Energy|Industrials?|Materials?|Real Estate|Communication|Aerospace|Defense|Semiconductor|Software|Retail|Transport|Automotive|Pharma)\b/i;
 
 /**
  * Converts theme intelligence into a short economic noun phrase describing the
@@ -223,8 +254,11 @@ function deriveRegimeNarrative(
     const genuineRisk = topRisk.momentum_label === "reversing"
       || topRisk.momentum_label === "cooling"
       || (topRisk.momentum_delta ?? 0) < 0;
-    const riskCausal  = genuineRisk ? causalSentence(topRisk.causal_narrative) : null;
-    const riskEff     = genuineRisk
+    // Only use prose when the theme is directionally bearish AND the text reads as
+    // bearish — stale API narratives can remain bullish-toned after a flip.
+    const riskCausalRaw = genuineRisk && isThemeBearish(topRisk) ? causalSentence(topRisk.causal_narrative) : null;
+    const riskCausal    = riskCausalRaw && !hasBullishProse(riskCausalRaw) ? riskCausalRaw : null;
+    const riskEff     = genuineRisk && isThemeBearish(topRisk)
       ? (topRisk.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15)
       : null;
     if (riskCausal && riskInd) {
@@ -302,8 +336,12 @@ function deriveRegimeNarrative(
  * Prioritises causal_narrative, falls back to template.
  */
 function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
-  const causal = causalSentence(theme.causal_narrative);
-  if (causal && causal.length > 20) return causal;
+  // Only use prose from API fields when the theme is directionally bullish.
+  // Prevents bearish causal_narrative text from appearing on an Opportunity card.
+  if (isThemeBullish(theme)) {
+    const causal = causalSentence(theme.causal_narrative);
+    if (causal && causal.length > 20) return causal;
+  }
 
   const ind0    = (theme.related_industries ?? [])[0] ?? "the sector";
   const ind1    = (theme.related_industries ?? [])[1];
@@ -312,8 +350,11 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
   const breadth = theme.breadth_score ?? 0;
   const delta   = theme.momentum_delta ?? 0;
 
-  // Second-order effects are analyst-written — prefer over templates when substantive
-  if (eff0 && !isRawChain(eff0) && eff0.length > 25) return eff0;
+  // Use first complete sentence of effect text only when directionally bullish.
+  if (isThemeBullish(theme) && eff0 && !isRawChain(eff0)) {
+    const s = firstSentence(eff0);
+    if (s && s.length > 20) return s;
+  }
 
   if (theme.momentum_label === "accelerating") {
     if (ind1)
@@ -350,15 +391,24 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
  * Prioritises causal_narrative, falls back to template.
  */
 function deriveRiskExplanation(theme: ThemeIntelligence): string {
-  const causal = causalSentence(theme.causal_narrative);
-  if (causal && causal.length > 20) return causal;
+  // Only use prose from API fields when the theme is directionally bearish AND the
+  // narrative text itself reads as bearish. Stale bullish causal_narratives can
+  // persist after a theme flips to reversing/cooling.
+  if (isThemeBearish(theme)) {
+    const causal = causalSentence(theme.causal_narrative);
+    if (causal && causal.length > 20 && !hasBullishProse(causal)) return causal;
+  }
 
   const ind0    = (theme.related_industries ?? [])[0] ?? "the sector";
   const ind1    = (theme.related_industries ?? [])[1];
   const eff0    = (theme.second_order_effects ?? [])[0];
   const persist = theme.persistence_cycles ?? 0;
 
-  if (eff0 && !isRawChain(eff0) && eff0.length > 25) return eff0;
+  // Use first complete sentence of effect text only when directionally bearish.
+  if (isThemeBearish(theme) && eff0 && !isRawChain(eff0)) {
+    const s = firstSentence(eff0);
+    if (s && s.length > 20) return s;
+  }
 
   if (theme.momentum_label === "reversing") {
     if (ind1)
@@ -373,7 +423,7 @@ function deriveRiskExplanation(theme: ThemeIntelligence): string {
   }
 
   if (!(theme.cross_category_confirmed) && (theme.breadth_score ?? 0) < 40)
-    return `${ind0} earnings exposure is narrow. The improvement is concentrated in too few names to support a sector-level view.`;
+    return `${ind0} weakness is concentrated in a small number of names and has not yet spread across the broader sector.`;
 
   return `${ind0} earnings are exposed to ${describeThemeImpact(theme)} weakness. Margin assumptions are the most vulnerable.`;
 }
@@ -804,9 +854,11 @@ function deriveRotationExplanation(
   const breadth = Math.round(top.breadth_score ?? 0);
 
   const toShort = (text: string): string => {
-    const words = text.trim().split(/\s+/);
-    const t = words.length > 18 ? words.slice(0, 18).join(" ") + "." : text.trim();
-    return t.endsWith(".") ? t : t + ".";
+    const s   = text.trim();
+    const dot = s.indexOf(".");
+    // Return only the first complete sentence; never cut mid-sentence.
+    if (dot > 15) return s.slice(0, dot + 1);
+    return s.endsWith(".") ? s : s + ".";
   };
 
   // Rotation rows answer "why outperforming/underperforming right now?"
@@ -819,11 +871,19 @@ function deriveRotationExplanation(
     .find(e => e && !isRawChain(e) && e.length >= 15);
   if (eff) {
     const candidate = toShort(eff);
-    if (!usedTexts.has(candidate)) {
+    // Reject effect text that opens with a recognised sector name other than the
+    // one being described — prevents "Financials face pressure" appearing under
+    // Utilities, or "Consumer" explanations appearing under Aerospace.
+    const sectorMatch = SECTOR_NAME_RE.exec(candidate);
+    const sigWord     = sig.industry.split(/[\s,/(]+/)[0];
+    const isRelevant  = !sectorMatch ||
+      sectorMatch[0].toLowerCase() === sigWord.toLowerCase();
+
+    if (isRelevant && !usedTexts.has(candidate)) {
       usedTexts.add(candidate);
       return candidate;
     }
-    // Already used by another industry — fall through to industry-named template.
+    // Wrong-industry text or already used — fall through to industry-named template.
   }
 
   // All templates include sig.industry so they are inherently unique per row.
