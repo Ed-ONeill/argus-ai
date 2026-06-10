@@ -86,14 +86,28 @@ const MACRO_LABEL_MAP: Record<string, string> = {
   "VIX": "Market Volatility", "GC=F": "Gold Prices",
 };
 
+// Known AI-generated internal theme names → public-facing labels
+const THEME_NAME_OVERRIDES: Record<string, string> = {
+  "Non-Bank Lending Ascendancy":       "Private Credit",
+  "Grid Bottleneck Trade":             "Power Infrastructure",
+  "Higher-for-Longer Repricing":       "Interest Rates",
+  "Silicon Sovereignty Capex":         "Semiconductor Capex",
+  "Deglobalization Capex Cycle":       "Reshoring & Capex",
+  "Fiscal Dominance Repricing":        "Fiscal Policy Impact",
+  "AI Infrastructure Build-out":       "AI Infrastructure",
+  "Credit Cycle Ascendancy":           "Credit Cycle",
+  "Energy Transition Capex":           "Energy Transition",
+  "Defense Spending Ascendancy":       "Defense Spending",
+};
+
 const EVOLUTION_CLS: Record<string, string> = {
-  accelerating:  "text-emerald-400",
-  strengthening: "text-emerald-400",
+  accelerating:  "text-emerald-500",
+  strengthening: "text-emerald-500",
   broadening:    "text-sky-400",
   stabilizing:   "text-slate-400",
   peaking:       "text-amber-400",
   weakening:     "text-orange-400",
-  reversing:     "text-red-400",
+  reversing:     "text-red-500",
 };
 
 const LIFECYCLE_STAGES: ThemeLifecycleStage[] = [
@@ -114,12 +128,10 @@ function formatPrice(key: string, price: number): string {
 }
 
 function formatChange(ticker: TickerData): string {
-  if (ticker.key === "TNX") {
+  if (ticker.key === "TNX")
     return `${ticker.change >= 0 ? "+" : ""}${ticker.change.toFixed(3)}%`;
-  }
-  if (ticker.key === "VIX") {
+  if (ticker.key === "VIX")
     return `${ticker.change >= 0 ? "+" : ""}${ticker.change.toFixed(2)} pts`;
-  }
   return `${ticker.changePercent >= 0 ? "+" : ""}${ticker.changePercent.toFixed(2)}%`;
 }
 
@@ -138,12 +150,25 @@ function cleanMacroLabel(raw: string): string {
   return MACRO_LABEL_MAP[raw] ?? raw;
 }
 
+// Translate AI-generated internal theme names to public-facing labels
+function cleanThemeName(raw: string): string {
+  if (THEME_NAME_OVERRIDES[raw]) return THEME_NAME_OVERRIDES[raw];
+  // Generic word cleanup for common internal jargon
+  return raw
+    .replace(/\bAscendancy\b/gi, "")
+    .replace(/\bRepricing\b/gi, "")
+    .replace(/\bSovereign(?:ty)?\b/gi, "")
+    .replace(/\bDominance\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim() || raw;
+}
+
 function regimeAccentColor(regime: string): string {
   const l = regime.toLowerCase();
   if (l.includes("risk-on") || l.includes("goldilocks") || l.includes("expansion")) return "#10b981";
-  if (l.includes("risk-off") || l.includes("stagflat") || l.includes("recession"))  return "#ef4444";
-  if (l.includes("reflat") || l.includes("inflation")) return "#f59e0b";
-  return "#6366f1";
+  if (l.includes("risk-off") || l.includes("stagflat") || l.includes("recession"))  return "#f87171";
+  if (l.includes("reflat") || l.includes("inflation")) return "#fbbf24";
+  return "#818cf8";
 }
 
 function clusterMatchesFilter(c: StoryCluster, keywords: string[]): boolean {
@@ -157,9 +182,8 @@ function findMoveExplanation(tickerKey: string, clusters: StoryCluster[]): strin
   if (kws.length === 0) return null;
   for (const c of clusters) {
     const hay = [c.primary.title, ...c.primary.affected_entities].join(" ").toLowerCase();
-    if (kws.some(k => hay.includes(k.toLowerCase()))) {
+    if (kws.some(k => hay.includes(k.toLowerCase())))
       return c.primary.why_it_matters ?? null;
-    }
   }
   return null;
 }
@@ -168,18 +192,18 @@ function findMoveExplanation(tickerKey: string, clusters: StoryCluster[]): strin
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 
 function Sparkline({ history, positive }: { history: number[]; positive: boolean }) {
-  if (history.length < 3) return <div className="w-[60px] h-[22px]" />;
+  if (history.length < 3) return <div className="w-[50px] h-[18px]" />;
   const min = Math.min(...history);
   const max = Math.max(...history);
   const span = max - min || 0.001;
-  const W = 60, H = 22;
+  const W = 50, H = 18;
   const pts = history.map((v, i) => {
     const x = (i / (history.length - 1)) * W;
     const y = H - 1 - ((v - min) / span) * (H - 2);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   return (
-    <svg width={W} height={H} className="overflow-visible opacity-75 shrink-0">
+    <svg width={W} height={H} className="overflow-visible opacity-60 shrink-0">
       <polyline points={pts} fill="none" stroke={positive ? "#10b981" : "#ef4444"}
         strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -206,44 +230,49 @@ function SnapshotTile({
       whileTap={{ scale: 0.97 }}
       onClick={onClick}
       className={cn(
-        "bg-surface rounded-xl border p-3.5 shadow-card text-left w-full transition-all duration-200",
+        "bg-surface rounded-lg border text-left w-full transition-all duration-150",
+        error ? "px-2.5 py-2" : "p-3 shadow-card",
         isActive
           ? "border-edge-strong shadow-card-hover"
-          : "border-edge hover:border-edge-strong hover:shadow-card-hover",
+          : "border-edge hover:border-edge-strong",
       )}
       style={{
-        borderTopWidth: "3px",
-        borderTopColor: config.color,
-        ...(isActive ? { boxShadow: `0 0 0 2px ${config.color}30, var(--shadow-card-hover)` } : {}),
+        borderTopWidth: error ? "1px" : "2px",
+        borderTopColor: error ? "var(--color-edge)" : config.color,
+        ...(isActive && !error ? { boxShadow: `0 0 0 2px ${config.color}25` } : {}),
       }}
     >
-      <p className="text-2xs font-bold uppercase tracking-wider text-ink-muted mb-0.5">{config.sub}</p>
-      <p className="text-sm font-bold text-ink">{config.label}</p>
-
-      {loading ? (
-        <div className="mt-2 h-10 w-full bg-raised rounded animate-pulse" />
-      ) : error ? (
-        <div className="mt-2 h-10 flex flex-col justify-end">
-          <p className="text-[15px] font-semibold text-ink-muted opacity-30">—</p>
-          <p className="text-2xs text-ink-muted opacity-50">offline</p>
+      {error ? (
+        // Compact offline state — just the label
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-semibold text-ink-muted/50">{config.label}</p>
+          <p className="text-[9px] text-ink-muted/25">—</p>
         </div>
       ) : (
-        <div className="mt-2 flex items-end justify-between gap-2">
-          <div className="min-w-0">
-            <span className="text-[15px] font-semibold tabular-nums text-ink block">
-              {formatPrice(ticker.key, ticker.price)}
-            </span>
-            <div className={cn(
-              "flex items-center gap-0.5 mt-0.5 text-2xs font-semibold tabular-nums",
-              up ? "text-emerald-600" : ticker.changePercent !== 0 ? "text-red-500" : "text-ink-muted",
-            )}>
-              {up ? <TrendingUp size={11} /> :
-               ticker.changePercent !== 0 ? <TrendingDown size={11} /> : <Minus size={11} />}
-              <span>{formatChange(ticker)}</span>
+        <>
+          <p className="text-[9px] font-bold uppercase tracking-wider text-ink-muted mb-0.5">{config.sub}</p>
+          <p className="text-[11px] font-bold text-ink">{config.label}</p>
+          {loading ? (
+            <div className="mt-1.5 h-7 w-full bg-raised rounded animate-pulse" />
+          ) : (
+            <div className="mt-1.5 flex items-end justify-between gap-1.5">
+              <div className="min-w-0">
+                <span className="text-[14px] font-semibold tabular-nums text-ink block">
+                  {formatPrice(ticker.key, ticker.price)}
+                </span>
+                <div className={cn(
+                  "flex items-center gap-0.5 text-[10px] font-semibold tabular-nums",
+                  up ? "text-emerald-600" : ticker.changePercent !== 0 ? "text-red-500" : "text-ink-muted",
+                )}>
+                  {up ? <TrendingUp size={10} /> :
+                   ticker.changePercent !== 0 ? <TrendingDown size={10} /> : <Minus size={10} />}
+                  <span>{formatChange(ticker)}</span>
+                </div>
+              </div>
+              <Sparkline history={ticker.history} positive={up} />
             </div>
-          </div>
-          <Sparkline history={ticker.history} positive={up} />
-        </div>
+          )}
+        </>
       )}
     </motion.button>
   );
@@ -258,115 +287,83 @@ function SectionHeader({
   label: string; icon?: React.ReactNode; sub?: string;
 }) {
   return (
-    <div className="flex items-center gap-3 mb-4">
+    <div className="flex items-center gap-2.5 mb-3">
       {icon}
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-muted/80">{label}</span>
-        {sub && <span className="text-[9.5px] text-ink-muted/40">{sub}</span>}
+        <span className="text-[9.5px] font-bold uppercase tracking-[0.18em] text-ink-muted/70">{label}</span>
+        {sub && <span className="text-[9px] text-ink-muted/35">{sub}</span>}
       </div>
-      <span className="h-px flex-1 bg-edge/60" />
+      <span className="h-px flex-1 bg-edge/70" />
     </div>
   );
 }
 
 
-// ── WHAT'S HAPPENING ──────────────────────────────────────────────────────────
+// ── Regime Strip ──────────────────────────────────────────────────────────────
+// Full-opacity dark band: matches the Argus header aesthetic exactly
 
-function WhatHappeningHeader({
-  derivedRegime, brief, marketData, activeKey, onTileClick,
-  allSnapshotUnavailable, marketOpen, heartbeatStatus, cacheAge,
+function RegimeStrip({
+  regime, brief, heartbeatStatus,
 }: {
-  derivedRegime:          string;
-  brief:                  { market_regime: string; primary_driver: string; confidence: number } | undefined;
-  marketData:             Record<string, TickerData | null> | undefined;
-  activeKey:              SnapshotKey | null;
-  onTileClick:            (key: SnapshotKey) => void;
-  allSnapshotUnavailable: boolean;
-  marketOpen:             boolean;
-  heartbeatStatus:        string;
-  cacheAge:               number | undefined;
+  regime:          string;
+  brief:           { market_regime: string; primary_driver: string; confidence: number } | undefined;
+  heartbeatStatus: string;
 }) {
-  const regime    = derivedRegime || brief?.market_regime || "";
-  const accentClr = regime ? regimeAccentColor(regime) : "#6366f1";
+  const label     = regime || brief?.market_regime || "";
+  if (!label) return null;
+  const accentClr = regimeAccentColor(label);
 
   return (
     <div
-      className="rounded-2xl border mb-6 overflow-hidden"
-      style={{ background: "rgba(6,10,22,0.65)", borderColor: `${accentClr}22` }}
+      className="rounded-xl mb-3 px-4 py-3 flex items-start justify-between gap-4"
+      style={{
+        background:   "rgba(6,10,22,0.94)",
+        border:       `1px solid ${accentClr}18`,
+        boxShadow:    `0 0 0 1px rgba(255,255,255,0.04) inset`,
+      }}
     >
-      {/* Regime strip */}
-      <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: `${accentClr}15` }}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span
-                className="text-[8px] font-bold uppercase tracking-[0.2em]"
-                style={{ color: `${accentClr}70` }}
-              >
-                Market Regime
-              </span>
-              {brief?.confidence !== undefined && (
-                <span
-                  className="text-[8px] font-semibold px-1.5 py-px rounded-full border"
-                  style={{ color: accentClr, background: `${accentClr}12`, borderColor: `${accentClr}22` }}
-                >
-                  {brief.confidence}% confidence
-                </span>
-              )}
-            </div>
-            <p className="text-[18px] font-bold leading-tight" style={{ color: accentClr }}>
-              {regime || "Analyzing market conditions…"}
-            </p>
-            {brief?.primary_driver && (
-              <p className="text-[11px] mt-1 leading-relaxed line-clamp-2"
-                style={{ color: "rgba(255,255,255,0.36)" }}>
-                {brief.primary_driver}
-              </p>
-            )}
-          </div>
-          <div className="shrink-0 flex items-center gap-1.5 mt-0.5">
-            <span className={cn(
-              "w-1.5 h-1.5 rounded-full",
-              heartbeatStatus === "live"     ? "bg-emerald-400 animate-pulse" :
-              heartbeatStatus === "stale"    ? "bg-amber-400" :
-              heartbeatStatus === "offline"  ? "bg-red-500" :
-                                               "bg-slate-400 animate-pulse",
-            )} />
-            <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)" }}>
-              {heartbeatStatus === "live"    ? "Live"   :
-               heartbeatStatus === "stale"  ? "Stale"  :
-               heartbeatStatus === "offline"? "Offline" : "Loading"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Asset tiles */}
-      <div className="px-4 py-3">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {SNAPSHOT_CONFIGS.map(cfg => (
-            <SnapshotTile
-              key={cfg.key}
-              config={cfg}
-              ticker={marketData ? (marketData[cfg.key] ?? null) : undefined}
-              isActive={activeKey === cfg.key}
-              onClick={() => onTileClick(cfg.key)}
-            />
-          ))}
-        </div>
-        {allSnapshotUnavailable && (
-          <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
-            <AlertTriangle size={10} className="shrink-0 text-amber-400" />
-            <p className="text-[10px] leading-snug" style={{ color: "rgba(255,255,255,0.40)" }}>
-              Market prices temporarily unavailable — intelligence sections remain active.
-            </p>
-          </div>
-        )}
-        <p className="text-[9px] flex items-center gap-1 mt-2" style={{ color: "rgba(255,255,255,0.18)" }}>
-          <AlertCircle size={9} className="shrink-0" />
-          {marketOpen ? "Live prices" : "Delayed ~15 min"} · Click a tile to filter themes
-          {cacheAge !== undefined && ` · Feed ${formatAge(cacheAge)}`}
+      <div className="min-w-0 flex-1">
+        <p
+          className="text-[7.5px] font-bold uppercase tracking-[0.2em] mb-1"
+          style={{ color: `${accentClr}55` }}
+        >
+          Market Regime
         </p>
+        <p className="text-[15px] font-bold leading-tight" style={{ color: accentClr }}>
+          {label}
+        </p>
+        {brief?.primary_driver && (
+          <p
+            className="text-[10.5px] mt-1 leading-relaxed line-clamp-2"
+            style={{ color: "rgba(255,255,255,0.36)" }}
+          >
+            {brief.primary_driver}
+          </p>
+        )}
+      </div>
+      <div className="shrink-0 flex flex-col items-end gap-1.5">
+        {brief?.confidence !== undefined && (
+          <span
+            className="text-[8px] font-bold tabular-nums px-1.5 py-px rounded"
+            style={{ color: accentClr, background: `${accentClr}14` }}
+          >
+            {brief.confidence}% conf.
+          </span>
+        )}
+        <div className="flex items-center gap-1">
+          <span className={cn(
+            "w-1.5 h-1.5 rounded-full shrink-0",
+            heartbeatStatus === "live"    ? "bg-emerald-400 animate-pulse" :
+            heartbeatStatus === "stale"   ? "bg-amber-400" :
+            heartbeatStatus === "offline" ? "bg-red-500" :
+                                            "bg-slate-500",
+          )} />
+          <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.22)" }}>
+            {heartbeatStatus === "live"    ? "Live"    :
+             heartbeatStatus === "stale"   ? "Stale"   :
+             heartbeatStatus === "offline" ? "Offline" : "—"}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -398,25 +395,25 @@ function BiggestMoves({
 
   return (
     <>
-      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1.5">
         {tickers.map(({ cfg, t }, i) => {
           const up = isUp(t);
           return (
             <div key={t.key} className={cn(
-              "bg-surface/60 border rounded-lg px-2 py-2 text-center",
-              i === 0 ? "border-edge-strong" : "border-edge/60",
+              "bg-surface border rounded-lg px-2 py-1.5 text-center",
+              i === 0 ? "border-edge-strong shadow-card" : "border-edge",
             )}>
-              <p className="text-2xs font-bold text-ink-muted mb-0.5 truncate">{cfg.label}</p>
+              <p className="text-[9px] font-bold text-ink-muted mb-0.5 truncate">{cfg.label}</p>
               {"isYield" in cfg && cfg.isYield && (
-                <p className="text-2xs font-semibold tabular-nums text-ink">{t.price.toFixed(3)}%</p>
+                <p className="text-[9px] font-semibold tabular-nums text-ink">{t.price.toFixed(3)}%</p>
               )}
               {"isVix" in cfg && cfg.isVix && (
-                <p className="text-2xs font-semibold tabular-nums text-ink">{t.price.toFixed(1)}</p>
+                <p className="text-[9px] font-semibold tabular-nums text-ink">{t.price.toFixed(1)}</p>
               )}
               <p className={cn(
-                "tabular-nums",
-                i === 0 ? "text-[13px] font-extrabold" : "text-xs font-bold",
-                up ? "text-emerald-500" : "text-red-500",
+                "tabular-nums font-bold",
+                i === 0 ? "text-[12px]" : "text-[10.5px]",
+                up ? "text-emerald-600" : "text-red-500",
               )}>
                 {formatChange(t)}
               </p>
@@ -425,23 +422,20 @@ function BiggestMoves({
         })}
       </div>
       {topExplained.length > 0 && (
-        <div className="mt-3 space-y-1.5 border-t border-edge/30 pt-3">
-          {topExplained.map(({ cfg, t, explanation }) => {
-            const up = isUp(t);
-            return (
-              <div key={t.key} className="flex items-start gap-2.5 text-2xs">
-                <span className={cn(
-                  "font-bold tabular-nums shrink-0 w-[7rem]",
-                  up ? "text-emerald-500" : "text-red-500",
-                )}>
-                  {cfg.label} {formatChange(t)}
-                </span>
-                <span className="leading-relaxed line-clamp-1 flex-1 text-ink-secondary">
-                  — {explanation}
-                </span>
-              </div>
-            );
-          })}
+        <div className="mt-2.5 space-y-1 border-t border-edge/40 pt-2.5">
+          {topExplained.map(({ cfg, t, explanation }) => (
+            <div key={t.key} className="flex items-start gap-2 text-2xs">
+              <span className={cn(
+                "font-bold tabular-nums shrink-0 w-[6.5rem]",
+                isUp(t) ? "text-emerald-600" : "text-red-500",
+              )}>
+                {cfg.label} {formatChange(t)}
+              </span>
+              <span className="leading-relaxed line-clamp-1 flex-1 text-ink-secondary">
+                — {explanation}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </>
@@ -462,17 +456,17 @@ function LifecycleJourney({ stage }: { stage: ThemeLifecycleStage }) {
         return (
           <div key={s} className={cn("flex items-center", i < LIFECYCLE_STAGES.length - 1 ? "flex-1" : "shrink-0")}>
             <div
-              className="w-[7px] h-[7px] rounded-full shrink-0"
+              className="w-[6px] h-[6px] rounded-full shrink-0"
               style={{
-                background:  isCurrent ? sMeta.color : isPast ? `${sMeta.color}45` : "transparent",
-                border:      `${isCurrent ? 2 : 1}px solid ${isCurrent ? sMeta.color : isPast ? `${sMeta.color}55` : "rgba(148,163,184,0.18)"}`,
-                transform:   isCurrent ? "scale(1.4)" : "none",
+                background: isCurrent ? sMeta.color : isPast ? `${sMeta.color}40` : "transparent",
+                border:     `${isCurrent ? 2 : 1}px solid ${isCurrent ? sMeta.color : isPast ? `${sMeta.color}50` : "rgba(148,163,184,0.15)"}`,
+                transform:  isCurrent ? "scale(1.3)" : "none",
               }}
             />
             {i < LIFECYCLE_STAGES.length - 1 && (
               <div
                 className="flex-1 h-px mx-1"
-                style={{ background: i < currentIdx ? `${sMeta.color}30` : "rgba(148,163,184,0.10)" }}
+                style={{ background: i < currentIdx ? `${sMeta.color}28` : "rgba(148,163,184,0.08)" }}
               />
             )}
           </div>
@@ -494,33 +488,35 @@ function RelationshipPanel({
   connected:  { id: string; name: string; linkType: string; strength: string }[];
   conflicts:  { id: string; description: string; type: string; severity: string; themeIds: string[] }[];
 }) {
-  const lcStage = computeThemeLifecycleStage(theme);
+  const lcStage    = computeThemeLifecycleStage(theme);
+  const publicName = cleanThemeName(theme.name);
+
   return (
     <motion.div
       key="rel-panel"
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: "auto" }}
       exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.2, ease: "easeInOut" }}
+      transition={{ duration: 0.18, ease: "easeInOut" }}
       style={{ overflow: "hidden" }}
     >
-      <div className="pt-3 mt-1 border-t border-edge/30 space-y-3.5">
+      <div className="pt-2.5 mt-1 border-t border-edge/25 space-y-3">
 
-        {/* Lifecycle timeline */}
+        {/* Lifecycle */}
         <div>
-          <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2.5">
+          <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">
             Lifecycle — {THEME_LIFECYCLE_META[lcStage].label}
           </p>
-          <div className="px-2">
+          <div className="px-1.5">
             <LifecycleJourney stage={lcStage} />
           </div>
-          <div className="flex justify-between mt-1.5 px-1">
+          <div className="flex justify-between mt-1 px-0.5">
             {LIFECYCLE_STAGES.map(s => (
               <span
                 key={s}
-                className="text-[6.5px] font-medium"
+                className="text-[6px] font-medium"
                 style={{
-                  color:      s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.28)",
+                  color:      s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.25)",
                   fontWeight: s === lcStage ? 800 : 400,
                 }}
               >
@@ -530,39 +526,39 @@ function RelationshipPanel({
           </div>
         </div>
 
-        {/* Causal chain */}
+        {/* Causal chain — translated names */}
         {(upstream.length > 0 || downstream.length > 0) && (
           <div>
-            <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
-              Causal Chain
+            <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/35 mb-1.5">
+              Factor Chain
             </p>
             <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-x-2">
-              <div className="space-y-1 text-right">
+              <div className="space-y-0.5 text-right">
                 {upstream.slice(0, 4).map(u => (
                   <div key={u} className="flex items-center justify-end gap-1">
-                    <span className="text-[9px] text-ink-muted/60 leading-tight">{cleanMacroLabel(u)}</span>
-                    <span className="text-[8px] text-ink-muted/20 shrink-0">→</span>
+                    <span className="text-[8.5px] text-ink-muted/55 leading-tight">{cleanMacroLabel(u)}</span>
+                    <span className="text-[7px] text-ink-muted/18 shrink-0">→</span>
                   </div>
                 ))}
               </div>
-              <div className="flex items-start justify-center pt-0.5">
+              <div className="flex items-start justify-center pt-px">
                 <div
-                  className="px-2 py-1 rounded-lg border text-[8.5px] font-bold text-center leading-tight"
+                  className="px-2 py-1 rounded border text-[7.5px] font-bold text-center leading-tight"
                   style={{
-                    borderColor: "var(--color-edge-strong)",
-                    color: "var(--color-ink)",
-                    background: "var(--color-raised)",
-                    maxWidth: 84,
+                    borderColor: "var(--color-edge)",
+                    color:       "var(--color-ink)",
+                    background:  "var(--color-raised)",
+                    maxWidth:    80,
                   }}
                 >
-                  {theme.name.length > 24 ? theme.name.slice(0, 22) + "…" : theme.name}
+                  {publicName.length > 20 ? publicName.slice(0, 18) + "…" : publicName}
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {downstream.slice(0, 4).map(d => (
                   <div key={d} className="flex items-center gap-1">
-                    <span className="text-[8px] text-ink-muted/20 shrink-0">→</span>
-                    <span className="text-[9px] text-ink-muted/60 leading-tight line-clamp-1">{d}</span>
+                    <span className="text-[7px] text-ink-muted/18 shrink-0">→</span>
+                    <span className="text-[8.5px] text-ink-muted/55 leading-tight line-clamp-1">{d}</span>
                   </div>
                 ))}
               </div>
@@ -570,10 +566,10 @@ function RelationshipPanel({
           </div>
         )}
 
-        {/* Connected themes */}
+        {/* Connected themes — translated names */}
         {connected.length > 0 && (
           <div>
-            <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/40 mb-1.5">
+            <p className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/35 mb-1">
               Connected Themes
             </p>
             <div className="flex flex-wrap gap-1">
@@ -583,14 +579,14 @@ function RelationshipPanel({
                 return (
                   <span
                     key={c.id}
-                    className="text-[9px] px-1.5 py-0.5 rounded"
+                    className="text-[8.5px] px-1.5 py-px rounded"
                     style={{
-                      color: linkColor,
+                      color:      linkColor,
                       background: `${linkColor}10`,
-                      border: `${c.strength === "strong" ? 1.5 : 1}px solid ${linkColor}28`,
+                      border:     `1px solid ${linkColor}24`,
                     }}
                   >
-                    {c.name}
+                    {cleanThemeName(c.name)}
                   </span>
                 );
               })}
@@ -601,14 +597,14 @@ function RelationshipPanel({
         {/* Signal conflicts */}
         {conflicts.length > 0 && (
           <div>
-            <p className="text-[7px] font-bold uppercase tracking-widest text-amber-500/50 mb-1.5">
+            <p className="text-[7px] font-bold uppercase tracking-widest text-amber-500/45 mb-1">
               Signal Conflicts
             </p>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {conflicts.slice(0, 2).map(c => (
                 <div key={c.id} className="flex items-start gap-1.5">
-                  <span className="text-[9px] text-amber-500/60 shrink-0 mt-px">⚠</span>
-                  <p className="text-[9px] text-ink-muted/60 leading-snug">{c.description}</p>
+                  <span className="text-[8.5px] text-amber-500/55 shrink-0">⚠</span>
+                  <p className="text-[8.5px] text-ink-muted/55 leading-snug">{c.description}</p>
                 </div>
               ))}
             </div>
@@ -640,6 +636,7 @@ function ThemeCard({
   const evState    = computeThemeEvolutionState(t);
   const evMeta     = THEME_EVOLUTION_META[evState];
   const evCls      = EVOLUTION_CLS[evState] ?? "text-slate-400";
+  const publicName = cleanThemeName(t.name);
 
   const benefits:  string[] = [];
   const pressures: string[] = [];
@@ -665,46 +662,48 @@ function ThemeCard({
       className="bg-surface rounded-xl border border-edge overflow-hidden"
       style={{ borderLeft: `3px solid ${borderColor}` }}
     >
-      <div className="px-4 pt-3.5 pb-3 space-y-3">
+      <div className="px-3 pt-2.5 pb-2.5 space-y-2">
 
         {/* Status row */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={cn("text-[9.5px] font-bold uppercase tracking-wide", evCls)}>
+          <span className={cn("text-[9px] font-bold uppercase tracking-wide", evCls)}>
             {evMeta.icon} {evMeta.label}
           </span>
-          <span className="text-ink-muted/25 text-[8px]">·</span>
+          <span className="text-ink-muted/20 text-[8px]">·</span>
           <div className="flex items-center gap-1.5">
-            <div className="w-16 h-[2.5px] rounded-full bg-raised overflow-hidden">
+            <div className="w-12 h-[2px] rounded-full bg-raised overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${confScore}%`, background: confColor }} />
             </div>
-            <span className="text-[9.5px] font-semibold tabular-nums" style={{ color: confColor }}>
+            <span className="text-[9px] font-semibold tabular-nums" style={{ color: confColor }}>
               {t.confidence_label || `${confScore}%`}
             </span>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
             {t.evidence_count > 0 && (
-              <span className="text-[8.5px] text-ink-muted/40 tabular-nums">
+              <span className="text-[8px] text-ink-muted/35 tabular-nums">
                 {t.evidence_count} signals
               </span>
             )}
             {isConflict && (
-              <span className="text-[10px] text-amber-400" title="Signal conflicts detected">⚠</span>
+              <span className="text-amber-400 text-[9px]" title="Signal conflicts">⚠</span>
             )}
           </div>
         </div>
 
-        {/* Theme name + upstream drivers */}
+        {/* Public theme name + upstream drivers */}
         <div>
-          <h3 className="text-[14px] font-bold text-ink leading-tight tracking-tight">{t.name}</h3>
+          <h3 className="text-[13px] font-bold text-ink leading-tight tracking-tight">
+            {publicName}
+          </h3>
           {upstream.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap mt-1.5">
-              <span className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/35 shrink-0">
-                Driven by
+            <div className="flex items-center gap-1 flex-wrap mt-1">
+              <span className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/30 shrink-0">
+                via
               </span>
               {upstream.map(u => (
                 <span
                   key={u}
-                  className="text-[8.5px] text-ink-muted/55 px-1.5 py-px rounded bg-raised border border-edge/50"
+                  className="text-[8px] text-ink-muted/50 px-1 py-px rounded bg-raised border border-edge/60"
                 >
                   {cleanMacroLabel(u)}
                 </span>
@@ -713,11 +712,11 @@ function ThemeCard({
           )}
         </div>
 
-        {/* Causal narrative — primary body text */}
+        {/* Causal narrative */}
         {(t.causal_narrative || t.description) && (
           <p
-            className="text-[11.5px] text-ink leading-relaxed border-l-2 pl-3"
-            style={{ borderColor: `${borderColor}35` }}
+            className="text-[11px] text-ink-secondary leading-relaxed border-l-2 pl-2.5"
+            style={{ borderColor: `${borderColor}30` }}
           >
             {t.causal_narrative || t.description}
           </p>
@@ -725,20 +724,20 @@ function ThemeCard({
 
         {/* Benefits / Pressures */}
         {(benefits.length > 0 || pressures.length > 0 || neutral.length > 0) && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-0 pt-0.5">
+          <div className="grid grid-cols-2 gap-x-3 pt-0.5">
             {(benefits.length > 0 || neutral.length > 0) && (
               <div>
-                <p className="text-[7.5px] font-bold uppercase tracking-widest text-emerald-500/55 mb-1.5">
+                <p className="text-[7px] font-bold uppercase tracking-widest text-emerald-600/50 mb-1">
                   ↑ Benefits
                 </p>
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {[...benefits, ...neutral].slice(0, 4).map(ind => (
                     <div key={ind} className="flex items-center gap-1.5">
                       <span
-                        className="w-1 h-1 rounded-full shrink-0"
-                        style={{ background: benefits.includes(ind) ? "#10b981" : "#64748b" }}
+                        className="w-[5px] h-[5px] rounded-full shrink-0"
+                        style={{ background: benefits.includes(ind) ? "#10b981" : "#94a3b8" }}
                       />
-                      <span className="text-[10px] text-ink-secondary leading-tight">{ind}</span>
+                      <span className="text-[9.5px] text-ink-secondary leading-tight">{ind}</span>
                     </div>
                   ))}
                 </div>
@@ -746,14 +745,14 @@ function ThemeCard({
             )}
             {pressures.length > 0 && (
               <div>
-                <p className="text-[7.5px] font-bold uppercase tracking-widest text-red-400/55 mb-1.5">
+                <p className="text-[7px] font-bold uppercase tracking-widest text-red-500/50 mb-1">
                   ↓ Pressures
                 </p>
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {pressures.slice(0, 4).map(ind => (
                     <div key={ind} className="flex items-center gap-1.5">
-                      <span className="w-1 h-1 rounded-full shrink-0 bg-red-400" />
-                      <span className="text-[10px] text-ink-secondary leading-tight">{ind}</span>
+                      <span className="w-[5px] h-[5px] rounded-full shrink-0 bg-red-400" />
+                      <span className="text-[9.5px] text-ink-secondary leading-tight">{ind}</span>
                     </div>
                   ))}
                 </div>
@@ -765,11 +764,11 @@ function ThemeCard({
         {/* Watch signal */}
         {t.second_order_effects[0] && (
           <div
-            className="flex items-start gap-2 rounded-lg px-2.5 py-2"
-            style={{ background: "rgba(248,190,65,0.05)", border: "1px solid rgba(248,190,65,0.10)" }}
+            className="flex items-start gap-1.5 rounded px-2 py-1.5"
+            style={{ background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.10)" }}
           >
-            <span className="text-[8px] font-bold text-amber-400/60 shrink-0 mt-px tracking-wide">WATCH</span>
-            <p className="text-[10.5px] text-ink-muted/65 leading-snug flex-1">
+            <span className="text-[7.5px] font-bold text-amber-500/55 shrink-0 mt-px tracking-wide">WATCH</span>
+            <p className="text-[10px] text-ink-muted/60 leading-snug flex-1">
               {t.second_order_effects[0]}
             </p>
           </div>
@@ -778,20 +777,20 @@ function ThemeCard({
         {/* Related themes */}
         {connected.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/35 shrink-0">
+            <span className="text-[7px] font-bold uppercase tracking-widest text-ink-muted/30 shrink-0">
               Related
             </span>
             {connected.map(c => (
               <span
                 key={c.id}
-                className="text-[9px] px-1.5 py-px rounded border"
+                className="text-[8.5px] px-1.5 py-px rounded border"
                 style={{
                   color:       c.strength === "strong" ? "#38bdf8" : "#64748b",
-                  background:  c.strength === "strong" ? "rgba(56,189,248,0.06)" : "var(--color-raised)",
-                  borderColor: c.strength === "strong" ? "rgba(56,189,248,0.18)" : "var(--color-edge)",
+                  background:  c.strength === "strong" ? "rgba(56,189,248,0.05)" : "var(--color-raised)",
+                  borderColor: c.strength === "strong" ? "rgba(56,189,248,0.15)" : "var(--color-edge)",
                 }}
               >
-                {c.name}
+                {cleanThemeName(c.name)}
               </span>
             ))}
           </div>
@@ -800,12 +799,12 @@ function ThemeCard({
         {/* Expand toggle */}
         <button
           onClick={() => setExpanded(p => !p)}
-          className="flex items-center gap-1 w-full pt-1.5 border-t border-edge/30
-                     text-[8.5px] text-ink-muted/35 hover:text-ink-muted/60 transition-colors"
+          className="flex items-center gap-1 w-full pt-1.5 border-t border-edge/25
+                     text-[8px] text-ink-muted/30 hover:text-ink-muted/55 transition-colors"
         >
           {expanded
-            ? <><ChevronUp size={9} className="shrink-0" /> Hide causal chain &amp; lifecycle</>
-            : <><ChevronDown size={9} className="shrink-0" /> Causal chain &amp; lifecycle</>}
+            ? <><ChevronUp size={8} className="shrink-0" /> Hide factor chain &amp; lifecycle</>
+            : <><ChevronDown size={8} className="shrink-0" /> Factor chain &amp; lifecycle</>}
         </button>
 
         <AnimatePresence>
@@ -840,7 +839,7 @@ function IntelligenceThemes({
     t => t.signal_strength === "strong" || t.signal_strength === "medium",
   );
 
-  const relMap = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
+  const relMap         = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
   const contradictions = useMemo(
     () => detectContradictions(visible, sectorData, riskRegime, volRegime),
     [visible, sectorData, riskRegime, volRegime],
@@ -848,23 +847,20 @@ function IntelligenceThemes({
   const conflictedIds = useMemo(() => getConflictedThemeIds(contradictions), [contradictions]);
 
   if (visible.length === 0) return (
-    <div className="mb-6">
-      <SectionHeader
-        label="What's Driving It"
-        icon={<Network size={13} className="text-accent shrink-0" />}
-      />
+    <div className="mb-4">
+      <SectionHeader label="What's Driving It" icon={<Network size={12} className="text-accent shrink-0" />} />
       <p className="text-[11px] text-ink-muted italic">Theme analysis warming up…</p>
     </div>
   );
 
   return (
-    <div className="mb-6">
+    <div className="mb-4">
       <SectionHeader
         label="What's Driving It"
-        icon={<Network size={13} className="text-accent shrink-0" />}
+        icon={<Network size={12} className="text-accent shrink-0" />}
         sub={`${visible.length} active theme${visible.length !== 1 ? "s" : ""}`}
       />
-      <div className="space-y-3">
+      <div className="space-y-2">
         {visible.map((t, i) => {
           const rel = relMap.get(t.id);
           return (
@@ -901,98 +897,88 @@ function WhereMattersList({
 
   if (snapshot.length === 0) return null;
 
-  const leaders  = snapshot.filter(s => s.direction === "positive").slice(0, 5);
-  const laggards = snapshot.filter(s => s.direction === "negative").slice(0, 5);
-  const mixed    = snapshot.filter(s => s.direction === "mixed").slice(0, 4);
-  const maxScore = snapshot[0]?.signalScore ?? 100;
-  const confirming = snapshot.filter(
-    s => s.direction === "positive" || s.direction === "mixed",
-  ).length;
+  const leaders    = snapshot.filter(s => s.direction === "positive").slice(0, 5);
+  const laggards   = snapshot.filter(s => s.direction === "negative").slice(0, 5);
+  const mixed      = snapshot.filter(s => s.direction === "mixed").slice(0, 4);
+  const maxScore   = snapshot[0]?.signalScore ?? 100;
+  const confirming = snapshot.filter(s => s.direction === "positive" || s.direction === "mixed").length;
+
+  function SectorRow({
+    sector, signalScore, themeCount, dominantTheme, barColor,
+  }: {
+    sector: string; signalScore: number; themeCount: number;
+    dominantTheme?: string; barColor: string;
+  }) {
+    const pct = maxScore > 0 ? (signalScore / maxScore) * 100 : 0;
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-[9.5px] text-ink-secondary w-24 shrink-0 truncate">{sector}</span>
+        <div className="w-16 h-[2.5px] rounded-full bg-raised overflow-hidden shrink-0">
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barColor }} />
+        </div>
+        {themeCount > 0 && (
+          <span className="text-[7.5px] font-bold shrink-0 tabular-nums" style={{ color: `${barColor}70` }}>
+            ×{themeCount}
+          </span>
+        )}
+        {dominantTheme && (
+          <span className="text-[8px] truncate min-w-0 flex-1 hidden sm:block" style={{ color: `${barColor}40` }}>
+            {dominantTheme}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="mb-6">
+    <div className="mb-4">
       <SectionHeader
         label="Where It Matters"
-        icon={<BarChart2 size={13} className="text-accent shrink-0" />}
+        icon={<BarChart2 size={12} className="text-accent shrink-0" />}
         sub={`${confirming} of ${snapshot.length} sectors confirming`}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {leaders.length > 0 && (
           <div>
-            <p className="text-[8px] font-bold uppercase tracking-widest text-emerald-500/55 mb-2.5">
+            <p className="text-[7.5px] font-bold uppercase tracking-widest text-emerald-600/50 mb-2">
               ↑ Sector Leaders
             </p>
-            <div className="space-y-2.5">
-              {leaders.map(s => {
-                const pct = maxScore > 0 ? (s.signalScore / maxScore) * 100 : 0;
-                return (
-                  <div key={s.sector} className="flex items-center gap-2.5">
-                    <span className="text-[10px] text-ink-secondary w-28 shrink-0 truncate">{s.sector}</span>
-                    <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden max-w-[80px]">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#10b981" }} />
-                    </div>
-                    {s.themeCount > 0 && (
-                      <span className="text-[8px] font-bold text-emerald-500/50 shrink-0 w-5 tabular-nums">
-                        ×{s.themeCount}
-                      </span>
-                    )}
-                    {s.dominantTheme && (
-                      <span className="text-[8.5px] text-emerald-500/35 truncate min-w-0 flex-1 hidden sm:block">
-                        {s.dominantTheme}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="space-y-2">
+              {leaders.map(s => (
+                <SectorRow key={s.sector} sector={s.sector} signalScore={s.signalScore}
+                  themeCount={s.themeCount} dominantTheme={s.dominantTheme ?? undefined} barColor="#10b981" />
+              ))}
             </div>
           </div>
         )}
-
         {laggards.length > 0 && (
           <div>
-            <p className="text-[8px] font-bold uppercase tracking-widest text-red-400/55 mb-2.5">
+            <p className="text-[7.5px] font-bold uppercase tracking-widest text-red-500/50 mb-2">
               ↓ Under Pressure
             </p>
-            <div className="space-y-2.5">
-              {laggards.map(s => {
-                const pct = maxScore > 0 ? (s.signalScore / maxScore) * 100 : 0;
-                return (
-                  <div key={s.sector} className="flex items-center gap-2.5">
-                    <span className="text-[10px] text-ink-secondary w-28 shrink-0 truncate">{s.sector}</span>
-                    <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden max-w-[80px]">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#ef4444" }} />
-                    </div>
-                    {s.themeCount > 0 && (
-                      <span className="text-[8px] font-bold text-red-400/50 shrink-0 w-5 tabular-nums">
-                        ×{s.themeCount}
-                      </span>
-                    )}
-                    {s.dominantTheme && (
-                      <span className="text-[8.5px] text-red-400/35 truncate min-w-0 flex-1 hidden sm:block">
-                        {s.dominantTheme}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="space-y-2">
+              {laggards.map(s => (
+                <SectorRow key={s.sector} sector={s.sector} signalScore={s.signalScore}
+                  themeCount={s.themeCount} dominantTheme={s.dominantTheme ?? undefined} barColor="#ef4444" />
+              ))}
             </div>
           </div>
         )}
       </div>
 
       {mixed.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-edge/40">
-          <p className="text-[8px] font-bold uppercase tracking-widest text-amber-400/55 mb-2">
+        <div className="mt-3 pt-2.5 border-t border-edge/40">
+          <p className="text-[7.5px] font-bold uppercase tracking-widest text-amber-500/50 mb-1.5">
             ~ Mixed / Conflicting
           </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
             {mixed.map(s => (
               <div key={s.sector} className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400/45 shrink-0" />
-                <span className="text-[9.5px] text-ink-muted">{s.sector}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400/40 shrink-0" />
+                <span className="text-[9px] text-ink-muted">{s.sector}</span>
                 {s.dominantTheme && (
-                  <span className="text-[8.5px] text-ink-muted/35">— {s.dominantTheme}</span>
+                  <span className="text-[8px] text-ink-muted/30">— {s.dominantTheme}</span>
                 )}
               </div>
             ))}
@@ -1020,9 +1006,8 @@ export default function MarketsPage() {
   const cacheAge      = data?.cache_age_seconds;
   const derivedRegime = data?.sector_data?.derived_regime ?? "";
 
-  const allSnapshotUnavailable =
-    marketData !== undefined &&
-    SNAPSHOT_CONFIGS.every(cfg => marketData[cfg.key] === null);
+  const anyLive = marketData !== undefined &&
+    SNAPSHOT_CONFIGS.some(cfg => marketData[cfg.key] !== null);
 
   const activeCfg = SNAPSHOT_CONFIGS.find(c => c.key === activeKey) ?? null;
 
@@ -1052,32 +1037,32 @@ export default function MarketsPage() {
   return (
     <>
       {/* Argus identity header */}
-      <div style={{ background: "rgba(6,10,22,0.97)", borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: "24px" }}>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-start justify-between gap-4">
+      <div style={{ background: "rgba(6,10,22,0.97)", borderBottom: "1px solid rgba(255,255,255,0.07)", marginBottom: "20px" }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2.5 mb-1">
+            <div className="flex items-center gap-2.5 mb-0.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/argus-icon.png" alt="" style={{ width: 16, height: 16, borderRadius: 3, opacity: 0.85 }} />
-              <span style={{ fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.28)" }}>
+              <img src="/argus-icon.png" alt="" style={{ width: 15, height: 15, borderRadius: 3, opacity: 0.85 }} />
+              <span style={{ fontSize: "8px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.25)" }}>
                 ARGUS
               </span>
-              <div style={{ width: 1, height: 10, background: "rgba(255,255,255,0.10)" }} />
-              <h1 style={{ fontSize: "14px", fontWeight: 600, color: "rgba(255,255,255,0.90)", letterSpacing: "0.02em" }}>
+              <div style={{ width: 1, height: 9, background: "rgba(255,255,255,0.10)" }} />
+              <h1 style={{ fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.88)", letterSpacing: "0.02em" }}>
                 Markets
               </h1>
             </div>
-            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.36)", letterSpacing: "0.02em" }}>
-              Market intelligence · Themes · Sector analysis
+            <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)" }}>
+              Intelligence · Themes · Sector signals
             </p>
           </div>
           {marketMeta?.fetchedAt && heartbeatStatus !== "loading" && (
-            <div className="flex items-center gap-1.5 shrink-0 self-center">
+            <div className="flex items-center gap-1.5 shrink-0">
               <span className={cn(
                 "w-1.5 h-1.5 rounded-full",
                 heartbeatStatus === "live"  ? "bg-emerald-400 animate-pulse" :
                 heartbeatStatus === "stale" ? "bg-amber-400" : "bg-red-500",
               )} />
-              <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)" }}>
+              <span style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.25)" }}>
                 {formatAge(Math.floor((Date.now() - new Date(marketMeta.fetchedAt).getTime()) / 1000))}
               </span>
             </div>
@@ -1089,25 +1074,44 @@ export default function MarketsPage() {
 
         {/* ── WHAT'S HAPPENING ────────────────────────────────── */}
         <SectionHeader label="What's Happening" />
-        <WhatHappeningHeader
-          derivedRegime={derivedRegime}
-          brief={data?.market_brief ?? undefined}
-          marketData={marketData}
-          activeKey={activeKey}
-          onTileClick={handleTileClick}
-          allSnapshotUnavailable={allSnapshotUnavailable}
-          marketOpen={marketOpen}
-          heartbeatStatus={heartbeatStatus}
-          cacheAge={cacheAge}
-        />
 
-        <div className="mb-6">
-          <SectionHeader
-            label="Biggest Moves"
-            icon={<Zap size={13} className="text-accent shrink-0" />}
+        {/* Regime strip — opaque dark band, clearly readable */}
+        {!isLoading && (
+          <RegimeStrip
+            regime={derivedRegime}
+            brief={data?.market_brief ?? undefined}
+            heartbeatStatus={heartbeatStatus}
           />
-          <BiggestMoves data={marketData} clusters={clusters} />
+        )}
+
+        {/* Asset tiles — on normal canvas, below the dark strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-1.5">
+          {SNAPSHOT_CONFIGS.map(cfg => (
+            <SnapshotTile
+              key={cfg.key}
+              config={cfg}
+              ticker={marketData ? (marketData[cfg.key] ?? null) : undefined}
+              isActive={activeKey === cfg.key}
+              onClick={() => handleTileClick(cfg.key)}
+            />
+          ))}
         </div>
+        <p className="text-[8.5px] text-ink-muted/40 flex items-center gap-1 mb-4">
+          <AlertCircle size={8} className="shrink-0" />
+          {anyLive ? (marketOpen ? "Live prices" : "Delayed ~15 min") : "Price data unavailable"} · Click a tile to filter themes
+          {cacheAge !== undefined && ` · Feed ${formatAge(cacheAge)}`}
+        </p>
+
+        {/* Biggest Moves */}
+        {!isLoading && (
+          <div className="mb-5">
+            <SectionHeader
+              label="Biggest Moves"
+              icon={<Zap size={12} className="text-accent shrink-0" />}
+            />
+            <BiggestMoves data={marketData} clusters={clusters} />
+          </div>
+        )}
 
         {/* ── WHAT'S DRIVING IT ────────────────────────────────── */}
         <IntelligenceThemes
@@ -1125,12 +1129,12 @@ export default function MarketsPage() {
 
         {/* ── SUPPORTING EVIDENCE ──────────────────────────────── */}
         <div ref={clusterRef}>
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-muted/80">
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="text-[9.5px] font-bold uppercase tracking-[0.18em] text-ink-muted/70">
               Supporting Evidence
             </span>
             {!isLoading && clusters.length > 0 && (
-              <span className="text-2xs font-medium text-ink-secondary bg-raised px-2 py-0.5 rounded-full">
+              <span className="text-2xs font-medium text-ink-secondary bg-raised px-1.5 py-px rounded-full">
                 {visibleClusters.length}{activeCfg ? ` of ${clusters.length}` : ""}
               </span>
             )}
@@ -1142,15 +1146,15 @@ export default function MarketsPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.85 }}
                   onClick={() => setActiveKey(null)}
-                  className="flex items-center gap-1 text-2xs font-semibold px-2 py-0.5 rounded-full
+                  className="flex items-center gap-1 text-2xs font-semibold px-1.5 py-px rounded-full
                              bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
                 >
                   {activeCfg.label}
-                  <X size={9} />
+                  <X size={8} />
                 </motion.button>
               )}
             </AnimatePresence>
-            <span className="h-px flex-1 bg-edge/60" />
+            <span className="h-px flex-1 bg-edge/70" />
           </div>
           <div className="mb-6">
             <ClusterStream
@@ -1161,6 +1165,16 @@ export default function MarketsPage() {
             />
           </div>
         </div>
+
+        {/* Only show data-unavailable warning when prices fully offline */}
+        {!anyLive && marketData !== undefined && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 mb-4">
+            <AlertTriangle size={10} className="shrink-0 text-amber-500" />
+            <p className="text-[10.5px] text-ink-secondary">
+              Market prices temporarily unavailable — intelligence sections remain active.
+            </p>
+          </div>
+        )}
 
       </div>
     </>
