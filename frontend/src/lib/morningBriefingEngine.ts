@@ -92,7 +92,7 @@ export function computeOpportunities(
     reversing:     -40,
   };
 
-  return [...themes]
+  const scored = [...themes]
     .filter(t => t.momentum_label !== "reversing")
     .map(t => ({
       theme: t,
@@ -100,8 +100,22 @@ export function computeOpportunities(
              Math.max(t.momentum_delta ?? 0, 0) * 1.5 +
              (MOMENTUM_BONUS[t.momentum_label] ?? 0),
     }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score);
+
+  // Deduplicate by primary industry: keep only the highest-scoring theme per industry.
+  // Multiple themes pointing to the same sector produce one entry using the best driver.
+  const seenInds = new Set<string>();
+  const result: BriefingOpportunity[] = [];
+  for (const item of scored) {
+    if (result.length >= limit) break;
+    const ind = (item.theme.related_industries ?? [])[0];
+    if (ind) {
+      if (seenInds.has(ind)) continue;
+      seenInds.add(ind);
+    }
+    result.push(item);
+  }
+  return result;
 }
 
 // ── computeRisks ──────────────────────────────────────────────────────────────
@@ -124,24 +138,39 @@ export function computeRisks(
            Math.max(0, 55 - (t.confidence ?? 55));
   };
 
-  const deteriorating = [...themes]
+  const allDeterioration = [...themes]
     .filter(t =>
       (t.momentum_delta ?? 0) < 0 ||
       t.momentum_label === "reversing" ||
       t.momentum_label === "cooling"
     )
     .map(t => ({ theme: t, severity: severity(t) }))
-    .sort((a, b) => b.severity - a.severity)
-    .slice(0, limit);
+    .sort((a, b) => b.severity - a.severity);
 
-  if (deteriorating.length >= limit) return deteriorating;
+  // Deduplicate by primary industry: if multiple themes share a sector, keep the worst.
+  const seenInds = new Set<string>();
+  const deteriorating: BriefingRisk[] = [];
+  for (const item of allDeterioration) {
+    const ind = (item.theme.related_industries ?? [])[0];
+    if (ind) {
+      if (seenInds.has(ind)) continue;
+      seenInds.add(ind);
+    }
+    deteriorating.push(item);
+  }
 
-  // Backfill with lowest-confidence non-accelerating themes
+  if (deteriorating.length >= limit) return deteriorating.slice(0, limit);
+
+  // Backfill with lowest-confidence non-accelerating themes, skipping already-seen industries
   const seen = new Set(deteriorating.map(d => d.theme.id));
   const backfill = [...themes]
     .filter(t => !seen.has(t.id) && t.momentum_label !== "accelerating")
     .map(t => ({ theme: t, severity: Math.max(0, 55 - (t.confidence ?? 55)) }))
     .sort((a, b) => b.severity - a.severity)
+    .filter(item => {
+      const ind = (item.theme.related_industries ?? [])[0];
+      return !ind || !seenInds.has(ind);
+    })
     .slice(0, limit - deteriorating.length);
 
   return [...deteriorating, ...backfill];
@@ -392,7 +421,7 @@ export function computeTodaysChanges(
       if (ptext) {
         text = dot(ptext);
       } else if (ind1) {
-        text = `The same supply-demand driver is confirmed in both ${ind0} and ${ind1}, suggesting structural rather than isolated demand.`;
+        text = `Demand confirmation is visible in both ${ind0} and ${ind1}: order data and pricing are aligned on the same driver.`;
       } else {
         text = `Supply-chain confirmation in ${ind0} is visible across multiple independent data points.`;
       }
@@ -494,12 +523,12 @@ export function computeTodaysChanges(
     const label = r.industry;
     if (r.delta >= 25 && !seen.has(label))
       addUp(
-        `${label} is seeing revenue upgrades from several directions. Order books and project financing are both moving higher.`,
+        `${label} order books and project financing are both improving, with multiple revenue lines moving in the same direction.`,
         r.delta * 0.6,
       );
     else if (r.delta <= -15 && !seen.has(label))
       addDown(
-        `${label} is facing broad pressure. Inventory builds and order cancellations are both visible in sector data.`,
+        `Inventory builds and order cancellations are rising simultaneously in ${label}, pointing to a demand-side correction.`,
         Math.abs(r.delta) * 0.6,
       );
   }

@@ -87,6 +87,22 @@ const THEME_LABEL_BLOCKLIST: string[] = [
   "Silicon Sovereignty Capex",
 ];
 
+// Filler phrase substitutions — each tuple is [pattern, replacement].
+// Applied in order after theme-label stripping; the empty-string replacements
+// remove the phrase entirely and the trailing clean-up collapses double spaces.
+const FILLER_SUBS: [RegExp, string][] = [
+  [/\. The move is structural[^.]*\./gi,                                  "."],
+  [/, not isolated to a single (?:company|name|catalyst)[^.]*/gi,         ""],
+  [/ rather than concentrating in (?:a single|any one) (?:name|sector|company)[^.]*/gi, ""],
+  [/ rather than concentrated in (?:a single|any one) (?:name|sector|company)[^.]*/gi, ""],
+  [/ from (?:the )?same underlying driver[^.]*/gi,                        ""],
+  [/ with broader confirmation (?:still )?developing[^.]*/gi,             ""],
+  [/ as multiple demand drivers converge[^.]*/gi,                         ""],
+  [/The improvement spans the supply chain[^.]*\./gi,                     ""],
+  [/ from several directions[^.]*/gi,                                     ""],
+  [/\. The advance is consistent with an earnings-driven rather than multiple-expansion move\./gi, "."],
+];
+
 /** Final defensive pass before any public-facing narrative string is rendered. */
 function sanitize(text: string): string {
   let s = text;
@@ -94,6 +110,9 @@ function sanitize(text: string): string {
   s = s.replace(/—/g, "");
   for (const label of THEME_LABEL_BLOCKLIST) {
     s = s.replace(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "this driver");
+  }
+  for (const [re, replacement] of FILLER_SUBS) {
+    s = s.replace(re, replacement);
   }
   s = s.replace(/  +/g, " ").trim();
   return s;
@@ -191,10 +210,11 @@ function deriveEffectiveRegime(
 // ── Narrative generators ──────────────────────────────────────────────────────
 
 /**
- * 2-3 sentence strategist summary.
- * S1: highest-conviction bullish theme — uses causal narrative when available.
- * S2: highest-conviction bearish theme (preferred over generic macro signals).
- * S3: breadth / conviction — names real themes, not signal counts.
+ * 2–3 sentence strategist summary.
+ * S1: the leading economic force and its sector consequence (mechanism-first).
+ * S2: the opposing or complicating force; names shared drivers when opp and
+ *     risk stem from the same macro variable.
+ * S3: synthesis — what the net of these forces means for positioning.
  */
 function deriveRegimeNarrative(
   ms:              MarketState,
@@ -216,115 +236,146 @@ function deriveRegimeNarrative(
   const oppInd   = (topOpp?.related_industries  ?? [])[0] ?? topInd?.industry;
   const opp2Ind  = (opp2?.related_industries ?? [])[0];
 
-  // ── S1: Lead with the highest-conviction bullish theme ────────────────────
+  // ── S1: Lead with the economic mechanism, name sector as consequence ───────
+  // Avoids the passive "X is benefiting" pattern — starts with the force itself.
   if (topOpp) {
     const causal = causalSentence(topOpp.causal_narrative);
     const eff    = (topOpp.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15);
+    const macro0 = (topOpp.related_macro_factors ?? [])[0];
+    const ind1   = (topOpp.related_industries ?? [])[1];
 
-    if (causal && oppInd) {
-      const lc = causal.charAt(0).toLowerCase() + causal.slice(1).replace(/\.$/, "");
-      sentences.push(`${oppInd} is benefiting as ${lc}.`);
-    } else if (causal) {
+    if (causal) {
+      // Use the causal narrative directly — it already names the mechanism
       sentences.push(causal.endsWith(".") ? causal : causal + ".");
     } else if (eff && oppInd) {
       const lc = eff.charAt(0).toLowerCase() + eff.slice(1).replace(/\.$/, "");
-      sentences.push(`${oppInd} is benefiting as ${lc}.`);
+      sentences.push(`In ${oppInd}, ${lc}.`);
+    } else if (macro0 && oppInd && ind1 && topOpp.cross_category_confirmed) {
+      sentences.push(`${cleanMacroLabel(macro0)} is generating earnings upgrades in both ${oppInd} and ${ind1}.`);
+    } else if (macro0 && oppInd) {
+      sentences.push(`${cleanMacroLabel(macro0)} dynamics are lifting earnings estimates in ${oppInd}, with pricing power and volume both moving in the same direction.`);
     } else if (oppInd) {
-      const ind2 = (topOpp.related_industries ?? [])[1];
-      if (ind2 && topOpp.cross_category_confirmed) {
-        sentences.push(`${oppInd} and ${ind2} are both seeing earnings upgrades as the driver extends across categories.`);
+      if (topOpp.momentum_label === "accelerating") {
+        sentences.push(`${oppInd} order volume and pricing are both rising, with the acceleration confirmed across multiple data points in the supply chain.`);
       } else {
-        sentences.push(opp2Ind
-          ? `${oppInd} earnings are improving, with ${opp2Ind} providing additional sector support.`
-          : `${oppInd} is showing consistent earnings and order improvement.`);
+        sentences.push(`${oppInd} earnings estimates are improving on volume gains and stable-to-rising pricing.`);
       }
     } else {
-      sentences.push("Order flow and pricing data are both improving. The move is not concentrated in a single sector.");
+      sentences.push("Earnings revisions are positive across the leading sectors, with volume and pricing both contributing.");
     }
   } else if (topInd) {
-    sentences.push(`${topInd.industry} is seeing the largest earnings revision uplift. Capital spending and demand trends are both turning positive.`);
+    sentences.push(`${topInd.industry} is leading the earnings revision cycle as capital spending and demand data converge in the same direction.`);
   } else if (riskRegime === "risk-on") {
-    sentences.push("Cyclicals and credit-sensitive sectors are both participating. The advance is consistent with an earnings-driven rather than multiple-expansion move.");
+    sentences.push("Cyclical sectors are outperforming as earnings revision momentum turns positive across the industrial base.");
   } else {
-    sentences.push("No single economic driver is dominating. Earnings and policy signals are pulling in different directions.");
+    sentences.push("Earnings and policy signals are currently pulling in different directions, with no single sector anchoring a broad move.");
   }
 
-  // ── S2: Risk theme first — only fall back to macro signals when none exist ─
+  // ── S2: The opposing force — name the tension explicitly ──────────────────
+  // When opp and risk stem from the same macro variable, call it out directly
+  // so the reader understands whether the forces are conflicting or independent.
   if (topRisk) {
     const genuineRisk = topRisk.momentum_label === "reversing"
       || topRisk.momentum_label === "cooling"
       || (topRisk.momentum_delta ?? 0) < 0;
-    // Only use prose when the theme is directionally bearish AND the text reads as
-    // bearish — stale API narratives can remain bullish-toned after a flip.
     const riskCausalRaw = genuineRisk && isThemeBearish(topRisk) ? causalSentence(topRisk.causal_narrative) : null;
     const riskCausal    = riskCausalRaw && !hasBullishProse(riskCausalRaw) ? riskCausalRaw : null;
-    const riskEff     = genuineRisk && isThemeBearish(topRisk)
+    const riskEff       = genuineRisk && isThemeBearish(topRisk)
       ? (topRisk.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15)
       : null;
+    const riskMacro0 = (topRisk.related_macro_factors ?? [])[0];
+
+    // Detect whether opp and risk share a macro driver
+    const oppMacros  = new Set((topOpp?.related_macro_factors ?? []).map(m => m.toLowerCase()));
+    const riskMacros = (topRisk.related_macro_factors ?? []).map(m => m.toLowerCase());
+    const sharedMacroRaw = riskMacros.find(m => oppMacros.has(m));
+    const sharedMacro    = sharedMacroRaw ? cleanMacroLabel(sharedMacroRaw) : null;
+
     if (riskCausal && riskInd) {
       const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-      sentences.push(`However, ${riskInd} faces headwinds as ${lc}.`);
+      if (sharedMacro && oppInd) {
+        sentences.push(`The same ${sharedMacro} environment is cutting estimates in ${riskInd} as ${lc}.`);
+      } else {
+        sentences.push(`Against this, ${lc}, pressuring estimates in ${riskInd}.`);
+      }
     } else if (riskCausal) {
       const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-      sentences.push(`However, ${lc}, pressuring margins and earnings estimates.`);
+      sentences.push(`Offsetting this, ${lc}, with margin assumptions the primary exposure.`);
     } else if (riskEff && riskInd) {
       const lc = riskEff.charAt(0).toLowerCase() + riskEff.slice(1).replace(/\.$/, "");
-      sentences.push(`However, ${riskInd} faces pressure as ${lc}.`);
+      sentences.push(`Against this, ${riskInd} faces pressure as ${lc}.`);
     } else if (riskInd) {
       if (topRisk.momentum_label === "reversing") {
-        sentences.push(`However, ${riskInd} is facing margin compression as pricing assumptions unwind.`);
+        const desc = describeThemeImpact(topRisk);
+        sentences.push(`Against this, ${riskInd} estimates are being cut as ${desc} reverses, with margin assumptions the first casualty.`);
       } else {
-        sentences.push(`However, ${riskInd} is seeing earnings estimates cut as demand softens.`);
+        const cleanRiskMacro = riskMacro0 ? cleanMacroLabel(riskMacro0) : null;
+        sentences.push(cleanRiskMacro
+          ? `Against this, ${cleanRiskMacro} pressure is compressing earnings in ${riskInd} as demand assumptions are revised lower.`
+          : `Against this, ${riskInd} estimates are being revised lower as demand softens faster than supply adjusts.`
+        );
       }
     } else {
       if (topRisk.momentum_label === "reversing") {
-        sentences.push("However, order cancellations are rising and margin guidance is being cut across exposed sectors.");
+        sentences.push("Against this, order cancellations are rising and margin guidance is being cut in exposed sectors.");
       } else {
-        sentences.push("However, end-demand is softening. Revenue assumptions across exposed sectors are being revised lower.");
+        sentences.push("Offsetting this, end-demand is softening in rate-sensitive sectors as revenue assumptions move lower.");
       }
     }
   } else if (ratesRegime === "rising" && riskRegime !== "risk-on") {
     sentences.push(
-      "However, rising yields are compressing equity risk premiums in growth and technology. Valuations are adjusting to a higher discount rate."
+      "Rising Treasury yields are compressing risk premiums in long-duration and rate-sensitive sectors."
     );
   } else if (volRegime === "elevated" || volRegime === "high") {
     sentences.push(
-      "However, elevated volatility is compressing multiples and limiting sector participation."
+      "Elevated volatility is limiting multiple expansion and compressing participation across rate-sensitive sectors."
     );
   } else if (dollarRegime === "strong" && riskRegime !== "risk-on") {
     sentences.push(
-      "Dollar strength is eroding foreign earnings translations and weighing on commodity prices. Internationally exposed sectors face FX headwinds."
+      "Dollar strength is compressing foreign earnings translations, creating a headwind for internationally-exposed sectors."
     );
   }
 
-  // ── S3: Market character — uses sector names, not theme names ────────────
+  // ── S3: Synthesis — what the net means for positioning ───────────────────
   const net        = scorecard.accelerating - scorecard.reversing;
   const oppSector  = oppInd  ?? null;
   const riskSector = riskInd ?? null;
 
-  if (net >= 4 && scorecard.highConviction >= 3) {
-    if (oppSector && opp2Ind) {
-      sentences.push(`${oppSector} and ${opp2Ind} are both seeing revenue upgrades. The improvement is broadening across the industrial base.`);
+  // Detect shared driver at the synthesis level for conflict/reinforcement framing
+  const oppMacroSet  = new Set((topOpp?.related_macro_factors ?? []).map(m => m.toLowerCase()));
+  const riskMacroSet = (topRisk?.related_macro_factors ?? []).map(m => m.toLowerCase());
+  const sharedAtS3Raw = riskMacroSet.find(m => oppMacroSet.has(m));
+  const sharedAtS3    = sharedAtS3Raw ? cleanMacroLabel(sharedAtS3Raw) : null;
+
+  if (sharedAtS3 && oppSector && riskSector) {
+    sentences.push(`${oppSector} and ${riskSector} are responding differently to the same ${sharedAtS3} environment: the former benefits while the latter faces estimate pressure.`);
+  } else if (net >= 4 && scorecard.highConviction >= 3) {
+    if (oppSector && opp2Ind && oppSector !== opp2Ind) {
+      sentences.push(`Earnings upgrade momentum spans both ${oppSector} and ${opp2Ind}, suggesting the recovery is sector-led rather than driven by multiple expansion.`);
     } else if (oppSector) {
-      sentences.push(`${oppSector} is leading a broad earnings recovery. Revenue revisions are positive and confirmed by order data.`);
+      sentences.push(`${oppSector} is carrying the most durable earnings upgrade story, with revision breadth and conviction both at cycle highs.`);
     } else {
-      sentences.push("More sectors are seeing revenue upgrades than cuts. The earnings revision cycle is tilted positive.");
+      sentences.push("The balance of upgrades to downgrades is positive. Revision momentum is tilted toward volume-driven growth.");
     }
   } else if (net >= 2) {
-    sentences.push(oppSector
-      ? `${oppSector} is leading, but improvement has not yet spread to other sectors. The advance is narrow.`
-      : "The improvement remains concentrated. It has not yet spread across the broader industrial base.");
+    if (oppSector && riskSector) {
+      sentences.push(`The upgrade cycle in ${oppSector} is narrow and has not yet offset downward pressure in ${riskSector}. The net balance favours selective rather than broad exposure.`);
+    } else if (oppSector) {
+      sentences.push(`${oppSector} is leading, but the improvement has not yet spread to adjacent sectors.`);
+    } else {
+      sentences.push("The improvement is concentrated in a small number of names and has not yet broadened across the industrial base.");
+    }
   } else if (net <= -2) {
     sentences.push(riskSector
-      ? `Earnings cuts in ${riskSector} are outpacing new upgrades. The number of downward revisions is widening.`
-      : "More sectors are seeing earnings cuts than upgrades. The downward revision cycle is broadening.");
+      ? `Downward estimate revisions in ${riskSector} are running faster than new upgrades. The revision cycle is net negative.`
+      : "Downward estimate revisions are outnumbering upgrades. The correction is spreading across the sector base.");
   } else {
     if (oppSector && riskSector) {
-      sentences.push(`${oppSector} is seeing upgrades while ${riskSector} faces cuts. The market is pricing sector-level divergence.`);
+      sentences.push(`${oppSector} earnings are improving while ${riskSector} estimates are being cut on different underlying drivers — the moves are not correlated.`);
     } else if (oppSector) {
-      sentences.push(`${oppSector} has the clearest earnings upgrade story in an otherwise mixed market.`);
+      sentences.push(`${oppSector} has the strongest near-term earnings revision story in an otherwise mixed market.`);
     } else {
-      sentences.push("No sector has strong enough earnings momentum to anchor a broad move. The macro catalysts are stale.");
+      sentences.push("No sector has earnings momentum strong enough to anchor a broad move. Positioning should remain selective.");
     }
   }
 
@@ -358,18 +409,18 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
 
   if (theme.momentum_label === "accelerating") {
     if (ind1)
-      return `${ind0} and ${ind1} are both seeing earnings upgrades as the underlying driver picks up pace. The improvement spans the supply chain rather than concentrating in a single name.`;
+      return `${ind0} and ${ind1} are both seeing earnings upgrades as the driver picks up pace, with order and pricing data aligned across the supply chain.`;
     if (persist >= 5)
       return `${ind0} has seen ${persist} consecutive periods of earnings upgrades without reverting. The trend has duration and is not a single-quarter anomaly.`;
     if (breadth >= 70)
-      return `${ind0} is benefiting with unusually broad participation across the sector. Earnings improvement spans multiple names rather than concentrating in a few.`;
-    return `${ind0} earnings estimates are being revised higher. Both top-line growth and margin assumptions are moving in the same direction.`;
+      return `${ind0} is benefiting with unusually broad participation — earnings improvement is distributed across the sector rather than concentrated in a few names.`;
+    return `${ind0} earnings estimates are being revised higher, with both top-line growth and margin assumptions moving in the same direction.`;
   }
 
   if (theme.cross_category_confirmed) {
     if (ind1)
-      return `${ind0} and ${ind1} are both seeing earnings upgrades from the same underlying driver. The move is structural, not isolated to a single company or catalyst.`;
-    return `${ind0} is the primary beneficiary as the driver spreads into adjacent sectors. Earnings exposure is extending across the supply chain.`;
+      return `Cross-sector confirmation is visible in both ${ind0} and ${ind1} order and pricing data, indicating the demand driver is not yet reflected in consensus estimates.`;
+    return `${ind0} is the primary beneficiary, with cross-sector data confirming the driver is active beyond a single vertical.`;
   }
 
   if (theme.momentum_label === "strengthening") {
@@ -470,7 +521,7 @@ function deriveOneSentence(
   if (oppInd) {
     if (ratesRegime === "rising")
       return cap22(`${oppInd} is outperforming despite rising yields, supported by earnings revisions.`);
-    return cap22(`Leadership remains concentrated in ${oppInd}, with broader confirmation still developing.`);
+    return cap22(`${oppInd} is leading the earnings revision cycle as adjacent sectors have yet to confirm.`);
   }
 
   if (balance.netSignal >= 3)
@@ -497,6 +548,64 @@ const KNOWN_DRIVER_LABELS: Record<string, string> = {
   "Silicon Sovereignty Capex":      "Semiconductor Capex",
 };
 
+// Maps terminal-style macro factor names to public-facing labels.
+// Covers Bloomberg/Refinitiv shorthand that should not appear in the UI.
+const MACRO_FACTOR_LABELS: Record<string, string> = {
+  "WTI Spot":                          "Oil Prices",
+  "WTI Spot Price":                    "Oil Prices",
+  "WTI Crude":                         "Oil Prices",
+  "Brent Crude":                       "Oil Prices",
+  "Brent Crude Price":                 "Oil Prices",
+  "10Y Yield":                         "Treasury Yields",
+  "10-Year Yield":                     "Treasury Yields",
+  "10Y Treasury":                      "Treasury Yields",
+  "10Y Treasury Yield":                "Treasury Yields",
+  "US 10-Year Treasury Yield":         "Treasury Yields",
+  "US10Y":                             "Treasury Yields",
+  "2Y Yield":                          "Short-Term Rates",
+  "2-Year Yield":                      "Short-Term Rates",
+  "SOFR":                              "Short-Term Rates",
+  "Fed Funds Rate":                    "Policy Rates",
+  "Federal Funds Rate":                "Policy Rates",
+  "FOMC":                              "Fed Policy",
+  "Credit Spreads":                    "Credit Conditions",
+  "HY Spreads":                        "Credit Conditions",
+  "High Yield Spreads":                "Credit Conditions",
+  "Investment Grade Spreads":          "Credit Conditions",
+  "IG Spreads":                        "Credit Conditions",
+  "OAS":                               "Credit Conditions",
+  "DXY":                               "Dollar Strength",
+  "USD Index":                         "Dollar Strength",
+  "USD/CNY":                           "China FX Policy",
+  "USD/JPY":                           "Yen Positioning",
+  "EUR/USD":                           "Euro Conditions",
+  "CPI":                               "Inflation",
+  "PCE":                               "Inflation",
+  "Core PCE":                          "Core Inflation",
+  "Core CPI":                          "Core Inflation",
+  "NFP":                               "Employment Data",
+  "Nonfarm Payrolls":                  "Employment Data",
+  "Initial Claims":                    "Employment Trends",
+  "VIX":                               "Market Volatility",
+  "Natural Gas":                       "Natural Gas Prices",
+  "Henry Hub":                         "Natural Gas Prices",
+  "M2":                                "Money Supply",
+  "Repo Rate":                         "Liquidity Conditions",
+};
+
+function cleanMacroLabel(raw: string): string {
+  const trimmed = raw.trim();
+  const exact   = MACRO_FACTOR_LABELS[trimmed];
+  if (exact) return exact;
+  // Normalise common suffixes before lookup
+  const normalised = trimmed.replace(/\s+(price|yield|rate|index|spot)s?$/i, "").trim();
+  const norm        = MACRO_FACTOR_LABELS[normalised];
+  if (norm) return norm;
+  // Cap at 3 words to avoid very long raw labels
+  const words = trimmed.split(/\s+/);
+  return words.length <= 3 ? trimmed : words.slice(0, 3).join(" ");
+}
+
 /**
  * Returns a clean public-facing driver label. Checks known mappings first,
  * then derives from related_macro_factors / related_industries.
@@ -509,7 +618,7 @@ function getPublicDriverLabel(theme: ThemeIntelligence): string {
 
   const macro0 = (theme.related_macro_factors ?? [])[0];
   const ind0   = (theme.related_industries   ?? [])[0];
-  if (macro0) return macro0;
+  if (macro0) return cleanMacroLabel(macro0);
   if (ind0)   return ind0;
 
   const causal = theme.causal_narrative;
@@ -889,14 +998,14 @@ function deriveRotationExplanation(
   // All templates include sig.industry so they are inherently unique per row.
   if (isLeader) {
     if (ml === "accelerating") {
-      if (top2) return `${sig.industry} revenue is rising as multiple demand drivers converge across the supply chain.`;
+      if (top2) return `${sig.industry} revenue is rising as order rates and pricing both improve at the same time.`;
       if (top.cross_category_confirmed) return `Cross-category confirmation is translating into ${sig.industry} revenue upside.`;
       if (pdays >= 10) return `${sig.industry} has outperformed for ${pdays} days as order data remains positive.`;
       if (breadth >= 70) return `${sig.industry} gains are broad-based, with improvement distributed across the sector.`;
       return `${sig.industry} revenue is rising on pricing power and volume gains.`;
     }
     if (ml === "strengthening") {
-      if (top2) return `${sig.industry} revenue outlook is improving from multiple supporting factors.`;
+      if (top2) return `${sig.industry} revenue outlook is improving on normalising input costs and recovering order rates.`;
       if (persist >= 4) return `${sig.industry} has outperformed for ${persist} consecutive periods as financing costs ease.`;
       return `${sig.industry} margins are widening as the cost structure normalises.`;
     }
@@ -907,7 +1016,7 @@ function deriveRotationExplanation(
     return `${sig.industry} is outperforming as demand shifts in the sector's favour.`;
   } else {
     if (ml === "reversing") {
-      if (top2) return `${sig.industry} margin guidance is being cut as multiple headwinds converge.`;
+      if (top2) return `${sig.industry} margin guidance is being cut as pricing power erodes while input costs stay elevated.`;
       return `${sig.industry} is underperforming as pricing assumptions are being walked back.`;
     }
     if (ml === "cooling") {
@@ -915,7 +1024,7 @@ function deriveRotationExplanation(
       if (persist >= 3) return `${sig.industry} has underperformed for ${persist} consecutive periods as order rates slow.`;
       return `${sig.industry} is under pressure as end-demand weakens faster than supply is adjusting.`;
     }
-    if (top2) return `Multiple revenue headwinds are cutting ${sig.industry} estimates.`;
+    if (top2) return `Revenue estimates for ${sig.industry} are being cut as both volume and pricing assumptions are revised lower.`;
     return `${sig.industry} is underperforming as sector pricing power erodes.`;
   }
 }
