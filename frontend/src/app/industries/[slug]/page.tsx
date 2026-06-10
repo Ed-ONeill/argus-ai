@@ -20,7 +20,6 @@ import {
   getIndustrySignals,
   getTopTheme,
   filterIndustryClusters,
-  type IndustryConfig,
 } from "@/lib/industryConfig";
 import {
   generateThesis,
@@ -35,7 +34,7 @@ import {
   type LeadershipDynamics,
   type MomentumState,
 } from "@/lib/sectorIntelligence";
-import type { SectorIntelligence, IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
+import type { IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
 import { computeThemeImpactScore, getThemeBeneficiaries, getThemeHeadwinds } from "@/lib/themeImpact";
 import {
@@ -388,7 +387,7 @@ function LeadershipSection({ leadership, color }: { leadership: LeadershipDynami
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
-function DetailSkeleton({ color }: { color: string }) {
+function DetailSkeleton({ color: _color }: { color: string }) {
   return (
     <div className="min-h-screen bg-canvas">
       <div
@@ -421,7 +420,7 @@ export default function IndustryDetailPage() {
   const industry = getIndustryBySlug(slug);
   const { isWatched, toggle: toggleThemeWatch } = useThemeWatchlist();
 
-  const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
+  const { sectorData, regime, clusters, isLoading, isFetching } = useSectors();
   const derivedRegime = sectorData?.derived_regime ?? "";
   const { data: feedData } = useFeed({});
   const whatMattersNow = feedData?.what_matters_now ?? [];

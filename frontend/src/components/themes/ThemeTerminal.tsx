@@ -114,11 +114,6 @@ export function ThemeTerminal({
         .sort((a, b) => (deltas[b.id]?.priorityScore ?? 0) - (deltas[a.id]?.priorityScore ?? 0))
     : sorted;
 
-  const signalCounts = {
-    strong: themes.filter(t => t.signal_strength === "strong").length,
-    medium: themes.filter(t => t.signal_strength === "medium").length,
-    weak:   themes.filter(t => t.signal_strength === "weak").length,
-  };
 
   const alertCount = themes.filter(t => hasAlert(t.id)).length;
 

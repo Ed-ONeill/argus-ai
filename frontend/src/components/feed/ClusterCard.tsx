@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ExternalLink, Bookmark, BookmarkCheck, Zap,
@@ -27,6 +27,158 @@ const MOMENTUM_BG: Record<string, string> = {
   cooling:       "rgba(245,158,11,0.10)",
   reversing:     "rgba(239,68,68,0.10)",
 };
+
+// ── Analysis helpers ──────────────────────────────────────────────────────────
+
+const BULL_LABELS = new Set(["accelerating", "strengthening", "emerging"]);
+const BEAR_LABELS = new Set(["reversing", "cooling"]);
+
+// Public-facing names for known internal theme labels — never expose raw names
+const KNOWN_DRIVER_LABELS: Record<string, string> = {
+  "Higher-for-Longer Repricing":   "Interest Rates",
+  "Grid Bottleneck Trade":          "Power Infrastructure",
+  "Baseload Scarcity Premium":      "Utility Capacity",
+  "Credit Transmission Breakdown":  "Bank Credit Conditions",
+  "Metabolic Disease Repricing":    "Healthcare Demand Shift",
+  "Crypto Market Structure":        "Digital Asset Flows",
+  "Non-Bank Lending Ascendancy":    "Private Credit",
+  "PBOC Easing Rotation":           "China Policy Support",
+  "NATO Rearmament Cycle":          "Defense Spending",
+  "Silicon Sovereignty Capex":      "Semiconductor Capex",
+};
+
+function getPublicThemeLabel(theme: ThemeIntelligence): string | null {
+  const known = KNOWN_DRIVER_LABELS[theme.name];
+  if (known) return known;
+  // Fall back to first macro factor (already public-facing)
+  const macro0 = (theme.related_macro_factors ?? [])[0];
+  if (macro0) return macro0;
+  return null; // Do not expose raw theme.name
+}
+
+// Vague phrases that should never appear in rendered copy
+const VAGUE_PHRASES = [
+  "multiple converging", "several directions", "various factors",
+  "market participants", "broad pressure", "many factors",
+  "various drivers", "multiple factors", "various conditions",
+  "several factors",
+];
+
+function hasVagueProse(text: string): boolean {
+  const l = text.toLowerCase();
+  return VAGUE_PHRASES.some(p => l.includes(p));
+}
+
+// Jaccard word-overlap — used to detect materially identical bull/bear cases
+function wordOverlap(a: string, b: string): number {
+  const words = (s: string) =>
+    new Set(s.toLowerCase().split(/\W+/).filter(w => w.length > 3));
+  const wa = words(a);
+  const wb = words(b);
+  const inter = [...wa].filter(w => wb.has(w)).length;
+  const union = new Set([...wa, ...wb]).size;
+  return union === 0 ? 0 : inter / union;
+}
+
+function impactDir(s: string): "bullish" | "bearish" | "mixed" | null {
+  const l = s.toLowerCase();
+  if (l.startsWith("bullish")) return "bullish";
+  if (l.startsWith("bearish")) return "bearish";
+  if (l.startsWith("mixed"))   return "mixed";
+  return null;
+}
+
+function stripDir(s: string): string {
+  return s.replace(/^(bullish|bearish|mixed)[:\s–—]*/i, "").trim();
+}
+
+function firstSent(text: string | undefined | null): string | null {
+  if (!text || text.length < 15 || text.includes(" → ")) return null;
+  const dot = text.indexOf(".");
+  return dot > 15 ? text.slice(0, dot + 1).trim() : null;
+}
+
+// Returns the first sentence of an effect string, or the full text if it is
+// short and complete; never truncates mid-sentence.
+function cleanEff(eff: string): string | null {
+  const s = firstSent(eff);
+  if (s && !hasVagueProse(s)) return s;
+  // Only use raw effect if it is short enough to be a complete thought
+  if (!s && eff.length <= 130) {
+    const clean = eff.endsWith(".") ? eff : eff + ".";
+    return hasVagueProse(clean) ? null : clean;
+  }
+  return null;
+}
+
+function deriveBullCase(
+  theme: ThemeIntelligence | undefined,
+  deep: DeepAnalysis | null,
+): string | null {
+  if (deep?.who_wins_loses && !hasVagueProse(deep.who_wins_loses))
+    return deep.who_wins_loses;
+  if (!theme) return null;
+  const isBull = theme.momentum_direction === "bullish" || BULL_LABELS.has(theme.momentum_label);
+  if (isBull) {
+    const c = firstSent(theme.causal_narrative);
+    if (c && !hasVagueProse(c)) return c;
+    const ind    = (theme.related_industries ?? [])[0];
+    const persist = theme.persistence_cycles ?? 0;
+    const driver  = (theme.related_macro_factors ?? [])[0]?.toLowerCase();
+    if (ind && persist >= 3)
+      return `${ind} has seen ${persist} consecutive periods of earnings improvement${theme.cross_category_confirmed ? ", with cross-sector confirmation" : ""}.`;
+    if (ind && driver)
+      return `${ind} earnings are directly tied to ${driver}. Participation is ${(theme.breadth_score ?? 0) >= 60 ? "broad across the sector" : "concentrated in leading names"}.`;
+    if (ind)
+      return `${ind} earnings are benefiting from this driver. Breadth is ${(theme.breadth_score ?? 0) >= 60 ? "broad" : "concentrated in a small number of names"}.`;
+  }
+  const ind0 = (theme.related_industries ?? [])[0];
+  if (ind0 && (theme.breadth_score ?? 0) < 50)
+    return `Pressure on ${ind0} appears concentrated (breadth ${Math.round(theme.breadth_score ?? 0)}). A stabilisation of the driver could support a mean-reversion trade.`;
+  return null;
+}
+
+function deriveBearCase(
+  theme: ThemeIntelligence | undefined,
+): string | null {
+  if (!theme) return null;
+  const isBear = theme.momentum_direction === "bearish" || BEAR_LABELS.has(theme.momentum_label);
+  if (isBear) {
+    const c = firstSent(theme.causal_narrative);
+    if (c && !hasVagueProse(c)) return c;
+  }
+  const eff = (theme.second_order_effects ?? []).find(e => e && !e.includes(" → ") && e.length >= 20);
+  if (eff) {
+    const r = cleanEff(eff);
+    if (r) return r;
+  }
+  const ind0 = (theme.related_industries ?? [])[0];
+  if (theme.momentum_label === "reversing" && ind0)
+    return `${ind0} estimates face downgrade risk if the reversal accelerates beyond current breadth.`;
+  if (theme.momentum_label === "cooling" && ind0)
+    return `${ind0} momentum is softening. Margin assumptions are most vulnerable to volume disappointment.`;
+  return null;
+}
+
+// bearCaseText is passed to avoid returning the same sentence as the bear case
+function deriveWatchNext(
+  theme: ThemeIntelligence | undefined,
+  deep: DeepAnalysis | null,
+  bearCaseText: string | null,
+): string | null {
+  if (deep?.what_to_watch && !hasVagueProse(deep.what_to_watch)) return deep.what_to_watch;
+  const effs = (theme?.second_order_effects ?? []).filter(e => e && !e.includes(" → ") && e.length >= 20);
+  for (const eff of effs) {
+    const r = cleanEff(eff);
+    if (r) {
+      // Don't repeat content that's already in the bear case
+      if (!bearCaseText || wordOverlap(r, bearCaseText) <= 0.60) return r;
+    }
+  }
+  const f = (theme?.related_macro_factors ?? []).slice(0, 2);
+  if (f.length) return `Watch ${f.join(" and ")} for confirmation or reversal of this thesis.`;
+  return null;
+}
 
 interface ClusterCardProps {
   cluster:          StoryCluster;
@@ -316,53 +468,14 @@ export function ClusterCard({
                   transition={{ duration: 0.22, ease: "easeInOut" }}
                   className="overflow-hidden"
                 >
-                  <div
-                    className="rounded-md px-3 py-3 mb-3 space-y-3"
-                    style={{ background: `${color}0d`, borderLeft: `1px solid ${color}40` }}
-                  >
-                    {item.why_it_matters && (
-                      <DeskNoteRow label="Why it matters" color={color}>
-                        {item.why_it_matters}
-                      </DeskNoteRow>
-                    )}
-
-                    {deepLoading ? (
-                      <div className="flex items-center gap-2 text-[10px]"
-                        style={{ color: "rgba(255,255,255,0.45)" }}>
-                        <Loader2 size={10} className="animate-spin" />
-                        Analyzing…
-                      </div>
-                    ) : deepData ? (
-                      <>
-                        {deepData.what_changed && (
-                          <DeskNoteRow label="What changed" color={color}>
-                            {deepData.what_changed}
-                          </DeskNoteRow>
-                        )}
-                        {deepData.why_markets_care && (
-                          <DeskNoteRow label="Why markets care" color={color}>
-                            {deepData.why_markets_care}
-                          </DeskNoteRow>
-                        )}
-                        {deepData.who_wins_loses && (
-                          <DeskNoteRow label="Who wins / loses" color={color}>
-                            {deepData.who_wins_loses}
-                          </DeskNoteRow>
-                        )}
-                        {deepData.what_to_watch && (
-                          <DeskNoteRow label="What to watch" color={color}>
-                            {deepData.what_to_watch}
-                          </DeskNoteRow>
-                        )}
-                      </>
-                    ) : null}
-
-                    {item.impact && (
-                      <DeskNoteRow label="Market impact" color={color}>
-                        {item.impact}
-                      </DeskNoteRow>
-                    )}
-                  </div>
+                  <AnalysisNote
+                    item={item}
+                    color={color}
+                    matchedTheme={matchedTheme}
+                    themeLabel={theme_label}
+                    deepData={deepData}
+                    deepLoading={deepLoading}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -529,21 +642,225 @@ function RelatedStoryRow({ story, isLast }: { story: RelatedStory; isLast: boole
 }
 
 
-// ── Desk-note row ─────────────────────────────────────────────────────────────
 
-function DeskNoteRow({
-  label, color, children,
-}: { label: string; color: string; children: string }) {
-  if (!children) return null;
+
+// ── Research note section ─────────────────────────────────────────────────────
+
+function NoteSection({
+  label, color, children, last = false,
+}: { label: string; color: string; children: React.ReactNode; last?: boolean }) {
   return (
-    <div>
-      <p className="text-[9px] font-bold uppercase tracking-[0.12em] mb-0.5"
-        style={{ color }}>
+    <div className="px-3 py-2.5"
+      style={!last ? { borderBottom: "1px solid rgba(255,255,255,0.05)" } : {}}>
+      <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1"
+        style={{ color: `${color}cc` }}>
         {label}
       </p>
-      <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.72)" }}>
+      <div className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.74)" }}>
         {children}
-      </p>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Analysis note — full research panel ──────────────────────────────────────
+
+function AnalysisNote({
+  item, color, matchedTheme, themeLabel, deepData, deepLoading,
+}: {
+  item:          FeedItem;
+  color:         string;
+  matchedTheme:  ThemeIntelligence | undefined;
+  themeLabel:    string;
+  deepData:      DeepAnalysis | null;
+  deepLoading:   boolean;
+}) {
+  const dir         = item.impact ? impactDir(item.impact) : null;
+  const impactBody  = item.impact ? stripDir(item.impact)  : null;
+  const bullCaseRaw = deriveBullCase(matchedTheme, deepData);
+  const bearCaseRaw = deriveBearCase(matchedTheme);
+  // Suppress the bear case when it is materially identical to the bull case
+  const bearCase    = bullCaseRaw && bearCaseRaw && wordOverlap(bullCaseRaw, bearCaseRaw) > 0.70
+    ? null : bearCaseRaw;
+  const bullCase    = bullCaseRaw;
+  const watchNext   = deriveWatchNext(matchedTheme, deepData, bearCase);
+
+  const industries       = (matchedTheme?.related_industries ?? []).slice(0, 5);
+  const macroFacts       = (matchedTheme?.related_macro_factors ?? []).slice(0, 4);
+  const themePublicLabel = matchedTheme ? getPublicThemeLabel(matchedTheme) : null;
+  // Only show Themes & Drivers when there is actual displayable content
+  const hasDrivers       = !!(themePublicLabel || macroFacts.length
+    || (themeLabel && themeLabel !== item.category));
+
+  const dirColor  = dir === "bullish" ? "#10B981" : dir === "bearish" ? "#EF4444" : "#F59E0B";
+  const sectorDir = matchedTheme?.momentum_direction;
+  const chipBg    = sectorDir === "bullish" ? "rgba(16,185,129,0.10)"
+                  : sectorDir === "bearish" ? "rgba(239,68,68,0.10)"
+                  :                           "rgba(255,255,255,0.06)";
+  const chipColor = sectorDir === "bullish" ? "rgba(16,185,129,0.85)"
+                  : sectorDir === "bearish" ? "rgba(239,68,68,0.80)"
+                  :                           "rgba(255,255,255,0.52)";
+  const chipPfx   = sectorDir === "bullish" ? "+" : sectorDir === "bearish" ? "−" : "→";
+
+  // How many sections will render — last section gets no bottom border
+  const sections = [
+    !!item.why_it_matters,
+    !!impactBody,
+    industries.length > 0,
+    !!(bullCase || deepLoading),
+    !!bearCase,
+    hasDrivers,
+    !!(watchNext || deepLoading),
+  ];
+  const lastIdx = sections.lastIndexOf(true);
+
+  return (
+    <div
+      className="rounded-md mb-3 overflow-hidden"
+      style={{ background: `${color}09`, border: `1px solid ${color}28` }}
+    >
+      {/* 1. Why It Matters */}
+      {item.why_it_matters && (
+        <NoteSection label="Why It Matters" color={color} last={lastIdx === 0}>
+          {item.why_it_matters}
+        </NoteSection>
+      )}
+
+      {/* 2. Market Impact */}
+      {impactBody && (
+        <div className="px-3 py-2.5"
+          style={lastIdx !== 1 ? { borderBottom: "1px solid rgba(255,255,255,0.05)" } : {}}>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-[8.5px] font-bold uppercase tracking-[0.13em]"
+              style={{ color: `${color}cc` }}>
+              Market Impact
+            </p>
+            {dir && (
+              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ color: dirColor, background: `${dirColor}18` }}>
+                {dir === "bullish" ? "↑ Bullish" : dir === "bearish" ? "↓ Bearish" : "↕ Mixed"}
+              </span>
+            )}
+          </div>
+          <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.74)" }}>
+            {impactBody}
+          </p>
+        </div>
+      )}
+
+      {/* 3. Affected Sectors */}
+      {industries.length > 0 && (
+        <div className="px-3 py-2.5"
+          style={lastIdx !== 2 ? { borderBottom: "1px solid rgba(255,255,255,0.05)" } : {}}>
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
+            style={{ color: `${color}cc` }}>
+            Affected Sectors
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {industries.map(ind => (
+              <span key={ind}
+                className="text-[9.5px] font-medium px-1.5 py-0.5 rounded"
+                style={{ background: chipBg, color: chipColor }}>
+                {chipPfx} {ind}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Bull Case */}
+      {(bullCase || deepLoading) && (
+        <div className="px-3 py-2.5"
+          style={{
+            borderBottom: lastIdx !== 3 ? "1px solid rgba(255,255,255,0.05)" : undefined,
+            borderLeft:   "2px solid rgba(16,185,129,0.35)",
+          }}>
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1"
+            style={{ color: "rgba(16,185,129,0.75)" }}>
+            Bull Case
+          </p>
+          {bullCase ? (
+            <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.74)" }}>
+              {bullCase}
+            </p>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[10px]"
+              style={{ color: "rgba(255,255,255,0.35)" }}>
+              <Loader2 size={9} className="animate-spin" /> Analyzing…
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. Bear Case */}
+      {bearCase && (
+        <div className="px-3 py-2.5"
+          style={{
+            borderBottom: lastIdx !== 4 ? "1px solid rgba(255,255,255,0.05)" : undefined,
+            borderLeft:   "2px solid rgba(239,68,68,0.35)",
+          }}>
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1"
+            style={{ color: "rgba(239,68,68,0.72)" }}>
+            Bear Case
+          </p>
+          <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.74)" }}>
+            {bearCase}
+          </p>
+        </div>
+      )}
+
+      {/* 6. Themes & Drivers */}
+      {hasDrivers && (
+        <div className="px-3 py-2.5"
+          style={lastIdx !== 5 ? { borderBottom: "1px solid rgba(255,255,255,0.05)" } : {}}>
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
+            style={{ color: `${color}cc` }}>
+            Themes &amp; Drivers
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {themePublicLabel && (
+              <span className="text-[9.5px] font-medium px-1.5 py-0.5 rounded-full"
+                style={{ background: "rgba(82,176,200,0.12)", color: "rgba(82,176,200,0.88)" }}>
+                {themePublicLabel}
+              </span>
+            )}
+            {!themePublicLabel && themeLabel && themeLabel !== item.category && (
+              <span className="text-[9.5px] font-medium px-1.5 py-0.5 rounded-full"
+                style={{ background: `${color}18`, color: `${color}cc` }}>
+                {themeLabel}
+              </span>
+            )}
+            {macroFacts.map(f => (
+              <span key={f}
+                className="text-[9.5px] px-1.5 py-0.5 rounded-full"
+                style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.50)" }}>
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 7. What To Watch Next */}
+      {(watchNext || deepLoading) && (
+        <div className="px-3 py-2.5">
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1"
+            style={{ color: `${color}cc` }}>
+            What To Watch Next
+          </p>
+          {watchNext ? (
+            <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.74)" }}>
+              {watchNext}
+            </p>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[10px]"
+              style={{ color: "rgba(255,255,255,0.35)" }}>
+              <Loader2 size={9} className="animate-spin" /> Fetching signals…
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

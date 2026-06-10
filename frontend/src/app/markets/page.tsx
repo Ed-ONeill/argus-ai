@@ -71,19 +71,6 @@ const TICKER_MATCH_KW: Record<string, string[]> = {
 type SnapshotKey = typeof SNAPSHOT_CONFIGS[number]["key"];
 
 // Entity → ticker key (for Key Assets directional arrows)
-const ENTITY_TO_TICKER: Record<string, string> = {
-  "S&P": "SPY", "SPX": "SPY", "Equities": "SPY", "S&P 500": "SPY", "NYSE": "SPY",
-  "Nasdaq": "QQQ", "Tech": "QQQ",
-  "Russell": "IWM", "IWM": "IWM", "Small Cap": "IWM",
-  "10Y": "TNX", "2Y": "TNX", "Treasury": "TNX", "Treasuries": "TNX",
-  "Yields": "TNX", "Rates": "TNX", "Fed": "TNX", "FOMC": "TNX",
-  "Oil": "BZ=F", "Brent": "BZ=F", "WTI": "BZ=F", "Crude": "BZ=F",
-  "Gold": "GC=F",
-  "Bitcoin": "BTC-USD", "BTC": "BTC-USD", "Crypto": "BTC-USD",
-  "Dollar": "DXY", "DXY": "DXY", "USD": "DXY",
-  "VIX": "VIX",
-};
-
 
 // ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -123,18 +110,6 @@ function isUp(t: TickerData): boolean {
   return t.key === "TNX" ? t.change > 0 : t.changePercent > 0;
 }
 
-function entityDirection(
-  entity: string,
-  data: Record<string, TickerData | null> | undefined,
-): "up" | "down" | "flat" {
-  if (!data) return "flat";
-  const key = ENTITY_TO_TICKER[entity];
-  if (!key) return "flat";
-  const t = data[key];
-  if (!t) return "flat";
-  const pct = key === "TNX" ? t.change : t.changePercent;
-  return pct > 0.1 ? "up" : pct < -0.1 ? "down" : "flat";
-}
 
 // Standard asset classes shown in Key Assets row, ordered by market importance
 const KEY_ASSET_DEFS = [
@@ -1186,12 +1161,6 @@ const STRENGTH_CFG = {
   weak:   { cls: "bg-slate-50  text-slate-500  border-slate-200",     dot: "bg-slate-300",   bar: "#94a3b8" },
 } as const;
 
-const MOMENTUM_COLOR: Record<string, string> = {
-  bullish: "#10b981",
-  bearish: "#ef4444",
-  neutral: "#94a3b8",
-};
-
 // Evolution state Tailwind class map — mirrors THEME_EVOLUTION_META for CSS-variable pages
 const EVOLUTION_CLS: Record<string, string> = {
   accelerating:  "text-emerald-600 bg-emerald-50  border-emerald-200",
@@ -1201,12 +1170,6 @@ const EVOLUTION_CLS: Record<string, string> = {
   peaking:       "text-amber-600   bg-amber-50     border-amber-200",
   weakening:     "text-orange-600  bg-orange-50    border-orange-200",
   reversing:     "text-red-600     bg-red-50       border-red-200",
-};
-
-const QUALITY_CFG: Record<string, { label: string; cls: string }> = {
-  confirmed:   { label: "Confirmed",   cls: "text-emerald-600" },
-  developing:  { label: "Developing",  cls: "text-amber-600"   },
-  speculative: { label: "Speculative", cls: "text-ink-muted"   },
 };
 
 function IntelligenceThemes({

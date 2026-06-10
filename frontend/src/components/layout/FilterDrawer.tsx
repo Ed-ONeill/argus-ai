@@ -31,12 +31,12 @@ export function FilterDrawer({ open, onClose, params, onChange }: FilterDrawerPr
 
   function toggleCat(cat: string) {
     const next = new Set(activeCats);
-    next.has(cat) ? next.delete(cat) : next.add(cat);
+    if (next.has(cat)) next.delete(cat); else next.add(cat);
     onChange({ categories: [...next].join(",") });
   }
   function toggleSrc(src: string) {
     const next = new Set(activeSrcs);
-    next.has(src) ? next.delete(src) : next.add(src);
+    if (next.has(src)) next.delete(src); else next.add(src);
     onChange({ sources: [...next].join(",") });
   }
 

@@ -436,8 +436,8 @@ function deriveOneSentence(
   opps:            BriefingOpportunity[],
   risks:           BriefingRisk[],
   ms:              MarketState,
-  balance:         SignalBalance,
-  effectiveRegime: RiskRegime,
+  balance:          SignalBalance,
+  _effectiveRegime: RiskRegime,
 ): string {
   const { ratesRegime } = ms;
   const topOpp  = opps[0]?.theme;
@@ -646,7 +646,7 @@ export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
             className="text-[7px] font-bold uppercase tracking-[0.28em] mb-2"
             style={{ color: "rgba(255,255,255,0.26)" }}
           >
-            Today's Changes
+            {"Today's Changes"}
           </p>
           <div className="space-y-[3px]">
             {changesUp.map((c, i) => <ChangeRow key={i} change={c} />)}

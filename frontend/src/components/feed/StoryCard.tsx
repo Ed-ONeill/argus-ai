@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ExternalLink, Bookmark, BookmarkCheck, Zap, ChevronDown, Loader2 } from "lucide-react";
 import { cn, impactStyle, catColor } from "@/lib/utils";
@@ -158,53 +158,12 @@ export function StoryCard({ item, isSaved, onSave, isNew }: StoryCardProps) {
                   transition={{ duration: 0.22, ease: "easeInOut" }}
                   className="overflow-hidden"
                 >
-                  <div
-                    className="rounded-lg px-3 py-3 mb-3 space-y-3"
-                    style={{ background: `${color}08`, borderLeft: `2px solid ${color}30` }}
-                  >
-                    {item.why_it_matters && (
-                      <AnalysisRow label="Why it matters" color={color}>
-                        {item.why_it_matters}
-                      </AnalysisRow>
-                    )}
-
-                    {/* Lazy-loaded desk-note fields */}
-                    {deepLoading ? (
-                      <div className="flex items-center gap-2 text-2xs text-ink-muted">
-                        <Loader2 size={11} className="animate-spin" />
-                        Analyzing…
-                      </div>
-                    ) : deepData ? (
-                      <>
-                        {deepData.what_changed && (
-                          <AnalysisRow label="What changed" color={color}>
-                            {deepData.what_changed}
-                          </AnalysisRow>
-                        )}
-                        {deepData.why_markets_care && (
-                          <AnalysisRow label="Why markets care" color={color}>
-                            {deepData.why_markets_care}
-                          </AnalysisRow>
-                        )}
-                        {deepData.who_wins_loses && (
-                          <AnalysisRow label="Who wins / loses" color={color}>
-                            {deepData.who_wins_loses}
-                          </AnalysisRow>
-                        )}
-                        {deepData.what_to_watch && (
-                          <AnalysisRow label="What to watch" color={color}>
-                            {deepData.what_to_watch}
-                          </AnalysisRow>
-                        )}
-                      </>
-                    ) : null}
-
-                    {item.impact && (
-                      <AnalysisRow label="Market impact" color={color}>
-                        {item.impact}
-                      </AnalysisRow>
-                    )}
-                  </div>
+                  <StoryResearchNote
+                    item={item}
+                    color={color}
+                    deepData={deepData}
+                    deepLoading={deepLoading}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -292,18 +251,164 @@ export function StoryCard({ item, isSaved, onSave, isNew }: StoryCardProps) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function AnalysisRow({
-  label, color, children,
-}: { label: string; color: string; children: string }) {
+
+function storyImpactDir(s: string): "bullish" | "bearish" | "mixed" | null {
+  const l = s.toLowerCase();
+  if (l.startsWith("bullish")) return "bullish";
+  if (l.startsWith("bearish")) return "bearish";
+  if (l.startsWith("mixed"))   return "mixed";
+  return null;
+}
+
+function storyStripDir(s: string): string {
+  return s.replace(/^(bullish|bearish|mixed)[:\s–—]*/i, "").trim();
+}
+
+const STORY_VAGUE = [
+  "multiple converging", "several directions", "various factors",
+  "market participants", "broad pressure", "many factors", "several factors",
+];
+function storyClean(s: string | null | undefined): string | null {
+  if (!s || s.trim().length < 10) return null;
+  const l = s.toLowerCase();
+  return STORY_VAGUE.some(p => l.includes(p)) ? null : s;
+}
+
+// Use borderTop for section dividers so the final section never has an orphaned
+// bottom border — simpler than tracking which section renders last.
+function StoryNoteRow({
+  label, color, notFirst = true, children,
+}: { label: string; color: string; notFirst?: boolean; children: React.ReactNode }) {
   return (
-    <div>
-      <p
-        className="text-2xs font-bold uppercase tracking-widest mb-0.5"
-        style={{ color }}
-      >
+    <div className="px-3 py-2.5"
+      style={notFirst ? { borderTop: `1px solid ${color}14` } : {}}>
+      <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1"
+        style={{ color }}>
         {label}
       </p>
-      <p className="text-xs text-ink-secondary leading-relaxed">{children}</p>
+      <div className="text-xs leading-relaxed text-ink-secondary">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function StoryResearchNote({
+  item, color, deepData, deepLoading,
+}: {
+  item:        FeedItem;
+  color:       string;
+  deepData:    DeepAnalysis | null;
+  deepLoading: boolean;
+}) {
+  const dir        = item.impact ? storyImpactDir(item.impact) : null;
+  const impactBody = item.impact ? storyClean(storyStripDir(item.impact)) : null;
+  const dirColor   = dir === "bullish" ? "#059669" : dir === "bearish" ? "#DC2626" : "#D97706";
+  const entities   = item.affected_entities.slice(0, 6);
+
+  const whatChanged = storyClean(deepData?.what_changed);
+  const whyMarkets  = storyClean(deepData?.why_markets_care);
+  const whoWins     = storyClean(deepData?.who_wins_loses);
+  const watchNext   = storyClean(deepData?.what_to_watch);
+
+  // Track whether any section has rendered so dividers are placed correctly
+  let sectionCount = 0;
+
+  return (
+    <div
+      className="rounded-lg mb-3 overflow-hidden"
+      style={{ background: `${color}07`, border: `1px solid ${color}22` }}
+    >
+      {/* 1. Why It Matters */}
+      {item.why_it_matters && (() => { const first = sectionCount++ === 0; return (
+        <StoryNoteRow label="Why It Matters" color={color} notFirst={!first}>
+          {item.why_it_matters}
+        </StoryNoteRow>
+      ); })()}
+
+      {/* 2. Market Impact */}
+      {impactBody && (() => { const first = sectionCount++ === 0; return (
+        <div className="px-3 py-2.5"
+          style={!first ? { borderTop: `1px solid ${color}14` } : {}}>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-[8.5px] font-bold uppercase tracking-[0.13em]"
+              style={{ color }}>
+              Market Impact
+            </p>
+            {dir && (
+              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ color: dirColor, background: `${dirColor}15` }}>
+                {dir === "bullish" ? "↑ Bullish" : dir === "bearish" ? "↓ Bearish" : "↕ Mixed"}
+              </span>
+            )}
+          </div>
+          <p className="text-xs leading-relaxed text-ink-secondary">{impactBody}</p>
+        </div>
+      ); })()}
+
+      {/* 3. Affected Entities */}
+      {entities.length > 0 && (() => { const first = sectionCount++ === 0; return (
+        <div className="px-3 py-2.5"
+          style={!first ? { borderTop: `1px solid ${color}14` } : {}}>
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
+            style={{ color }}>
+            Affected Entities
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {entities.map(e => (
+              <span key={e}
+                className="text-[9.5px] font-medium px-1.5 py-0.5 rounded bg-raised text-ink-secondary">
+                {e}
+              </span>
+            ))}
+            {item.affected_entities.length > 6 && (
+              <span className="text-[9.5px] text-ink-muted">
+                +{item.affected_entities.length - 6}
+              </span>
+            )}
+          </div>
+        </div>
+      ); })()}
+
+      {/* 4–7: Deep analysis fields */}
+      {deepLoading && !deepData ? (
+        <div className="px-3 py-3 flex items-center gap-2 text-2xs text-ink-muted"
+          style={sectionCount > 0 ? { borderTop: `1px solid ${color}14` } : {}}>
+          <Loader2 size={11} className="animate-spin" />
+          Analyzing…
+        </div>
+      ) : deepData ? (
+        <>
+          {whatChanged && (() => { const first = sectionCount++ === 0; return (
+            <StoryNoteRow label="What Changed" color={color} notFirst={!first}>
+              {whatChanged}
+            </StoryNoteRow>
+          ); })()}
+          {whyMarkets && (() => { const first = sectionCount++ === 0; return (
+            <StoryNoteRow label="Why Markets Care" color={color} notFirst={!first}>
+              {whyMarkets}
+            </StoryNoteRow>
+          ); })()}
+          {whoWins && (() => { const notFirst = sectionCount++ > 0; return (
+            <div className="px-3 py-2.5"
+              style={{
+                borderTop:  notFirst ? `1px solid ${color}14` : undefined,
+                borderLeft: "2px solid rgba(16,185,129,0.30)",
+              }}>
+              <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1"
+                style={{ color: "#059669" }}>
+                Bull Case / Positioning
+              </p>
+              <p className="text-xs leading-relaxed text-ink-secondary">{whoWins}</p>
+            </div>
+          ); })()}
+          {watchNext && (() => { const first = sectionCount++ === 0; return (
+            <StoryNoteRow label="What To Watch Next" color={color} notFirst={!first}>
+              {watchNext}
+            </StoryNoteRow>
+          ); })()}
+        </>
+      ) : null}
     </div>
   );
 }
