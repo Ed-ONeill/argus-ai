@@ -108,6 +108,25 @@ const EVOLUTION_CLS: Record<string, string> = {
   reversing:     "text-red-500",
 };
 
+const EVOLUTION_COLOR: Record<string, string> = {
+  accelerating:  "#10b981",
+  strengthening: "#10b981",
+  broadening:    "#38bdf8",
+  stabilizing:   "#94a3b8",
+  peaking:       "#f59e0b",
+  weakening:     "#f97316",
+  reversing:     "#ef4444",
+};
+
+const SNAP_STRIP_KEYS = [
+  { key: "SPY",     label: "S&P 500" },
+  { key: "QQQ",     label: "Nasdaq"  },
+  { key: "TNX",     label: "10Y UST" },
+  { key: "BZ=F",    label: "Oil"     },
+  { key: "BTC-USD", label: "Bitcoin" },
+  { key: "VIX",     label: "VIX"     },
+] as const;
+
 const LIFECYCLE_STAGES: ThemeLifecycleStage[] = [
   "emerging", "building", "dominant", "maturing", "retiring",
 ];
@@ -189,6 +208,14 @@ function confColor(score: number): string {
   return score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8";
 }
 
+function fmtSnapPrice(key: string, price: number): string {
+  if (key === "TNX")     return price.toFixed(3) + "%";
+  if (key === "BTC-USD") return "$" + price.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (key === "BZ=F")    return "$" + price.toFixed(2);
+  if (key === "VIX")     return price.toFixed(2);
+  return price.toFixed(2);
+}
+
 function borderColorForTheme(t: ThemeIntelligence, evState: string): string {
   if (t.momentum_direction === "bullish") return "#10b981";
   if (t.momentum_direction === "bearish") return "#ef4444";
@@ -206,9 +233,56 @@ function SectionHeader({ label, icon, sub }: {
   return (
     <div className="flex items-center gap-2 mb-2">
       {icon}
-      <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-ink-muted/60">{label}</span>
-      {sub && <span className="text-[8.5px] text-ink-muted/30">{sub}</span>}
-      <span className="h-px flex-1 bg-edge/60" />
+      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">{label}</span>
+      {sub && <span className="text-[9px] text-ink-muted">{sub}</span>}
+      <span className="h-px flex-1 bg-edge" />
+    </div>
+  );
+}
+
+
+// ── Market Snapshot Strip ─────────────────────────────────────────────────────
+
+function MarketSnapshotStrip({ marketData }: {
+  marketData: Record<string, TickerData | null> | undefined;
+}) {
+  const loading = marketData === undefined;
+  return (
+    <div className="flex items-stretch rounded-lg border border-edge bg-surface overflow-x-auto scrollbar-hide mb-3">
+      {SNAP_STRIP_KEYS.map((cfg, i) => {
+        const ticker  = marketData?.[cfg.key];
+        const offline = ticker === null;
+        const up      = ticker ? isUp(ticker) : false;
+        const chgClr  = up ? "#16a34a" : "#dc2626";
+
+        return (
+          <div
+            key={cfg.key}
+            className={cn(
+              "flex flex-col items-center justify-center px-3 py-2 min-w-[72px] flex-1 gap-0.5",
+              i > 0 && "border-l border-edge",
+            )}
+          >
+            <span className="text-[8px] font-semibold uppercase tracking-wider text-ink-muted whitespace-nowrap">
+              {cfg.label}
+            </span>
+            {loading ? (
+              <span className="text-[12px] font-bold text-ink-muted/30 tabular-nums">…</span>
+            ) : offline ? (
+              <span className="text-[12px] font-bold text-ink-muted/25 tabular-nums">—</span>
+            ) : (
+              <>
+                <span className="text-[12px] font-bold text-ink tabular-nums leading-tight">
+                  {fmtSnapPrice(cfg.key, ticker!.price)}
+                </span>
+                <span className="text-[9.5px] font-semibold tabular-nums leading-tight" style={{ color: chgClr }}>
+                  {formatChange(ticker!)}
+                </span>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -747,7 +821,6 @@ function CompactThemeCard({
   const t          = theme;
   const evState    = computeThemeEvolutionState(t);
   const evMeta     = THEME_EVOLUTION_META[evState];
-  const evCls      = EVOLUTION_CLS[evState] ?? "text-slate-400";
   const publicName = cleanThemeName(t.name);
   const narrative  = t.causal_narrative || t.description || "";
   const score      = t.confidence ?? 0;
@@ -762,6 +835,8 @@ function CompactThemeCard({
     else if (w?.direction === "negative") pressures.push(ind);
   }
 
+  const evColor = EVOLUTION_COLOR[evState] ?? "#94a3b8";
+
   return (
     <button
       onClick={onClick}
@@ -769,57 +844,67 @@ function CompactThemeCard({
                  hover:border-edge-strong hover:shadow-sm transition-all duration-100 group"
       style={{ borderLeft: `3px solid ${bColor}` }}
     >
-      <div className="px-4 pt-3 pb-3 space-y-2">
+      <div className="px-4 pt-2.5 pb-2.5 space-y-1.5">
 
-        {/* Status row — tiny, secondary */}
+        {/* Status row: badge + confidence + arrow */}
         <div className="flex items-center justify-between gap-2">
-          <span className={cn("text-[9px] font-semibold uppercase tracking-wider", evCls)}>
+          <span
+            className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full leading-none"
+            style={{ color: evColor, background: `${evColor}14`, border: `1px solid ${evColor}22` }}
+          >
             {evMeta.icon} {evMeta.label}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {isConflict && (
-              <span className="text-[8.5px] text-amber-400" title="Signal conflict">⚠ conflicting signals</span>
+              <span className="text-[8px] font-semibold text-amber-500 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded">
+                ⚠ conflict
+              </span>
             )}
-            <span className="text-[9px] tabular-nums text-ink-muted/50" style={{ color: cColor }}>
-              {score}% confidence
-            </span>
+            <div className="flex items-center gap-1">
+              <div className="w-16 h-[3px] rounded-full bg-raised overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${score}%`, background: cColor }} />
+              </div>
+              <span className="text-[8.5px] font-semibold tabular-nums" style={{ color: cColor }}>
+                {score}%
+              </span>
+            </div>
             <ChevronRight
               size={11}
-              className="text-ink-muted/25 group-hover:text-ink-muted/60 transition-colors"
+              className="text-ink-muted/30 group-hover:text-ink-muted/70 transition-colors"
             />
           </div>
         </div>
 
-        {/* Theme name — large and prominent */}
-        <h3 className="text-[15px] font-bold text-ink leading-snug">
+        {/* Theme name */}
+        <h3 className="text-[15px] font-bold text-ink leading-snug tracking-tight">
           {publicName}
         </h3>
 
-        {/* Thesis — readable body copy */}
+        {/* Thesis */}
         {narrative && (
           <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2">
             {narrative}
           </p>
         )}
 
-        {/* Winners / Losers — clear labeled lines */}
+        {/* Winners / Losers */}
         {(benefits.length > 0 || pressures.length > 0) && (
-          <div className="space-y-0.5 pt-0.5">
+          <div className="space-y-0.5 pt-0.5 border-t border-edge/50">
             {benefits.length > 0 && (
               <p className="text-[10.5px] leading-snug">
-                <span className="text-emerald-600 font-semibold">↑ Benefits&nbsp;</span>
+                <span className="text-emerald-600 font-semibold">↑ </span>
                 <span className="text-ink-secondary">
                   {benefits.slice(0, 3).join(" · ")}
-                  {benefits.length > 3 && <span className="text-ink-muted/40"> +{benefits.length - 3} more</span>}
+                  {benefits.length > 3 && <span className="text-ink-muted"> +{benefits.length - 3}</span>}
                 </span>
               </p>
             )}
             {pressures.length > 0 && (
               <p className="text-[10.5px] leading-snug">
-                <span className="text-red-500 font-semibold">↓ Pressures&nbsp;</span>
+                <span className="text-red-500 font-semibold">↓ </span>
                 <span className="text-ink-secondary">
                   {pressures.slice(0, 3).join(" · ")}
-                  {pressures.length > 3 && <span className="text-ink-muted/40"> +{pressures.length - 3} more</span>}
+                  {pressures.length > 3 && <span className="text-ink-muted"> +{pressures.length - 3}</span>}
                 </span>
               </p>
             )}
@@ -875,13 +960,13 @@ function IntelligenceThemes({
 
   return (
     <>
-      <div className="mb-4">
+      <div className="mb-3">
         <SectionHeader
           label="What's Driving It"
           icon={<Network size={11} className="text-accent shrink-0" />}
           sub={`${visible.length} theme${visible.length !== 1 ? "s" : ""} · click for detail`}
         />
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {visible.map(t => (
             <CompactThemeCard
               key={t.id}
@@ -915,82 +1000,79 @@ function WhereMattersList({ themes, sectorData }: {
 
   if (snapshot.length === 0) return null;
 
-  const leaders    = snapshot.filter(s => s.direction === "positive").slice(0, 6);
-  const laggards   = snapshot.filter(s => s.direction === "negative").slice(0, 6);
-  const mixed      = snapshot.filter(s => s.direction === "mixed").slice(0, 4);
-  const maxScore   = snapshot[0]?.signalScore ?? 100;
+  // Sort: positives by score desc, then negatives by score desc, then mixed
+  const sorted = [...snapshot].sort((a, b) => {
+    const order = { positive: 0, negative: 1, mixed: 2 } as const;
+    const dDiff = (order[a.direction as keyof typeof order] ?? 3)
+                - (order[b.direction as keyof typeof order] ?? 3);
+    return dDiff !== 0 ? dDiff : b.signalScore - a.signalScore;
+  });
+
+  const maxScore   = Math.max(...snapshot.map(s => s.signalScore), 1);
   const confirming = snapshot.filter(s => s.direction === "positive" || s.direction === "mixed").length;
 
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       <SectionHeader
         label="Where It Matters"
         icon={<BarChart2 size={11} className="text-accent shrink-0" />}
-        sub={`${confirming}/${snapshot.length} sectors confirming`}
+        sub={`${confirming} of ${snapshot.length} sectors confirming`}
       />
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-        {/* Leaders column header */}
-        {leaders.length > 0 && (
-          <p className="text-[7.5px] font-bold uppercase tracking-widest text-emerald-600/50 mb-0.5">
-            ↑ Leaders
-          </p>
-        )}
-        {laggards.length > 0 && (
-          <p className="text-[7.5px] font-bold uppercase tracking-widest text-red-500/50 mb-0.5">
-            ↓ Pressure
-          </p>
-        )}
+      <div className="space-y-0">
+        {sorted.map((s, i) => {
+          const pos     = s.direction === "positive";
+          const neg     = s.direction === "negative";
+          const barClr  = pos ? "#16a34a" : neg ? "#dc2626" : "#d97706";
+          const barPct  = (s.signalScore / maxScore) * 100;
+          const dirLabel = pos ? "↑" : neg ? "↓" : "~";
 
-        {/* Interleaved rows */}
-        {Array.from({ length: Math.max(leaders.length, laggards.length) }).map((_, i) => (
-          <>
-            {/* Leader row */}
-            <div key={`l-${i}`} className={cn("flex items-center gap-1.5", !leaders[i] ? "invisible" : "")}>
-              {leaders[i] && (
-                <>
-                  <span className="text-[9.5px] text-ink-secondary w-24 shrink-0 truncate">
-                    {leaders[i].sector}
-                  </span>
-                  <div className="w-12 h-[2px] rounded-full bg-raised overflow-hidden shrink-0">
-                    <div className="h-full rounded-full"
-                      style={{ width: `${maxScore > 0 ? (leaders[i].signalScore / maxScore) * 100 : 0}%`, background: "#10b981" }} />
-                  </div>
-                  {leaders[i].themeCount > 0 && (
-                    <span className="text-[7.5px] text-emerald-600/50 tabular-nums">×{leaders[i].themeCount}</span>
-                  )}
-                </>
+          return (
+            <div
+              key={s.sector}
+              className={cn(
+                "flex items-center gap-2.5 px-2 py-1.5 rounded transition-colors",
+                i % 2 === 0 ? "bg-transparent" : "bg-raised/40",
+              )}
+            >
+              {/* Rank */}
+              <span className="text-[8.5px] tabular-nums text-ink-muted w-4 shrink-0 text-right font-medium">
+                {i + 1}
+              </span>
+              {/* Direction dot */}
+              <span className="text-[11px] font-bold shrink-0 w-3" style={{ color: barClr }}>
+                {dirLabel}
+              </span>
+              {/* Sector name */}
+              <span className="text-[11px] font-semibold text-ink w-[6.5rem] shrink-0 truncate">
+                {s.sector}
+              </span>
+              {/* Signal bar */}
+              <div className="flex-1 h-[4px] rounded-full bg-edge overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${barPct}%`, background: barClr }}
+                />
+              </div>
+              {/* Theme count badge */}
+              {s.themeCount > 0 && (
+                <span
+                  className="text-[8.5px] font-bold tabular-nums px-1.5 py-0.5 rounded-full shrink-0"
+                  style={{ color: barClr, background: `${barClr}12` }}
+                >
+                  {s.themeCount}×
+                </span>
+              )}
+              {/* Dominant theme */}
+              {s.dominantTheme && (
+                <span className="text-[9px] text-ink-muted truncate hidden sm:block" style={{ maxWidth: "7rem" }}>
+                  {cleanThemeName(s.dominantTheme)}
+                </span>
               )}
             </div>
-            {/* Laggard row */}
-            <div key={`r-${i}`} className={cn("flex items-center gap-1.5", !laggards[i] ? "invisible" : "")}>
-              {laggards[i] && (
-                <>
-                  <span className="text-[9.5px] text-ink-secondary w-24 shrink-0 truncate">
-                    {laggards[i].sector}
-                  </span>
-                  <div className="w-12 h-[2px] rounded-full bg-raised overflow-hidden shrink-0">
-                    <div className="h-full rounded-full"
-                      style={{ width: `${maxScore > 0 ? (laggards[i].signalScore / maxScore) * 100 : 0}%`, background: "#ef4444" }} />
-                  </div>
-                  {laggards[i].themeCount > 0 && (
-                    <span className="text-[7.5px] text-red-500/50 tabular-nums">×{laggards[i].themeCount}</span>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        ))}
+          );
+        })}
       </div>
-
-      {mixed.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-edge/40">
-          <span className="text-[7.5px] font-bold uppercase tracking-widest text-amber-500/50 shrink-0">Mixed</span>
-          {mixed.map(s => (
-            <span key={s.sector} className="text-[9px] text-ink-muted">{s.sector}</span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1068,7 +1150,10 @@ export default function MarketsPage() {
         {/* ── WHAT'S HAPPENING ─────────────────────────────── */}
         <SectionHeader label="What's Happening" />
 
-        {/* Market Intel Bar — regime + prices + filter in one dark strip */}
+        {/* Live market snapshot — 6 instruments */}
+        <MarketSnapshotStrip marketData={marketData} />
+
+        {/* Market Intel Bar — regime + filter */}
         <MarketIntelBar
           regime={derivedRegime}
           brief={data?.market_brief ?? undefined}
@@ -1103,7 +1188,7 @@ export default function MarketsPage() {
         </AnimatePresence>
 
         {/* Biggest Moves */}
-        <div className="mb-4">
+        <div className="mb-3">
           <SectionHeader label="Biggest Moves" icon={<Zap size={11} className="text-accent shrink-0" />} />
           <BiggestMoves data={marketData} clusters={clusters} />
         </div>
@@ -1125,15 +1210,15 @@ export default function MarketsPage() {
         {/* ── SUPPORTING EVIDENCE ──────────────────────────── */}
         <div ref={clusterRef}>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-ink-muted/60">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">
               Supporting Evidence
             </span>
             {!isLoading && clusters.length > 0 && (
-              <span className="text-[8.5px] text-ink-muted/40 bg-raised px-1.5 py-px rounded-full">
+              <span className="text-[9px] text-ink-muted bg-raised px-1.5 py-px rounded-full border border-edge">
                 {visibleClusters.length}{activeCfg ? ` of ${clusters.length}` : ""}
               </span>
             )}
-            <span className="h-px flex-1 bg-edge/60" />
+            <span className="h-px flex-1 bg-edge" />
           </div>
           <ClusterStream
             clusters={visibleClusters}
