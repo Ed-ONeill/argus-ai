@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, X } from "lucide-react";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFeed } from "@/hooks/useFeed";
+import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
+import { useFollowedThemes } from "@/hooks/useFollowedThemes";
+import { useSaved } from "@/hooks/useSaved";
 import type { MarketBrief, ThemeIntelligence } from "@/lib/types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
 
 const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">'
@@ -47,6 +55,17 @@ const fadeUp = {
   }),
 };
 
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small shared components
+// ─────────────────────────────────────────────────────────────────────────────
+
 function PulseDot({ color = "#3ab880" }: { color?: string }) {
   return (
     <span className="relative inline-flex" style={{ width: 6, height: 6 }}>
@@ -57,17 +76,164 @@ function PulseDot({ color = "#3ab880" }: { color?: string }) {
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{
+      fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700,
+      color: "rgba(255,255,255,0.22)", marginBottom: "8px", textTransform: "uppercase",
+    }}>
+      {children}
+    </p>
+  );
+}
+
+function StatusLine({ icon, label, color }: { icon: string; label: string; color?: string }) {
+  return (
+    <div className="flex items-center gap-2 justify-center">
+      <span style={{ fontSize: "8px", color: color ?? "rgba(255,255,255,0.22)", opacity: 0.7 }}>{icon}</span>
+      <span style={{ fontSize: "11px", color: color ? `${color}99` : "rgba(255,255,255,0.34)", letterSpacing: "0.03em" }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Morning Brief — signed-out prompt
+// ─────────────────────────────────────────────────────────────────────────────
+
+function BriefSignOutPrompt({ regimeColor, pulseDotColor, onContinue }: {
+  regimeColor: string;
+  pulseDotColor: string;
+  onContinue: () => void;
+}) {
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  }).toUpperCase();
+
+  return (
+    <motion.div
+      key="prompt"
+      initial={{ opacity: 0, scale: 0.97, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0, transition: { duration: 0.40, ease: [0.25, 0, 0.25, 1] } }}
+      exit={{ opacity: 0, scale: 0.95, y: -6, transition: { duration: 0.24 } }}
+      className="flex justify-center"
+    >
+      <div
+        className="relative w-full max-w-lg"
+        style={{
+          background: "rgba(5,9,22,0.85)",
+          border: "1px solid rgba(255,255,255,0.09)",
+          borderRadius: "8px",
+          backdropFilter: "blur(12px)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Corner fold */}
+        <div aria-hidden style={{
+          position: "absolute", top: 0, right: 0, width: 0, height: 0,
+          borderStyle: "solid", borderWidth: "0 28px 28px 0",
+          borderColor: `transparent rgba(255,255,255,0.035) transparent transparent`,
+        }} />
+
+        {/* Top accent */}
+        <div style={{ height: 2, background: `linear-gradient(to right, transparent, ${regimeColor}44, transparent)` }} />
+
+        <div className="px-10 py-10 flex flex-col items-center text-center gap-6">
+
+          {/* Header */}
+          <div className="flex items-center gap-2.5">
+            <PulseDot color={pulseDotColor} />
+            <span style={{ fontSize: "9px", letterSpacing: "0.24em", fontWeight: 700, color: "rgba(255,255,255,0.28)" }}>
+              ARGUS · MORNING BRIEF
+            </span>
+            <div style={{ width: 1, height: 10, background: "rgba(255,255,255,0.10)" }} />
+            <span style={{ fontSize: "9px", letterSpacing: "0.12em", color: "rgba(255,255,255,0.18)" }}>
+              {today}
+            </span>
+          </div>
+
+          {/* Seal */}
+          <motion.div
+            animate={{ scale: [1, 1.03, 1] }}
+            transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              width: 72, height: 72, borderRadius: "50%",
+              background: `radial-gradient(circle at 38% 38%, ${regimeColor}28 0%, ${regimeColor}10 60%, transparent 100%)`,
+              border: `1px solid ${regimeColor}30`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2,
+            }}
+          >
+            <span style={{ fontSize: "18px", fontWeight: 700, color: regimeColor, opacity: 0.65, letterSpacing: "-0.02em" }}>A</span>
+            <div style={{ width: 20, height: 1, background: `${regimeColor}35` }} />
+          </motion.div>
+
+          {/* Copy */}
+          <div className="space-y-1.5">
+            <p style={{ fontSize: "14px", fontWeight: 500, color: "rgba(255,255,255,0.75)", letterSpacing: "0.02em" }}>
+              Your Morning Brief is ready.
+            </p>
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.30)", lineHeight: 1.55 }}>
+              Sign in to personalize your intelligence feed<br />and sync saved items across devices.
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col items-center gap-2.5 w-full"
+            style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "20px" }}>
+            <Link href="/auth" className="w-full max-w-[220px]">
+              <button
+                className="w-full flex items-center justify-center gap-2 transition-all duration-150"
+                style={{
+                  background: `${regimeColor}18`,
+                  border: `1px solid ${regimeColor}38`,
+                  borderRadius: "5px",
+                  padding: "10px 24px",
+                  color: "rgba(255,255,255,0.82)",
+                  fontSize: "10.5px",
+                  letterSpacing: "0.16em",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = `${regimeColor}28`;
+                  e.currentTarget.style.color = "rgba(255,255,255,0.96)";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = `${regimeColor}18`;
+                  e.currentTarget.style.color = "rgba(255,255,255,0.82)";
+                }}
+              >
+                SIGN IN
+                <ArrowRight size={11} style={{ opacity: 0.55 }} />
+              </button>
+            </Link>
+
+            <button
+              onClick={onContinue}
+              className="transition-colors duration-150"
+              style={{ fontSize: "11px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.04em", background: "none", border: "none", cursor: "pointer" }}
+              onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.52)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.28)"; }}
+            >
+              Continue without signing in →
+            </button>
+          </div>
+
+        </div>
+
+        <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${regimeColor}22, transparent)` }} />
+      </div>
+    </motion.div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Morning Brief — sealed envelope state
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BriefSealed({
-  isLoading,
-  themeCount,
-  regimeLabel,
-  regimeColor,
-  pulseDotColor,
-  onOpen,
+  isLoading, themeCount, regimeLabel, regimeColor, pulseDotColor, onOpen,
 }: {
   isLoading: boolean;
   themeCount: number;
@@ -86,7 +252,7 @@ function BriefSealed({
       initial={{ opacity: 0, scale: 0.97, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0, 0.25, 1] } }}
       exit={{ opacity: 0, scale: 0.95, y: -6, transition: { duration: 0.28, ease: [0.5, 0, 1, 0] } }}
-      className="relative flex justify-center"
+      className="flex justify-center"
     >
       <div
         className="relative w-full max-w-lg"
@@ -98,33 +264,17 @@ function BriefSealed({
           overflow: "hidden",
         }}
       >
-        {/* Corner fold — top-right */}
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            width: 0,
-            height: 0,
-            borderStyle: "solid",
-            borderWidth: "0 28px 28px 0",
-            borderColor: `transparent rgba(255,255,255,0.035) transparent transparent`,
-          }}
-        />
-
-        {/* Top edge accent line */}
+        <div aria-hidden style={{
+          position: "absolute", top: 0, right: 0, width: 0, height: 0,
+          borderStyle: "solid", borderWidth: "0 28px 28px 0",
+          borderColor: `transparent rgba(255,255,255,0.035) transparent transparent`,
+        }} />
         <div style={{ height: 2, background: `linear-gradient(to right, transparent, ${regimeColor}44, transparent)` }} />
 
         <div className="px-10 py-10 flex flex-col items-center text-center gap-6">
-
-          {/* Header label */}
           <div className="flex items-center gap-2.5">
             <PulseDot color={pulseDotColor} />
-            <span style={{
-              fontSize: "9px", letterSpacing: "0.24em", fontWeight: 700,
-              color: "rgba(255,255,255,0.28)",
-            }}>
+            <span style={{ fontSize: "9px", letterSpacing: "0.24em", fontWeight: 700, color: "rgba(255,255,255,0.28)" }}>
               ARGUS · MORNING BRIEF
             </span>
             <div style={{ width: 1, height: 10, background: "rgba(255,255,255,0.10)" }} />
@@ -133,33 +283,22 @@ function BriefSealed({
             </span>
           </div>
 
-          {/* Wax seal */}
           <motion.div
             animate={{ scale: [1, 1.03, 1] }}
             transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
             style={{
-              width: 72,
-              height: 72,
-              borderRadius: "50%",
+              width: 72, height: 72, borderRadius: "50%",
               background: `radial-gradient(circle at 38% 38%, ${regimeColor}28 0%, ${regimeColor}10 60%, transparent 100%)`,
               border: `1px solid ${regimeColor}30`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              gap: 2,
+              display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2,
             }}
           >
             <span style={{ fontSize: "18px", fontWeight: 700, color: regimeColor, opacity: 0.65, letterSpacing: "-0.02em" }}>A</span>
             <div style={{ width: 20, height: 1, background: `${regimeColor}35` }} />
           </motion.div>
 
-          {/* Title */}
           <div className="space-y-1">
-            <p style={{
-              fontSize: "13.5px", letterSpacing: "0.12em", fontWeight: 600,
-              color: "rgba(255,255,255,0.72)",
-            }}>
+            <p style={{ fontSize: "13.5px", letterSpacing: "0.12em", fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>
               MORNING INTELLIGENCE BRIEF
             </p>
             <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.24)", letterSpacing: "0.06em" }}>
@@ -167,7 +306,6 @@ function BriefSealed({
             </p>
           </div>
 
-          {/* Status items */}
           <div className="w-full space-y-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "16px" }}>
             {isLoading ? (
               <>
@@ -187,7 +325,6 @@ function BriefSealed({
             )}
           </div>
 
-          {/* Open button */}
           <button
             onClick={onOpen}
             disabled={isLoading}
@@ -206,15 +343,13 @@ function BriefSealed({
             }}
             onMouseEnter={e => {
               if (isLoading) return;
-              const b = e.currentTarget;
-              b.style.background = "rgba(255,255,255,0.10)";
-              b.style.color = "rgba(255,255,255,0.95)";
+              e.currentTarget.style.background = "rgba(255,255,255,0.10)";
+              e.currentTarget.style.color = "rgba(255,255,255,0.95)";
             }}
             onMouseLeave={e => {
               if (isLoading) return;
-              const b = e.currentTarget;
-              b.style.background = "rgba(255,255,255,0.06)";
-              b.style.color = "rgba(255,255,255,0.78)";
+              e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+              e.currentTarget.style.color = "rgba(255,255,255,0.78)";
             }}
           >
             {isLoading ? (
@@ -225,28 +360,16 @@ function BriefSealed({
             ) : (
               <>
                 ▶ OPEN BRIEF
-                <ArrowRight size={11} className="transition-transform duration-200 group-hover:translate-x-0.5" style={{ opacity: 0.55 }} />
+                <ArrowRight size={11} className="transition-transform duration-200 group-hover:translate-x-0.5"
+                  style={{ opacity: 0.55 }} />
               </>
             )}
           </button>
-
         </div>
 
-        {/* Bottom edge accent */}
         <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${regimeColor}22, transparent)` }} />
       </div>
     </motion.div>
-  );
-}
-
-function StatusLine({ icon, label, color }: { icon: string; label: string; color?: string }) {
-  return (
-    <div className="flex items-center gap-2 justify-center">
-      <span style={{ fontSize: "8px", color: color ?? "rgba(255,255,255,0.22)", opacity: 0.7 }}>{icon}</span>
-      <span style={{ fontSize: "11px", color: color ? `${color}99` : "rgba(255,255,255,0.34)", letterSpacing: "0.03em" }}>
-        {label}
-      </span>
-    </div>
   );
 }
 
@@ -255,10 +378,7 @@ function StatusLine({ icon, label, color }: { icon: string; label: string; color
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BriefOpen({
-  brief,
-  themes,
-  regimeColor,
-  onClose,
+  brief, themes, regimeColor, onClose,
 }: {
   brief: MarketBrief | null | undefined;
   themes: ThemeIntelligence[];
@@ -286,10 +406,9 @@ function BriefOpen({
   );
 
   const activeThemes = useMemo(() => themes.slice(0, 6), [themes]);
-
   const confPct = brief?.confidence ? `${Math.round(brief.confidence)}%` : null;
 
-  const sectionVariants = {
+  const sv = {
     hidden:  { opacity: 0 },
     visible: (i: number) => ({
       opacity: 1,
@@ -311,15 +430,11 @@ function BriefOpen({
         overflow: "hidden",
       }}
     >
-      {/* Top accent line */}
       <div style={{ height: 2, background: `linear-gradient(to right, transparent, ${regimeColor}55, transparent)` }} />
 
-      {/* Header */}
-      <motion.div
-        custom={0} variants={sectionVariants} initial="hidden" animate="visible"
+      <motion.div custom={0} variants={sv} initial="hidden" animate="visible"
         className="flex items-center justify-between px-6 py-4"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-      >
+        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="flex items-center gap-3">
           <span style={{ fontSize: "9px", letterSpacing: "0.22em", fontWeight: 700, color: "rgba(255,255,255,0.30)" }}>
             ARGUS MORNING BRIEF
@@ -332,24 +447,20 @@ function BriefOpen({
         <button
           onClick={onClose}
           className="flex items-center gap-1.5 transition-opacity duration-150 hover:opacity-80"
-          style={{ color: "rgba(255,255,255,0.28)", fontSize: "9px", letterSpacing: "0.12em" }}
+          style={{ color: "rgba(255,255,255,0.28)", fontSize: "9px", letterSpacing: "0.12em", background: "none", border: "none", cursor: "pointer" }}
         >
-          <X size={11} />
-          CLOSE
+          <X size={11} /> CLOSE
         </button>
       </motion.div>
 
-      {/* Regime band */}
       {brief?.market_regime && (
-        <motion.div
-          custom={1} variants={sectionVariants} initial="hidden" animate="visible"
+        <motion.div custom={1} variants={sv} initial="hidden" animate="visible"
           className="flex items-center justify-between px-6 py-3"
           style={{
             background: `${regimeColor}0c`,
             borderBottom: "1px solid rgba(255,255,255,0.05)",
             borderLeft: `3px solid ${regimeColor}55`,
-          }}
-        >
+          }}>
           <div className="flex items-center gap-3">
             <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em", color: regimeColor, opacity: 0.82 }}>
               {brief.market_regime.toUpperCase()}
@@ -369,10 +480,8 @@ function BriefOpen({
       )}
 
       <div className="px-6 py-5 space-y-5">
-
-        {/* Primary narrative */}
         {brief?.primary_driver && (
-          <motion.div custom={2} variants={sectionVariants} initial="hidden" animate="visible">
+          <motion.div custom={2} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Primary Narrative</SectionLabel>
             <p style={{
               fontSize: "13px", lineHeight: "1.72", color: "rgba(255,255,255,0.58)",
@@ -383,13 +492,9 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {/* Opportunities | Risks two-column */}
         {(opportunities.length > 0 || brief?.risk_scenario) && (
-          <motion.div
-            custom={3} variants={sectionVariants} initial="hidden" animate="visible"
-            className="grid grid-cols-2 gap-4"
-          >
-            {/* Opportunities */}
+          <motion.div custom={3} variants={sv} initial="hidden" animate="visible"
+            className="grid grid-cols-2 gap-4">
             <div>
               <SectionLabel>Opportunities</SectionLabel>
               {opportunities.length > 0 ? (
@@ -410,7 +515,6 @@ function BriefOpen({
               )}
             </div>
 
-            {/* Risks */}
             <div>
               <SectionLabel>Key Risks</SectionLabel>
               <div className="space-y-2">
@@ -438,17 +542,14 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {/* Trade implication */}
         {brief?.trade_implication && (
-          <motion.div
-            custom={4} variants={sectionVariants} initial="hidden" animate="visible"
+          <motion.div custom={4} variants={sv} initial="hidden" animate="visible"
             style={{
               background: "rgba(255,255,255,0.025)",
               border: "1px solid rgba(255,255,255,0.06)",
               borderRadius: "5px",
               padding: "12px 16px",
-            }}
-          >
+            }}>
             <SectionLabel>Trade Implication</SectionLabel>
             <p style={{ fontSize: "12px", lineHeight: "1.65", color: "rgba(255,255,255,0.52)" }}>
               {brief.trade_implication}
@@ -456,9 +557,8 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {/* Narrative shift */}
         {brief?.narrative_shift && (
-          <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible">
+          <motion.div custom={5} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Overnight Shift</SectionLabel>
             <p style={{ fontSize: "12px", lineHeight: "1.65", color: "rgba(255,255,255,0.40)" }}>
               {brief.narrative_shift}
@@ -466,24 +566,16 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {/* Active themes */}
         {activeThemes.length > 0 && (
-          <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible">
+          <motion.div custom={6} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Active Themes</SectionLabel>
             <div className="flex flex-wrap gap-1.5">
               {activeThemes.map((t) => (
-                <span
-                  key={t.id}
-                  style={{
-                    fontSize: "10px",
-                    letterSpacing: "0.04em",
-                    color: "rgba(255,255,255,0.48)",
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: "4px",
-                    padding: "3px 9px",
-                  }}
-                >
+                <span key={t.id} style={{
+                  fontSize: "10px", letterSpacing: "0.04em", color: "rgba(255,255,255,0.48)",
+                  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "4px", padding: "3px 9px",
+                }}>
                   {t.name}
                 </span>
               ))}
@@ -491,57 +583,27 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {/* CTA */}
-        <motion.div
-          custom={7} variants={sectionVariants} initial="hidden" animate="visible"
+        <motion.div custom={7} variants={sv} initial="hidden" animate="visible"
           className="flex justify-end pt-1"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
-        >
+          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <Link href="/feed">
             <button
               className="group flex items-center gap-2.5 transition-all duration-200"
               style={{
-                background: "rgba(255,255,255,0.055)",
-                border: "1px solid rgba(255,255,255,0.11)",
-                borderRadius: "5px",
-                padding: "10px 22px",
-                color: "rgba(255,255,255,0.72)",
-                fontSize: "10.5px",
-                letterSpacing: "0.18em",
-                fontWeight: 600,
-                cursor: "pointer",
+                background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.11)",
+                borderRadius: "5px", padding: "10px 22px", color: "rgba(255,255,255,0.72)",
+                fontSize: "10.5px", letterSpacing: "0.18em", fontWeight: 600, cursor: "pointer",
               }}
-              onMouseEnter={e => {
-                const b = e.currentTarget;
-                b.style.background = "rgba(255,255,255,0.09)";
-                b.style.color = "rgba(255,255,255,0.94)";
-              }}
-              onMouseLeave={e => {
-                const b = e.currentTarget;
-                b.style.background = "rgba(255,255,255,0.055)";
-                b.style.color = "rgba(255,255,255,0.72)";
-              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.09)"; e.currentTarget.style.color = "rgba(255,255,255,0.94)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.055)"; e.currentTarget.style.color = "rgba(255,255,255,0.72)"; }}
             >
               ENTER PLATFORM
-              <ArrowRight size={12} className="transition-transform duration-200 group-hover:translate-x-0.5"
-                style={{ opacity: 0.55 }} />
+              <ArrowRight size={12} className="transition-transform duration-200 group-hover:translate-x-0.5" style={{ opacity: 0.55 }} />
             </button>
           </Link>
         </motion.div>
-
       </div>
     </motion.div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{
-      fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700,
-      color: "rgba(255,255,255,0.22)", marginBottom: "8px", textTransform: "uppercase",
-    }}>
-      {children}
-    </p>
   );
 }
 
@@ -553,11 +615,20 @@ export default function LandingPage() {
   const ms = useMarketState();
   const [mounted, setMounted] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
+  const [guestMode, setGuestMode] = useState(false);
+  const briefSectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
+  const { user, loading: authLoading } = useAuth();
+  const { firstName } = useProfile();
+  const { followed } = useFollowedThemes();
+  const { savedIds } = useSaved();
   const { data: feedData, isLoading: feedLoading } = useFeed();
-  const brief = feedData?.market_brief;
+
+  const brief  = feedData?.market_brief;
   const themes = useMemo(() => feedData?.theme_intelligence ?? [], [feedData?.theme_intelligence]);
+
+  // ── Regime colors ───────────────────────────────────────────────────────────
 
   const heroGrad =
     ms.riskRegime === "risk-off"
@@ -591,12 +662,54 @@ export default function LandingPage() {
     ms.riskRegime === "risk-on"  ? "Risk On" :
     ms.riskRegime === "risk-off" ? "Risk Off" : "Neutral";
 
+  // ── Derived ─────────────────────────────────────────────────────────────────
+
+  const isSignedIn    = !authLoading && !!user;
+  const showBriefCard = isSignedIn || guestMode;
+  const greeting      = getGreeting();
+
+  const todayLong = new Date().toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  }).toUpperCase();
+
+  const followedCount = followed.length;
+  const savedCount    = savedIds.length;
+
+  function handleOpenBriefFromHero() {
+    setBriefOpen(true);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        briefSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
+    });
+  }
+
+  // Live status strip (shared between both hero variants)
+  const statusStrip = mounted && (
+    <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible"
+      className="flex items-center gap-3 mb-8">
+      <PulseDot color={pulseDotColor} />
+      <span style={{ fontSize: "10px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.36)" }}>LIVE</span>
+      <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.10)" }} />
+      <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: regimeColor }}>
+        {ms.riskRegime === "risk-on" ? "RISK ON" : ms.riskRegime === "risk-off" ? "RISK OFF" : "NEUTRAL"}
+      </span>
+      <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.08)" }} />
+      <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: volColor }}>
+        {ms.volRegime.toUpperCase()} VOL
+      </span>
+      <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.08)" }} />
+      <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: "rgba(255,255,255,0.28)" }}>
+        RATES {ratesArrow}
+      </span>
+    </motion.div>
+  );
+
   return (
     <div style={{ background: "#030710", minHeight: "100vh" }}>
 
-      {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex flex-col justify-center pt-14"
-        style={{ overflow: "hidden" }}>
+      {/* ── HERO ────────────────────────────────────────────────────────────── */}
+      <section className="relative min-h-screen flex flex-col justify-center pt-14" style={{ overflow: "hidden" }}>
 
         <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: heroGrad }} />
         <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: sideGrad }} />
@@ -607,99 +720,188 @@ export default function LandingPage() {
 
         <div className="relative max-w-5xl mx-auto w-full px-6 sm:px-10 py-10 sm:py-14">
 
-          {/* Live status strip */}
-          {mounted && (
-            <motion.div
-              custom={0} variants={fadeUp} initial="hidden" animate="visible"
-              className="flex items-center gap-3 mb-8">
-              <PulseDot color={pulseDotColor} />
-              <span style={{ fontSize: "10px", letterSpacing: "0.20em", fontWeight: 600, color: "rgba(255,255,255,0.36)" }}>
-                LIVE
-              </span>
-              <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.10)" }} />
-              <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: regimeColor }}>
-                {ms.riskRegime === "risk-on" ? "RISK ON" : ms.riskRegime === "risk-off" ? "RISK OFF" : "NEUTRAL"}
-              </span>
-              <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.08)" }} />
-              <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: volColor }}>
-                {ms.volRegime.toUpperCase()} VOL
-              </span>
-              <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.08)" }} />
-              <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: "rgba(255,255,255,0.28)" }}>
-                RATES {ratesArrow}
-              </span>
-            </motion.div>
-          )}
+          {isSignedIn ? (
+            /* ── Signed-in: personalized morning hero ── */
+            <>
+              {statusStrip}
 
-          {/* Logo */}
-          <motion.div custom={1} variants={fadeUp} initial="hidden" animate="visible"
-            style={{ marginBottom: "28px" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/argus-logo-hero.png"
-              alt="Argus Market Intelligence"
-              style={{ display: "block", width: "min(100%, 460px)", height: "auto" }}
-            />
-          </motion.div>
-
-          {/* Tagline */}
-          <motion.p
-            custom={2} variants={fadeUp} initial="hidden" animate="visible"
-            style={{
-              fontSize: "14px", fontWeight: 300, letterSpacing: "0.05em",
-              color: "rgba(255,255,255,0.40)", marginBottom: "12px",
-            }}>
-            Real-time market intelligence.
-          </motion.p>
-
-          {/* Description */}
-          <motion.p
-            custom={3} variants={fadeUp} initial="hidden" animate="visible"
-            style={{
-              fontSize: "13.5px", lineHeight: "1.80", color: "rgba(255,255,255,0.28)",
-              maxWidth: "460px", marginBottom: "28px",
-            }}>
-            Tracks liquidity conditions, volatility regimes, participant positioning,
-            and cross-asset flows in real time. Built for the speed and structure
-            of live capital markets.
-          </motion.p>
-
-          {/* CTA */}
-          <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible">
-            <Link href="/feed">
-              <button
-                className="group flex items-center gap-3 transition-all duration-200"
+              {/* Greeting */}
+              <motion.p
+                custom={1} variants={fadeUp} initial="hidden" animate="visible"
                 style={{
-                  background: "rgba(255,255,255,0.055)",
-                  border: "1px solid rgba(255,255,255,0.11)",
-                  borderRadius: "5px",
-                  padding: "12px 26px",
-                  color: "rgba(255,255,255,0.76)",
-                  fontSize: "11px",
-                  letterSpacing: "0.18em",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  backdropFilter: "blur(8px)",
-                }}
-                onMouseEnter={e => {
-                  const b = e.currentTarget as HTMLButtonElement;
-                  b.style.background = "rgba(255,255,255,0.09)";
-                  b.style.borderColor = "rgba(255,255,255,0.18)";
-                  b.style.color = "rgba(255,255,255,0.94)";
-                }}
-                onMouseLeave={e => {
-                  const b = e.currentTarget as HTMLButtonElement;
-                  b.style.background = "rgba(255,255,255,0.055)";
-                  b.style.borderColor = "rgba(255,255,255,0.11)";
-                  b.style.color = "rgba(255,255,255,0.76)";
+                  fontSize: "clamp(22px, 4vw, 32px)",
+                  fontWeight: 300,
+                  letterSpacing: "0.01em",
+                  color: "rgba(255,255,255,0.82)",
+                  marginBottom: "8px",
+                  lineHeight: 1.2,
                 }}
               >
-                OPEN PLATFORM
-                <ArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-1"
-                  style={{ opacity: 0.55 }} />
-              </button>
-            </Link>
-          </motion.div>
+                {greeting}, {firstName}.
+              </motion.p>
+
+              {/* Sub-headline */}
+              <motion.p
+                custom={2} variants={fadeUp} initial="hidden" animate="visible"
+                style={{
+                  fontSize: "14px",
+                  fontWeight: 300,
+                  letterSpacing: "0.04em",
+                  color: "rgba(255,255,255,0.38)",
+                  marginBottom: "18px",
+                }}
+              >
+                Your Argus Brief is ready.
+              </motion.p>
+
+              {/* Date stamp */}
+              <motion.p
+                custom={3} variants={fadeUp} initial="hidden" animate="visible"
+                style={{
+                  fontSize: "9px",
+                  letterSpacing: "0.20em",
+                  color: "rgba(255,255,255,0.22)",
+                  marginBottom: "20px",
+                }}
+              >
+                {todayLong}
+              </motion.p>
+
+              {/* Stats row */}
+              {(followedCount > 0 || savedCount > 0) && (
+                <motion.div
+                  custom={4} variants={fadeUp} initial="hidden" animate="visible"
+                  className="flex items-center gap-4 mb-8"
+                >
+                  {followedCount > 0 && (
+                    <>
+                      <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.34)", letterSpacing: "0.03em" }}>
+                        <span style={{ color: regimeColor, opacity: 0.65, fontWeight: 600 }}>{followedCount}</span>
+                        {" "}theme{followedCount !== 1 ? "s" : ""} followed
+                      </span>
+                      {savedCount > 0 && (
+                        <div style={{ width: 1, height: 11, background: "rgba(255,255,255,0.10)" }} />
+                      )}
+                    </>
+                  )}
+                  {savedCount > 0 && (
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.34)", letterSpacing: "0.03em" }}>
+                      <span style={{ color: regimeColor, opacity: 0.65, fontWeight: 600 }}>{savedCount}</span>
+                      {" "}saved
+                    </span>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Action buttons */}
+              <motion.div
+                custom={followedCount > 0 || savedCount > 0 ? 5 : 4}
+                variants={fadeUp} initial="hidden" animate="visible"
+                className="flex items-center gap-3"
+              >
+                <button
+                  onClick={handleOpenBriefFromHero}
+                  className="group flex items-center gap-2.5 transition-all duration-200"
+                  style={{
+                    background: `${regimeColor}18`,
+                    border: `1px solid ${regimeColor}38`,
+                    borderRadius: "5px",
+                    padding: "11px 24px",
+                    color: "rgba(255,255,255,0.82)",
+                    fontSize: "10.5px",
+                    letterSpacing: "0.18em",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = `${regimeColor}28`; e.currentTarget.style.color = "rgba(255,255,255,0.96)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = `${regimeColor}18`; e.currentTarget.style.color = "rgba(255,255,255,0.82)"; }}
+                >
+                  OPEN BRIEF ▾
+                </button>
+
+                <Link href="/feed">
+                  <button
+                    className="group flex items-center gap-2.5 transition-all duration-200"
+                    style={{
+                      background: "rgba(255,255,255,0.055)",
+                      border: "1px solid rgba(255,255,255,0.11)",
+                      borderRadius: "5px",
+                      padding: "11px 24px",
+                      color: "rgba(255,255,255,0.60)",
+                      fontSize: "10.5px",
+                      letterSpacing: "0.18em",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.09)"; e.currentTarget.style.color = "rgba(255,255,255,0.90)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.055)"; e.currentTarget.style.color = "rgba(255,255,255,0.60)"; }}
+                  >
+                    ENTER PLATFORM
+                    <ArrowRight size={11} className="transition-transform duration-200 group-hover:translate-x-0.5" style={{ opacity: 0.50 }} />
+                  </button>
+                </Link>
+              </motion.div>
+            </>
+          ) : (
+            /* ── Signed-out: landing hero ── */
+            <>
+              {statusStrip}
+
+              <motion.div custom={1} variants={fadeUp} initial="hidden" animate="visible"
+                style={{ marginBottom: "28px" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/argus-logo-hero.png"
+                  alt="Argus Market Intelligence"
+                  style={{ display: "block", width: "min(100%, 460px)", height: "auto" }}
+                />
+              </motion.div>
+
+              <motion.p custom={2} variants={fadeUp} initial="hidden" animate="visible"
+                style={{ fontSize: "14px", fontWeight: 300, letterSpacing: "0.05em", color: "rgba(255,255,255,0.40)", marginBottom: "12px" }}>
+                Real-time market intelligence.
+              </motion.p>
+
+              <motion.p custom={3} variants={fadeUp} initial="hidden" animate="visible"
+                style={{ fontSize: "13.5px", lineHeight: "1.80", color: "rgba(255,255,255,0.28)", maxWidth: "460px", marginBottom: "28px" }}>
+                Tracks liquidity conditions, volatility regimes, participant positioning,
+                and cross-asset flows in real time. Built for the speed and structure
+                of live capital markets.
+              </motion.p>
+
+              <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible">
+                <Link href="/feed">
+                  <button
+                    className="group flex items-center gap-3 transition-all duration-200"
+                    style={{
+                      background: "rgba(255,255,255,0.055)",
+                      border: "1px solid rgba(255,255,255,0.11)",
+                      borderRadius: "5px", padding: "12px 26px",
+                      color: "rgba(255,255,255,0.76)",
+                      fontSize: "11px", letterSpacing: "0.18em", fontWeight: 600,
+                      cursor: "pointer", backdropFilter: "blur(8px)",
+                    }}
+                    onMouseEnter={e => {
+                      const b = e.currentTarget as HTMLButtonElement;
+                      b.style.background = "rgba(255,255,255,0.09)";
+                      b.style.borderColor = "rgba(255,255,255,0.18)";
+                      b.style.color = "rgba(255,255,255,0.94)";
+                    }}
+                    onMouseLeave={e => {
+                      const b = e.currentTarget as HTMLButtonElement;
+                      b.style.background = "rgba(255,255,255,0.055)";
+                      b.style.borderColor = "rgba(255,255,255,0.11)";
+                      b.style.color = "rgba(255,255,255,0.76)";
+                    }}
+                  >
+                    OPEN PLATFORM
+                    <ArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-1"
+                      style={{ opacity: 0.55 }} />
+                  </button>
+                </Link>
+              </motion.div>
+            </>
+          )}
         </div>
 
         <div aria-hidden className="absolute bottom-0 left-0 right-0 h-28 pointer-events-none"
@@ -709,13 +911,11 @@ export default function LandingPage() {
       {/* ── INTELLIGENCE LAYERS ───────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="max-w-5xl mx-auto px-6 sm:px-10 py-12">
-
           <div className="flex items-center gap-4 mb-8">
             <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
               INTELLIGENCE LAYERS
             </span>
-            <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
+            <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
@@ -731,16 +931,10 @@ export default function LandingPage() {
                   paddingLeft: i > 0 ? "28px" : 0,
                   borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.055)" : "none",
                 }}>
-                <span style={{
-                  fontSize: "10px", letterSpacing: "0.14em",
-                  color: "rgba(255,255,255,0.18)", display: "block", marginBottom: "12px",
-                }}>
+                <span style={{ fontSize: "10px", letterSpacing: "0.14em", color: "rgba(255,255,255,0.18)", display: "block", marginBottom: "12px" }}>
                   {p.index}
                 </span>
-                <h3 style={{
-                  fontSize: "10px", letterSpacing: "0.16em", fontWeight: 700,
-                  color: "rgba(255,255,255,0.66)", marginBottom: "12px",
-                }}>
+                <h3 style={{ fontSize: "10px", letterSpacing: "0.16em", fontWeight: 700, color: "rgba(255,255,255,0.66)", marginBottom: "12px" }}>
                   {p.title}
                 </h3>
                 <p style={{ fontSize: "13px", lineHeight: "1.72", color: "rgba(255,255,255,0.32)" }}>
@@ -753,7 +947,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── MORNING BRIEF ─────────────────────────────────────────────────── */}
-      <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <section ref={briefSectionRef} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-8 pb-12">
 
           <div className="flex items-center gap-4 mb-7">
@@ -761,28 +955,36 @@ export default function LandingPage() {
             <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
               MORNING BRIEF
             </span>
-            <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
+            <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
           </div>
 
           <AnimatePresence mode="wait">
-            {!briefOpen ? (
-              <BriefSealed
-                key="sealed"
-                isLoading={feedLoading}
-                themeCount={themes.length}
-                regimeLabel={brief?.market_regime ?? regimeLabel}
+            {showBriefCard ? (
+              briefOpen ? (
+                <BriefOpen
+                  key="open"
+                  brief={brief}
+                  themes={themes}
+                  regimeColor={regimeColor}
+                  onClose={() => setBriefOpen(false)}
+                />
+              ) : (
+                <BriefSealed
+                  key="sealed"
+                  isLoading={feedLoading}
+                  themeCount={themes.length}
+                  regimeLabel={brief?.market_regime ?? regimeLabel}
+                  regimeColor={regimeColor}
+                  pulseDotColor={pulseDotColor}
+                  onOpen={() => setBriefOpen(true)}
+                />
+              )
+            ) : (
+              <BriefSignOutPrompt
+                key="prompt"
                 regimeColor={regimeColor}
                 pulseDotColor={pulseDotColor}
-                onOpen={() => setBriefOpen(true)}
-              />
-            ) : (
-              <BriefOpen
-                key="open"
-                brief={brief}
-                themes={themes}
-                regimeColor={regimeColor}
-                onClose={() => setBriefOpen(false)}
+                onContinue={() => setGuestMode(true)}
               />
             )}
           </AnimatePresence>
@@ -793,13 +995,11 @@ export default function LandingPage() {
       {/* ── CAPABILITIES ──────────────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="max-w-5xl mx-auto px-6 sm:px-10 py-9">
-
           <div className="flex items-center gap-4 mb-7">
             <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
               CAPABILITIES
             </span>
-            <div className="flex-1 h-px"
-              style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
+            <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-px"
@@ -817,10 +1017,7 @@ export default function LandingPage() {
                   borderRight: i % 2 === 0 ? "1px solid rgba(255,255,255,0.05)" : "none",
                   borderBottom: i < 2 ? "1px solid rgba(255,255,255,0.05)" : "none",
                 }}>
-                <p style={{
-                  fontSize: "10.5px", fontWeight: 600, letterSpacing: "0.06em",
-                  color: "rgba(255,255,255,0.64)", marginBottom: "6px",
-                }}>
+                <p style={{ fontSize: "10.5px", fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.64)", marginBottom: "6px" }}>
                   {c.label}
                 </p>
                 <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.30)", lineHeight: "1.60" }}>
@@ -838,10 +1035,7 @@ export default function LandingPage() {
           <motion.p
             initial={{ opacity: 0 }} whileInView={{ opacity: 1 }}
             viewport={{ once: true }} transition={{ duration: 0.55 }}
-            style={{
-              fontSize: "13px", letterSpacing: "0.04em",
-              color: "rgba(255,255,255,0.22)", marginBottom: "22px",
-            }}>
+            style={{ fontSize: "13px", letterSpacing: "0.04em", color: "rgba(255,255,255,0.22)", marginBottom: "22px" }}>
             Markets don&apos;t wait. Neither does Argus.
           </motion.p>
 
@@ -851,19 +1045,10 @@ export default function LandingPage() {
             <Link href="/feed">
               <button
                 style={{
-                  background: "rgba(255,255,255,0.055)",
-                  border: "1px solid rgba(255,255,255,0.11)",
-                  borderRadius: "5px",
-                  padding: "12px 34px",
-                  color: "rgba(255,255,255,0.74)",
-                  fontSize: "11px",
-                  letterSpacing: "0.18em",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  transition: "all 0.2s ease",
+                  background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.11)",
+                  borderRadius: "5px", padding: "12px 34px", color: "rgba(255,255,255,0.74)",
+                  fontSize: "11px", letterSpacing: "0.18em", fontWeight: 600, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: "12px", transition: "all 0.2s ease",
                 }}
                 onMouseEnter={e => {
                   const b = e.currentTarget as HTMLButtonElement;
