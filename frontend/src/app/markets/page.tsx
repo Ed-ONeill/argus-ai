@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Network, BarChart2,
   X, ChevronRight, AlertTriangle,
+  Bookmark, BookmarkCheck, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeed } from "@/hooks/useFeed";
@@ -27,6 +28,8 @@ import {
   computeBreadthSnapshot,
 } from "@/lib/themeIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
+import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
+import { useThemeAlerts, type ThemeAlert } from "@/hooks/useThemeAlerts";
 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -263,6 +266,156 @@ function SectionHeader({ label, icon, sub }: {
       <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">{label}</span>
       {sub && <span className="text-[9px] text-ink-muted">{sub}</span>}
       <span className="h-px flex-1 bg-edge" />
+    </div>
+  );
+}
+
+
+// ── Watchlist Panel ───────────────────────────────────────────────────────────
+
+function WatchlistPanel({
+  followed, liveThemes, onOpenTheme, onUnfollow, alerts,
+}: {
+  followed:    FollowedTheme[];
+  liveThemes:  ThemeIntelligence[];
+  onOpenTheme: (t: ThemeIntelligence) => void;
+  onUnfollow:  (id: string) => void;
+  alerts:      ThemeAlert[];
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (followed.length === 0) return null;
+
+  const byId = new Map(liveThemes.map(t => [t.id, t]));
+
+  return (
+    <div
+      className="mb-3 rounded-lg border overflow-hidden bg-surface"
+      style={{ borderColor: "var(--color-edge)", borderLeft: "3px solid #2563EB" }}
+    >
+      {/* Header row */}
+      <button
+        onClick={() => setCollapsed(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2
+                   bg-raised/50 hover:bg-raised transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <BookmarkCheck size={11} className="text-accent shrink-0" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">
+            Your Watchlist
+          </span>
+          <span className="text-[9px] font-bold tabular-nums px-1.5 py-0.5 rounded-full
+                           bg-accent/10 text-accent leading-none">
+            {followed.length}
+          </span>
+          {alerts.length > 0 && (
+            <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full leading-none
+                             text-amber-600 bg-amber-50 border border-amber-200">
+              {alerts.length} update{alerts.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+        <ChevronDown
+          size={12}
+          className={cn(
+            "text-ink-muted/40 transition-transform duration-200 shrink-0",
+            collapsed && "-rotate-90",
+          )}
+        />
+      </button>
+
+      {/* Rows */}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="watchlist"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="overflow-hidden"
+          >
+            <div className="divide-y divide-edge/40">
+              {followed.map(f => {
+                const live    = byId.get(f.id);
+                const alert   = alerts.find(a => a.themeId === f.id);
+                const evState = live ? computeThemeEvolutionState(live) : null;
+                const evMeta  = evState ? THEME_EVOLUTION_META[evState] : null;
+                const evClr   = evState ? (EVOLUTION_COLOR[evState] ?? "#94a3b8") : "#94a3b8";
+                const score   = live?.confidence ?? null;
+
+                return (
+                  <div key={f.id} className="flex items-center gap-2.5 px-3 py-2 group hover:bg-raised/30">
+                    {/* Main clickable row */}
+                    <button
+                      className="flex-1 flex items-center gap-2.5 text-left min-w-0"
+                      onClick={() => live && onOpenTheme(live)}
+                      disabled={!live}
+                    >
+                      {evMeta ? (
+                        <span
+                          className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5
+                                     rounded-full leading-none shrink-0 whitespace-nowrap"
+                          style={{ color: evClr, background: `${evClr}14`, border: `1px solid ${evClr}22` }}
+                        >
+                          {evMeta.icon} {evMeta.label}
+                        </span>
+                      ) : (
+                        <span className="text-[8.5px] text-ink-muted/35 shrink-0">inactive</span>
+                      )}
+
+                      <span className={cn(
+                        "text-[12px] font-semibold truncate flex-1",
+                        live ? "text-ink" : "text-ink-muted/50",
+                      )}>
+                        {f.name}
+                      </span>
+
+                      {alert && (
+                        <span className={cn(
+                          "text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 leading-none",
+                          alert.direction === "up"
+                            ? "text-emerald-700 bg-emerald-50 border border-emerald-200"
+                            : "text-red-600 bg-red-50 border border-red-200",
+                        )}>
+                          {alert.direction === "up" ? "▲" : "▼"}&nbsp;
+                          signal {alert.direction === "up" ? "strengthened" : "weakened"}
+                        </span>
+                      )}
+
+                      {score !== null && (
+                        <span
+                          className="text-[9px] font-semibold tabular-nums shrink-0"
+                          style={{ color: confColor(score) }}
+                        >
+                          {score}%
+                        </span>
+                      )}
+
+                      {live && (
+                        <ChevronRight
+                          size={10}
+                          className="shrink-0 text-ink-muted/20 group-hover:text-ink-muted/50 transition-colors"
+                        />
+                      )}
+                    </button>
+
+                    {/* Unfollow */}
+                    <button
+                      onClick={() => onUnfollow(f.id)}
+                      className="shrink-0 p-1 rounded hover:bg-red-50 hover:text-red-400
+                                 text-ink-muted/25 transition-colors"
+                      title="Unfollow"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -540,10 +693,12 @@ function LifecycleJourney({ stage }: { stage: ThemeLifecycleStage }) {
 // ── Theme Detail Drawer ───────────────────────────────────────────────────────
 
 function ThemeDetailDrawer({
-  data, onClose,
+  data, onClose, isFollowed, onToggleFollow,
 }: {
-  data:    DrawerData | null;
-  onClose: () => void;
+  data:           DrawerData | null;
+  onClose:        () => void;
+  isFollowed:     boolean;
+  onToggleFollow: () => void;
 }) {
   // Lock body scroll while open
   useEffect(() => {
@@ -621,13 +776,32 @@ function ThemeDetailDrawer({
                     </span>
                   </div>
                 </div>
-                <button
-                  onClick={onClose}
-                  className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-raised
-                             text-ink-muted hover:text-ink transition-colors mt-0.5"
-                >
-                  <X size={15} />
-                </button>
+                <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                  {/* Follow / Following toggle */}
+                  <button
+                    onClick={onToggleFollow}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold",
+                      "border transition-all duration-150",
+                      isFollowed
+                        ? "bg-accent text-white border-accent hover:bg-accent/90"
+                        : "bg-surface text-ink-secondary border-edge hover:border-accent hover:text-accent",
+                    )}
+                  >
+                    {isFollowed
+                      ? <><BookmarkCheck size={11} /> Following</>
+                      : <><Bookmark size={11} /> Follow</>
+                    }
+                  </button>
+                  {/* Close */}
+                  <button
+                    onClick={onClose}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-raised
+                               text-ink-muted hover:text-ink transition-colors"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -934,11 +1108,13 @@ function ThemeDetailDrawer({
 // ── Compact Theme Card (analyst note style) ───────────────────────────────────
 
 function CompactThemeCard({
-  theme, isConflict, onClick,
+  theme, isConflict, isFollowed, onClick, onFollowToggle,
 }: {
-  theme:      ThemeIntelligence;
-  isConflict: boolean;
-  onClick:    () => void;
+  theme:          ThemeIntelligence;
+  isConflict:     boolean;
+  isFollowed:     boolean;
+  onClick:        () => void;
+  onFollowToggle: () => void;
 }) {
   const t          = theme;
   const evState    = computeThemeEvolutionState(t);
@@ -960,13 +1136,14 @@ function CompactThemeCard({
   const evColor = EVOLUTION_COLOR[evState] ?? "#94a3b8";
 
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-surface border border-edge rounded-lg
+    <div
+      className="relative w-full bg-surface border border-edge rounded-lg
                  hover:border-edge-strong hover:shadow-sm transition-all duration-100 group"
       style={{ borderLeft: `3px solid ${bColor}` }}
     >
-      <div className="px-4 pt-2.5 pb-2.5 space-y-1.5">
+      {/* Main card — opens drawer */}
+      <button onClick={onClick} className="w-full text-left block">
+      <div className="px-4 pt-2.5 pb-2.5 pr-9 space-y-1.5">
 
         {/* Status row: badge + confidence + arrow */}
         <div className="flex items-center justify-between gap-2">
@@ -1034,7 +1211,25 @@ function CompactThemeCard({
         )}
 
       </div>
-    </button>
+      </button>
+
+      {/* Follow button — absolutely positioned, sibling to drawer button */}
+      <button
+        onClick={onFollowToggle}
+        className={cn(
+          "absolute top-2.5 right-2.5 p-1.5 rounded-md transition-all duration-150",
+          isFollowed
+            ? "text-accent"
+            : "text-ink-muted/20 hover:text-ink-muted/60 opacity-0 group-hover:opacity-100",
+        )}
+        title={isFollowed ? "Unfollow theme" : "Follow theme"}
+      >
+        {isFollowed
+          ? <BookmarkCheck size={13} />
+          : <Bookmark size={13} />
+        }
+      </button>
+    </div>
   );
 }
 
@@ -1042,11 +1237,13 @@ function CompactThemeCard({
 // ── WHAT'S DRIVING IT ─────────────────────────────────────────────────────────
 
 function IntelligenceThemes({
-  themes, conflictedIds, onThemeClick,
+  themes, conflictedIds, followedIds, onThemeClick, onFollowToggle,
 }: {
-  themes:        ThemeIntelligence[];
-  conflictedIds: Set<string>;
-  onThemeClick:  (t: ThemeIntelligence) => void;
+  themes:         ThemeIntelligence[];
+  conflictedIds:  Set<string>;
+  followedIds:    string[];
+  onThemeClick:   (t: ThemeIntelligence) => void;
+  onFollowToggle: (t: ThemeIntelligence) => void;
 }) {
   if (themes.length === 0) return (
     <div className="mb-3">
@@ -1060,7 +1257,7 @@ function IntelligenceThemes({
       <SectionHeader
         label="What's Driving It"
         icon={<Network size={11} className="text-accent shrink-0" />}
-        sub={`${themes.length} theme${themes.length !== 1 ? "s" : ""} · click for detail`}
+        sub={`${themes.length} theme${themes.length !== 1 ? "s" : ""} · click to explore`}
       />
       <div className="space-y-1.5">
         {themes.map(t => (
@@ -1068,7 +1265,9 @@ function IntelligenceThemes({
             key={t.id}
             theme={t}
             isConflict={conflictedIds.has(t.id)}
+            isFollowed={followedIds.includes(t.id)}
             onClick={() => onThemeClick(t)}
+            onFollowToggle={() => onFollowToggle(t)}
           />
         ))}
       </div>
@@ -1324,11 +1523,14 @@ export default function MarketsPage() {
 
   const { data: marketData, meta: marketMeta, heartbeatStatus, marketOpen } = useMarketData();
   const { data, isLoading }       = useFeed({ use_ai: true });
-  const { riskRegime, volRegime } = useMarketState();
-  const { savedIds, toggleSave }  = useSaved();
+  const { riskRegime, volRegime }                              = useMarketState();
+  const { savedIds, toggleSave }                               = useSaved();
+  const { followed, followedIds, isFollowed, toggle: toggleFollow, unfollow } = useFollowedThemes();
 
   const clusters      = useMemo(() => data?.clusters           ?? [], [data]);
   const themes        = useMemo(() => data?.theme_intelligence ?? [], [data]);
+
+  const { alerts, dismiss: dismissAlert } = useThemeAlerts(themes);
   const cacheAge      = data?.cache_age_seconds;
   const derivedRegime = data?.sector_data?.derived_regime ?? "";
   const sectorData    = data?.sector_data ?? null;
@@ -1346,6 +1548,7 @@ export default function MarketsPage() {
   const conflictedIds = useMemo(() => getConflictedThemeIds(contradictions), [contradictions]);
 
   function openDrawer(t: ThemeIntelligence) {
+    dismissAlert(t.id);
     const rel = relMap.get(t.id);
     setDrawerData({
       theme:      t,
@@ -1355,6 +1558,12 @@ export default function MarketsPage() {
       conflicts:  contradictions.filter(c => c.themeIds.includes(t.id)),
     });
   }
+
+  function handleFollowToggle(t: ThemeIntelligence) {
+    toggleFollow(t, cleanThemeName(t.name));
+  }
+
+  const watchlistAlerts = alerts.filter(a => followedIds.includes(a.themeId));
 
   const activeCfg = SNAPSHOT_CONFIGS.find(c => c.key === activeKey) ?? null;
 
@@ -1455,11 +1664,22 @@ export default function MarketsPage() {
           <BiggestMoves data={marketData} clusters={clusters} />
         </div>
 
+        {/* ── YOUR WATCHLIST ───────────────────────────────── */}
+        <WatchlistPanel
+          followed={followed}
+          liveThemes={visible}
+          onOpenTheme={openDrawer}
+          onUnfollow={unfollow}
+          alerts={watchlistAlerts}
+        />
+
         {/* ── WHAT'S DRIVING IT ────────────────────────────── */}
         <IntelligenceThemes
           themes={visible}
           conflictedIds={conflictedIds}
+          followedIds={followedIds}
           onThemeClick={openDrawer}
+          onFollowToggle={handleFollowToggle}
         />
 
         {/* ── THEME RELATIONSHIPS ───────────────────────────── */}
@@ -1498,10 +1718,12 @@ export default function MarketsPage() {
 
       </div>
 
-      {/* Shared drawer — opened by both theme cards and relationship chains */}
+      {/* Shared drawer — opened by theme cards, watchlist, and chain nodes */}
       <ThemeDetailDrawer
         data={drawerData}
         onClose={() => setDrawerData(null)}
+        isFollowed={drawerData ? isFollowed(drawerData.theme.id) : false}
+        onToggleFollow={() => drawerData && handleFollowToggle(drawerData.theme)}
       />
     </>
   );
