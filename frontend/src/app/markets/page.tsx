@@ -12,7 +12,7 @@ import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useMarketData } from "@/hooks/useMarketData";
 import { ClusterStream } from "@/components/feed/ClusterStream";
-import type { StoryCluster, ThemeIntelligence, SectorData } from "@/lib/types";
+import type { StoryCluster, ThemeIntelligence, SectorData, MarketBrief } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
 import {
   computeThemeEvolutionState,
@@ -252,6 +252,107 @@ function deriveKeyRisk(t: ThemeIntelligence): string {
     return "Single-category signal — cross-confirmation required";
   if (second_order_effects.length > 0)   return second_order_effects[0];
   return "Policy shift or macro inflection could invalidate thesis";
+}
+
+
+// ── Dominant Narrative ────────────────────────────────────────────────────────
+
+function DominantNarrative({
+  brief, themes,
+}: {
+  brief:  MarketBrief | null | undefined;
+  themes: ThemeIntelligence[];
+}) {
+  const topTheme = themes[0];
+  if (!brief && !topTheme) return null;
+
+  const headline    = brief?.primary_driver   || topTheme?.causal_narrative || "";
+  const confidence  = brief?.confidence       ?? topTheme?.confidence ?? 0;
+  const tradeImpl   = brief?.trade_implication;
+  const riskScenario = brief?.risk_scenario;
+
+  const sectors = [
+    ...new Set(themes.slice(0, 4).flatMap(t => (t.related_industries ?? []).slice(0, 2))),
+  ].slice(0, 5);
+
+  const totalEvidence = themes.reduce((s, t) => s + (t.evidence_count ?? 0), 0);
+  const topThemeName  = topTheme ? cleanThemeName(topTheme.name) : null;
+  const cColor        = confColor(confidence);
+
+  return (
+    <div
+      className="mb-4 rounded-xl border border-edge overflow-hidden bg-surface"
+      style={{ borderTop: `2.5px solid ${cColor}` }}
+    >
+      {/* Header row */}
+      <div className="px-4 pt-3 pb-0 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span className="text-[8.5px] font-bold uppercase tracking-[0.18em] text-ink-muted/50">
+              Today&apos;s Dominant Narrative
+            </span>
+            {totalEvidence > 0 && (
+              <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-raised border border-edge text-ink-muted/45">
+                {totalEvidence} signals
+              </span>
+            )}
+          </div>
+          {topThemeName && (
+            <p className="text-[10px] font-semibold text-accent/70 mb-1">
+              {topThemeName}
+              {themes.length > 1 && (
+                <span className="text-ink-muted/40 font-normal">
+                  {" + "}{themes.length - 1} related theme{themes.length > 2 ? "s" : ""}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+        {/* Confidence */}
+        <div className="flex flex-col items-end gap-0.5 shrink-0 mt-0.5">
+          <span className="text-[20px] font-black tabular-nums leading-none" style={{ color: cColor }}>
+            {confidence}<span className="text-[11px] font-bold opacity-55">%</span>
+          </span>
+          <span className="text-[7.5px] text-ink-muted/40 uppercase tracking-wider">confidence</span>
+        </div>
+      </div>
+
+      {/* Primary narrative text */}
+      {headline && (
+        <div className="px-4 pt-2 pb-3">
+          <p className="text-[14px] leading-snug font-semibold text-ink">{headline}</p>
+        </div>
+      )}
+
+      {/* Trade implication */}
+      {tradeImpl && (
+        <div className="px-4 py-2.5 border-t border-edge/60"
+          style={{ background: "rgba(37,99,235,0.03)" }}>
+          <span className="text-[7.5px] font-bold uppercase tracking-widest text-accent/55 mr-2">Implication</span>
+          <span className="text-[11.5px] text-ink-secondary leading-snug">{tradeImpl}</span>
+        </div>
+      )}
+
+      {/* Bottom: sectors + risk */}
+      {(sectors.length > 0 || riskScenario) && (
+        <div className="px-4 py-2.5 border-t border-edge/60 flex items-center gap-1.5 flex-wrap">
+          {sectors.map(s => (
+            <span key={s} className="text-[9px] font-medium px-2 py-0.5 rounded bg-raised border border-edge text-ink-secondary">
+              {s}
+            </span>
+          ))}
+          {riskScenario && (
+            <div className="flex items-center gap-1 ml-auto shrink-0">
+              <AlertTriangle size={9} className="text-amber-500/55 shrink-0" />
+              <span className="text-[9px] text-amber-600/65 line-clamp-1 max-w-[180px]">
+                {riskScenario.length > 60 ? riskScenario.slice(0, 60) + "…" : riskScenario}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 
@@ -806,18 +907,18 @@ function ThemeDetailDrawer({
             </div>
 
             {/* Body */}
-            <div className="px-5 py-5 space-y-6">
+            <div className="px-5 py-5 space-y-4">
 
               {/* ── Trade Implications ─────────────────────────── */}
               {(() => {
                 const timeHorizon = deriveTimeHorizon(t);
                 const keyRisk     = deriveKeyRisk(t);
                 return (
-                  <div>
-                    <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-secondary mb-2.5">
-                      Trade Implications
-                    </p>
-                    <div className="grid grid-cols-2 rounded-lg overflow-hidden border border-edge">
+                  <div className="rounded-lg border border-edge overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Trade Implications</p>
+                    </div>
+                    <div className="grid grid-cols-2">
 
                       {/* WINNERS */}
                       <div className="p-3 border-b border-r border-edge bg-emerald-50/40">
@@ -903,85 +1004,90 @@ function ThemeDetailDrawer({
                 );
               })()}
 
-              {/* Upstream drivers */}
-              {upstream.length > 0 && (
-                <div>
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
-                    Driven By
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {upstream.map(u => (
-                      <span
-                        key={u}
-                        className="text-[11px] text-ink-secondary px-2.5 py-1 rounded bg-raised border border-edge"
-                      >
-                        {cleanMacroLabel(u)}
-                      </span>
-                    ))}
+              {/* Why It Matters */}
+              {(t.causal_narrative || t.description || upstream.length > 0) && (
+                <div className="rounded-lg border border-edge overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Why It Matters</p>
+                  </div>
+                  <div className="px-4 py-4">
+                    {(t.causal_narrative || t.description) && (
+                      <p className="text-[13.5px] text-ink-secondary leading-[1.65]"
+                        style={{ borderLeft: `2px solid ${bColor}40`, paddingLeft: "1rem" }}>
+                        {t.causal_narrative || t.description}
+                      </p>
+                    )}
+                    {upstream.length > 0 && (
+                      <div className={cn(
+                        "flex flex-wrap gap-1.5 items-center",
+                        (t.causal_narrative || t.description) ? "mt-3 pt-3 border-t border-edge/40" : "",
+                      )}>
+                        <span className="text-[8.5px] text-ink-muted/50 uppercase tracking-wider font-semibold">
+                          Driven by
+                        </span>
+                        {upstream.map(u => (
+                          <span key={u} className="text-[10.5px] text-ink-secondary px-2 py-0.5 rounded bg-raised border border-edge">
+                            {cleanMacroLabel(u)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Full causal narrative */}
-              {(t.causal_narrative || t.description) && (
-                <div>
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
-                    Why It Matters
-                  </p>
-                  <p className="text-[13.5px] text-ink-secondary leading-[1.65] border-l-2 pl-4"
-                    style={{ borderColor: `${bColor}40` }}>
-                    {t.causal_narrative || t.description}
-                  </p>
+              {/* Sector Exposure */}
+              {(neutral.length > 0 || benefits.length > 4 || pressures.length > 4) && (
+                <div className="rounded-lg border border-edge overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Sector Exposure</p>
+                  </div>
+                  <div className="grid grid-cols-2">
+                    {(benefits.length > 0 || neutral.length > 0) && (
+                      <div className="p-3.5 border-r border-edge/50">
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-emerald-600/60 mb-2.5">
+                          ↑ Benefits
+                        </p>
+                        <div className="space-y-1.5">
+                          {[...benefits, ...neutral].slice(0, 7).map(ind => (
+                            <div key={ind} className="flex items-center gap-2">
+                              <span className="w-1 h-1 rounded-full shrink-0"
+                                style={{ background: benefits.includes(ind) ? "#10b981" : "#94a3b8" }} />
+                              <span className="text-[12px] text-ink-secondary">{ind}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {pressures.length > 0 && (
+                      <div className="p-3.5">
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-red-500/60 mb-2.5">
+                          ↓ Pressures
+                        </p>
+                        <div className="space-y-1.5">
+                          {pressures.slice(0, 7).map(ind => (
+                            <div key={ind} className="flex items-center gap-2">
+                              <span className="w-1 h-1 rounded-full shrink-0 bg-red-400" />
+                              <span className="text-[12px] text-ink-secondary">{ind}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Benefits / Pressures */}
-              {(benefits.length > 0 || pressures.length > 0 || neutral.length > 0) && (
-                <div className="grid grid-cols-2 gap-5">
-                  {(benefits.length > 0 || neutral.length > 0) && (
-                    <div>
-                      <p className="text-[9.5px] font-bold uppercase tracking-widest text-emerald-600/60 mb-2.5">
-                        ↑ Benefits
-                      </p>
-                      <div className="space-y-1.5">
-                        {[...benefits, ...neutral].slice(0, 7).map(ind => (
-                          <div key={ind} className="flex items-center gap-2">
-                            <span className="w-1 h-1 rounded-full shrink-0"
-                              style={{ background: benefits.includes(ind) ? "#10b981" : "#94a3b8" }} />
-                            <span className="text-[12px] text-ink-secondary">{ind}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {pressures.length > 0 && (
-                    <div>
-                      <p className="text-[9.5px] font-bold uppercase tracking-widest text-red-500/60 mb-2.5">
-                        ↓ Pressures
-                      </p>
-                      <div className="space-y-1.5">
-                        {pressures.slice(0, 7).map(ind => (
-                          <div key={ind} className="flex items-center gap-2">
-                            <span className="w-1 h-1 rounded-full shrink-0 bg-red-400" />
-                            <span className="text-[12px] text-ink-secondary">{ind}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Watch signals */}
+              {/* Watch For */}
               {t.second_order_effects.length > 0 && (
-                <div>
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-amber-500/60 mb-2.5">
-                    Watch For
-                  </p>
-                  <div className="space-y-2.5">
+                <div className="rounded-lg border border-amber-200/60 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Watch For</p>
+                  </div>
+                  <div className="divide-y divide-amber-100/60">
                     {t.second_order_effects.slice(0, 3).map((effect, i) => (
-                      <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-amber-50/50 border border-amber-100">
-                        <span className="text-amber-500 shrink-0 mt-0.5 font-bold text-[11px]">›</span>
+                      <div key={i} className="flex items-start gap-3 px-4 py-3">
+                        <span className="text-amber-500 shrink-0 mt-0.5 font-bold text-[13px] leading-none">›</span>
                         <p className="text-[12.5px] text-ink-secondary leading-relaxed">{effect}</p>
                       </div>
                     ))}
@@ -989,20 +1095,26 @@ function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Related themes */}
+              {/* Related Themes */}
               {connected.length > 0 && (
-                <div>
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2.5">
-                    Related Themes
-                  </p>
-                  <div className="flex flex-wrap gap-2">
+                <div className="rounded-lg border border-edge overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Related Themes</p>
+                  </div>
+                  <div className="p-4 flex flex-wrap gap-2">
                     {connected.map(c => {
                       const lc = c.linkType === "shared-story" ? "#38bdf8" :
                                  c.linkType === "shared-asset" ? "#a78bfa" : "#94a3b8";
+                      const linkLabel = c.linkType === "shared-story" ? "shared narrative"
+                                      : c.linkType === "shared-asset" ? "shared exposure"
+                                      : "sector overlap";
                       return (
-                        <span key={c.id} className="text-[11px] px-2.5 py-1 rounded-full font-medium"
+                        <span key={c.id} className="text-[11px] px-2.5 py-1.5 rounded-lg font-medium"
                           style={{ color: lc, background: `${lc}12`, border: `1px solid ${lc}28` }}>
                           {cleanThemeName(c.name)}
+                          <span className="ml-1.5 text-[8.5px] font-normal" style={{ opacity: 0.55 }}>
+                            {linkLabel}
+                          </span>
                         </span>
                       );
                     })}
@@ -1010,13 +1122,13 @@ function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Narrative flow: Driver → Theme → Impact (replaces factor chain diagram) */}
+              {/* How It Works */}
               {(upstream.length > 0 || downstream.length > 0) && (
-                <div>
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-3">
-                    How It Works
-                  </p>
-                  <div className="flex items-stretch gap-0 rounded-lg border border-edge overflow-hidden">
+                <div className="rounded-lg border border-edge overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">How It Works</p>
+                  </div>
+                  <div className="flex items-stretch gap-0">
                     {/* Drivers */}
                     <div className="flex-1 bg-raised px-3 py-3">
                       <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Driver</p>
@@ -1059,35 +1171,40 @@ function ThemeDetailDrawer({
               )}
 
               {/* Lifecycle */}
-              <div>
-                <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-3">
-                  Lifecycle — <span style={{ color: THEME_LIFECYCLE_META[lcStage].color }}>
-                    {THEME_LIFECYCLE_META[lcStage].label}
-                  </span>
-                </p>
-                <LifecycleJourney stage={lcStage} />
-                <div className="flex justify-between mt-1.5">
-                  {LIFECYCLE_STAGES.map(s => (
-                    <span key={s} className="text-[8px]"
-                      style={{
-                        color: s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.28)",
-                        fontWeight: s === lcStage ? 700 : 400,
-                      }}>
-                      {THEME_LIFECYCLE_META[s].label}
+              <div className="rounded-lg border border-edge overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Lifecycle</p>
+                    <span className="text-[9px] font-semibold" style={{ color: THEME_LIFECYCLE_META[lcStage].color }}>
+                      — {THEME_LIFECYCLE_META[lcStage].label}
                     </span>
-                  ))}
+                  </div>
+                </div>
+                <div className="px-4 py-4">
+                  <LifecycleJourney stage={lcStage} />
+                  <div className="flex justify-between mt-2">
+                    {LIFECYCLE_STAGES.map(s => (
+                      <span key={s} className="text-[8px]"
+                        style={{
+                          color: s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.28)",
+                          fontWeight: s === lcStage ? 700 : 400,
+                        }}>
+                        {THEME_LIFECYCLE_META[s].label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Signal conflicts */}
+              {/* Signal Conflicts */}
               {conflicts.length > 0 && (
-                <div>
-                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-amber-500/60 mb-2.5">
-                    Signal Conflicts
-                  </p>
-                  <div className="space-y-2">
+                <div className="rounded-lg border border-amber-200/60 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Signal Conflicts</p>
+                  </div>
+                  <div className="divide-y divide-amber-100/60">
                     {conflicts.slice(0, 3).map(c => (
-                      <div key={c.id} className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50/40 border border-amber-100/80">
+                      <div key={c.id} className="flex items-start gap-2.5 px-4 py-3">
                         <AlertTriangle size={12} className="text-amber-500/70 shrink-0 mt-0.5" />
                         <p className="text-[12px] text-ink-secondary leading-relaxed">{c.description}</p>
                       </div>
@@ -1401,17 +1518,38 @@ function ThemeRelationshipChains({
                   </button>
 
                   {/* Connector between nodes */}
-                  {ni < chain.nodes.length - 1 && link && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 border-y border-edge/50 bg-raised/50">
-                      <span className="text-[11px] font-bold text-ink-muted/30 leading-none select-none">↓</span>
-                      <span className="text-[8px] text-ink-muted italic">
-                        {LINK_LABEL[link.linkType] ?? "connected"}
-                      </span>
-                      {link.strength === "strong" && (
-                        <span className="ml-auto text-[7px] font-bold uppercase tracking-wide text-emerald-600/60">strong</span>
-                      )}
-                    </div>
-                  )}
+                  {ni < chain.nodes.length - 1 && link && (() => {
+                    const sColor = link.strength === "strong"   ? "#10b981"
+                                 : link.strength === "moderate" ? "#64748b"
+                                 :                               "#cbd5e1";
+                    return (
+                      <div
+                        className="flex items-center gap-2 px-3 py-1.5"
+                        style={{ borderTop: "1px solid rgba(148,163,184,0.10)", borderBottom: "1px solid rgba(148,163,184,0.10)", background: "rgba(15,22,35,0.03)" }}
+                      >
+                        {/* CSS arrow */}
+                        <div className="flex flex-col items-center shrink-0 gap-[1px]">
+                          <div className="w-px h-2.5" style={{ background: sColor, opacity: 0.45 }} />
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: "3px solid transparent",
+                            borderRight: "3px solid transparent",
+                            borderTop: `3.5px solid ${sColor}`,
+                            opacity: 0.55,
+                          }} />
+                        </div>
+                        <span className="text-[7.5px] text-ink-muted/55 italic flex-1 leading-none">
+                          {LINK_LABEL[link.linkType] ?? "connected"}
+                        </span>
+                        {link.strength === "strong" && (
+                          <span className="text-[6.5px] font-bold uppercase tracking-wider shrink-0"
+                                style={{ color: sColor, opacity: 0.65 }}>
+                            strong
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1658,6 +1796,9 @@ export default function MarketsPage() {
           )}
         </AnimatePresence>
 
+        {/* ── DOMINANT NARRATIVE ───────────────────────────── */}
+        <DominantNarrative brief={data?.market_brief} themes={visible} />
+
         {/* Biggest Moves */}
         <div className="mb-3">
           <SectionHeader label="Biggest Moves" icon={<Zap size={11} className="text-accent shrink-0" />} />
@@ -1713,6 +1854,7 @@ export default function MarketsPage() {
             savedIds={savedIds}
             onSave={(item) => toggleSave(item)}
             isLoading={isLoading}
+            themes={visible}
           />
         </div>
 

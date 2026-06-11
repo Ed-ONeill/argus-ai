@@ -379,6 +379,21 @@ export function ClusterCard({
               LIVE
             </span>
           )}
+          {/* Sentiment badge — always visible, derived from impact field */}
+          {item.impact && (() => {
+            const dir = impactDir(item.impact);
+            if (!dir) return null;
+            const [label, clr, bg] =
+              dir === "bullish" ? ["↑ Bullish", "#10B981", "rgba(16,185,129,0.12)"] :
+              dir === "bearish" ? ["↓ Bearish", "#EF4444", "rgba(239,68,68,0.10)"] :
+                                  ["↕ Mixed",   "#F59E0B", "rgba(245,158,11,0.10)"];
+            return (
+              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 leading-none"
+                    style={{ color: clr, background: bg }}>
+                {label}
+              </span>
+            );
+          })()}
           <span className="ml-auto text-[9px] tabular-nums font-mono"
             style={{ color: "rgba(255,255,255,0.38)" }}>
             {score}
