@@ -224,6 +224,33 @@ function borderColorForTheme(t: ThemeIntelligence, evState: string): string {
   return "#f59e0b";
 }
 
+function deriveTimeHorizon(t: ThemeIntelligence): string {
+  const { momentum_label, persistence_cycles, signal_quality, persistence_days } = t;
+  if (momentum_label === "reversing")  return "Deteriorating — exit window narrowing";
+  if (momentum_label === "cooling")    return "1–3 months (momentum fading)";
+  if (momentum_label === "emerging")   return "Near-term · 2–8 weeks";
+  if (persistence_cycles >= 6)         return "12+ months (structural)";
+  if (persistence_cycles >= 4)         return "6–12 months";
+  if (momentum_label === "accelerating" && signal_quality === "confirmed") return "3–6 months";
+  if (momentum_label === "strengthening") return "2–4 months";
+  if (persistence_days  >= 60)         return "3–6 months";
+  if (persistence_days  >= 30)         return "1–3 months";
+  return "1–3 months";
+}
+
+function deriveKeyRisk(t: ThemeIntelligence): string {
+  const { signal_quality, volatility_score, competition_penalty,
+          momentum_label, cross_category_confirmed, confidence, second_order_effects } = t;
+  if (signal_quality === "speculative")    return "Unconfirmed thesis — limited evidence base";
+  if (volatility_score >= 70)             return "Elevated volatility — rapid reversal risk";
+  if (competition_penalty >= 30)          return "Crowded positioning — mean reversion risk";
+  if (momentum_label === "reversing")     return "Momentum already reversing — timing risk elevated";
+  if (!cross_category_confirmed && confidence < 60)
+    return "Single-category signal — cross-confirmation required";
+  if (second_order_effects.length > 0)   return second_order_effects[0];
+  return "Policy shift or macro inflection could invalidate thesis";
+}
+
 
 // ── Section header ─────────────────────────────────────────────────────────────
 
@@ -606,6 +633,101 @@ function ThemeDetailDrawer({
 
             {/* Body */}
             <div className="px-5 py-5 space-y-6">
+
+              {/* ── Trade Implications ─────────────────────────── */}
+              {(() => {
+                const timeHorizon = deriveTimeHorizon(t);
+                const keyRisk     = deriveKeyRisk(t);
+                return (
+                  <div>
+                    <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-secondary mb-2.5">
+                      Trade Implications
+                    </p>
+                    <div className="grid grid-cols-2 rounded-lg overflow-hidden border border-edge">
+
+                      {/* WINNERS */}
+                      <div className="p-3 border-b border-r border-edge bg-emerald-50/40">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-emerald-700/60 mb-2">
+                          ↑ Winners
+                        </p>
+                        {benefits.length > 0 ? (
+                          <div className="space-y-1">
+                            {benefits.slice(0, 4).map(ind => (
+                              <div key={ind} className="flex items-center gap-1.5">
+                                <span className="w-[5px] h-[5px] rounded-full shrink-0 bg-emerald-500" />
+                                <span className="text-[11.5px] font-medium text-ink leading-snug">{ind}</span>
+                              </div>
+                            ))}
+                            {benefits.length > 4 && (
+                              <p className="text-[9.5px] text-emerald-600/60 pl-3.5">+{benefits.length - 4} more</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-ink-muted italic">—</p>
+                        )}
+                      </div>
+
+                      {/* LOSERS */}
+                      <div className="p-3 border-b border-edge bg-red-50/30">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-600/60 mb-2">
+                          ↓ Losers
+                        </p>
+                        {pressures.length > 0 ? (
+                          <div className="space-y-1">
+                            {pressures.slice(0, 4).map(ind => (
+                              <div key={ind} className="flex items-center gap-1.5">
+                                <span className="w-[5px] h-[5px] rounded-full shrink-0 bg-red-500" />
+                                <span className="text-[11.5px] font-medium text-ink leading-snug">{ind}</span>
+                              </div>
+                            ))}
+                            {pressures.length > 4 && (
+                              <p className="text-[9.5px] text-red-500/60 pl-3.5">+{pressures.length - 4} more</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-ink-muted italic">—</p>
+                        )}
+                      </div>
+
+                      {/* TIME HORIZON */}
+                      <div className="p-3 border-r border-edge bg-sky-50/20">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-sky-600/60 mb-2">
+                          Time Horizon
+                        </p>
+                        <p className="text-[12px] font-semibold text-ink leading-snug">{timeHorizon}</p>
+                        {t.persistence_cycles > 0 && (
+                          <p className="text-[9.5px] text-ink-muted mt-1">
+                            {t.persistence_cycles} cycle{t.persistence_cycles !== 1 ? "s" : ""} persistent
+                            {t.persistence_days > 0 && ` · ${t.persistence_days}d`}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* KEY RISK */}
+                      <div className="p-3 bg-amber-50/25">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-amber-600/60 mb-2">
+                          Key Risk
+                        </p>
+                        <p className="text-[11.5px] font-medium text-ink leading-snug">{keyRisk}</p>
+                        {t.volatility_score > 0 && (
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <span className="text-[8.5px] text-ink-muted">Volatility</span>
+                            <div className="w-12 h-[2px] rounded-full bg-edge overflow-hidden">
+                              <div className="h-full rounded-full"
+                                style={{
+                                  width: `${t.volatility_score}%`,
+                                  background: t.volatility_score >= 70 ? "#ef4444" : t.volatility_score >= 40 ? "#f59e0b" : "#94a3b8",
+                                }} />
+                            </div>
+                            <span className="text-[8.5px] tabular-nums text-ink-muted">{t.volatility_score}</span>
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Upstream drivers */}
               {upstream.length > 0 && (
