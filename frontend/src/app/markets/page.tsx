@@ -498,56 +498,52 @@ function ThemeDetailDrawer({
             style={{ borderTop: `3px solid ${bColor}` }}
           >
             {/* Header */}
-            <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-edge px-4 py-3 z-10">
+            <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-edge px-5 py-4 z-10">
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className={cn("text-[8.5px] font-bold uppercase tracking-wide", evCls)}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={cn("text-[10px] font-semibold uppercase tracking-wider", evCls)}>
                       {evMeta.icon} {evMeta.label}
                     </span>
-                    <span className="text-ink-muted/20">·</span>
-                    <span className="text-[8.5px] font-bold tabular-nums" style={{ color: cColor }}>
-                      {t.confidence_label || `${score}%`}
-                    </span>
                     {t.evidence_count > 0 && (
-                      <span className="text-[8px] text-ink-muted/40">{t.evidence_count} signals</span>
+                      <span className="text-[9px] text-ink-muted/35">{t.evidence_count} signals</span>
                     )}
                   </div>
-                  <h2 className="text-[15px] font-bold text-ink leading-tight">{publicName}</h2>
+                  <h2 className="text-[22px] font-bold text-ink leading-tight tracking-tight">{publicName}</h2>
+                  {/* Confidence below the name — slim, unobtrusive */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="w-24 h-[2px] rounded-full bg-raised overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${score}%`, background: cColor }} />
+                    </div>
+                    <span className="text-[9px] tabular-nums" style={{ color: cColor }}>
+                      {t.confidence_label || `${score}% confidence`}
+                    </span>
+                  </div>
                 </div>
                 <button
                   onClick={onClose}
-                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-raised text-ink-muted hover:text-ink transition-colors"
+                  className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-raised
+                             text-ink-muted hover:text-ink transition-colors mt-0.5"
                 >
-                  <X size={14} />
+                  <X size={15} />
                 </button>
               </div>
             </div>
 
             {/* Body */}
-            <div className="px-4 py-3 space-y-4">
-
-              {/* Confidence bar */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-[3px] rounded-full bg-raised overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${score}%`, background: cColor }} />
-                </div>
-                <span className="text-[9px] font-bold tabular-nums" style={{ color: cColor }}>
-                  {score}% confidence
-                </span>
-              </div>
+            <div className="px-5 py-5 space-y-6">
 
               {/* Upstream drivers */}
               {upstream.length > 0 && (
                 <div>
-                  <p className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-1.5">
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
                     Driven By
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {upstream.map(u => (
                       <span
                         key={u}
-                        className="text-[9.5px] text-ink-secondary px-2 py-0.5 rounded bg-raised border border-edge"
+                        className="text-[11px] text-ink-secondary px-2.5 py-1 rounded bg-raised border border-edge"
                       >
                         {cleanMacroLabel(u)}
                       </span>
@@ -559,11 +555,11 @@ function ThemeDetailDrawer({
               {/* Full causal narrative */}
               {(t.causal_narrative || t.description) && (
                 <div>
-                  <p className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-1.5">
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
                     Why It Matters
                   </p>
-                  <p className="text-[11.5px] text-ink-secondary leading-relaxed border-l-2 pl-3"
-                    style={{ borderColor: `${bColor}35` }}>
+                  <p className="text-[13.5px] text-ink-secondary leading-[1.65] border-l-2 pl-4"
+                    style={{ borderColor: `${bColor}40` }}>
                     {t.causal_narrative || t.description}
                   </p>
                 </div>
@@ -571,18 +567,18 @@ function ThemeDetailDrawer({
 
               {/* Benefits / Pressures */}
               {(benefits.length > 0 || pressures.length > 0 || neutral.length > 0) && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-5">
                   {(benefits.length > 0 || neutral.length > 0) && (
                     <div>
-                      <p className="text-[7.5px] font-bold uppercase tracking-widest text-emerald-600/55 mb-2">
+                      <p className="text-[9.5px] font-bold uppercase tracking-widest text-emerald-600/60 mb-2.5">
                         ↑ Benefits
                       </p>
-                      <div className="space-y-1">
-                        {[...benefits, ...neutral].slice(0, 6).map(ind => (
+                      <div className="space-y-1.5">
+                        {[...benefits, ...neutral].slice(0, 7).map(ind => (
                           <div key={ind} className="flex items-center gap-2">
                             <span className="w-1 h-1 rounded-full shrink-0"
                               style={{ background: benefits.includes(ind) ? "#10b981" : "#94a3b8" }} />
-                            <span className="text-[10.5px] text-ink-secondary">{ind}</span>
+                            <span className="text-[12px] text-ink-secondary">{ind}</span>
                           </div>
                         ))}
                       </div>
@@ -590,14 +586,14 @@ function ThemeDetailDrawer({
                   )}
                   {pressures.length > 0 && (
                     <div>
-                      <p className="text-[7.5px] font-bold uppercase tracking-widest text-red-500/55 mb-2">
+                      <p className="text-[9.5px] font-bold uppercase tracking-widest text-red-500/60 mb-2.5">
                         ↓ Pressures
                       </p>
-                      <div className="space-y-1">
-                        {pressures.slice(0, 6).map(ind => (
+                      <div className="space-y-1.5">
+                        {pressures.slice(0, 7).map(ind => (
                           <div key={ind} className="flex items-center gap-2">
                             <span className="w-1 h-1 rounded-full shrink-0 bg-red-400" />
-                            <span className="text-[10.5px] text-ink-secondary">{ind}</span>
+                            <span className="text-[12px] text-ink-secondary">{ind}</span>
                           </div>
                         ))}
                       </div>
@@ -609,14 +605,14 @@ function ThemeDetailDrawer({
               {/* Watch signals */}
               {t.second_order_effects.length > 0 && (
                 <div>
-                  <p className="text-[7.5px] font-bold uppercase tracking-widest text-amber-500/55 mb-1.5">
-                    Watch
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-amber-500/60 mb-2.5">
+                    Watch For
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2.5">
                     {t.second_order_effects.slice(0, 3).map((effect, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className="text-[9px] text-amber-500/60 shrink-0 mt-px">›</span>
-                        <p className="text-[10.5px] text-ink-secondary leading-snug">{effect}</p>
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-amber-50/50 border border-amber-100">
+                        <span className="text-amber-500 shrink-0 mt-0.5 font-bold text-[11px]">›</span>
+                        <p className="text-[12.5px] text-ink-secondary leading-relaxed">{effect}</p>
                       </div>
                     ))}
                   </div>
@@ -626,16 +622,16 @@ function ThemeDetailDrawer({
               {/* Related themes */}
               {connected.length > 0 && (
                 <div>
-                  <p className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-1.5">
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2.5">
                     Related Themes
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {connected.map(c => {
                       const lc = c.linkType === "shared-story" ? "#38bdf8" :
                                  c.linkType === "shared-asset" ? "#a78bfa" : "#94a3b8";
                       return (
-                        <span key={c.id} className="text-[9.5px] px-2 py-0.5 rounded"
-                          style={{ color: lc, background: `${lc}10`, border: `1px solid ${lc}22` }}>
+                        <span key={c.id} className="text-[11px] px-2.5 py-1 rounded-full font-medium"
+                          style={{ color: lc, background: `${lc}12`, border: `1px solid ${lc}28` }}>
                           {cleanThemeName(c.name)}
                         </span>
                       );
@@ -644,18 +640,68 @@ function ThemeDetailDrawer({
                 </div>
               )}
 
+              {/* Narrative flow: Driver → Theme → Impact (replaces factor chain diagram) */}
+              {(upstream.length > 0 || downstream.length > 0) && (
+                <div>
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-3">
+                    How It Works
+                  </p>
+                  <div className="flex items-stretch gap-0 rounded-lg border border-edge overflow-hidden">
+                    {/* Drivers */}
+                    <div className="flex-1 bg-raised px-3 py-3">
+                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Driver</p>
+                      <div className="space-y-1">
+                        {upstream.slice(0, 3).map(u => (
+                          <p key={u} className="text-[11.5px] text-ink-secondary font-medium">{cleanMacroLabel(u)}</p>
+                        ))}
+                        {upstream.length > 3 && (
+                          <p className="text-[10px] text-ink-muted/40">+{upstream.length - 3} more</p>
+                        )}
+                      </div>
+                    </div>
+                    {/* Arrow */}
+                    <div className="flex items-center justify-center px-2 bg-surface border-x border-edge shrink-0">
+                      <span className="text-[13px] text-ink-muted/25 select-none">→</span>
+                    </div>
+                    {/* Theme */}
+                    <div className="flex-1 bg-surface px-3 py-3" style={{ borderBottom: `2px solid ${bColor}40` }}>
+                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Theme</p>
+                      <p className="text-[12px] font-bold text-ink">{publicName}</p>
+                    </div>
+                    {/* Arrow */}
+                    <div className="flex items-center justify-center px-2 bg-surface border-x border-edge shrink-0">
+                      <span className="text-[13px] text-ink-muted/25 select-none">→</span>
+                    </div>
+                    {/* Impact */}
+                    <div className="flex-1 bg-raised px-3 py-3">
+                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Impact</p>
+                      <div className="space-y-1">
+                        {downstream.slice(0, 3).map(d => (
+                          <p key={d} className="text-[11.5px] text-ink-secondary line-clamp-1">{d}</p>
+                        ))}
+                        {downstream.length > 3 && (
+                          <p className="text-[10px] text-ink-muted/40">+{downstream.length - 3} more</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Lifecycle */}
               <div>
-                <p className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
-                  Lifecycle — {THEME_LIFECYCLE_META[lcStage].label}
+                <p className="text-[9.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-3">
+                  Lifecycle — <span style={{ color: THEME_LIFECYCLE_META[lcStage].color }}>
+                    {THEME_LIFECYCLE_META[lcStage].label}
+                  </span>
                 </p>
                 <LifecycleJourney stage={lcStage} />
-                <div className="flex justify-between mt-1">
+                <div className="flex justify-between mt-1.5">
                   {LIFECYCLE_STAGES.map(s => (
-                    <span key={s} className="text-[7px]"
+                    <span key={s} className="text-[8px]"
                       style={{
                         color: s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.28)",
-                        fontWeight: s === lcStage ? 800 : 400,
+                        fontWeight: s === lcStage ? 700 : 400,
                       }}>
                       {THEME_LIFECYCLE_META[s].label}
                     </span>
@@ -663,50 +709,17 @@ function ThemeDetailDrawer({
                 </div>
               </div>
 
-              {/* Factor chain */}
-              {(upstream.length > 0 || downstream.length > 0) && (
-                <div>
-                  <p className="text-[7.5px] font-bold uppercase tracking-widest text-ink-muted/40 mb-2">
-                    Factor Chain
-                  </p>
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-x-2">
-                    <div className="space-y-1 text-right">
-                      {upstream.slice(0, 4).map(u => (
-                        <div key={u} className="flex items-center justify-end gap-1">
-                          <span className="text-[9px] text-ink-muted/60">{cleanMacroLabel(u)}</span>
-                          <span className="text-[8px] text-ink-muted/20">→</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-start justify-center pt-px">
-                      <div className="px-2 py-1 rounded border text-[8px] font-bold text-center leading-tight"
-                        style={{ borderColor: "var(--color-edge-strong)", color: "var(--color-ink)", background: "var(--color-raised)", maxWidth: 80 }}>
-                        {publicName.length > 18 ? publicName.slice(0, 16) + "…" : publicName}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      {downstream.slice(0, 4).map(d => (
-                        <div key={d} className="flex items-center gap-1">
-                          <span className="text-[8px] text-ink-muted/20">→</span>
-                          <span className="text-[9px] text-ink-muted/60 line-clamp-1">{d}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Signal conflicts */}
               {conflicts.length > 0 && (
                 <div>
-                  <p className="text-[7.5px] font-bold uppercase tracking-widest text-amber-500/55 mb-1.5">
+                  <p className="text-[9.5px] font-bold uppercase tracking-widest text-amber-500/60 mb-2.5">
                     Signal Conflicts
                   </p>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {conflicts.slice(0, 3).map(c => (
-                      <div key={c.id} className="flex items-start gap-1.5">
-                        <AlertTriangle size={9} className="text-amber-500/60 shrink-0 mt-px" />
-                        <p className="text-[10px] text-ink-secondary leading-snug">{c.description}</p>
+                      <div key={c.id} className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50/40 border border-amber-100/80">
+                        <AlertTriangle size={12} className="text-amber-500/70 shrink-0 mt-0.5" />
+                        <p className="text-[12px] text-ink-secondary leading-relaxed">{c.description}</p>
                       </div>
                     ))}
                   </div>
@@ -752,57 +765,63 @@ function CompactThemeCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-surface border border-edge rounded hover:border-edge-strong
-                 hover:shadow-card transition-all duration-100 group"
-      style={{ borderLeft: `2px solid ${bColor}` }}
+      className="w-full text-left bg-surface border border-edge rounded-lg
+                 hover:border-edge-strong hover:shadow-sm transition-all duration-100 group"
+      style={{ borderLeft: `3px solid ${bColor}` }}
     >
-      <div className="px-3 py-2 space-y-1">
+      <div className="px-4 pt-3 pb-3 space-y-2">
 
-        {/* Row 1: status icon + name + confidence + arrow */}
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className={cn("text-[8px] font-bold uppercase tracking-wide shrink-0", evCls)}>
-            {evMeta.icon}
+        {/* Status row — tiny, secondary */}
+        <div className="flex items-center justify-between gap-2">
+          <span className={cn("text-[9px] font-semibold uppercase tracking-wider", evCls)}>
+            {evMeta.icon} {evMeta.label}
           </span>
-          <span className="text-[11.5px] font-bold text-ink flex-1 min-w-0 truncate leading-tight">
-            {publicName}
-          </span>
-          <span className="text-[8.5px] font-bold tabular-nums shrink-0" style={{ color: cColor }}>
-            {score}%
-          </span>
-          {isConflict && (
-            <span className="text-[8.5px] text-amber-400 shrink-0" title="Signal conflict">⚠</span>
-          )}
-          <ChevronRight
-            size={11}
-            className="shrink-0 text-ink-muted/25 group-hover:text-ink-muted/50 transition-colors"
-          />
+          <div className="flex items-center gap-2">
+            {isConflict && (
+              <span className="text-[8.5px] text-amber-400" title="Signal conflict">⚠ conflicting signals</span>
+            )}
+            <span className="text-[9px] tabular-nums text-ink-muted/50" style={{ color: cColor }}>
+              {score}% confidence
+            </span>
+            <ChevronRight
+              size={11}
+              className="text-ink-muted/25 group-hover:text-ink-muted/60 transition-colors"
+            />
+          </div>
         </div>
 
-        {/* Row 2: narrative — 2 lines max */}
+        {/* Theme name — large and prominent */}
+        <h3 className="text-[15px] font-bold text-ink leading-snug">
+          {publicName}
+        </h3>
+
+        {/* Thesis — readable body copy */}
         {narrative && (
-          <p className="text-[10px] text-ink-secondary leading-snug line-clamp-2">
+          <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2">
             {narrative}
           </p>
         )}
 
-        {/* Row 3: winners / losers inline */}
+        {/* Winners / Losers — clear labeled lines */}
         {(benefits.length > 0 || pressures.length > 0) && (
-          <div className="flex items-start gap-3 text-[9px] leading-tight flex-wrap">
+          <div className="space-y-0.5 pt-0.5">
             {benefits.length > 0 && (
-              <span className="text-emerald-600 font-medium">
-                ↑ {benefits.slice(0, 2).join(" · ")}
-                {benefits.length > 2 && (
-                  <span className="opacity-50"> +{benefits.length - 2}</span>
-                )}
-              </span>
+              <p className="text-[10.5px] leading-snug">
+                <span className="text-emerald-600 font-semibold">↑ Benefits&nbsp;</span>
+                <span className="text-ink-secondary">
+                  {benefits.slice(0, 3).join(" · ")}
+                  {benefits.length > 3 && <span className="text-ink-muted/40"> +{benefits.length - 3} more</span>}
+                </span>
+              </p>
             )}
             {pressures.length > 0 && (
-              <span className="text-red-500 font-medium">
-                ↓ {pressures.slice(0, 2).join(" · ")}
-                {pressures.length > 2 && (
-                  <span className="opacity-50"> +{pressures.length - 2}</span>
-                )}
-              </span>
+              <p className="text-[10.5px] leading-snug">
+                <span className="text-red-500 font-semibold">↓ Pressures&nbsp;</span>
+                <span className="text-ink-secondary">
+                  {pressures.slice(0, 3).join(" · ")}
+                  {pressures.length > 3 && <span className="text-ink-muted/40"> +{pressures.length - 3} more</span>}
+                </span>
+              </p>
             )}
           </div>
         )}
@@ -862,7 +881,7 @@ function IntelligenceThemes({
           icon={<Network size={11} className="text-accent shrink-0" />}
           sub={`${visible.length} theme${visible.length !== 1 ? "s" : ""} · click for detail`}
         />
-        <div className="space-y-1">
+        <div className="space-y-2">
           {visible.map(t => (
             <CompactThemeCard
               key={t.id}
