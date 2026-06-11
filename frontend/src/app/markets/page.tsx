@@ -26,6 +26,13 @@ import {
   detectContradictions,
   getConflictedThemeIds,
   computeBreadthSnapshot,
+  generateIntelligenceBriefing,
+  generateBullBearCases,
+  generateNextCatalysts,
+  generateWatchSignals,
+  generateInvalidationSignals,
+  computeThemeHealth,
+  generateWhyItMattersNow,
 } from "@/lib/themeIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
@@ -278,6 +285,7 @@ function DominantNarrative({
   const totalEvidence = themes.reduce((s, t) => s + (t.evidence_count ?? 0), 0);
   const topThemeName  = topTheme ? cleanThemeName(topTheme.name) : null;
   const cColor        = confColor(confidence);
+  const whyNow        = topTheme ? generateWhyItMattersNow(topTheme).slice(0, 2) : [];
 
   return (
     <div
@@ -321,6 +329,16 @@ function DominantNarrative({
       {headline && (
         <div className="px-4 pt-2 pb-3">
           <p className="text-[14px] leading-snug font-semibold text-ink">{headline}</p>
+          {whyNow.length > 0 && (
+            <ul className="mt-2.5 space-y-1">
+              {whyNow.map((b, i) => (
+                <li key={i} className="flex items-start gap-2 text-[11px] text-ink-secondary leading-snug">
+                  <span className="shrink-0 mt-px text-ink-muted/40">·</span>
+                  {b}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -827,7 +845,13 @@ function ThemeDetailDrawer({
     else                                  neutral.push(ind);
   }
 
-  const bColor = borderColorForTheme(t, evState);
+  const bColor  = borderColorForTheme(t, evState);
+  const health  = computeThemeHealth(t);
+  const bbCases = generateBullBearCases(t);
+  const catalysts      = generateNextCatalysts(t);
+  const watchSignals   = generateWatchSignals(t);
+  const invalidations  = generateInvalidationSignals(t);
+  const briefingSents  = generateIntelligenceBriefing(t);
 
   return (
     <AnimatePresence>
@@ -858,9 +882,15 @@ function ThemeDetailDrawer({
             <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-edge px-5 py-4 z-10">
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                     <span className={cn("text-[10px] font-semibold uppercase tracking-wider", evCls)}>
                       {evMeta.icon} {evMeta.label}
+                    </span>
+                    <span
+                      className="text-[8.5px] font-bold px-1.5 py-0.5 rounded leading-none"
+                      style={{ color: health.color, background: `${health.color}14` }}
+                    >
+                      {health.label}
                     </span>
                     {t.evidence_count > 0 && (
                       <span className="text-[9px] text-ink-muted/35">{t.evidence_count} signals</span>
@@ -1004,24 +1034,46 @@ function ThemeDetailDrawer({
                 );
               })()}
 
+              {/* Bull / Bear Cases */}
+              <div className="rounded-lg border border-edge overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Bull / Bear Cases</p>
+                </div>
+                <div className="grid grid-cols-2">
+                  <div className="px-3.5 py-3 border-r border-edge"
+                       style={{ borderLeft: "2px solid rgba(16,185,129,0.35)" }}>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-600/60 mb-1.5">Bull Case</p>
+                    <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bull}</p>
+                  </div>
+                  <div className="px-3.5 py-3"
+                       style={{ borderLeft: "2px solid rgba(239,68,68,0.30)" }}>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-500/60 mb-1.5">Bear Case</p>
+                    <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bear}</p>
+                  </div>
+                </div>
+              </div>
+
               {/* Why It Matters */}
-              {(t.causal_narrative || t.description || upstream.length > 0) && (
+              {(briefingSents.length > 0 || upstream.length > 0) && (
                 <div className="rounded-lg border border-edge overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Why It Matters</p>
                   </div>
-                  <div className="px-4 py-4">
-                    {(t.causal_narrative || t.description) && (
-                      <p className="text-[13.5px] text-ink-secondary leading-[1.65]"
-                        style={{ borderLeft: `2px solid ${bColor}40`, paddingLeft: "1rem" }}>
-                        {t.causal_narrative || t.description}
-                      </p>
+                  <div className="px-4 py-4 space-y-3">
+                    {briefingSents.length > 0 && (
+                      <div className="space-y-2">
+                        {briefingSents.map((sent, si) => (
+                          <p key={si}
+                            className="text-[13px] text-ink-secondary leading-[1.65]"
+                            style={si === 0 ? { borderLeft: `2px solid ${bColor}40`, paddingLeft: "1rem" } : { paddingLeft: "1rem" }}
+                          >
+                            {sent}
+                          </p>
+                        ))}
+                      </div>
                     )}
                     {upstream.length > 0 && (
-                      <div className={cn(
-                        "flex flex-wrap gap-1.5 items-center",
-                        (t.causal_narrative || t.description) ? "mt-3 pt-3 border-t border-edge/40" : "",
-                      )}>
+                      <div className="flex flex-wrap gap-1.5 items-center pt-2 border-t border-edge/40">
                         <span className="text-[8.5px] text-ink-muted/50 uppercase tracking-wider font-semibold">
                           Driven by
                         </span>
@@ -1078,17 +1130,46 @@ function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Watch For */}
-              {t.second_order_effects.length > 0 && (
+              {/* Watch Signals */}
+              {watchSignals.length > 0 && (
                 <div className="rounded-lg border border-amber-200/60 overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Watch For</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Watch Signals</p>
                   </div>
                   <div className="divide-y divide-amber-100/60">
-                    {t.second_order_effects.slice(0, 3).map((effect, i) => (
-                      <div key={i} className="flex items-start gap-3 px-4 py-3">
-                        <span className="text-amber-500 shrink-0 mt-0.5 font-bold text-[13px] leading-none">›</span>
-                        <p className="text-[12.5px] text-ink-secondary leading-relaxed">{effect}</p>
+                    {watchSignals.map((sig, i) => (
+                      <div key={i} className="px-4 py-3">
+                        <p className="text-[11px] font-semibold text-ink mb-0.5">{sig.variable}</p>
+                        <p className="text-[11px] text-ink-secondary leading-snug">{sig.condition}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Next Catalysts */}
+              {catalysts.length > 0 && (
+                <div className="rounded-lg border border-edge overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Next Catalysts</p>
+                  </div>
+                  <div className="divide-y divide-edge/50">
+                    {catalysts.map((cat, i) => (
+                      <div key={i} className="px-4 py-3 flex items-start gap-3">
+                        <span
+                          className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5"
+                          style={{
+                            color:       cat.direction === "confirming" ? "#10b981" : "#f59e0b",
+                            background:  cat.direction === "confirming" ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)",
+                          }}
+                        >
+                          {cat.direction === "confirming" ? "▲ confirming" : "⚑ risk"}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold text-ink mb-0.5">{cat.label}</p>
+                          <p className="text-[10.5px] text-ink-secondary leading-snug">{cat.reason}</p>
+                        </div>
+                        <span className="text-[8px] text-ink-muted/40 shrink-0 mt-0.5">{cat.sensitivity}</span>
                       </div>
                     ))}
                   </div>
@@ -1196,6 +1277,23 @@ function ThemeDetailDrawer({
                 </div>
               </div>
 
+              {/* Invalidation Signals */}
+              {invalidations.length > 0 && (
+                <div className="rounded-lg border border-edge overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Thesis Invalidation</p>
+                  </div>
+                  <div className="divide-y divide-edge/50">
+                    {invalidations.map((inv, i) => (
+                      <div key={i} className="px-4 py-3">
+                        <p className="text-[11px] font-semibold text-ink mb-1">{inv.condition}</p>
+                        <p className="text-[10.5px] text-ink-secondary leading-snug">{inv.impact}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Signal Conflicts */}
               {conflicts.length > 0 && (
                 <div className="rounded-lg border border-amber-200/60 overflow-hidden">
@@ -1237,10 +1335,11 @@ function CompactThemeCard({
   const evState    = computeThemeEvolutionState(t);
   const evMeta     = THEME_EVOLUTION_META[evState];
   const publicName = cleanThemeName(t.name);
-  const narrative  = t.causal_narrative || t.description || "";
   const score      = t.confidence ?? 0;
   const cColor     = confColor(score);
   const bColor     = borderColorForTheme(t, evState);
+  const briefing   = generateIntelligenceBriefing(t);
+  const health     = computeThemeHealth(t);
 
   const benefits:  string[] = [];
   const pressures: string[] = [];
@@ -1262,14 +1361,22 @@ function CompactThemeCard({
       <button onClick={onClick} className="w-full text-left block">
       <div className="px-4 pt-2.5 pb-2.5 pr-9 space-y-1.5">
 
-        {/* Status row: badge + confidence + arrow */}
+        {/* Status row: evolution badge + health badge + confidence + arrow */}
         <div className="flex items-center justify-between gap-2">
-          <span
-            className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full leading-none"
-            style={{ color: evColor, background: `${evColor}14`, border: `1px solid ${evColor}22` }}
-          >
-            {evMeta.icon} {evMeta.label}
-          </span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full leading-none shrink-0"
+              style={{ color: evColor, background: `${evColor}14`, border: `1px solid ${evColor}22` }}
+            >
+              {evMeta.icon} {evMeta.label}
+            </span>
+            <span
+              className="text-[7.5px] font-bold px-1 py-0.5 rounded leading-none shrink-0"
+              style={{ color: health.color, background: `${health.color}14` }}
+            >
+              {health.label}
+            </span>
+          </div>
           <div className="flex items-center gap-2 shrink-0">
             {isConflict && (
               <span className="text-[8px] font-semibold text-amber-500 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded">
@@ -1296,10 +1403,10 @@ function CompactThemeCard({
           {publicName}
         </h3>
 
-        {/* Thesis */}
-        {narrative && (
+        {/* Intelligence briefing — first sentence */}
+        {briefing[0] && (
           <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2">
-            {narrative}
+            {briefing[0]}
           </p>
         )}
 

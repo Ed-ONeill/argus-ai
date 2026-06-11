@@ -68,9 +68,29 @@ export function ClusterStream({
         >
           {clusters.map((cluster, i) => {
             const tier         = clusterTier(cluster);
-            const matchedTheme = themes?.find(t =>
-              (t.contributing_cluster_ids ?? []).includes(cluster.id)
-            );
+            // Primary: backend-assigned cluster membership
+            // Fallback: keyword overlap when contributing_cluster_ids aren't populated
+            const matchedTheme: ThemeIntelligence | undefined = (() => {
+              const byId = themes?.find(t =>
+                (t.contributing_cluster_ids ?? []).includes(cluster.id)
+              );
+              if (byId) return byId;
+              if (!themes?.length) return undefined;
+              const hay = [cluster.primary.title, ...cluster.primary.affected_entities]
+                .join(" ").toLowerCase();
+              let best: ThemeIntelligence | undefined;
+              let bestScore = 0;
+              for (const t of themes) {
+                const words = [
+                  ...(t.related_macro_factors ?? []),
+                  ...(t.related_industries    ?? []),
+                  t.name,
+                ].flatMap(s => s.toLowerCase().split(/\W+/).filter(w => w.length >= 6));
+                const score = words.filter(w => hay.includes(w)).length;
+                if (score > bestScore) { bestScore = score; best = t; }
+              }
+              return bestScore >= 1 ? best : undefined;
+            })();
             return (
               <motion.div
                 key={cluster.id}
