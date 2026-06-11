@@ -1042,69 +1042,184 @@ function CompactThemeCard({
 // ── WHAT'S DRIVING IT ─────────────────────────────────────────────────────────
 
 function IntelligenceThemes({
-  themes, sectorData, riskRegime, volRegime,
+  themes, conflictedIds, onThemeClick,
 }: {
-  themes:     ThemeIntelligence[];
-  sectorData: SectorData | null;
-  riskRegime: "risk-on" | "neutral" | "risk-off";
-  volRegime:  "low" | "moderate" | "elevated" | "high";
+  themes:        ThemeIntelligence[];
+  conflictedIds: Set<string>;
+  onThemeClick:  (t: ThemeIntelligence) => void;
 }) {
-  const [drawerData, setDrawerData] = useState<DrawerData | null>(null);
-
-  const visible = themes.filter(
-    t => t.signal_strength === "strong" || t.signal_strength === "medium",
-  );
-
-  const relMap         = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
-  const contradictions = useMemo(
-    () => detectContradictions(visible, sectorData, riskRegime, volRegime),
-    [visible, sectorData, riskRegime, volRegime],
-  );
-  const conflictedIds  = useMemo(() => getConflictedThemeIds(contradictions), [contradictions]);
-
-  function openDrawer(t: ThemeIntelligence) {
-    const rel = relMap.get(t.id);
-    setDrawerData({
-      theme:      t,
-      upstream:   rel?.upstream ?? [],
-      downstream: rel?.downstream ?? [],
-      connected:  rel?.connected ?? [],
-      conflicts:  contradictions.filter(c => c.themeIds.includes(t.id)),
-    });
-  }
-
-  if (visible.length === 0) return (
-    <div className="mb-4">
+  if (themes.length === 0) return (
+    <div className="mb-3">
       <SectionHeader label="What's Driving It" icon={<Network size={11} className="text-accent shrink-0" />} />
       <p className="text-[10.5px] text-ink-muted italic">Theme analysis warming up…</p>
     </div>
   );
 
   return (
-    <>
-      <div className="mb-3">
-        <SectionHeader
-          label="What's Driving It"
-          icon={<Network size={11} className="text-accent shrink-0" />}
-          sub={`${visible.length} theme${visible.length !== 1 ? "s" : ""} · click for detail`}
-        />
-        <div className="space-y-1.5">
-          {visible.map(t => (
-            <CompactThemeCard
-              key={t.id}
-              theme={t}
-              isConflict={conflictedIds.has(t.id)}
-              onClick={() => openDrawer(t)}
-            />
-          ))}
-        </div>
-      </div>
-
-      <ThemeDetailDrawer
-        data={drawerData}
-        onClose={() => setDrawerData(null)}
+    <div className="mb-3">
+      <SectionHeader
+        label="What's Driving It"
+        icon={<Network size={11} className="text-accent shrink-0" />}
+        sub={`${themes.length} theme${themes.length !== 1 ? "s" : ""} · click for detail`}
       />
-    </>
+      <div className="space-y-1.5">
+        {themes.map(t => (
+          <CompactThemeCard
+            key={t.id}
+            theme={t}
+            isConflict={conflictedIds.has(t.id)}
+            onClick={() => onThemeClick(t)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Theme Relationship Chains ──────────────────────────────────────────────────
+
+type ThemeChain = {
+  nodes: ThemeIntelligence[];
+  links: Array<{ linkType: string; strength: string }>;
+};
+
+function buildThemeChains(
+  themes: ThemeIntelligence[],
+  relMap: ReturnType<typeof buildThemeRelationshipMap>,
+): ThemeChain[] {
+  const chains:    ThemeChain[] = [];
+  const themeById  = new Map(themes.map(t => [t.id, t]));
+  const visited    = new Set<string>();
+  const sorted     = [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  const strengthRank = { strong: 0, moderate: 1, weak: 2 } as const;
+
+  for (const root of sorted) {
+    if (visited.has(root.id)) continue;
+    const rootRel = relMap.get(root.id);
+    if (!rootRel?.connected.length) continue;
+
+    const nodes: ThemeIntelligence[] = [root];
+    const links: ThemeChain["links"] = [];
+    visited.add(root.id);
+
+    let cursor = root;
+    for (let depth = 0; depth < 2; depth++) {
+      const curRel = relMap.get(cursor.id);
+      const best   = curRel?.connected
+        .filter(c => !visited.has(c.id))
+        .sort((a, b) =>
+          (strengthRank[a.strength as keyof typeof strengthRank] ?? 3) -
+          (strengthRank[b.strength as keyof typeof strengthRank] ?? 3),
+        )[0];
+      if (!best) break;
+      const next = themeById.get(best.id);
+      if (!next) break;
+      nodes.push(next);
+      links.push({ linkType: best.linkType, strength: best.strength });
+      visited.add(next.id);
+      cursor = next;
+    }
+
+    if (nodes.length >= 2) {
+      chains.push({ nodes, links });
+      if (chains.length >= 6) break;
+    }
+  }
+
+  return chains;
+}
+
+const LINK_LABEL: Record<string, string> = {
+  "shared-story":   "shared narrative",
+  "shared-asset":   "shared exposure",
+  "sector-overlap": "sector overlap",
+};
+
+function ThemeRelationshipChains({
+  themes, relMap, onNodeClick,
+}: {
+  themes:      ThemeIntelligence[];
+  relMap:      ReturnType<typeof buildThemeRelationshipMap>;
+  onNodeClick: (t: ThemeIntelligence) => void;
+}) {
+  const chains = useMemo(() => buildThemeChains(themes, relMap), [themes, relMap]);
+
+  if (chains.length === 0) return null;
+
+  return (
+    <div className="mb-3">
+      <SectionHeader
+        label="Theme Relationships"
+        icon={<Network size={11} className="text-accent shrink-0" />}
+        sub={`${chains.length} causal chain${chains.length !== 1 ? "s" : ""} · click any node to explore`}
+      />
+
+      <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
+        {chains.map(chain => (
+          <div
+            key={chain.nodes[0].id}
+            className="flex-shrink-0 w-[192px] border border-edge rounded-lg bg-surface
+                       overflow-hidden hover:border-edge-strong transition-colors"
+          >
+            {chain.nodes.map((node, ni) => {
+              const evState = computeThemeEvolutionState(node);
+              const evMeta  = THEME_EVOLUTION_META[evState];
+              const evClr   = EVOLUTION_COLOR[evState] ?? "#94a3b8";
+              const bClr    = borderColorForTheme(node, evState);
+              const score   = node.confidence ?? 0;
+              const link    = chain.links[ni];
+
+              return (
+                <div key={node.id}>
+                  {/* Clickable node */}
+                  <button
+                    onClick={() => onNodeClick(node)}
+                    className="w-full text-left px-3 py-2.5 hover:bg-raised/70 transition-colors group"
+                    style={{ borderLeft: `2.5px solid ${bClr}` }}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span
+                        className="text-[7.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full leading-none"
+                        style={{ color: evClr, background: `${evClr}15`, border: `1px solid ${evClr}20` }}
+                      >
+                        {evMeta.icon} {evMeta.label}
+                      </span>
+                      <span
+                        className="text-[8px] font-semibold tabular-nums"
+                        style={{ color: confColor(score) }}
+                      >
+                        {score}%
+                      </span>
+                    </div>
+                    <p className="text-[13px] font-bold text-ink leading-snug">
+                      {cleanThemeName(node.name)}
+                    </p>
+                    <ChevronRight
+                      size={10}
+                      className="mt-1 text-ink-muted/20 group-hover:text-ink-muted/50 transition-colors"
+                    />
+                  </button>
+
+                  {/* Connector between nodes */}
+                  {ni < chain.nodes.length - 1 && link && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 border-y border-edge/50 bg-raised/50">
+                      <span className="text-[11px] font-bold text-ink-muted/30 leading-none select-none">↓</span>
+                      <span className="text-[8px] text-ink-muted italic">
+                        {LINK_LABEL[link.linkType] ?? "connected"}
+                      </span>
+                      {link.strength === "strong" && (
+                        <span className="ml-auto text-[7px] font-bold uppercase tracking-wide text-emerald-600/60">strong</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1203,7 +1318,8 @@ function WhereMattersList({ themes, sectorData }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MarketsPage() {
-  const [activeKey, setActiveKey] = useState<SnapshotKey | null>(null);
+  const [activeKey,  setActiveKey]  = useState<SnapshotKey | null>(null);
+  const [drawerData, setDrawerData] = useState<DrawerData | null>(null);
   const clusterRef = useRef<HTMLDivElement>(null);
 
   const { data: marketData, meta: marketMeta, heartbeatStatus, marketOpen } = useMarketData();
@@ -1215,6 +1331,30 @@ export default function MarketsPage() {
   const themes        = useMemo(() => data?.theme_intelligence ?? [], [data]);
   const cacheAge      = data?.cache_age_seconds;
   const derivedRegime = data?.sector_data?.derived_regime ?? "";
+  const sectorData    = data?.sector_data ?? null;
+
+  // Theme intelligence — computed once, shared by all sections
+  const visible = useMemo(
+    () => themes.filter(t => t.signal_strength === "strong" || t.signal_strength === "medium"),
+    [themes],
+  );
+  const relMap = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
+  const contradictions = useMemo(
+    () => detectContradictions(visible, sectorData, riskRegime, volRegime),
+    [visible, sectorData, riskRegime, volRegime],
+  );
+  const conflictedIds = useMemo(() => getConflictedThemeIds(contradictions), [contradictions]);
+
+  function openDrawer(t: ThemeIntelligence) {
+    const rel = relMap.get(t.id);
+    setDrawerData({
+      theme:      t,
+      upstream:   rel?.upstream   ?? [],
+      downstream: rel?.downstream ?? [],
+      connected:  rel?.connected  ?? [],
+      conflicts:  contradictions.filter(c => c.themeIds.includes(t.id)),
+    });
+  }
 
   const activeCfg = SNAPSHOT_CONFIGS.find(c => c.key === activeKey) ?? null;
 
@@ -1317,16 +1457,22 @@ export default function MarketsPage() {
 
         {/* ── WHAT'S DRIVING IT ────────────────────────────── */}
         <IntelligenceThemes
-          themes={themes}
-          sectorData={data?.sector_data ?? null}
-          riskRegime={riskRegime}
-          volRegime={volRegime}
+          themes={visible}
+          conflictedIds={conflictedIds}
+          onThemeClick={openDrawer}
+        />
+
+        {/* ── THEME RELATIONSHIPS ───────────────────────────── */}
+        <ThemeRelationshipChains
+          themes={visible}
+          relMap={relMap}
+          onNodeClick={openDrawer}
         />
 
         {/* ── WHERE IT MATTERS ─────────────────────────────── */}
         <WhereMattersList
           themes={themes}
-          sectorData={data?.sector_data ?? null}
+          sectorData={sectorData}
         />
 
         {/* ── SUPPORTING EVIDENCE ──────────────────────────── */}
@@ -1351,6 +1497,12 @@ export default function MarketsPage() {
         </div>
 
       </div>
+
+      {/* Shared drawer — opened by both theme cards and relationship chains */}
+      <ThemeDetailDrawer
+        data={drawerData}
+        onClose={() => setDrawerData(null)}
+      />
     </>
   );
 }
