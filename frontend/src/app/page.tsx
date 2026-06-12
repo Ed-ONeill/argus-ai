@@ -57,11 +57,11 @@ const fadeUp = {
 };
 
 const UPCOMING_CATALYSTS = [
-  { label: "CPI Release",           importance: "HIGH",   why: "Core inflation data will reprice rate expectations and sovereign yields." },
-  { label: "FOMC Decision",         importance: "HIGH",   why: "Rate guidance sets the tone for equity valuations and credit spreads."    },
-  { label: "Non-Farm Payrolls",      importance: "HIGH",   why: "Labor market strength signals Fed trajectory and consumption durability." },
-  { label: "Treasury Auction",       importance: "MEDIUM", why: "Demand for duration reveals institutional appetite for sovereign risk."   },
-  { label: "Major Earnings Season",  importance: "MEDIUM", why: "Forward guidance from large-caps will drive near-term sector rotation."   },
+  { label: "CPI Release",           importance: "HIGH",   timing: "Tomorrow",   why: "Core inflation data will reprice rate expectations and sovereign yields." },
+  { label: "Non-Farm Payrolls",     importance: "HIGH",   timing: "In 3 Days",  why: "Labor market strength signals Fed trajectory and consumption durability." },
+  { label: "FOMC Decision",         importance: "HIGH",   timing: "In 4 Days",  why: "Rate guidance sets the tone for equity valuations and credit spreads."    },
+  { label: "Treasury Auction",      importance: "MEDIUM", timing: "Next Week",  why: "Demand for duration reveals institutional appetite for sovereign risk."   },
+  { label: "Major Earnings Season", importance: "MEDIUM", timing: "In 14 Days", why: "Forward guidance from large-caps will drive near-term sector rotation."   },
 ] as const;
 
 function getGreeting(): string {
@@ -96,16 +96,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function StatusLine({ icon, label, color }: { icon: string; label: string; color?: string }) {
-  return (
-    <div className="flex items-center gap-2 justify-center">
-      <span style={{ fontSize: "8px", color: color ?? "rgba(255,255,255,0.22)", opacity: 0.7 }}>{icon}</span>
-      <span style={{ fontSize: "11px", color: color ? `${color}99` : "rgba(255,255,255,0.34)", letterSpacing: "0.03em" }}>
-        {label}
-      </span>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Morning Brief — signed-out prompt
@@ -242,13 +232,14 @@ function BriefSignOutPrompt({ regimeColor, pulseDotColor, onContinue }: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BriefSealed({
-  isLoading, themeCount, regimeLabel, regimeColor, pulseDotColor, onOpen,
+  isLoading, themeCount, regimeLabel, regimeColor, pulseDotColor, confidence, onOpen,
 }: {
   isLoading: boolean;
   themeCount: number;
   regimeLabel: string;
   regimeColor: string;
   pulseDotColor: string;
+  confidence?: number;
   onOpen: () => void;
 }) {
   const today = new Date().toLocaleDateString("en-US", {
@@ -292,46 +283,67 @@ function BriefSealed({
             </span>
           </div>
 
-          <motion.div
-            animate={{ scale: [1, 1.03, 1] }}
-            transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
-            style={{
-              width: 72, height: 72, borderRadius: "50%",
-              background: `radial-gradient(circle at 38% 38%, ${regimeColor}28 0%, ${regimeColor}10 60%, transparent 100%)`,
-              border: `1px solid ${regimeColor}30`,
-              display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2,
-            }}
-          >
-            <span style={{ fontSize: "18px", fontWeight: 700, color: regimeColor, opacity: 0.65, letterSpacing: "-0.02em" }}>A</span>
-            <div style={{ width: 20, height: 1, background: `${regimeColor}35` }} />
-          </motion.div>
-
-          <div className="space-y-1">
-            <p style={{ fontSize: "13.5px", letterSpacing: "0.12em", fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>
+          <div style={{ width: "100%" }}>
+            <p style={{ fontSize: "12.5px", letterSpacing: "0.12em", fontWeight: 600, color: "rgba(255,255,255,0.68)", marginBottom: "3px", textAlign: "center" }}>
               MORNING INTELLIGENCE BRIEF
             </p>
-            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.24)", letterSpacing: "0.06em" }}>
-              Classified · For authorized access only
+            <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.26)", letterSpacing: "0.04em", textAlign: "center" }}>
+              Daily market intelligence briefing
             </p>
           </div>
 
-          <div className="w-full space-y-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "16px" }}>
-            {isLoading ? (
-              <>
-                {[80, 65, 72].map((w, i) => (
-                  <div key={i} className="flex items-center gap-2 justify-center">
-                    <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.12)" }} />
-                    <div className="h-2 rounded animate-pulse" style={{ width: `${w}px`, background: "rgba(255,255,255,0.07)" }} />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            width: "100%",
+            gap: "1px",
+            background: "rgba(255,255,255,0.055)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: "5px",
+            overflow: "hidden",
+          }}>
+            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px" }}>
+              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>REGIME</p>
+              {isLoading
+                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "70%", background: "rgba(255,255,255,0.07)" }} />
+                : <p style={{ fontSize: "12px", fontWeight: 600, color: regimeColor, opacity: 0.88, letterSpacing: "0.02em" }}>{regimeLabel}</p>
+              }
+            </div>
+
+            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px" }}>
+              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>CONVICTION</p>
+              {isLoading
+                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "50%", background: "rgba(255,255,255,0.07)" }} />
+                : (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.68)" }}>
+                      {confidence ? `${Math.round(confidence)}%` : "—"}
+                    </span>
+                    {confidence && (
+                      <div style={{ flex: 1, height: "2px", background: "rgba(255,255,255,0.08)", borderRadius: "1px" }}>
+                        <div style={{ height: "100%", width: `${Math.round(confidence)}%`, background: regimeColor, opacity: 0.55, borderRadius: "1px" }} />
+                      </div>
+                    )}
                   </div>
-                ))}
-              </>
-            ) : (
-              <>
-                <StatusLine icon="◦" label={`Regime: ${regimeLabel}`} color={regimeColor} />
-                <StatusLine icon="◦" label={`${themeCount} intelligence theme${themeCount !== 1 ? "s" : ""} active`} />
-                <StatusLine icon="◦" label="Market conditions available" />
-              </>
-            )}
+                )
+              }
+            </div>
+
+            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px", borderTop: "1px solid rgba(255,255,255,0.055)" }}>
+              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>ACTIVE THEMES</p>
+              {isLoading
+                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "35%", background: "rgba(255,255,255,0.07)" }} />
+                : <p style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.65)" }}>{themeCount}</p>
+              }
+            </div>
+
+            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px", borderTop: "1px solid rgba(255,255,255,0.055)" }}>
+              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>UPCOMING CATALYSTS</p>
+              {isLoading
+                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "35%", background: "rgba(255,255,255,0.07)" }} />
+                : <p style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.65)" }}>{UPCOMING_CATALYSTS.length}</p>
+              }
+            </div>
           </div>
 
           <button
@@ -480,17 +492,38 @@ function BriefOpen({
               </span>
             )}
           </div>
-          {confPct && (
-            <span style={{ fontSize: "9px", letterSpacing: "0.12em", color: "rgba(255,255,255,0.28)" }}>
-              CONF {confPct}
-            </span>
+          {confPct && brief?.confidence && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ width: "44px", height: "2px", background: "rgba(255,255,255,0.10)", borderRadius: "1px", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.round(brief.confidence)}%`, background: regimeColor, opacity: 0.65 }} />
+              </div>
+              <span style={{ fontSize: "9px", letterSpacing: "0.10em", fontWeight: 600, color: "rgba(255,255,255,0.35)" }}>
+                {confPct}
+              </span>
+            </div>
           )}
         </motion.div>
       )}
 
       <div className="px-6 py-5 space-y-5">
+        {brief?.narrative_shift && (
+          <motion.div custom={2} variants={sv} initial="hidden" animate="visible"
+            style={{
+              background: `${regimeColor}08`,
+              border: "1px solid rgba(255,255,255,0.055)",
+              borderLeft: `2px solid ${regimeColor}44`,
+              borderRadius: "5px",
+              padding: "12px 16px",
+            }}>
+            <SectionLabel>Why Today Matters</SectionLabel>
+            <p style={{ fontSize: "12.5px", lineHeight: "1.72", color: "rgba(255,255,255,0.58)" }}>
+              {brief.narrative_shift}
+            </p>
+          </motion.div>
+        )}
+
         {brief?.primary_driver && (
-          <motion.div custom={2} variants={sv} initial="hidden" animate="visible">
+          <motion.div custom={3} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Primary Narrative</SectionLabel>
             <p style={{
               fontSize: "13px", lineHeight: "1.72", color: "rgba(255,255,255,0.58)",
@@ -502,7 +535,7 @@ function BriefOpen({
         )}
 
         {(opportunities.length > 0 || brief?.risk_scenario) && (
-          <motion.div custom={3} variants={sv} initial="hidden" animate="visible"
+          <motion.div custom={4} variants={sv} initial="hidden" animate="visible"
             className="grid grid-cols-2 gap-4">
             <div>
               <SectionLabel>Opportunities</SectionLabel>
@@ -552,7 +585,7 @@ function BriefOpen({
         )}
 
         {brief?.trade_implication && (
-          <motion.div custom={4} variants={sv} initial="hidden" animate="visible"
+          <motion.div custom={5} variants={sv} initial="hidden" animate="visible"
             style={{
               background: "rgba(255,255,255,0.025)",
               border: "1px solid rgba(255,255,255,0.06)",
@@ -562,15 +595,6 @@ function BriefOpen({
             <SectionLabel>Trade Implication</SectionLabel>
             <p style={{ fontSize: "12px", lineHeight: "1.65", color: "rgba(255,255,255,0.52)" }}>
               {brief.trade_implication}
-            </p>
-          </motion.div>
-        )}
-
-        {brief?.narrative_shift && (
-          <motion.div custom={5} variants={sv} initial="hidden" animate="visible">
-            <SectionLabel>Overnight Shift</SectionLabel>
-            <p style={{ fontSize: "12px", lineHeight: "1.65", color: "rgba(255,255,255,0.40)" }}>
-              {brief.narrative_shift}
             </p>
           </motion.div>
         )}
@@ -610,21 +634,26 @@ function BriefOpen({
                   border:       "1px solid rgba(255,255,255,0.055)",
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="flex items-center gap-2.5 mb-1">
-                      <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.62)" }}>
-                        {c.label}
-                      </span>
-                      <span style={{
-                        fontSize:      "8px",
-                        fontWeight:    700,
-                        letterSpacing: "0.16em",
-                        color:         impColor,
-                        opacity:       0.82,
-                        border:        `1px solid ${impColor}44`,
-                        borderRadius:  "3px",
-                        padding:       "1px 5px",
-                      }}>
-                        {c.importance}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.62)" }}>
+                          {c.label}
+                        </span>
+                        <span style={{
+                          fontSize:      "8px",
+                          fontWeight:    700,
+                          letterSpacing: "0.16em",
+                          color:         impColor,
+                          opacity:       0.82,
+                          border:        `1px solid ${impColor}44`,
+                          borderRadius:  "3px",
+                          padding:       "1px 5px",
+                        }}>
+                          {c.importance}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.03em", flexShrink: 0 }}>
+                        {c.timing}
                       </span>
                     </div>
                     <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.32)", lineHeight: 1.48 }}>
@@ -1053,6 +1082,7 @@ export default function LandingPage() {
                   regimeLabel={brief?.market_regime ?? regimeLabel}
                   regimeColor={regimeColor}
                   pulseDotColor={pulseDotColor}
+                  confidence={brief?.confidence}
                   onOpen={() => setBriefOpen(true)}
                 />
               )
