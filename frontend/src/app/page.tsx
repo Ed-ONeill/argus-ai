@@ -231,8 +231,17 @@ function BriefSignOutPrompt({ regimeColor, pulseDotColor, onContinue }: {
 // Morning Brief — sealed envelope state
 // ─────────────────────────────────────────────────────────────────────────────
 
+type RegimeStatus = "unchanged" | "stronger" | "weaker" | "changed";
+
+function regimeStatusLabel(s: RegimeStatus) {
+  return s === "unchanged" ? "UNCHANGED" : s === "stronger" ? "↑ STRONGER" : s === "weaker" ? "↓ WEAKER" : "CHANGED";
+}
+function regimeStatusColor(s: RegimeStatus) {
+  return s === "unchanged" ? "rgba(255,255,255,0.26)" : s === "stronger" ? "rgba(70,168,110,0.72)" : s === "weaker" ? "rgba(200,80,80,0.72)" : "rgba(196,160,52,0.72)";
+}
+
 function BriefSealed({
-  isLoading, themeCount, regimeLabel, regimeColor, pulseDotColor, confidence, onOpen,
+  isLoading, themeCount, regimeLabel, regimeColor, pulseDotColor, confidence, regimeStatus, onOpen,
 }: {
   isLoading: boolean;
   themeCount: number;
@@ -240,6 +249,7 @@ function BriefSealed({
   regimeColor: string;
   pulseDotColor: string;
   confidence?: number;
+  regimeStatus?: RegimeStatus | null;
   onOpen: () => void;
 }) {
   const today = new Date().toLocaleDateString("en-US", {
@@ -306,7 +316,16 @@ function BriefSealed({
               <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>REGIME</p>
               {isLoading
                 ? <div className="h-2.5 rounded animate-pulse" style={{ width: "70%", background: "rgba(255,255,255,0.07)" }} />
-                : <p style={{ fontSize: "12px", fontWeight: 600, color: regimeColor, opacity: 0.88, letterSpacing: "0.02em" }}>{regimeLabel}</p>
+                : (
+                  <>
+                    <p style={{ fontSize: "12px", fontWeight: 600, color: regimeColor, opacity: 0.88, letterSpacing: "0.02em" }}>{regimeLabel}</p>
+                    {regimeStatus && (
+                      <span style={{ fontSize: "7.5px", letterSpacing: "0.12em", fontWeight: 700, color: regimeStatusColor(regimeStatus), display: "block", marginTop: "4px" }}>
+                        {regimeStatusLabel(regimeStatus)}
+                      </span>
+                    )}
+                  </>
+                )
               }
             </div>
 
@@ -399,11 +418,12 @@ function BriefSealed({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BriefOpen({
-  brief, themes, regimeColor, onClose,
+  brief, themes, regimeColor, regimeStatus, onClose,
 }: {
   brief: MarketBrief | null | undefined;
   themes: ThemeIntelligence[];
   regimeColor: string;
+  regimeStatus?: RegimeStatus | null;
   onClose: () => void;
 }) {
   const today = new Date().toLocaleDateString("en-US", {
@@ -486,6 +506,16 @@ function BriefOpen({
             <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em", color: regimeColor, opacity: 0.82 }}>
               {brief.market_regime.toUpperCase()}
             </span>
+            {regimeStatus && (
+              <span style={{
+                fontSize: "8px", letterSpacing: "0.12em", fontWeight: 700,
+                color: regimeStatusColor(regimeStatus),
+                border: `1px solid ${regimeStatusColor(regimeStatus).replace(/[\d.]+\)$/, "0.22)")}`,
+                borderRadius: "3px", padding: "1.5px 5px",
+              }}>
+                {regimeStatusLabel(regimeStatus)}
+              </span>
+            )}
             {brief.assets_impacted?.length > 0 && (
               <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.28)" }}>
                 {brief.assets_impacted.slice(0, 4).join(" · ")}
@@ -618,48 +648,34 @@ function BriefOpen({
 
         <motion.div custom={7} variants={sv} initial="hidden" animate="visible">
           <SectionLabel>Upcoming Catalysts</SectionLabel>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {UPCOMING_CATALYSTS.map((c) => {
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            {UPCOMING_CATALYSTS.map((c, idx) => {
               const impColor =
                 c.importance === "HIGH"   ? "#c8a040" :
                 c.importance === "MEDIUM" ? "#5390c8" : "rgba(255,255,255,0.28)";
               return (
                 <div key={c.label} style={{
-                  display:      "flex",
-                  alignItems:   "flex-start",
-                  gap:          "12px",
-                  padding:      "9px 12px",
-                  borderRadius: "4px",
-                  background:   "rgba(255,255,255,0.018)",
-                  border:       "1px solid rgba(255,255,255,0.055)",
+                  display: "grid",
+                  gridTemplateColumns: "82px 1fr auto",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "6px 0",
+                  borderBottom: idx < UPCOMING_CATALYSTS.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
                 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.62)" }}>
-                          {c.label}
-                        </span>
-                        <span style={{
-                          fontSize:      "8px",
-                          fontWeight:    700,
-                          letterSpacing: "0.16em",
-                          color:         impColor,
-                          opacity:       0.82,
-                          border:        `1px solid ${impColor}44`,
-                          borderRadius:  "3px",
-                          padding:       "1px 5px",
-                        }}>
-                          {c.importance}
-                        </span>
-                      </div>
-                      <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.03em", flexShrink: 0 }}>
-                        {c.timing}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.32)", lineHeight: 1.48 }}>
-                      {c.why}
-                    </p>
-                  </div>
+                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.02em" }}>
+                    {c.timing}
+                  </span>
+                  <span style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)" }}>
+                    {c.label}
+                  </span>
+                  <span style={{
+                    fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
+                    color: impColor, opacity: 0.82,
+                    border: `1px solid ${impColor}40`,
+                    borderRadius: "3px", padding: "2px 5px",
+                  }}>
+                    {c.importance === "MEDIUM" ? "MED" : c.importance}
+                  </span>
                 </div>
               );
             })}
@@ -700,6 +716,7 @@ export default function LandingPage() {
   const [briefOpen,         setBriefOpen]         = useState(false);
   const [guestMode,         setGuestMode]         = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [regimeStatus, setRegimeStatus] = useState<null | "unchanged" | "stronger" | "weaker" | "changed">(null);
   const briefSectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
@@ -713,6 +730,34 @@ export default function LandingPage() {
 
   const brief  = feedData?.market_brief;
   const themes = useMemo(() => feedData?.theme_intelligence ?? [], [feedData?.theme_intelligence]);
+
+  // Persist yesterday's regime in localStorage to derive change indicators.
+  useEffect(() => {
+    if (!brief?.market_regime || !mounted) return;
+    const KEY = "argus_regime_track_v1";
+    const today = new Date().toDateString();
+    const dir = (prev: string, curr: string) => {
+      const p = prev.toLowerCase(), c = curr.toLowerCase();
+      if (p === c) return "unchanged" as const;
+      if (c.includes("risk-on")  && p.includes("risk-off")) return "stronger" as const;
+      if (c.includes("risk-off") && p.includes("risk-on"))  return "weaker"   as const;
+      return "changed" as const;
+    };
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) {
+        localStorage.setItem(KEY, JSON.stringify({ prev: null, date: today, current: brief.market_regime }));
+        return;
+      }
+      const s = JSON.parse(raw) as { prev: string | null; date: string; current: string };
+      if (s.date === today) {
+        if (s.prev) setRegimeStatus(dir(s.prev, brief.market_regime));
+      } else {
+        setRegimeStatus(dir(s.current, brief.market_regime));
+        localStorage.setItem(KEY, JSON.stringify({ prev: s.current, date: today, current: brief.market_regime }));
+      }
+    } catch {}
+  }, [brief?.market_regime, mounted]);
 
   // ── Regime colors ───────────────────────────────────────────────────────────
 
@@ -1072,6 +1117,7 @@ export default function LandingPage() {
                   brief={brief}
                   themes={themes}
                   regimeColor={regimeColor}
+                  regimeStatus={regimeStatus}
                   onClose={() => setBriefOpen(false)}
                 />
               ) : (
@@ -1083,6 +1129,7 @@ export default function LandingPage() {
                   regimeColor={regimeColor}
                   pulseDotColor={pulseDotColor}
                   confidence={brief?.confidence}
+                  regimeStatus={regimeStatus}
                   onOpen={() => setBriefOpen(true)}
                 />
               )
