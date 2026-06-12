@@ -1,6 +1,7 @@
 import type { StoryCluster } from "./types";
 
 export interface UserPrefs {
+  followed_themes:        string[];
   followed_sectors:       string[];
   followed_asset_classes: string[];
   user_role:              string;
@@ -12,7 +13,26 @@ export interface RankedCluster extends StoryCluster {
   _debug:          Record<string, number> | undefined;
 }
 
-// ── Keyword maps ──────────────────────────────────────────────────────────────
+// ── Theme keyword maps ────────────────────────────────────────────────────────
+// Matches cluster text against the curated theme list. Each theme has tight,
+// high-precision patterns to avoid false positives inflating scores.
+
+const THEME_KEYWORDS: Record<string, RegExp> = {
+  "AI Infrastructure":      /\bai\b.*infra|artificial intelligence.*infra|gpu cluster|inference.*cluster|foundation model|llm.*deploy|ai data center|nvidia.*data center|ai chip|training compute/i,
+  "Defense Rearmament":      /rearmament|defense spend|military budget|\bnato\b.*spend|arms buildup|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|defense procure/i,
+  "Power Grid Expansion":    /power grid|grid expansion|grid infrastructure|transmission line|electricity grid|grid upgrade|high.voltage|grid invest|grid capacity/i,
+  "Private Credit":          /private credit|direct lending|private debt|\bbdc\b|unitranche|middle.market loan|credit fund.*private|private.*credit fund/i,
+  "Nuclear Renaissance":     /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear.*invest/i,
+  "Space Economy":           /space economy|commercial space|satellite.*launch|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital/i,
+  "Cybersecurity":           /cybersecurity|cyber attack|ransomware|data breach|zero.day|endpoint security|threat actor|cyber threat|cyberattack|infosec/i,
+  "Energy Security":         /energy security|energy independence|\blng\b|liquefied natural gas|strategic.*energy|fuel supply.*secur|energy.*supply.*secur/i,
+  "GLP-1 Economy":           /glp.1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight.loss drug|obesity drug|eli lilly|novo nordisk|glp1/i,
+  "Autonomous Systems":      /autonomous.*vehicle|self.driving|\buav\b|unmanned aerial|\bdrone\b.*militar|autonomous.*robot|lidar.*autonomous|full self/i,
+  "Reshoring":               /reshoring|nearshoring|onshoring|friend.shoring|supply chain.*relocat|manufacturing.*return|domestic.*manufactur|bring.*production.*home/i,
+  "Data Center Buildout":    /data center.*build|hyperscaler.*expand|colocation.*capacity|data center.*invest|server farm|data center.*power|new data center/i,
+};
+
+// ── Sector / asset class keyword maps ─────────────────────────────────────────
 
 const SECTOR_KEYWORDS: Record<string, RegExp> = {
   "Technology":             /tech|software|\bai\b|artificial intelligence|semiconductor|cloud|digital|cyber|saas|data center/i,
@@ -111,6 +131,17 @@ function roleScore(cluster: StoryCluster, role: string): number {
   }
 }
 
+// Priority 1 — strongest signal: +40 per followed theme match (capped at 80)
+function followedThemeScore(text: string, themes: string[]): number {
+  if (!themes.length) return 0;
+  let score = 0;
+  for (const theme of themes) {
+    const rx = THEME_KEYWORDS[theme];
+    if (rx?.test(text)) score += 40;
+  }
+  return Math.min(score, 80);
+}
+
 function themeScore(text: string, sectors: string[], assets: string[]): number {
   // Bonus for topics that appear repeatedly — indicates a dominant theme, not a passing mention.
   let hits = 0;
@@ -142,7 +173,8 @@ function isTrending(cluster: StoryCluster): boolean {
 
 function prefsAreEmpty(prefs: UserPrefs): boolean {
   return (
-    prefs.followed_sectors.length === 0 &&
+    prefs.followed_themes.length        === 0 &&
+    prefs.followed_sectors.length       === 0 &&
     prefs.followed_asset_classes.length === 0 &&
     !prefs.user_role &&
     !prefs.region_focus
@@ -155,16 +187,17 @@ export function scoreCluster(
   debug = false,
 ): RankedCluster {
   const text = textOf(cluster);
+  const th   = followedThemeScore(text, prefs.followed_themes);
   const s    = sectorScore(text, prefs.followed_sectors);
   const a    = assetScore(text, prefs.followed_asset_classes);
   const r    = regionScore(text, prefs.region_focus);
   const ro   = roleScore(cluster, prefs.user_role);
-  const t    = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
+  const tm   = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
 
   return {
     ...cluster,
-    relevance_score: s + a + r + ro + t,
-    _debug: debug ? { sector: s, asset: a, region: r, role: ro, theme: t } : undefined,
+    relevance_score: th + s + a + r + ro + tm,
+    _debug: debug ? { followedTheme: th, sector: s, asset: a, region: r, role: ro, themeDepth: tm } : undefined,
   };
 }
 

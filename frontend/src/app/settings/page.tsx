@@ -31,6 +31,13 @@ const ROLES = [
   { id: "other",        label: "Other"                   },
 ];
 
+const THEMES = [
+  "AI Infrastructure", "Defense Rearmament", "Power Grid Expansion",
+  "Private Credit", "Nuclear Renaissance", "Space Economy",
+  "Cybersecurity", "Energy Security", "GLP-1 Economy",
+  "Autonomous Systems", "Reshoring", "Data Center Buildout",
+];
+
 const MARKETS = [
   "United States", "Europe", "China", "Japan",
   "India", "Emerging Markets", "Global",
@@ -203,6 +210,7 @@ export default function SettingsPage() {
 
   // ── Intelligence preferences ────────────────────────────────────────────────
 
+  const [prefThemes,  setPrefThemes]  = useState<string[]>([]);
   const [prefSectors, setPrefSectors] = useState<string[]>([]);
   const [prefAssets,  setPrefAssets]  = useState<string[]>([]);
   const [prefRole,    setPrefRole]    = useState<string>("");
@@ -217,18 +225,20 @@ export default function SettingsPage() {
     setPrefLoading(true);
     supabase
       .from("user_preferences")
-      .select("followed_sectors, followed_asset_classes, user_role, region_focus")
+      .select("followed_themes, followed_sectors, followed_asset_classes, user_role, region_focus")
       .eq("user_id", user.id)
       .single()
       .then(({ data }) => {
         setPrefLoading(false);
         if (data) {
           const p = data as {
+            followed_themes:        string[] | null;
             followed_sectors:       string[] | null;
             followed_asset_classes: string[] | null;
             user_role:              string   | null;
             region_focus:           string   | null;
           };
+          setPrefThemes( p.followed_themes        ?? []);
           setPrefSectors(p.followed_sectors       ?? []);
           setPrefAssets( p.followed_asset_classes ?? []);
           setPrefRole(   p.user_role              ?? "");
@@ -247,6 +257,7 @@ export default function SettingsPage() {
     setPrefSaving(true); setPrefError(null); setPrefSuccess(null);
     const { error } = await supabase.from("user_preferences").upsert({
       user_id:                user.id,
+      followed_themes:        prefThemes,
       followed_sectors:       prefSectors,
       followed_asset_classes: prefAssets,
       user_role:              prefRole   || null,
@@ -411,7 +422,7 @@ export default function SettingsPage() {
 
                 {prefLoading ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {[4, 3, 2, 3].map((n, row) => (
+                    {[5, 5, 4, 3, 2, 3].map((n, row) => (
                       <div key={row} style={{ display: "flex", gap: "8px", flexWrap: "wrap" as const }}>
                         {Array.from({ length: n }).map((_, i) => (
                           <div key={i} className="animate-pulse" style={{ height: "26px", width: `${56 + i * 22}px`, borderRadius: "4px", background: "rgba(255,255,255,0.06)" }} />
@@ -421,6 +432,16 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <>
+                    <div className="mb-5">
+                      <FieldLabel>Followed Themes</FieldLabel>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {THEMES.map(t => (
+                          <PrefChip key={t} label={t} selected={prefThemes.includes(t)}
+                            onClick={() => toggleArr(prefThemes, setPrefThemes, t)} />
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="mb-5">
                       <FieldLabel>Sectors</FieldLabel>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
