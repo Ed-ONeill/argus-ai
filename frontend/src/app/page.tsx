@@ -89,7 +89,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p style={{
       fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700,
-      color: "rgba(255,255,255,0.22)", marginBottom: "8px", textTransform: "uppercase",
+      color: "rgba(255,255,255,0.22)", marginBottom: "6px", textTransform: "uppercase",
     }}>
       {children}
     </p>
@@ -237,7 +237,13 @@ function regimeStatusLabel(s: RegimeStatus) {
   return s === "unchanged" ? "UNCHANGED" : s === "stronger" ? "↑ STRONGER" : s === "weaker" ? "↓ WEAKER" : "CHANGED";
 }
 function regimeStatusColor(s: RegimeStatus) {
-  return s === "unchanged" ? "rgba(255,255,255,0.26)" : s === "stronger" ? "rgba(70,168,110,0.72)" : s === "weaker" ? "rgba(200,80,80,0.72)" : "rgba(196,160,52,0.72)";
+  return s === "unchanged" ? "rgba(255,255,255,0.32)" : s === "stronger" ? "rgba(70,168,110,0.80)" : s === "weaker" ? "rgba(200,80,80,0.80)" : "rgba(196,160,52,0.80)";
+}
+function regimeStatusBorder(s: RegimeStatus) {
+  return s === "unchanged" ? "rgba(255,255,255,0.14)" : s === "stronger" ? "rgba(70,168,110,0.30)" : s === "weaker" ? "rgba(200,80,80,0.30)" : "rgba(196,160,52,0.30)";
+}
+function regimeStatusBg(s: RegimeStatus) {
+  return s === "unchanged" ? "rgba(255,255,255,0.04)" : s === "stronger" ? "rgba(70,168,110,0.07)" : s === "weaker" ? "rgba(200,80,80,0.07)" : "rgba(196,160,52,0.07)";
 }
 
 function BriefSealed({
@@ -318,7 +324,7 @@ function BriefSealed({
                 ? <div className="h-2.5 rounded animate-pulse" style={{ width: "70%", background: "rgba(255,255,255,0.07)" }} />
                 : (
                   <>
-                    <p style={{ fontSize: "12px", fontWeight: 600, color: regimeColor, opacity: 0.88, letterSpacing: "0.02em" }}>{regimeLabel}</p>
+                    <p style={{ fontSize: "13px", fontWeight: 700, color: regimeColor, opacity: 0.94, letterSpacing: "0.02em" }}>{regimeLabel}</p>
                     {regimeStatus && (
                       <span style={{ fontSize: "7.5px", letterSpacing: "0.12em", fontWeight: 700, color: regimeStatusColor(regimeStatus), display: "block", marginTop: "4px" }}>
                         {regimeStatusLabel(regimeStatus)}
@@ -498,20 +504,21 @@ function BriefOpen({
         <motion.div custom={1} variants={sv} initial="hidden" animate="visible"
           className="flex items-center justify-between px-6 py-3"
           style={{
-            background: `${regimeColor}0c`,
+            background: `${regimeColor}12`,
             borderBottom: "1px solid rgba(255,255,255,0.05)",
-            borderLeft: `3px solid ${regimeColor}55`,
+            borderLeft: `4px solid ${regimeColor}65`,
           }}>
           <div className="flex items-center gap-3">
-            <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em", color: regimeColor, opacity: 0.82 }}>
+            <span style={{ fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.12em", color: regimeColor, opacity: 0.92 }}>
               {brief.market_regime.toUpperCase()}
             </span>
             {regimeStatus && (
               <span style={{
                 fontSize: "8px", letterSpacing: "0.12em", fontWeight: 700,
                 color: regimeStatusColor(regimeStatus),
-                border: `1px solid ${regimeStatusColor(regimeStatus).replace(/[\d.]+\)$/, "0.22)")}`,
-                borderRadius: "3px", padding: "1.5px 5px",
+                background: regimeStatusBg(regimeStatus),
+                border: `1px solid ${regimeStatusBorder(regimeStatus)}`,
+                borderRadius: "3px", padding: "1.5px 6px",
               }}>
                 {regimeStatusLabel(regimeStatus)}
               </span>
@@ -535,7 +542,7 @@ function BriefOpen({
         </motion.div>
       )}
 
-      <div className="px-6 py-5 space-y-5">
+      <div className="px-6 py-4 space-y-4">
         {brief?.narrative_shift && (
           <motion.div custom={2} variants={sv} initial="hidden" animate="visible"
             style={{
@@ -543,10 +550,10 @@ function BriefOpen({
               border: "1px solid rgba(255,255,255,0.055)",
               borderLeft: `2px solid ${regimeColor}44`,
               borderRadius: "5px",
-              padding: "12px 16px",
+              padding: "10px 14px",
             }}>
             <SectionLabel>Why Today Matters</SectionLabel>
-            <p style={{ fontSize: "12.5px", lineHeight: "1.72", color: "rgba(255,255,255,0.58)" }}>
+            <p style={{ fontSize: "12px", lineHeight: "1.58", color: "rgba(255,255,255,0.60)" }}>
               {brief.narrative_shift}
             </p>
           </motion.div>
@@ -556,7 +563,7 @@ function BriefOpen({
           <motion.div custom={3} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Primary Narrative</SectionLabel>
             <p style={{
-              fontSize: "13px", lineHeight: "1.72", color: "rgba(255,255,255,0.58)",
+              fontSize: "12.5px", lineHeight: "1.62", color: "rgba(255,255,255,0.58)",
               borderLeft: "2px solid rgba(255,255,255,0.10)", paddingLeft: "14px",
             }}>
               {brief.primary_driver}
@@ -617,13 +624,13 @@ function BriefOpen({
         {brief?.trade_implication && (
           <motion.div custom={5} variants={sv} initial="hidden" animate="visible"
             style={{
-              background: "rgba(255,255,255,0.025)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "rgba(255,255,255,0.022)",
+              border: "1px solid rgba(255,255,255,0.055)",
               borderRadius: "5px",
-              padding: "12px 16px",
+              padding: "10px 14px",
             }}>
             <SectionLabel>Trade Implication</SectionLabel>
-            <p style={{ fontSize: "12px", lineHeight: "1.65", color: "rgba(255,255,255,0.52)" }}>
+            <p style={{ fontSize: "12px", lineHeight: "1.58", color: "rgba(255,255,255,0.52)" }}>
               {brief.trade_implication}
             </p>
           </motion.div>
