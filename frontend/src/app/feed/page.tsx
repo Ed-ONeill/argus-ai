@@ -21,6 +21,8 @@ import { ThemeTerminal } from "@/components/themes/ThemeTerminal";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
+import { useUserPreferences } from "@/hooks/useUserPreferences";
+import { rankClusters } from "@/lib/feedRanker";
 import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
 
 function itemsToFallbackClusters(items: FeedItem[]): StoryCluster[] {
@@ -68,6 +70,7 @@ export default function FeedPage() {
   const themes = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
   const { hasAlert, alertFor, dismiss: dismissAlert } = useThemeAlerts(themes);
   const ms = useMarketState();
+  const { prefs } = useUserPreferences();
   const isPanic      = ms.regimeTransition && ms.riskRegime === "risk-off";
   const isEuphoric   = ms.trend.acceleration === "accelerating" && ms.riskRegime === "risk-on";
   const isComplacent = ms.volRegime === "low" && ms.riskRegime !== "risk-off";
@@ -88,11 +91,12 @@ export default function FeedPage() {
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [params.categories, data?.generated_at]);
 
-  const allClusters    = data?.clusters?.length
+  const allClusters     = data?.clusters?.length
     ? data.clusters
     : itemsToFallbackClusters(data?.items ?? []);
-  const visibleClusters = allClusters.slice(0, visibleCount);
-  const hasMore         = visibleCount < allClusters.length;
+  const rankedClusters  = useMemo(() => rankClusters(allClusters, prefs), [allClusters, prefs]);
+  const visibleClusters = rankedClusters.slice(0, visibleCount);
+  const hasMore         = visibleCount < rankedClusters.length;
 
   useEffect(() => {
     console.log("[feed]", {
@@ -104,11 +108,12 @@ export default function FeedPage() {
       dataKeys:  data ? Object.keys(data).join(", ") : "undefined",
       clusters:  data?.clusters?.length ?? "n/a",
       allClusters: allClusters.length,
+      ranked:    rankedClusters.length,
       visible:   visibleClusters.length,
       params:    JSON.stringify(params),
     });
     if (error) console.error("[feed] ✗ query error:", error);
-  }, [data, error, isPending, isLoading, isFetching, allClusters.length, visibleClusters.length, params]);
+  }, [data, error, isPending, isLoading, isFetching, allClusters.length, rankedClusters.length, visibleClusters.length, params]);
 
   const handleSave = useCallback((item: FeedItem) => toggleSave(item), [toggleSave]);
 
