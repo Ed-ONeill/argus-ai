@@ -8,7 +8,7 @@ import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle } from "lucide-r
 import { useAuth } from "@/context/AuthContext";
 
 type Tab      = "signin" | "signup";
-type InputKey = "name" | "email" | "password";
+type InputKey = "name" | "lastname" | "email" | "password";
 
 const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">'
@@ -27,6 +27,7 @@ export default function AuthPage() {
 function AuthPageInner() {
   const [tab,          setTab]          = useState<Tab>("signin");
   const [firstName,    setFirstName]    = useState("");
+  const [lastName,     setLastName]     = useState("");
   const [email,        setEmail]        = useState("");
   const [password,     setPassword]     = useState("");
   const [loading,      setLoading]      = useState(false);
@@ -70,7 +71,12 @@ function AuthPageInner() {
           router.refresh();
         }
       } else {
-        const err = await signUp(email, password, firstName.trim() || undefined);
+        const err = await signUp(
+          email,
+          password,
+          firstName.trim() || undefined,
+          lastName.trim()  || undefined,
+        );
         if (err) {
           setError(friendlyError(err.message));
         } else {
@@ -287,31 +293,52 @@ function AuthPageInner() {
             {/* ── Form ────────────────────────────────────────────────────── */}
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "13px" }}>
 
-              {/* First name — signup only */}
+              {/* First name + Last name — signup only */}
               <AnimatePresence>
                 {isSignUp && (
                   <motion.div
-                    key="firstname"
-                    initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    key="namefields"
+                    initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.22, ease: "easeInOut" }}
-                    style={{ overflow: "hidden" }}
+                    style={{ overflow: "hidden", display: "flex", flexDirection: "column", gap: "13px" }}
                   >
-                    <FieldLabel>First name</FieldLabel>
-                    <div style={{ position: "relative" }}>
-                      <User size={12} style={iconStyle} />
-                      <input
-                        type="text"
-                        value={firstName}
-                        onChange={e => setFirstName(e.target.value)}
-                        placeholder="Edward"
-                        autoComplete="given-name"
-                        required={isSignUp}
-                        style={inputStyle("name")}
-                        onFocus={() => setFocusedInput("name")}
-                        onBlur={() => setFocusedInput(null)}
-                      />
+                    <div>
+                      <FieldLabel>First name</FieldLabel>
+                      <div style={{ position: "relative" }}>
+                        <User size={12} style={iconStyle} />
+                        <input
+                          type="text"
+                          value={firstName}
+                          onChange={e => setFirstName(e.target.value)}
+                          placeholder="Edward"
+                          autoComplete="given-name"
+                          required={isSignUp}
+                          style={inputStyle("name")}
+                          onFocus={() => setFocusedInput("name")}
+                          onBlur={() => setFocusedInput(null)}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel>
+                        Last name{" "}
+                        <span style={{ fontWeight: 400, opacity: 0.40, letterSpacing: "0.08em" }}>(optional)</span>
+                      </FieldLabel>
+                      <div style={{ position: "relative" }}>
+                        <User size={12} style={iconStyle} />
+                        <input
+                          type="text"
+                          value={lastName}
+                          onChange={e => setLastName(e.target.value)}
+                          placeholder="O'Neill"
+                          autoComplete="family-name"
+                          style={inputStyle("lastname")}
+                          onFocus={() => setFocusedInput("lastname")}
+                          onBlur={() => setFocusedInput(null)}
+                        />
+                      </div>
                     </div>
                   </motion.div>
                 )}

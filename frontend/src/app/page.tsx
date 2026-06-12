@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { useSaved } from "@/hooks/useSaved";
+import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import type { MarketBrief, ThemeIntelligence } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -613,14 +614,15 @@ function BriefOpen({
 
 export default function LandingPage() {
   const ms = useMarketState();
-  const [mounted, setMounted] = useState(false);
-  const [briefOpen, setBriefOpen] = useState(false);
-  const [guestMode, setGuestMode] = useState(false);
+  const [mounted,           setMounted]           = useState(false);
+  const [briefOpen,         setBriefOpen]         = useState(false);
+  const [guestMode,         setGuestMode]         = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const briefSectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
   const { user, loading: authLoading } = useAuth();
-  const { firstName } = useProfile();
+  const { firstName, onboardingCompleted } = useProfile();
   const { followed } = useFollowedThemes();
   const { savedIds } = useSaved();
   const { data: feedData, isLoading: feedLoading } = useFeed();
@@ -705,8 +707,16 @@ export default function LandingPage() {
     </motion.div>
   );
 
+  const showOnboarding =
+    !authLoading && !!user && !onboardingCompleted && !onboardingDismissed;
+
   return (
     <div style={{ background: "#030710", minHeight: "100vh" }}>
+
+      {/* Onboarding overlay — new users only */}
+      {showOnboarding && (
+        <OnboardingFlow onComplete={() => setOnboardingDismissed(true)} />
+      )}
 
       {/* ── HERO ────────────────────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex flex-col justify-center pt-14" style={{ overflow: "hidden" }}>

@@ -17,7 +17,7 @@ interface AuthContextValue {
   session: Session | null;
   /** True while the initial session check is in flight. */
   loading: boolean;
-  signUp:  (email: string, password: string, firstName?: string) => Promise<AuthError | null>;
+  signUp:  (email: string, password: string, firstName?: string, lastName?: string) => Promise<AuthError | null>;
   signIn:  (email: string, password: string) => Promise<AuthError | null>;
   signOut: () => Promise<void>;
 }
@@ -61,13 +61,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string,
     firstName?: string,
+    lastName?: string,
   ): Promise<AuthError | null> {
     try {
+      const first = firstName?.trim();
+      const last  = lastName?.trim();
+      const full  = [first, last].filter(Boolean).join(" ");
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        ...(firstName?.trim()
-          ? { options: { data: { first_name: firstName.trim(), full_name: firstName.trim() } } }
+        ...(first || last
+          ? { options: { data: { first_name: first ?? "", last_name: last ?? "", full_name: full } } }
           : {}),
       });
       return error;

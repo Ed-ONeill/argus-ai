@@ -6,12 +6,13 @@ import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   RefreshCw, Settings, Bookmark, BarChart2,
-  Newspaper, Building2, LogIn, LogOut, User, Headphones,
-  GitMerge, Layers, Network,
+  Newspaper, Building2, LogIn, LogOut, Headphones,
+  GitMerge, Layers, Network, UserCircle, Eye,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
 
 const NAV_LINKS = [
   { href: "/feed",            label: "Feed",       icon: Newspaper  },
@@ -34,7 +35,8 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
   const pathname = usePathname();
   const router   = useRouter();
   const [scrolled, setScrolled] = useState(false);
-  const { user, signOut, loading } = useAuth();
+  const { user, signOut, loading: authLoading } = useAuth();
+  const { initials, fullName, memberSince, loading: profileLoading } = useProfile();
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 8);
@@ -48,8 +50,7 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
     router.refresh();
   }
 
-  // Initials for the avatar circle
-  const initials = user?.email?.[0]?.toUpperCase() ?? "U";
+  const loading = authLoading || profileLoading;
 
   return (
     <header
@@ -169,20 +170,19 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
           {/* ── Auth area ───────────────────────────────────────────────── */}
           {!loading && (
             user ? (
-              /* Logged-in: avatar + dropdown */
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
                   <button
                     className={cn(
-                      "w-7 h-7 rounded-full flex items-center justify-center",
-                      "text-[11px] font-bold shrink-0",
+                      "w-8 h-8 rounded-full flex items-center justify-center",
+                      "text-[10.5px] font-bold shrink-0 tracking-wide",
                       "hover:opacity-90 active:scale-95 transition-all duration-150",
                       "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                     )}
                     style={{
-                      background: "linear-gradient(145deg, #1a3060 0%, #1e4888 100%)",
-                      color: "rgba(255,255,255,0.88)",
-                      boxShadow: "0 1px 6px rgba(30,72,136,0.40)",
+                      background: "linear-gradient(145deg, #152550 0%, #1a3a72 100%)",
+                      color: "rgba(255,255,255,0.82)",
+                      boxShadow: "0 1px 6px rgba(26,58,114,0.45)",
                     }}
                     aria-label="Account menu"
                   >
@@ -193,61 +193,103 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content
                     align="end"
-                    sideOffset={8}
+                    sideOffset={10}
                     className={cn(
-                      "z-50 min-w-[200px] rounded-xl p-1",
-                      "data-[state=open]:animate-in data-[state=open]:fade-in-0",
-                      "data-[state=open]:zoom-in-95",
-                      "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
-                      "data-[state=closed]:zoom-out-95",
+                      "z-50 min-w-[220px] rounded-xl overflow-hidden",
+                      "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+                      "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
                       "origin-top-right",
                     )}
                     style={{
-                      background: "rgba(10,14,30,0.97)",
-                      border: "1px solid rgba(255,255,255,0.07)",
-                      backdropFilter: "blur(16px)",
-                      boxShadow: "0 16px 48px rgba(0,0,0,0.55)",
+                      background:     "rgba(8,12,26,0.98)",
+                      border:         "1px solid rgba(255,255,255,0.08)",
+                      backdropFilter: "blur(20px)",
+                      boxShadow:      "0 20px 60px rgba(0,0,0,0.65), 0 0 0 0.5px rgba(255,255,255,0.04) inset",
                     }}
                   >
-                    {/* User info */}
-                    <div className="px-3 py-2.5 mb-1"
-                      style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                      <div className="flex items-center gap-2">
-                        <User size={12} className="shrink-0" style={{ color: "rgba(255,255,255,0.28)" }} />
-                        <p className="text-2xs font-medium truncate" style={{ color: "rgba(255,255,255,0.58)" }}>
-                          {user.email}
-                        </p>
+                    {/* Top accent */}
+                    <div style={{ height: "1.5px", background: "linear-gradient(to right, transparent, rgba(83,150,220,0.35), transparent)" }} />
+
+                    {/* ── Identity block ──────────────────────────────────── */}
+                    <div className="px-4 py-3.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold tracking-wide"
+                          style={{
+                            background: "linear-gradient(145deg, #152550 0%, #1a3a72 100%)",
+                            color: "rgba(255,255,255,0.78)",
+                            boxShadow: "0 2px 8px rgba(26,58,114,0.40)",
+                          }}
+                        >
+                          {initials}
+                        </div>
+                        <div className="min-w-0">
+                          {fullName && fullName !== "there" && (
+                            <p className="text-[12.5px] font-medium truncate"
+                              style={{ color: "rgba(255,255,255,0.72)", letterSpacing: "-0.01em" }}>
+                              {fullName}
+                            </p>
+                          )}
+                          <p className="text-[11px] truncate"
+                            style={{ color: "rgba(255,255,255,0.32)" }}>
+                            {user.email}
+                          </p>
+                          {memberSince && (
+                            <p className="text-[9.5px] mt-0.5"
+                              style={{ color: "rgba(255,255,255,0.20)", letterSpacing: "0.04em" }}>
+                              Member since {memberSince}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Saved items */}
-                    <DropdownMenu.Item asChild>
-                      <Link
-                        href="/saved"
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs outline-none cursor-pointer select-none hover:bg-white/[0.05] transition-colors"
-                        style={{ color: "rgba(255,255,255,0.68)" }}
+                    {/* ── Menu items ──────────────────────────────────────── */}
+                    <div className="p-1.5">
+
+                      <DropdownMenu.Item asChild>
+                        <Link href="/settings" className={menuItemClass}>
+                          <UserCircle size={12} style={menuIconStyle} />
+                          My Profile
+                        </Link>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Item asChild>
+                        <Link href="/saved" className={menuItemClass}>
+                          <Bookmark size={12} style={menuIconStyle} />
+                          Saved Intelligence
+                        </Link>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Item asChild>
+                        <Link href="/feed" className={menuItemClass}>
+                          <Eye size={12} style={menuIconStyle} />
+                          Intelligence Feed
+                        </Link>
+                      </DropdownMenu.Item>
+
+                    </div>
+
+                    <DropdownMenu.Separator
+                      style={{ height: 1, background: "rgba(255,255,255,0.055)", margin: "0 0 4px" }} />
+
+                    <div className="p-1.5">
+                      <DropdownMenu.Item
+                        onSelect={handleSignOut}
+                        className={cn(menuItemClass, "hover:bg-red-500/10 data-[highlighted]:bg-red-500/10")}
+                        style={{ color: "rgba(220,80,80,0.80)" }}
                       >
-                        <Bookmark size={12} style={{ color: "rgba(255,255,255,0.32)" }} />
-                        Saved Stories
-                      </Link>
-                    </DropdownMenu.Item>
+                        <LogOut size={12} style={{ color: "rgba(220,80,80,0.55)", flexShrink: 0 }} />
+                        Sign Out
+                      </DropdownMenu.Item>
+                    </div>
 
-                    <DropdownMenu.Separator style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                    <div style={{ height: "2px" }} />
 
-                    {/* Sign out */}
-                    <DropdownMenu.Item
-                      onSelect={handleSignOut}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors outline-none cursor-pointer select-none hover:bg-red-500/10"
-                      style={{ color: "rgba(220,80,80,0.88)" }}
-                    >
-                      <LogOut size={12} />
-                      Sign Out
-                    </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
             ) : (
-              /* Logged-out: Sign in link */
               <Link
                 href="/auth"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white/[0.05] transition-colors"
@@ -263,3 +305,13 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
     </header>
   );
 }
+
+// ── Menu primitives ──────────────────────────────────────────────────────────
+
+const menuItemClass =
+  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[12px] outline-none cursor-pointer select-none transition-colors hover:bg-white/[0.05] data-[highlighted]:bg-white/[0.05]";
+
+const menuIconStyle: React.CSSProperties = {
+  color: "rgba(255,255,255,0.28)",
+  flexShrink: 0,
+};

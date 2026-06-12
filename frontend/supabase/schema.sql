@@ -7,10 +7,13 @@
 -- One row per user, auto-created by trigger on sign-up.
 
 create table if not exists public.profiles (
-  id           uuid references auth.users on delete cascade primary key,
-  display_name text,
-  avatar_url   text,
-  created_at   timestamptz default now() not null
+  id                    uuid references auth.users on delete cascade primary key,
+  first_name            text,
+  last_name             text,
+  display_name          text,
+  avatar_url            text,
+  onboarding_completed  boolean     not null default false,
+  created_at            timestamptz not null default now()
 );
 
 -- Trigger: auto-insert a profile row whenever a new auth.users row is created.
@@ -21,9 +24,20 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id)
-  values (new.id)
-  on conflict (id) do nothing;
+  insert into public.profiles (id, first_name, last_name, display_name)
+  values (
+    new.id,
+    nullif(trim(new.raw_user_meta_data->>'first_name'), ''),
+    nullif(trim(new.raw_user_meta_data->>'last_name'),  ''),
+    nullif(trim(coalesce(
+      new.raw_user_meta_data->>'display_name',
+      new.raw_user_meta_data->>'first_name'
+    )), '')
+  )
+  on conflict (id) do update set
+    first_name   = coalesce(public.profiles.first_name,   excluded.first_name),
+    last_name    = coalesce(public.profiles.last_name,    excluded.last_name),
+    display_name = coalesce(public.profiles.display_name, excluded.display_name);
   return new;
 end;
 $$;
@@ -79,11 +93,15 @@ create index if not exists watchlist_user_id_idx on public.watchlist (user_id);
 -- One row per user, created on first preference save.
 
 create table if not exists public.user_preferences (
-  user_id             uuid    references auth.users on delete cascade primary key,
-  default_categories  text[]  default '{}',
-  default_sources     text[]  default '{}',
-  ai_enabled          boolean default true,
-  updated_at          timestamptz default now() not null
+  user_id                 uuid        references auth.users on delete cascade primary key,
+  default_categories      text[]      not null default '{}',
+  default_sources         text[]      not null default '{}',
+  ai_enabled              boolean     not null default true,
+  followed_sectors        text[]      not null default '{}',
+  followed_asset_classes  text[]      not null default '{}',
+  user_role               text,
+  region_focus            text,
+  updated_at              timestamptz not null default now()
 );
 
 
