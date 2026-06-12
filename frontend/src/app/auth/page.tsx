@@ -320,7 +320,7 @@ function AuthPageInner() {
                           name="argus_given_signal"
                           value={firstName}
                           onChange={e => setFirstName(e.target.value)}
-                          placeholder="Edward"
+                          placeholder="First name"
                           autoComplete="new-password"
                           required={isSignUp}
                           style={inputStyle("name")}
@@ -338,7 +338,7 @@ function AuthPageInner() {
                           name="argus_family_signal"
                           value={lastName}
                           onChange={e => setLastName(e.target.value)}
-                          placeholder="O'Neill"
+                          placeholder="Last name"
                           autoComplete="new-password"
                           required={isSignUp}
                           style={inputStyle("lastname")}
@@ -381,7 +381,7 @@ function AuthPageInner() {
                     name="argus_secret_signal"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="Create a password"
                     autoComplete="new-password"
                     required
                     minLength={8}

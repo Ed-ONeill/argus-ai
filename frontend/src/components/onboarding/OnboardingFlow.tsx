@@ -372,7 +372,7 @@ function StepName({ firstName, lastName, error, onChangeFirst, onChangeLast, onN
               type="text"
               value={firstName}
               onChange={e => onChangeFirst(e.target.value)}
-              placeholder="Edward"
+              placeholder="First name"
               autoComplete="off"
               autoFocus
               style={inputCss(focusFirst)}
@@ -389,7 +389,7 @@ function StepName({ firstName, lastName, error, onChangeFirst, onChangeLast, onN
               type="text"
               value={lastName}
               onChange={e => onChangeLast(e.target.value)}
-              placeholder="O'Neill"
+              placeholder="Last name"
               autoComplete="off"
               style={inputCss(focusLast)}
               onFocus={() => setFocusLast(true)}
