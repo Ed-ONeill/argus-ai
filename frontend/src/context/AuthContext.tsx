@@ -17,7 +17,7 @@ interface AuthContextValue {
   session: Session | null;
   /** True while the initial session check is in flight. */
   loading: boolean;
-  signUp:  (email: string, password: string) => Promise<AuthError | null>;
+  signUp:  (email: string, password: string, firstName?: string) => Promise<AuthError | null>;
   signIn:  (email: string, password: string) => Promise<AuthError | null>;
   signOut: () => Promise<void>;
 }
@@ -60,20 +60,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signUp(
     email: string,
     password: string,
+    firstName?: string,
   ): Promise<AuthError | null> {
-    const { error } = await supabase.auth.signUp({ email, password });
-    return error;
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        ...(firstName?.trim()
+          ? { options: { data: { first_name: firstName.trim(), full_name: firstName.trim() } } }
+          : {}),
+      });
+      return error;
+    } catch (thrown) {
+      const message = thrown instanceof Error ? thrown.message : "Unexpected error during sign-up.";
+      return { message, name: "AuthError", status: 0 } as AuthError;
+    }
   }
 
   async function signIn(
     email: string,
     password: string,
   ): Promise<AuthError | null> {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return error;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      return error;
+    } catch (thrown) {
+      const message = thrown instanceof Error ? thrown.message : "Unexpected error during sign-in.";
+      return { message, name: "AuthError", status: 0 } as AuthError;
+    }
   }
 
   async function signOut() {
