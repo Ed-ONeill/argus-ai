@@ -322,10 +322,7 @@ function AuthPageInner() {
                       </div>
                     </div>
                     <div>
-                      <FieldLabel>
-                        Last name{" "}
-                        <span style={{ fontWeight: 400, opacity: 0.40, letterSpacing: "0.08em" }}>(optional)</span>
-                      </FieldLabel>
+                      <FieldLabel>Last name</FieldLabel>
                       <div style={{ position: "relative" }}>
                         <User size={12} style={iconStyle} />
                         <input
@@ -334,6 +331,7 @@ function AuthPageInner() {
                           onChange={e => setLastName(e.target.value)}
                           placeholder="O'Neill"
                           autoComplete="family-name"
+                          required={isSignUp}
                           style={inputStyle("lastname")}
                           onFocus={() => setFocusedInput("lastname")}
                           onBlur={() => setFocusedInput(null)}

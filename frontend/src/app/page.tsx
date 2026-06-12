@@ -56,6 +56,14 @@ const fadeUp = {
   }),
 };
 
+const UPCOMING_CATALYSTS = [
+  { label: "CPI Release",           importance: "HIGH",   why: "Core inflation data will reprice rate expectations and sovereign yields." },
+  { label: "FOMC Decision",         importance: "HIGH",   why: "Rate guidance sets the tone for equity valuations and credit spreads."    },
+  { label: "Non-Farm Payrolls",      importance: "HIGH",   why: "Labor market strength signals Fed trajectory and consumption durability." },
+  { label: "Treasury Auction",       importance: "MEDIUM", why: "Demand for duration reveals institutional appetite for sovereign risk."   },
+  { label: "Major Earnings Season",  importance: "MEDIUM", why: "Forward guidance from large-caps will drive near-term sector rotation."   },
+] as const;
+
 function getGreeting(): string {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -584,7 +592,52 @@ function BriefOpen({
           </motion.div>
         )}
 
-        <motion.div custom={7} variants={sv} initial="hidden" animate="visible"
+        <motion.div custom={7} variants={sv} initial="hidden" animate="visible">
+          <SectionLabel>Upcoming Catalysts</SectionLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {UPCOMING_CATALYSTS.map((c) => {
+              const impColor =
+                c.importance === "HIGH"   ? "#c8a040" :
+                c.importance === "MEDIUM" ? "#5390c8" : "rgba(255,255,255,0.28)";
+              return (
+                <div key={c.label} style={{
+                  display:      "flex",
+                  alignItems:   "flex-start",
+                  gap:          "12px",
+                  padding:      "9px 12px",
+                  borderRadius: "4px",
+                  background:   "rgba(255,255,255,0.018)",
+                  border:       "1px solid rgba(255,255,255,0.055)",
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="flex items-center gap-2.5 mb-1">
+                      <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.62)" }}>
+                        {c.label}
+                      </span>
+                      <span style={{
+                        fontSize:      "8px",
+                        fontWeight:    700,
+                        letterSpacing: "0.16em",
+                        color:         impColor,
+                        opacity:       0.82,
+                        border:        `1px solid ${impColor}44`,
+                        borderRadius:  "3px",
+                        padding:       "1px 5px",
+                      }}>
+                        {c.importance}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.32)", lineHeight: 1.48 }}>
+                      {c.why}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        <motion.div custom={8} variants={sv} initial="hidden" animate="visible"
           className="flex justify-end pt-1"
           style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <Link href="/feed">
@@ -622,7 +675,9 @@ export default function LandingPage() {
   useEffect(() => { setMounted(true); }, []);
 
   const { user, loading: authLoading } = useAuth();
-  const { firstName, onboardingCompleted } = useProfile();
+  const { firstName, onboardingCompleted, profile, refetch: refetchProfile } = useProfile();
+  const meta = user?.user_metadata as Record<string, string | undefined> | undefined;
+  const needsNameCapture = !authLoading && !!user && !profile?.first_name && !meta?.first_name;
   const { followed } = useFollowedThemes();
   const { savedIds } = useSaved();
   const { data: feedData, isLoading: feedLoading } = useFeed();
@@ -715,7 +770,15 @@ export default function LandingPage() {
 
       {/* Onboarding overlay — new users only */}
       {showOnboarding && (
-        <OnboardingFlow onComplete={() => setOnboardingDismissed(true)} />
+        <OnboardingFlow
+          onComplete={() => {
+            setOnboardingDismissed(true);
+            handleOpenBriefFromHero();
+          }}
+          needsNameCapture={needsNameCapture}
+          firstName={firstName}
+          onRefetchProfile={refetchProfile}
+        />
       )}
 
       {/* ── HERO ────────────────────────────────────────────────────────────── */}

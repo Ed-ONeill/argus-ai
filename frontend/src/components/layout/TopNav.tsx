@@ -7,7 +7,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   RefreshCw, Settings, Bookmark, BarChart2,
   Newspaper, Building2, LogIn, LogOut, Headphones,
-  GitMerge, Layers, Network, UserCircle, Eye,
+  GitMerge, Layers, Network, UserCircle, Eye, SlidersHorizontal, Star,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -248,21 +248,37 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
                     <div className="p-1.5">
 
                       <DropdownMenu.Item asChild>
-                        <Link href="/settings" className={menuItemClass}>
+                        <Link href="/settings" className={menuItemClass} style={{ color: "rgba(255,255,255,0.68)" }}>
                           <UserCircle size={12} style={menuIconStyle} />
                           My Profile
                         </Link>
                       </DropdownMenu.Item>
 
                       <DropdownMenu.Item asChild>
-                        <Link href="/saved" className={menuItemClass}>
+                        <Link href="/settings" className={menuItemClass} style={{ color: "rgba(255,255,255,0.68)" }}>
+                          <SlidersHorizontal size={12} style={menuIconStyle} />
+                          Intelligence Preferences
+                        </Link>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Separator style={{ height: 1, background: "rgba(255,255,255,0.045)", margin: "2px 0" }} />
+
+                      <DropdownMenu.Item asChild>
+                        <Link href="/saved" className={menuItemClass} style={{ color: "rgba(255,255,255,0.68)" }}>
                           <Bookmark size={12} style={menuIconStyle} />
                           Saved Intelligence
                         </Link>
                       </DropdownMenu.Item>
 
                       <DropdownMenu.Item asChild>
-                        <Link href="/feed" className={menuItemClass}>
+                        <Link href="/saved" className={menuItemClass} style={{ color: "rgba(255,255,255,0.68)" }}>
+                          <Star size={12} style={menuIconStyle} />
+                          Watchlist
+                        </Link>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Item asChild>
+                        <Link href="/feed" className={menuItemClass} style={{ color: "rgba(255,255,255,0.68)" }}>
                           <Eye size={12} style={menuIconStyle} />
                           Intelligence Feed
                         </Link>
