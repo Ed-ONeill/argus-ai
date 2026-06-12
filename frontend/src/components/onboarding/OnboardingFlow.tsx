@@ -45,27 +45,31 @@ type Step = "welcome" | "name" | "sectors" | "assets" | "role" | "region" | "sum
 interface Props {
   onComplete:         () => void;
   needsNameCapture?:  boolean;
+  nameOnly?:          boolean;   // show only the name-capture step (existing users missing a name)
   firstName?:         string;
   onRefetchProfile?:  () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function OnboardingFlow({ onComplete, needsNameCapture, firstName: propFirstName, onRefetchProfile }: Props) {
+export function OnboardingFlow({ onComplete, needsNameCapture, nameOnly, firstName: propFirstName, onRefetchProfile }: Props) {
   const { user }  = useAuth();
   const supabase  = useMemo(() => createClient(), []);
 
-  const steps = useMemo<Step[]>(() => [
-    "welcome",
-    ...(needsNameCapture ? (["name"] as Step[]) : []),
-    "sectors",
-    "assets",
-    "role",
-    "region",
-    "summary",
-  ], [needsNameCapture]);
+  const steps = useMemo<Step[]>(() => {
+    if (nameOnly) return ["name"];
+    return [
+      "welcome",
+      ...(needsNameCapture ? (["name"] as Step[]) : []),
+      "sectors",
+      "assets",
+      "role",
+      "region",
+      "summary",
+    ];
+  }, [needsNameCapture, nameOnly]);
 
-  const [step,             setStep]    = useState<Step>("welcome");
+  const [step,             setStep]    = useState<Step>(() => nameOnly ? "name" : "welcome");
   const [direction,        setDir]     = useState(1);
   const [capturedFirst,    setCapFirst] = useState("");
   const [capturedLast,     setCapLast]  = useState("");
@@ -79,9 +83,13 @@ export function OnboardingFlow({ onComplete, needsNameCapture, firstName: propFi
   const stepIndex = steps.indexOf(step);
 
   function advance() {
-    // Validate name step before advancing
     if (step === "name" && !capturedFirst.trim()) {
       setNameError("First name is required.");
+      return;
+    }
+    // nameOnly mode has only the name step — save directly instead of advancing
+    if (nameOnly && step === "name") {
+      finish();
       return;
     }
     setDir(1);
@@ -100,38 +108,43 @@ export function OnboardingFlow({ onComplete, needsNameCapture, firstName: propFi
     setSaving(true);
     if (user) {
       try {
-        // Save name if captured in this session
-        if (needsNameCapture && capturedFirst.trim()) {
+        // Save name when captured in this session (full onboarding or nameOnly mode)
+        if ((needsNameCapture || nameOnly) && capturedFirst.trim()) {
+          const first = capturedFirst.trim();
+          const last  = capturedLast.trim();
           await supabase.auth.updateUser({
-            data: { first_name: capturedFirst.trim(), last_name: capturedLast.trim() },
+            data: { first_name: first, last_name: last || undefined },
           });
           await supabase.from("profiles").upsert({
             id:           user.id,
-            first_name:   capturedFirst.trim(),
-            last_name:    capturedLast.trim() || null,
-            display_name: capturedFirst.trim(),
+            first_name:   first,
+            last_name:    last || null,
+            // "First Last" format so display_name space-check is also valid
+            display_name: [first, last].filter(Boolean).join(" "),
           }, { onConflict: "id" });
+          onRefetchProfile?.();
         }
 
-        // Save preferences
-        await supabase.from("user_preferences").upsert({
-          user_id:                user.id,
-          followed_sectors:       selectedSectors,
-          followed_asset_classes: selectedAssets,
-          user_role:              selectedRole  || null,
-          region_focus:           selectedRegion || null,
-          updated_at:             new Date().toISOString(),
-        }, { onConflict: "user_id" });
+        if (!nameOnly) {
+          // Full onboarding: save preferences and mark complete
+          await supabase.from("user_preferences").upsert({
+            user_id:                user.id,
+            followed_sectors:       selectedSectors,
+            followed_asset_classes: selectedAssets,
+            user_role:              selectedRole  || null,
+            region_focus:           selectedRegion || null,
+            updated_at:             new Date().toISOString(),
+          }, { onConflict: "user_id" });
 
-        await supabase.from("profiles")
-          .update({ onboarding_completed: true })
-          .eq("id", user.id);
+          await supabase.from("profiles")
+            .update({ onboarding_completed: true })
+            .eq("id", user.id);
 
-        onRefetchProfile?.();
+          localStorage.setItem("argus_onboarding_v1", "done");
+        }
       } catch {
         // Non-fatal
       }
-      localStorage.setItem("argus_onboarding_v1", "done");
     }
     setSaving(false);
     onComplete();
@@ -207,6 +220,9 @@ export function OnboardingFlow({ onComplete, needsNameCapture, firstName: propFi
                   onChangeLast={setCapLast}
                   onNext={advance}
                   onBack={back}
+                  showBack={stepIndex > 0}
+                  nextLabel={nameOnly ? (saving ? "Saving…" : "Save name") : "Continue"}
+                  nextDisabled={nameOnly && saving}
                 />
               )}
 
@@ -317,14 +333,17 @@ function StepWelcome({ onNext }: { onNext: () => void }) {
 
 // ── Step: Name Capture (existing users without a stored name) ─────────────────
 
-function StepName({ firstName, lastName, error, onChangeFirst, onChangeLast, onNext, onBack }: {
-  firstName:      string;
-  lastName:       string;
-  error:          string | null;
-  onChangeFirst:  (v: string) => void;
-  onChangeLast:   (v: string) => void;
-  onNext:         () => void;
-  onBack:         () => void;
+function StepName({ firstName, lastName, error, onChangeFirst, onChangeLast, onNext, onBack, showBack = true, nextLabel = "Continue", nextDisabled = false }: {
+  firstName:    string;
+  lastName:     string;
+  error:        string | null;
+  onChangeFirst: (v: string) => void;
+  onChangeLast:  (v: string) => void;
+  onNext:       () => void;
+  onBack:       () => void;
+  showBack?:    boolean;
+  nextLabel?:   string;
+  nextDisabled?: boolean;
 }) {
   const [focusFirst, setFocusFirst] = useState(false);
   const [focusLast,  setFocusLast]  = useState(false);
@@ -380,7 +399,7 @@ function StepName({ firstName, lastName, error, onChangeFirst, onChangeLast, onN
         </div>
       </div>
 
-      <StepFooter onBack={onBack} onNext={onNext} />
+      <StepFooter onBack={onBack} onNext={onNext} showBack={showBack} nextLabel={nextLabel} nextDisabled={nextDisabled} />
     </div>
   );
 }
@@ -664,38 +683,51 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
 
 // ── Footer navigation ─────────────────────────────────────────────────────────
 
-function StepFooter({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function StepFooter({ onBack, onNext, showBack = true, nextLabel = "Continue", nextDisabled = false }: {
+  onBack:        () => void;
+  onNext:        () => void;
+  showBack?:     boolean;
+  nextLabel?:    string;
+  nextDisabled?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between pt-2"
       style={{ borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: "auto" }}>
-      <button
-        type="button"
-        onClick={onBack}
-        style={{
-          fontSize: "11px", color: "rgba(255,255,255,0.28)", background: "none",
-          border: "none", cursor: "pointer", letterSpacing: "0.04em", padding: "4px 0",
-          transition: "color 0.14s",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.54)"; }}
-        onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.28)"; }}
-      >
-        ← Back
-      </button>
+      {showBack ? (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            fontSize: "11px", color: "rgba(255,255,255,0.28)", background: "none",
+            border: "none", cursor: "pointer", letterSpacing: "0.04em", padding: "4px 0",
+            transition: "color 0.14s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.54)"; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.28)"; }}
+        >
+          ← Back
+        </button>
+      ) : (
+        <span />
+      )}
 
       <button
         type="button"
         onClick={onNext}
+        disabled={nextDisabled}
         style={{
           display: "flex", alignItems: "center", gap: "6px",
           padding: "8px 20px", borderRadius: "4px",
           fontSize: "10.5px", fontWeight: 700, letterSpacing: "0.10em",
           border: "none", background: "#2563EB", color: "rgba(255,255,255,0.92)",
-          cursor: "pointer", transition: "background 0.12s",
+          cursor: nextDisabled ? "not-allowed" : "pointer",
+          opacity: nextDisabled ? 0.55 : 1,
+          transition: "background 0.12s",
         }}
-        onMouseEnter={e => { e.currentTarget.style.background = "#1d4ed8"; }}
+        onMouseEnter={e => { if (!nextDisabled) e.currentTarget.style.background = "#1d4ed8"; }}
         onMouseLeave={e => { e.currentTarget.style.background = "#2563EB"; }}
       >
-        Continue
+        {nextLabel}
         <ArrowRight size={11} />
       </button>
     </div>

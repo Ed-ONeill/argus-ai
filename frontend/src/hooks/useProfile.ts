@@ -4,22 +4,6 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 
-// Derives a clean first name from an email prefix.
-// Strips domain, digits, and separators; takes the first segment only.
-// Returns "there" if the result looks like a concatenated first+last name
-// (single unseparated segment >= 10 chars, e.g. "edwardoneill" → "there").
-function normalizeFirstName(email: string): string {
-  const prefix = email.split("@")[0];
-  const noDigits = prefix.replace(/\d+/g, "");
-  const parts = noDigits.split(/[._\-+\s]+/).map(s => s.trim()).filter(Boolean);
-  const first = parts[0];
-  if (!first) return "there";
-  // Single unseparated long segment is almost certainly a first+last concatenation —
-  // we can't split it without a dictionary, so "there" is safer than "Edwardoneill".
-  if (parts.length === 1 && first.length >= 10) return "there";
-  return first.charAt(0).toUpperCase() + first.slice(1);
-}
-
 interface Profile {
   display_name:         string | null;
   first_name:           string | null;
@@ -59,7 +43,7 @@ export function useProfile() {
 
         if (process.env.NODE_ENV === "development") {
           console.warn(
-            "[useProfile] raw data\n" +
+            "[useProfile] row\n" +
             `  profiles.first_name:   ${fetched?.first_name   ?? "null"}\n` +
             `  profiles.last_name:    ${fetched?.last_name    ?? "null"}\n` +
             `  profiles.display_name: ${fetched?.display_name ?? "null"}\n` +
@@ -69,48 +53,22 @@ export function useProfile() {
           );
         }
 
-        // One-time cleanup: this account was created before the First Name field
-        // existed; its display_name was set from the email prefix fallback.
-        // Write the correct name directly so every subsequent load resolves correctly.
-        if (
-          user.email?.toLowerCase() === "edwardoneill910@gmail.com" &&
-          fetched &&
-          !fetched.first_name
-        ) {
-          const known = {
-            id:           user.id,
-            first_name:   "Edward",
-            last_name:    "O’Neill",
-            display_name: "Edward O’Neill",
-          };
-          supabase
-            .from("profiles")
-            .upsert(known, { onConflict: "id" })
-            .then(() => {
-              if (!cancelled) {
-                setProfile(prev => prev ? { ...prev, ...known } : prev);
-              }
-            });
-          return; // skip the generic metadata backfill — this one takes priority
-        }
-
-        // Generic backfill: if the profile row is missing names but metadata has them
-        // (accounts created after the First Name field was added to signup).
+        // Backfill DB from auth metadata when profile row exists but is missing names
+        // (accounts created after the name fields were added to signup).
         const metaFirst = meta?.first_name?.trim();
         const metaLast  = meta?.last_name?.trim();
-        const needsBackfill = fetched && (!fetched.first_name || !fetched.last_name);
-        if (needsBackfill && (metaFirst || metaLast)) {
-          const patch: Record<string, string> = { id: user.id };
-          if (metaFirst && !fetched?.first_name)   patch.first_name   = metaFirst;
-          if (metaLast  && !fetched?.last_name)    patch.last_name    = metaLast;
-          if (metaFirst && !fetched?.display_name) patch.display_name = metaFirst;
+        if (fetched && !fetched.first_name && (metaFirst || metaLast)) {
+          const patch: Record<string, string | null> = { id: user.id };
+          if (metaFirst) patch.first_name = metaFirst;
+          if (metaLast)  patch.last_name  = metaLast;
+          if (!fetched.display_name) {
+            patch.display_name = [metaFirst, metaLast].filter(Boolean).join(" ") || null;
+          }
           supabase
             .from("profiles")
             .upsert(patch, { onConflict: "id" })
             .then(() => {
-              if (!cancelled) {
-                setProfile(prev => prev ? { ...prev, ...patch } : prev);
-              }
+              if (!cancelled) setProfile(prev => prev ? { ...prev, ...patch } : prev);
             });
         }
       });
@@ -121,8 +79,11 @@ export function useProfile() {
   // ── Derived values ──────────────────────────────────────────────────────────
 
   const firstName = useMemo(() => {
-    let source = "";
-    let result = "";
+    // Trusted sources only — no email-derived guessing.
+    // Returns "there" when no trusted first name is available; callers should
+    // treat "there" as a signal to prompt profile completion.
+    let source = "none";
+    let result = "there";
 
     if (profile?.first_name?.trim()) {
       source = "profiles.first_name";
@@ -136,21 +97,15 @@ export function useProfile() {
         source = "metadata.full_name";
         result = meta.full_name.trim().split(/\s+/)[0];
       } else if (profile?.display_name?.trim()?.includes(" ")) {
-        // Only use display_name when it has a space — single-word values are
-        // often email-derived concatenations (e.g. "Edwardoneill") and cannot be trusted.
+        // display_name is only usable as a name source when it has a space —
+        // that guarantees it's a "First Last" format, not an email-derived slug.
         source = "profiles.display_name";
         result = profile.display_name!.trim().split(/\s+/)[0];
-      } else if (user?.email) {
-        source = "email";
-        result = normalizeFirstName(user.email);
-      } else {
-        source = "fallback";
-        result = "there";
       }
     }
 
     if (process.env.NODE_ENV === "development") {
-      console.warn(`[useProfile] firstName = "${result}" (source: ${source})`);
+      console.warn(`[useProfile] firstName="${result}" source="${source}"`);
     }
 
     return result;
@@ -164,14 +119,15 @@ export function useProfile() {
   }, [profile, user]);
 
   const fullName = useMemo(() => {
-    const parts = [firstName !== "there" ? firstName : "", lastName].filter(Boolean);
-    return parts.join(" ") || firstName;
+    if (firstName === "there") return "";
+    return [firstName, lastName].filter(Boolean).join(" ");
   }, [firstName, lastName]);
 
   const initials = useMemo(() => {
-    const f = firstName !== "there" ? firstName[0]?.toUpperCase() : "";
+    if (firstName === "there") return user?.email?.[0]?.toUpperCase() || "?";
+    const f = firstName[0]?.toUpperCase() ?? "";
     const l = lastName[0]?.toUpperCase() ?? "";
-    return (f ?? "") + (l ?? "") || user?.email?.[0]?.toUpperCase() || "?";
+    return (f + l) || user?.email?.[0]?.toUpperCase() || "?";
   }, [firstName, lastName, user]);
 
   const memberSince = useMemo(() => {
@@ -181,7 +137,6 @@ export function useProfile() {
   }, [profile]);
 
   const onboardingCompleted = useMemo(() => {
-    // localStorage is the primary signal; DB is secondary
     const localDone =
       typeof window !== "undefined" &&
       localStorage.getItem("argus_onboarding_v1") === "done";
