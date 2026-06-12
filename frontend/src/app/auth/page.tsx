@@ -291,7 +291,14 @@ function AuthPageInner() {
             </AnimatePresence>
 
             {/* ── Form ────────────────────────────────────────────────────── */}
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "13px" }}>
+            <form onSubmit={handleSubmit} autoComplete="off" style={{ display: "flex", flexDirection: "column", gap: "13px" }}>
+
+              {/* Honeypot: positioned off-screen so Chrome fills these first, leaving real fields alone */}
+              <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, overflow: "hidden" }}>
+                <input type="text"     tabIndex={-1} />
+                <input type="email"    tabIndex={-1} />
+                <input type="password" tabIndex={-1} />
+              </div>
 
               {/* First name + Last name — signup only */}
               <AnimatePresence>
@@ -310,10 +317,11 @@ function AuthPageInner() {
                         <User size={12} style={iconStyle} />
                         <input
                           type="text"
+                          name="argus_given_signal"
                           value={firstName}
                           onChange={e => setFirstName(e.target.value)}
                           placeholder="Edward"
-                          autoComplete="off"
+                          autoComplete="new-password"
                           required={isSignUp}
                           style={inputStyle("name")}
                           onFocus={() => setFocusedInput("name")}
@@ -327,10 +335,11 @@ function AuthPageInner() {
                         <User size={12} style={iconStyle} />
                         <input
                           type="text"
+                          name="argus_family_signal"
                           value={lastName}
                           onChange={e => setLastName(e.target.value)}
                           placeholder="O'Neill"
-                          autoComplete="off"
+                          autoComplete="new-password"
                           required={isSignUp}
                           style={inputStyle("lastname")}
                           onFocus={() => setFocusedInput("lastname")}
@@ -349,10 +358,11 @@ function AuthPageInner() {
                   <Mail size={12} style={iconStyle} />
                   <input
                     type="email"
+                    name="argus_identifier_signal"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    autoComplete="email"
+                    autoComplete="off"
                     required
                     style={inputStyle("email")}
                     onFocus={() => setFocusedInput("email")}
@@ -368,10 +378,11 @@ function AuthPageInner() {
                   <Lock size={12} style={iconStyle} />
                   <input
                     type="password"
+                    name="argus_secret_signal"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    autoComplete={isSignUp ? "new-password" : "current-password"}
+                    autoComplete="new-password"
                     required
                     minLength={8}
                     style={inputStyle("password")}
