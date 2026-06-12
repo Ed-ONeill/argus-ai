@@ -1152,6 +1152,34 @@ export default function LandingPage() {
           </span>
         </div>
       </div>
+
+      {/* ── DEV: profile name debug overlay — remove before shipping ─────── */}
+      {process.env.NODE_ENV === "development" && user && (
+        <div
+          style={{
+            position:      "fixed",
+            bottom:        12,
+            left:          12,
+            background:    "rgba(0,0,0,0.88)",
+            border:        "1px solid rgba(0,255,100,0.35)",
+            color:         "rgba(0,255,100,0.82)",
+            padding:       "8px 12px",
+            fontFamily:    "monospace",
+            fontSize:      "10.5px",
+            borderRadius:  6,
+            zIndex:        9999,
+            lineHeight:    1.75,
+            pointerEvents: "none",
+          }}
+        >
+          <strong style={{ opacity: 0.5, fontSize: 9, letterSpacing: "0.06em" }}>PROFILE DEBUG</strong><br />
+          profiles.first_name: <strong>{profile?.first_name ?? "null"}</strong><br />
+          profiles.last_name: <strong>{profile?.last_name ?? "null"}</strong><br />
+          profiles.display_name: <strong>{profile?.display_name ?? "null"}</strong><br />
+          meta.first_name: <strong>{meta?.first_name ?? "null"}</strong><br />
+          → firstName: <strong>&quot;{firstName}&quot;</strong>
+        </div>
+      )}
     </div>
   );
 }
