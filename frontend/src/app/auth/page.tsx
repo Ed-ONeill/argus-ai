@@ -313,7 +313,7 @@ function AuthPageInner() {
                           value={firstName}
                           onChange={e => setFirstName(e.target.value)}
                           placeholder="Edward"
-                          autoComplete="given-name"
+                          autoComplete="off"
                           required={isSignUp}
                           style={inputStyle("name")}
                           onFocus={() => setFocusedInput("name")}
@@ -330,7 +330,7 @@ function AuthPageInner() {
                           value={lastName}
                           onChange={e => setLastName(e.target.value)}
                           placeholder="O'Neill"
-                          autoComplete="family-name"
+                          autoComplete="off"
                           required={isSignUp}
                           style={inputStyle("lastname")}
                           onFocus={() => setFocusedInput("lastname")}

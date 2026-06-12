@@ -4,6 +4,19 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 
+// Derives a clean first name from an email prefix.
+// Strips domain, digits, and separators; takes the first segment only.
+// e.g. "edward.oneill910@gmail.com" → "Edward"
+// Cannot reliably split unsepeated concatenations like "edwardoneill".
+function normalizeFirstName(email: string): string {
+  const prefix = email.split("@")[0];
+  const noDigits = prefix.replace(/\d+/g, "");
+  const parts = noDigits.split(/[._\-+\s]+/).map(s => s.trim()).filter(Boolean);
+  const first = parts[0];
+  if (!first) return "there";
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 interface Profile {
   display_name:         string | null;
   first_name:           string | null;
@@ -39,6 +52,18 @@ export function useProfile() {
         setProfile(fetched);
         setProfLoading(false);
 
+        if (process.env.NODE_ENV === "development") {
+          const m = user.user_metadata as Record<string, unknown> | undefined;
+          console.group("[useProfile] profile row fetched");
+          console.log("  profiles.first_name:   ", fetched?.first_name   ?? "(null)");
+          console.log("  profiles.last_name:    ", fetched?.last_name    ?? "(null)");
+          console.log("  profiles.display_name: ", fetched?.display_name ?? "(null)");
+          console.log("  metadata.first_name:   ", m?.first_name         ?? "(null)");
+          console.log("  metadata.last_name:    ", m?.last_name          ?? "(null)");
+          console.log("  metadata.full_name:    ", m?.full_name          ?? "(null)");
+          console.groupEnd();
+        }
+
         // Backfill names from signup metadata if the profile row is missing them
         const meta = user.user_metadata as Record<string, string | undefined> | undefined;
         const metaFirst = meta?.first_name?.trim();
@@ -69,24 +94,42 @@ export function useProfile() {
   // ── Derived values ──────────────────────────────────────────────────────────
 
   const firstName = useMemo(() => {
-    // 1. profiles.first_name
-    if (profile?.first_name?.trim()) return profile.first_name.trim().split(/\s+/)[0];
-    // 2. profiles.display_name
-    if (profile?.display_name?.trim()) return profile.display_name.trim().split(/\s+/)[0];
-    // 3. user_metadata
-    const meta = user?.user_metadata as Record<string, string | undefined> | undefined;
-    if (meta?.first_name?.trim()) return meta.first_name.trim().split(/\s+/)[0];
-    if (meta?.full_name?.trim())  return meta.full_name.trim().split(/\s+/)[0];
-    // 4. Clean email fallback
-    if (user?.email) {
-      const raw = user.email.split("@")[0]
-        .replace(/\d+/g, "")
-        .replace(/[._-]+(\w)/g, " $1")
-        .trim();
-      const clean = raw.replace(/^\w/, c => c.toUpperCase());
-      return clean.split(/\s+/)[0] || "there";
+    let source = "";
+    let result = "";
+
+    if (profile?.first_name?.trim()) {
+      // Best: explicit first_name column in DB
+      source = "profiles.first_name";
+      result = profile.first_name.trim().split(/\s+/)[0];
+    } else {
+      const meta = user?.user_metadata as Record<string, string | undefined> | undefined;
+      if (meta?.first_name?.trim()) {
+        // Explicit first_name stored in auth metadata at signup
+        source = "metadata.first_name";
+        result = meta.first_name.trim().split(/\s+/)[0];
+      } else if (meta?.full_name?.trim()) {
+        // Full name from metadata — take first word
+        source = "metadata.full_name";
+        result = meta.full_name.trim().split(/\s+/)[0];
+      } else if (profile?.display_name?.trim()?.includes(" ")) {
+        // display_name only when it has a space — single-word values are often
+        // email-derived concatenations (e.g. "Edwardoneill") and cannot be used.
+        source = "profiles.display_name";
+        result = profile.display_name!.trim().split(/\s+/)[0];
+      } else if (user?.email) {
+        source = "email";
+        result = normalizeFirstName(user.email);
+      } else {
+        source = "fallback";
+        result = "there";
+      }
     }
-    return "there";
+
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[useProfile] firstName = "${result}" (source: ${source})`);
+    }
+
+    return result;
   }, [profile, user]);
 
   const lastName = useMemo(() => {
