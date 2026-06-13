@@ -65,6 +65,15 @@ _HARD_EXCLUDE_RE = re.compile(
     # Podcast / webinar / event CTAs
     r"|^(?:listen|watch|register|join)\s+(?:now|here|today)\b"
     r"|\bpodcast\s+(?:episode|recap|listen)\b"
+    # Sponsored / advertorial — paid placement, never consumes feed inventory.
+    # Anchored to the start of the title (optional leading punctuation), matching
+    # the standard publisher labels and their common variants.
+    r"|^[\[(\s]*sponsored\b"                                  # "Sponsored:", "[Sponsored]", "Sponsored Content"
+    r"|^[\[(\s]*partner\s+content\b"                          # "Partner Content"
+    r"|^[\[(\s]*advertiser\s+content\b"                       # "Advertiser Content"
+    r"|^[\[(\s]*presented\s+by\b"                             # "Presented By X"
+    r"|^[\[(\s]*paid\s+(?:content|post|partnership)\b"        # common synonyms
+    r"|^[\[(\s]*advertorial\b"
     r")",
     re.IGNORECASE,
 )
@@ -493,6 +502,8 @@ class FeedItem:
     retail_content_penalty: float     = 0.0  # −50 for obvious retail content
     macro_relevance_bonus:  float     = 0.0  # +10 for hard macro catalysts
     cross_asset_bonus:      float     = 0.0  # +8 for multi-asset-class stories
+    event_article_penalty:  float     = 0.0  # −60 for opinion / SEO / "should I buy" articles
+    event_signal_bonus:     float     = 0.0  # +6 for concrete event verbs (guidance, beats, files…)
     institutional_score:    float     = 0.0  # composite institutional quality 0–100
     graph_alignment_score:  float     = 0.0  # set post-graph; 0–30 regime keyword match
 
@@ -606,7 +617,118 @@ FEED_REGISTRY: list[tuple[str, str, str]] = [
         "https://rss.politico.com/politics-news.xml",
         "Geopolitical",
     ),
+
+    # ── Tier 1: primary sources & official releases (event-driven) ──────────────
+    # These ARE the events: central-bank decisions, auctions, data prints, energy
+    # balances, and regulatory orders. Periodic releases (CPI, payrolls) only
+    # surface while fresh (≤ STALE_HOURS), which is the desired event-driven behavior.
+    # Verified live (feedparser) before wiring; see _SOURCE_TIERS for authority.
+
+    # Federal Reserve — all press releases (FOMC, regulatory, supervisory).
+    (
+        "Federal Reserve",
+        "https://www.federalreserve.gov/feeds/press_all.xml",
+        "Markets",
+    ),
+    # US Treasury — auction announcements (TreasuryDirect). Captures the auction
+    # calendar / sizing that drives the "Treasury auction weakens" type of event.
+    (
+        "US Treasury",
+        "https://www.treasurydirect.gov/TA_WS/securities/announced/rss",
+        "Markets",
+    ),
+    # BLS — the three market-moving releases, each its own feed (all labeled "BLS").
+    ("BLS", "https://www.bls.gov/feed/cpi.rss",    "Markets"),   # CPI / inflation
+    ("BLS", "https://www.bls.gov/feed/empsit.rss", "Markets"),   # Employment Situation (payrolls)
+    ("BLS", "https://www.bls.gov/feed/ppi.rss",    "Markets"),   # PPI
+    # EIA — Today in Energy: crude/nat-gas balances, supply/demand, capacity.
+    (
+        "EIA",
+        "https://www.eia.gov/rss/todayinenergy.xml",
+        "Markets",
+    ),
+    # FERC — no native RSS exists (all official endpoints 404 / serve HTML), so this
+    # is a scoped Google-News query for FERC actions (transmission, interconnection,
+    # orders, approvals). Lower authority than a primary feed — tiered accordingly.
+    (
+        "FERC",
+        "https://news.google.com/rss/search?q=FERC+(transmission+OR+interconnection+OR+order+OR+approves)+when:7d&hl=en-US&gl=US&ceid=US:en",
+        "Markets",
+    ),
+
+    # ── Tier 2: specialist industry intelligence (original reporting, low noise) ──
+    # Primary domain coverage for the core theses (AI compute, power, data centers).
+    # Verified live before wiring.
+    (
+        "SemiAnalysis",                                   # deep semiconductor / AI-compute research
+        "https://semianalysis.com/feed/",
+        "Markets",
+    ),
+    (
+        "Utility Dive",                                   # utilities, grid, power demand
+        "https://www.utilitydive.com/feeds/news/",
+        "Markets",
+    ),
+    (
+        "Data Center Dynamics",                           # data-center buildout primary coverage
+        "https://www.datacenterdynamics.com/en/rss/",
+        "Markets",
+    ),
 ]
+
+
+# ── SEC EDGAR watchlist ─────────────────────────────────────────────────────────
+# Curated, theme-aligned set of issuers — NOT all of EDGAR. We pull each name's
+# 8-K stream (current reports = material events) and surface ONLY filings whose
+# items are materially thesis-relevant (earnings, M&A, debt, control/exec changes,
+# guidance). Routine filings (vote results, bylaw tweaks, exhibit-only) are dropped.
+# CIKs verified against SEC's official company_tickers.json.
+_SEC_UA = "Argus-AI/1.0 (contact: research@argus.example)"   # SEC fair-access: descriptive UA
+
+_SEC_WATCHLIST: dict[str, str] = {
+    # AI compute / hyperscaler / semis
+    "NVDA":  "0001045810",  # NVIDIA
+    "MSFT":  "0000789019",  # Microsoft
+    "AMZN":  "0001018724",  # Amazon
+    "META":  "0001326801",  # Meta Platforms
+    "GOOGL": "0001652044",  # Alphabet
+    "AVGO":  "0001730168",  # Broadcom
+    "TSLA":  "0001318605",  # Tesla
+    # Power / utilities (AI energy demand, nuclear)
+    "NEE":   "0000753308",  # NextEra Energy
+    "CEG":   "0001868275",  # Constellation Energy
+    # Private capital (private credit / buyouts)
+    "KKR":   "0001404912",  # KKR & Co.
+    "BX":    "0001393818",  # Blackstone
+    "APO":   "0001858681",  # Apollo Global Management
+}
+
+# Material 8-K item codes → short label. A filing is surfaced only if it carries at
+# least one of these; filings whose items are entirely outside this set (e.g. 5.07
+# annual-meeting votes, 5.03 bylaw amendments, 9.01 exhibits-only) are skipped.
+_SEC_MATERIAL_8K_ITEMS: dict[str, str] = {
+    "1.01": "Material Agreement",
+    "1.03": "Bankruptcy",
+    "2.01": "Acquisition / Disposition",
+    "2.02": "Results of Operations",      # earnings
+    "2.03": "Material Debt Obligation",
+    "2.04": "Debt Triggering Event",
+    "2.05": "Restructuring Costs",
+    "2.06": "Material Impairment",
+    "4.01": "Auditor Change",
+    "4.02": "Restatement / Non-Reliance",
+    "5.01": "Change in Control",
+    "5.02": "Executive / Board Change",
+    "7.01": "Reg FD Disclosure",          # guidance / selective disclosure
+    "8.01": "Other Material Event",
+}
+
+_SEC_ITEM_RE      = re.compile(r"Item\s+(\d\.\d{2})\s*[:.\-]?\s*([^<\n]*)", re.IGNORECASE)
+_SEC_8K_ATOM_URL  = (
+    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}"
+    "&type=8-K&dateb=&owner=include&count=20&output=atom"
+)
+_SEC_MAX_PER_CO   = 5     # cap material filings surfaced per company per refresh
 
 # ── Dead / replaced sources (kept for reference, not active) ──────────────────
 # WSJ Markets (feeds.a.dj.com/rss/RSSMarketsMain.xml): serving 421-day-old items
@@ -634,9 +756,9 @@ _SOURCE_TIERS: dict[str, float] = {
     "CNBC Economy":      40,
     "BBC World":         40,   # authoritative international; geo/sanctions/trade
     "CNBC Companies":    38,   # earnings, guidance, exec changes
-    "PE Hub":            36,   # PE deal flow — acquisitions, LBOs, growth investments
+    "PE Hub":            40,   # PE deal flow — acquisitions, LBOs, growth investments (Tier 2)
     "PE Wire":           34,   # PE industry news — fund closes, portfolio M&A
-    "Yahoo Finance":     32,
+    "Yahoo Finance":     28,   # aggregator — high SEO/opinion content; authority-discounted
     "Politico":          30,   # US policy and regulatory
     # Dead / replaced sources — kept so any stale-cache items still score correctly
     "WSJ Markets":       50,
@@ -649,6 +771,28 @@ _SOURCE_TIERS: dict[str, float] = {
     "Reuters World":     45,
     "Business Wire M&A": 14,
     "PR Newswire M&A":   12,
+
+    # ── Tier 1: primary sources & wires (event-driven, highest authority) ───────
+    # Encoded here so they score at the top when wired into FEED_REGISTRY. Primary
+    # filings/releases are the canonical event source — they ARE the event.
+    "Reuters":              48,
+    "Financial Times":      48,
+    "Wall Street Journal":  50,
+    "SEC Filings":          50,   # 8-K / 10-Q / S-1 — the event itself
+    "Federal Reserve":      50,   # FOMC statements, H.15, press releases
+    "US Treasury":          50,   # auction results, refunding, TIC
+    "BLS":                  50,   # CPI, PPI, jobs report
+    "EIA":                  48,   # crude/nat-gas inventories, STEO
+    "FERC":                 44,   # transmission/interconnection orders (Google-News-sourced; no native RSS)
+
+    # ── Tier 2: specialist trade press (authoritative for core themes) ──────────
+    "PitchBook":             42,  # private-capital deal data
+    "Private Debt Investor": 42,  # direct lending / private credit
+    "Infrastructure Investor":42,  # infra funds, energy/data-center capital
+    "PE Hub Wire":           40,
+    "Data Center Dynamics":  42,  # data-center buildout primary coverage
+    "SemiAnalysis":          44,  # deep semiconductor / AI-compute research
+    "Utility Dive":          40,  # utilities, grid, power demand
 }
 
 # High-value finance keywords (+15 per match, cap 40)
@@ -875,6 +1019,72 @@ _INSTITUTIONAL_BOOST_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Event-vs-article classifier ─────────────────────────────────────────────────
+# Argus surfaces EVENTS, not ARTICLES. These patterns identify article-/opinion-/
+# SEO-driven headlines — "Is X a good stock to buy?", "Top AI Stocks for 2026",
+# "Why Investors Love X", "Can Tech Justify a Trillion-Dollar Valuation?" — which
+# carry no discrete catalyst. Matching applies a heavy penalty (−60) so they fall
+# below the conviction gate. Deliberately tuned NOT to hit event headlines like
+# "Broadcom lowers guidance" or "FERC approves transmission project".
+_ARTICLE_OPINION_RE = re.compile(
+    r"(?:"
+    # ── "Should I buy" / buy-sell advice framing ──────────────────────────────
+    r"\bshould\s+(?:i|you|investors?|we)\s+(?:buy|sell|own|hold|invest|dump|avoid)\b"
+    r"|\b(?:good|great|best|top|hot|smart|safe|cheap|undervalued)\s+stocks?\s+to\s+(?:buy|own|watch|consider|hold)\b"
+    r"|\bstocks?\s+to\s+(?:buy|watch|own|consider|avoid|sell)\b"
+    r"|\b(?:a\s+)?(?:good|great|smart|strong|solid)\s+stock\s+to\s+buy\b"
+    r"|\bis\s+[\w.\-]+\s+(?:stock\s+)?a\s+(?:buy|sell|good\s+(?:stock|buy|investment)|smart\s+buy|bargain)\b"
+    r"|\bis\s+(?:it\s+)?(?:too\s+late|time)\s+to\s+(?:buy|sell|invest)\b"
+    r"|\bbuy\s+the\s+dip\b|\bworth\s+buying\b|\bbetter\s+buy\b|\bbuy[,\s]+sell[,\s]+or\s+hold\b"
+    # ── Stock-pick listicles / SEO rankings ───────────────────────────────────
+    r"|\btop\s+\d*\s*[\w\s/&'-]{0,24}?\bstocks?\b"            # "Top 10 AI Stocks", "Top AI Stocks"
+    r"|\bbest\s+[\w\s/&'-]{0,24}?\bstocks?\b"                 # "Best Dividend Stocks for 2026"
+    r"|\b\d{1,2}\s+[\w\s/&'-]{0,24}?\bstocks?\s+(?:to\s+buy|to\s+watch|for|of\s+20\d\d|right\s+now)\b"
+    r"|\bstock\s+picks?\b|\bbest\s+stocks?\b|\btop\s+stocks?\b|\bstocks?\s+to\s+watch\b"
+    r"|\bhot\s+stocks?\b|\bmust.own\s+stocks?\b"
+    # ── Opinion / explainer / SEO framing ─────────────────────────────────────
+    r"|\bwhy\s+(?:investors?|wall\s+street|the\s+market|markets?|everyone|traders?|you\s+should)\b"
+    r"|\bhere'?s?\s+why\b|\bhere\s+is\s+why\b|\bthis\s+is\s+why\b"
+    r"|\bwhat\s+(?:to\s+know|you\s+need\s+to\s+know|investors\s+need\s+to\s+know)\b"
+    r"|\beverything\s+you\s+need\s+to\s+know\b"
+    r"|\bthings?\s+to\s+(?:know|watch)\s+(?:about|before|this)\b"
+    # ── Valuation-justification opinion ───────────────────────────────────────
+    r"|\bcan\s+[\w\s'.\-]{0,30}?\bjustify\b"
+    r"|\bjustify\s+(?:a\s+|its\s+|the\s+)?[\w\s$.\-]{0,20}\bvaluation\b"
+    r"|\b(?:is|are|has)\s+[\w\s'.\-]{0,30}?\b(?:over|under)valued\b"
+    r"|\bis\s+[\w\s'.\-]{0,30}?\ba\s+bubble\b"
+    # ── Hype / prediction / forecast opinion ──────────────────────────────────
+    r"|\b(?:could|might|will|may)\s+(?:soar|surge|double|triple|skyrocket|explode|plunge|crash|tank|moon)\b"
+    r"|\bprice\s+(?:prediction|forecast)\b|\b(?:prediction|forecast)\s+for\s+20\d\d\b"
+    r"|\bwhere\s+will\s+[\w\s'.\-]{0,30}?\b(?:be|go|head)\b"
+    r"|\b(?:next\s+(?:big|hot)|the\s+next)\s+[\w\s'.\-]{0,20}?\b(?:stock|nvidia|amazon|apple|tesla)\b"
+    # ── Generic rhetorical headline: Is/Can/Will/Should …<speculation>…? ───────
+    r"|^(?:is|are|can|will|should|why|how|what)\b[^?]{0,80}\b(?:buy|sell|worth|bubble|overvalued|undervalued|justify|too\s+(?:high|cheap|late)|next|soar|rally|win|winner|crash|doomed|dead)\b[^?]*\?"
+    r")",
+    re.IGNORECASE,
+)
+
+# ── Event-signal bonus ──────────────────────────────────────────────────────────
+# Concrete catalyst verbs with objects — the hallmark of an EVENT headline. Gives
+# a modest boost so event-driven stories edge out article-style ones at the margin.
+_EVENT_SIGNAL_RE = re.compile(
+    r"(?:"
+    r"\b(?:raises?|lowers?|cuts?|lifts?|boosts?|slashes?|trims?|reaffirms?|withdraws?)\s+(?:its\s+|full.?year\s+|fy\s*\d\d\s+)?(?:guidance|forecast|outlook|dividend|target|estimates?|price\s+target)\b"
+    r"|\b(?:beats?|misses?|tops?|trails?|matches?)\s+(?:on\s+)?(?:estimates?|expectations?|forecasts?|views?|the\s+street|consensus)\b"
+    r"|\b(?:reports?|posts?)\s+(?:q[1-4]\b|first|second|third|fourth|quarter|fy\s*\d|record|a\s+(?:loss|profit)|results?)\b"
+    r"|\braises?\s+\$?\d"                                  # "raises $20B fund"
+    r"|\b(?:approves?|rejects?|blocks?|clears?|grants?|denies?|fines?|charges?|sues?|halts?|orders?)\b"
+    r"|\b(?:to\s+acquire|acquires?|to\s+buy|agrees?\s+to\s+(?:buy|acquire|merge)|merger\s+with|takeover\s+(?:bid|offer))\b"
+    r"|\b(?:auction|issuance|prices?\s+(?:its\s+)?(?:ipo|bond|notes?|offering|debt))\b"
+    r"|\b(?:downgrades?|upgrades?)\b"
+    r"|\b(?:files?\s+for|filed\s+for|files?)\s+(?:ipo|bankruptcy|chapter\s+11|for\s+ipo)\b"
+    r"|\b(?:announces?|unveils?|launches?)\s+\$?\d"        # quantified announcement
+    r"|\b(?:surprises?|jumps?|climbs?|falls?|rises?|drops?)\s+(?:to|higher|lower|above|below|past)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 # Normalized source quality ceiling (0–100 scale, derived from _SOURCE_TIERS / 50 * 100)
 # Used for institutional_score computation and Today's Take candidate filtering.
 def _source_quality(source: str) -> float:
@@ -895,9 +1105,11 @@ def score_item(item: "FeedItem") -> float:
       Institutional boost: +8     (market-structure signals)
       Macro bonus        : +10    (hard macro catalyst)
       Cross-asset bonus  : +8     (2+ asset classes)
+      Event bonus        : +6     (concrete catalyst verb in headline)
       Noise penalty      : −75    (PR boilerplate)
       Consumer soft      : −30    (personal finance framing)
       Retail penalty     : −50    (obvious retail content)
+      Article penalty    : −60    (opinion / SEO / "should I buy" articles)
 
     institutional_score (0–100):
       A quality-only composite used by Today's Take / WMN selectors to
@@ -952,6 +1164,17 @@ def score_item(item: "FeedItem") -> float:
     if noise == 0.0 and consumer_penalty == 0.0 and _RETAIL_CONTENT_RE.search(full_text):
         retail_penalty = 50.0
 
+    # 7b. Article/opinion/SEO penalty (−60) — event-vs-article classifier.
+    #     Anchored on the TITLE (headline framing), applied when not already
+    #     caught by harder penalties. Surfaces events, suppresses articles.
+    article_penalty = 0.0
+    if noise == 0.0 and consumer_penalty == 0.0 and retail_penalty == 0.0 \
+            and _ARTICLE_OPINION_RE.search(item.title):
+        article_penalty = 60.0
+
+    # 7c. Event-signal bonus (+6) — concrete catalyst verb in the headline.
+    event_bonus = 6.0 if _EVENT_SIGNAL_RE.search(item.title) else 0.0
+
     # 8. Ticker bonus — unambiguous single-company signal
     ticker_bonus = 8.0 if _TICKER_RE.search(item.title) else 0.0
 
@@ -967,8 +1190,9 @@ def score_item(item: "FeedItem") -> float:
 
     # ── Signal score (0–100) ──────────────────────────────────────────────────
     signal = max(0.0, min(100.0,
-        src_score + kw_score + rec_score + ticker_bonus + inst_boost + macro_bonus + cross_bonus
-        - noise - consumer_penalty - retail_penalty
+        src_score + kw_score + rec_score + ticker_bonus + inst_boost + macro_bonus
+        + cross_bonus + event_bonus
+        - noise - consumer_penalty - retail_penalty - article_penalty
     ))
 
     # ── institutional_score (0–100) ────────────────────────────────────────────
@@ -982,8 +1206,10 @@ def score_item(item: "FeedItem") -> float:
         + inst_boost                         # +8  : market-structure signal
         + macro_bonus * 0.8                  # +8  : macro catalyst
         + cross_bonus * 0.6                  # +4.8: cross-asset breadth
+        + event_bonus                        # +6  : concrete event catalyst
         - consumer_penalty * 1.2             # −36 : consumer framing
         - retail_penalty   * 1.5             # −75 : retail content
+        - article_penalty  * 1.2             # −72 : opinion / SEO article
     ))
 
     item.source_quality_score   = round(src_quality, 1)
@@ -991,6 +1217,8 @@ def score_item(item: "FeedItem") -> float:
     item.retail_content_penalty = round(retail_penalty, 1)
     item.macro_relevance_bonus  = round(macro_bonus, 1)
     item.cross_asset_bonus      = round(cross_bonus, 1)
+    item.event_article_penalty  = round(article_penalty, 1)
+    item.event_signal_bonus     = round(event_bonus, 1)
     item.institutional_score    = round(inst_score, 1)
 
     return signal
@@ -1107,6 +1335,17 @@ class FeedManager:
                     self.fetch_errors[name] = msg
                     log.debug("Feed future failed [%s]: %s", name, msg)
 
+        # ── SEC watchlist (curated 8-K material events) ───────────────────────
+        # Fetched outside the RSS pool so item-level materiality filtering and
+        # title rewriting can run. Items merge into the same scoring/dedup path.
+        try:
+            sec_items = self._fetch_sec_watchlist(force_refresh=force_refresh)
+            raw_items.extend(sec_items)
+            log.debug("SEC watchlist contributed %d material filings", len(sec_items))
+        except Exception as exc:
+            self.fetch_errors["SEC Filings"] = str(exc)
+            log.debug("SEC watchlist fetch failed: %s", exc)
+
         # ── Sort newest-first ─────────────────────────────────────────────────
         _epoch = datetime.min.replace(tzinfo=timezone.utc)
         raw_items.sort(key=lambda i: i.published_dt or _epoch, reverse=True)
@@ -1160,6 +1399,68 @@ class FeedManager:
 
     def clear_cache(self) -> None:
         self._cache.clear()
+
+    # ── SEC watchlist ───────────────────────────────────────────────────────────
+
+    def _fetch_sec_watchlist(self, force_refresh: bool = False) -> list[FeedItem]:
+        """
+        Pull each watchlist issuer's 8-K stream from EDGAR and return material
+        filings as FeedItems (source="SEC Filings"). Only 8-Ks carrying a material
+        item (see _SEC_MATERIAL_8K_ITEMS) are kept; titles are rewritten to a
+        readable "TICKER 8-K — <event>" form. Per-CIK responses are cached like
+        any other feed (keyed by the EDGAR URL); failures fall back to stale cache.
+        """
+        import feedparser
+        out: list[FeedItem] = []
+        for ticker, cik in _SEC_WATCHLIST.items():
+            url = _SEC_8K_ATOM_URL.format(cik=cik)
+            now = time.time()
+            if not force_refresh and url in self._cache:
+                ts, cached = self._cache[url]
+                if now - ts < self._ttl:
+                    out.extend(cached)
+                    continue
+            try:
+                feed = feedparser.parse(url, request_headers={"User-Agent": _SEC_UA})
+                items: list[FeedItem] = []
+                for entry in feed.entries:
+                    summary = str(entry.get("summary", "") or "")
+                    parsed  = _SEC_ITEM_RE.findall(summary)
+                    material = [
+                        (code, desc.strip())
+                        for code, desc in parsed
+                        if code in _SEC_MATERIAL_8K_ITEMS
+                    ]
+                    if not material:
+                        continue   # routine filing (vote results, exhibits-only, etc.)
+
+                    lead_code, lead_desc = material[0]
+                    event   = lead_desc if len(lead_desc) >= 5 else _SEC_MATERIAL_8K_ITEMS[lead_code]
+                    pub_dt  = _parse_published_dt(entry)
+                    snippet = (
+                        f"SEC 8-K filing by {ticker}: "
+                        + "; ".join(f"Item {c} {_SEC_MATERIAL_8K_ITEMS[c]}" for c, _ in material[:3])
+                    )
+                    items.append(FeedItem(
+                        title             = f"{ticker} 8-K — {event}",
+                        url               = entry.get("link", ""),
+                        source            = "SEC Filings",
+                        category          = "Company",
+                        published_dt      = pub_dt,
+                        published         = format_age(pub_dt),
+                        snippet           = snippet[:_MAX_SNIPPET],
+                        affected_entities = [ticker],
+                    ))
+                    if len(items) >= _SEC_MAX_PER_CO:
+                        break
+                self._cache[url] = (now, items)
+                out.extend(items)
+                log.debug("SEC watchlist [%s]: %d material 8-K(s)", ticker, len(items))
+            except Exception as exc:
+                self.fetch_errors[f"SEC:{ticker}"] = str(exc)
+                if url in self._cache:
+                    out.extend(self._cache[url][1])
+        return out
 
     # ── Internal ──────────────────────────────────────────────────────────────
 

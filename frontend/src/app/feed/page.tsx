@@ -42,7 +42,11 @@ function formatAge(seconds: number): string {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
-const PAGE_SIZE = 20;
+// Hard ceiling on the curated feed — signal density over volume. The gate decides
+// what qualifies; this caps how many of the qualifiers we show. If 14 pass, show
+// 14; if 50 pass, show the top 25.
+const MAX_FEED_SIZE = 25;
+const PAGE_SIZE = MAX_FEED_SIZE;
 
 const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60">'
@@ -94,9 +98,25 @@ export default function FeedPage() {
   const allClusters     = data?.clusters?.length
     ? data.clusters
     : itemsToFallbackClusters(data?.items ?? []);
+  // rankClusters applies the strict quality gate (when personalized); we then cap
+  // the qualifiers at MAX_FEED_SIZE. The feed is the shorter of {qualifiers, 25}.
   const rankedClusters  = useMemo(() => rankClusters(allClusters, prefs), [allClusters, prefs]);
-  const visibleClusters = rankedClusters.slice(0, visibleCount);
-  const hasMore         = visibleCount < rankedClusters.length;
+  const cappedClusters  = useMemo(() => rankedClusters.slice(0, MAX_FEED_SIZE), [rankedClusters]);
+  const visibleClusters = cappedClusters.slice(0, visibleCount);
+  const hasMore         = visibleCount < cappedClusters.length;
+
+  // Personalization active → the gate ran, so the ranked list can be much shorter
+  // than the raw cluster set. Surface counts so an intentionally short, high-signal
+  // feed (and the 25-cap) doesn't read as a loading failure.
+  const personalized = (
+    prefs.followed_themes.length        > 0 ||
+    prefs.followed_sectors.length       > 0 ||
+    prefs.followed_asset_classes.length > 0 ||
+    !!prefs.user_role || !!prefs.region_focus
+  );
+  const qualified      = rankedClusters.length;                 // cleared the gate
+  const belowThreshold = personalized ? Math.max(0, allClusters.length - qualified) : 0;
+  const cappedAway     = Math.max(0, qualified - cappedClusters.length); // passed but over the 25-cap
 
   // Personalize the high-visibility derived sections (not just the stream) so the
   // homepage prioritizes followed themes/sectors within the first screen.
@@ -316,9 +336,9 @@ export default function FeedPage() {
                   border: "1px solid rgba(255,255,255,0.09)",
                 }}
               >
-                Show {Math.min(PAGE_SIZE, allClusters.length - visibleCount)} more
+                Show {Math.min(PAGE_SIZE, cappedClusters.length - visibleCount)} more
                 <span className="ml-1.5" style={{ color: "rgba(255,255,255,0.28)" }}>
-                  ({allClusters.length - visibleCount} remaining)
+                  ({cappedClusters.length - visibleCount} remaining)
                 </span>
               </button>
             </div>
@@ -328,7 +348,11 @@ export default function FeedPage() {
           {data && !isLoading && (
             <p className="text-center text-2xs mt-8"
               style={{ color: "rgba(255,255,255,0.22)" }}>
-              {data.total} stories · {data.sources.length} sources
+              {personalized
+                ? `${cappedClusters.length} high-signal ${cappedClusters.length === 1 ? "story" : "stories"}`
+                  + (cappedAway > 0 ? ` (top ${MAX_FEED_SIZE} of ${qualified})` : "")
+                  + ` · ${belowThreshold} below quality threshold · ${data.sources.length} sources`
+                : `${data.total} stories · ${data.sources.length} sources`}
               {Object.keys(data.errors).length > 0 && (
                 <span style={{ color: "rgba(255,255,255,0.16)" }}>
                   {" "}· {Object.keys(data.errors).length} source{Object.keys(data.errors).length > 1 ? "s" : ""} unavailable

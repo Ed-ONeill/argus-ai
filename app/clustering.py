@@ -25,11 +25,20 @@ log = logging.getLogger(__name__)
 
 # ── Thresholds ─────────────────────────────────────────────────────────────────
 
-_ENTITY_WINDOW_H  = 4     # max hours between items to cluster via shared entity
-_JACCARD_WINDOW_H = 2     # tighter window for title-similarity path
-_JACCARD_THRESH   = 0.50  # minimum Jaccard on non-stop title tokens (high = strict)
+_ENTITY_WINDOW_H  = 6     # max hours between items to cluster via shared entity
+_JACCARD_WINDOW_H = 3     # window for title-similarity path
+_JACCARD_THRESH   = 0.45  # minimum Jaccard on non-stop title tokens (high = strict)
 _JACCARD_MIN_TOKS = 4     # both titles must have ≥ N tokens to use Jaccard path
-_MAX_RELATED      = 5     # max related stories stored per cluster (payload control)
+_MAX_RELATED      = 6     # max related stories stored per cluster (payload control)
+
+# Topic-anchor path — groups stories about the same event/company/catalyst that
+# share a salient topic word (e.g. "Iran", "Broadcom", "inflation", "ceasefire")
+# but have low overall title overlap. Salient tokens are found data-driven: a
+# token is an anchor when it appears in 2..N distinct titles in the current feed
+# (rare enough to denote a specific subject, common enough to link coverage).
+_ANCHOR_WINDOW_H   = 8    # macro/geopolitical coverage spreads over many hours
+_ANCHOR_MAX_DF     = 6    # token in more than this many titles is too generic
+_ANCHOR_MIN_LEN    = 4    # minimum token length to qualify as an anchor
 
 # ── Entity blocklist ───────────────────────────────────────────────────────────
 # Terms too broad to be used as cluster anchors.  Matching on these would
@@ -44,6 +53,23 @@ _BROAD_ENTITIES: frozenset[str] = frozenset({
     "Wall Street", "US", "UK", "EU", "China", "Europe",
 })
 
+# ── Sector / industry labels ────────────────────────────────────────────────────
+# The entity extractor frequently tags stories with a SECTOR name rather than a
+# company. Sectors are far too coarse to anchor a cluster on (every energy story
+# would merge), so they are excluded from the shared-entity path alongside the
+# broad-entity blocklist.
+_SECTOR_LABELS: frozenset[str] = frozenset({
+    "Energy", "Utilities", "Financials", "Banks", "Bank", "Insurance",
+    "Semiconductors", "Software", "Technology", "Tech", "Healthcare",
+    "Biotech", "Pharma", "Pharmaceuticals", "Defense", "Aerospace",
+    "Industrials", "Materials", "Mining", "Consumer", "Retail", "Staples",
+    "Discretionary", "Media", "Telecom", "Communications", "Crypto",
+    "Real Estate", "Transports", "Airlines", "Automakers", "Autos",
+    "CNBC", "Reuters", "Bloomberg",
+})
+
+_NON_SPECIFIC: frozenset[str] = _BROAD_ENTITIES | _SECTOR_LABELS
+
 # ── Stop words for Jaccard ─────────────────────────────────────────────────────
 
 _STOP_WORDS: frozenset[str] = frozenset({
@@ -53,6 +79,48 @@ _STOP_WORDS: frozenset[str] = frozenset({
     "new", "after", "over", "than", "but", "amid", "says", "said", "has",
     "have", "had", "that", "this", "his", "her", "their", "into", "after",
     "report", "reports", "sources", "according",
+})
+
+# ── Generic tokens excluded from topic anchors ──────────────────────────────────
+# Words common enough across market headlines that sharing them does NOT imply two
+# stories cover the same event. Anchors are additionally required to be capitalized
+# (proper-noun-like) in BOTH titles, so this list mainly guards against shared
+# proper-cased-but-generic words (regions, price-action verbs, deal boilerplate).
+_GENERIC_TOKENS: frozenset[str] = frozenset({
+    # finance generics
+    "stock", "stocks", "share", "shares", "market", "markets", "economy",
+    "economic", "growth", "fund", "funds", "money", "price", "prices",
+    "rate", "rates", "yield", "yields", "investor", "investors", "trading",
+    "trade", "trader", "traders", "deal", "deals", "profit", "profits",
+    "sales", "revenue", "business", "stake", "firm", "group", "capital",
+    "advisory", "partners", "asset", "assets", "tech", "technology",
+    "company", "companies", "earnings", "quarter", "billion", "million",
+    "percent", "dividend", "dividends", "bond", "bonds", "forex", "value",
+    # regions / broad geographies (too coarse to anchor on)
+    "asia", "asian", "america", "american", "americas", "europe", "european",
+    "africa", "african", "global", "world", "worldwide", "international",
+    # price-action / event verbs (capitalized in Title-Case sources)
+    "boom", "rally", "rallies", "fall", "falls", "rise", "rises", "drop",
+    "drops", "gain", "gains", "loss", "losses", "slide", "slides", "slip",
+    "slips", "jump", "jumps", "soar", "soars", "plunge", "plunges", "tumble",
+    "tumbles", "sink", "sinks", "beat", "beats", "miss", "misses", "tops",
+    "climb", "climbs", "surge", "surges", "selloff", "rout", "swing", "swings",
+    # M&A / deal boilerplate
+    "acquires", "acquire", "acquisition", "acquisitions", "merger", "buyout",
+    "completes", "complete", "agrees", "agree", "raises", "raise", "backed",
+    "exit", "exits", "launches", "launch", "deal",
+    # common verbs / fillers that survive Title-Case capitalization
+    "seeks", "seek", "wants", "want", "takes", "take", "makes", "make",
+    "gives", "give", "tells", "show", "shows", "says", "warns", "warn",
+    "plans", "plan", "pledges", "pledge", "steps", "vow", "vows", "action",
+    "accelerating", "balancing", "aligning", "thinks", "brace", "flags",
+    "consumer", "consumers", "retailer", "investing", "record", "records",
+    "historic", "biggest", "largest", "highest", "lowest", "ever", "first",
+    "report", "reports", "update", "wrap", "data", "news", "today", "story",
+    "director", "official", "officials", "senior", "amid", "over", "near",
+    # abstract nouns common across unrelated geopolitics/markets headlines
+    "security", "council", "powers", "power", "rebuke", "risk", "risks",
+    "policy", "unrest", "talks", "deal", "crisis", "threat", "threats",
 })
 
 # ── Label vocabulary ───────────────────────────────────────────────────────────
@@ -105,12 +173,14 @@ def cluster_items(items: list["FeedItem"]) -> list[StoryCluster]:  # noqa: F821
 
     Returns clusters in the same order as the primary stories appear in `items`.
     """
+    salient_vocab = _build_salient_vocab(items)
+
     buckets: list[list] = []
 
     for item in items:
         placed = False
         for bucket in buckets:
-            if _should_cluster(item, bucket[0]):
+            if _should_cluster(item, bucket[0], salient_vocab):
                 bucket.append(item)
                 placed = True
                 break
@@ -118,18 +188,58 @@ def cluster_items(items: list["FeedItem"]) -> list[StoryCluster]:  # noqa: F821
             buckets.append([item])
 
     clusters = [_build_cluster(b) for b in buckets]
-    log.debug(
-        "[cluster] %d items → %d clusters  singleton=%d  multi=%d",
+    log.info(
+        "[cluster] %d items -> %d clusters  singleton=%d  multi=%d  anchors=%d",
         len(items), len(clusters),
         sum(1 for c in clusters if c.story_count == 1),
         sum(1 for c in clusters if c.story_count > 1),
+        len(salient_vocab),
     )
     return clusters
 
 
+_CAP_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'’]*")
+
+
+def _name_tokens(title: str) -> set[str]:
+    """
+    Proper-noun-like tokens from a title: words that are Capitalized in the
+    original headline (denoting a name, place, or specific catalyst), normalized
+    to lowercase, ≥ _ANCHOR_MIN_LEN chars, and not generic/stopwords. Requiring
+    capitalization is what separates a real subject ("Iran", "Broadcom") from a
+    common verb a Title-Case source happens to capitalize.
+    """
+    out: set[str] = set()
+    for w in _CAP_TOKEN_RE.findall(title or ""):
+        if not w[0].isupper():
+            continue
+        lw = re.sub(r"[^a-z]", "", w.lower())
+        if len(lw) >= _ANCHOR_MIN_LEN and lw not in _STOP_WORDS and lw not in _GENERIC_TOKENS:
+            out.add(lw)
+    return out
+
+
+def _build_salient_vocab(items: list) -> frozenset[str]:
+    """
+    Identify salient topic anchors across the feed: proper-noun-like title tokens
+    that appear in 2.._ANCHOR_MAX_DF distinct titles. These denote specific
+    subjects (companies, places, catalysts) shared by stories covering the same
+    event, without merging stories that merely share a generic word.
+    """
+    df: dict[str, int] = {}
+    for item in items:
+        for t in _name_tokens(getattr(item, "title", "") or ""):
+            df[t] = df.get(t, 0) + 1
+    return frozenset(t for t, n in df.items() if 2 <= n <= _ANCHOR_MAX_DF)
+
+
 # ── Clustering predicate ───────────────────────────────────────────────────────
 
-def _should_cluster(candidate: "FeedItem", primary: "FeedItem") -> bool:  # noqa: F821
+def _should_cluster(
+    candidate: "FeedItem",                  # noqa: F821
+    primary:   "FeedItem",                  # noqa: F821
+    salient_vocab: frozenset[str] = frozenset(),
+) -> bool:
     # ── Time gate — fast, always first ────────────────────────────────────────
     dt_c, dt_p = getattr(candidate, "published_dt", None), getattr(primary, "published_dt", None)
     if dt_c and dt_p:
@@ -138,9 +248,10 @@ def _should_cluster(candidate: "FeedItem", primary: "FeedItem") -> bool:  # noqa
         delta_h = 0.0
 
     # ── Path 1: Shared specific entity ────────────────────────────────────────
-    # Both items must carry at least one specific (non-broad) entity in common.
-    spec_c = {e for e in getattr(candidate, "affected_entities", []) if e not in _BROAD_ENTITIES}
-    spec_p = {e for e in getattr(primary,   "affected_entities", []) if e not in _BROAD_ENTITIES}
+    # Both items must carry at least one specific (non-broad, non-sector) entity in
+    # common. Sector labels are excluded so unrelated same-sector stories don't merge.
+    spec_c = {e for e in getattr(candidate, "affected_entities", []) if e not in _NON_SPECIFIC}
+    spec_p = {e for e in getattr(primary,   "affected_entities", []) if e not in _NON_SPECIFIC}
     if spec_c and spec_p and (spec_c & spec_p) and delta_h <= _ENTITY_WINDOW_H:
         return True
 
@@ -156,6 +267,27 @@ def _should_cluster(candidate: "FeedItem", primary: "FeedItem") -> bool:  # noqa
             j = len(tok_c & tok_p) / len(tok_c | tok_p)
             if j >= _JACCARD_THRESH:
                 return True
+
+    # ── Path 3: Shared salient topic anchor ────────────────────────────────────
+    # Catches same-event/same-catalyst coverage that shares a specific topic word
+    # (e.g. "Iran", "Broadcom", "inflation") but not enough of the rest of the
+    # headline to clear the Jaccard bar. Precision comes from the anchor vocabulary
+    # (generic finance words are excluded; anchors must denote a specific subject).
+    if (
+        salient_vocab
+        and delta_h <= _ANCHOR_WINDOW_H
+        and candidate.category == primary.category   # same-category guard (precision)
+    ):
+        anc_c = _name_tokens(candidate.title) & salient_vocab
+        anc_p = _name_tokens(primary.title)   & salient_vocab
+        if anc_c & anc_p:
+            # Guard: if both name DIFFERENT specific (ticker-like) entities, they
+            # are about different subjects despite a shared catalyst word.
+            tickers_c = {e for e in spec_c if e.isupper() and len(e) <= 5}
+            tickers_p = {e for e in spec_p if e.isupper() and len(e) <= 5}
+            if tickers_c and tickers_p and not (tickers_c & tickers_p):
+                return False
+            return True
 
     return False
 

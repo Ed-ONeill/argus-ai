@@ -384,12 +384,30 @@ export function scoreCluster(
   return toRanked(cluster, computeAffinity(cluster, prefs), debug);
 }
 
+// ── Strict quality gate ──────────────────────────────────────────────────────
+// A personalized feed prioritizes signal density over volume: it shows ONLY
+// stories that clear both bars and never backfills with weak content. If just 15
+// stories qualify, the feed is 15 stories long.
+//   • relevance_score (= affinity.finalRank) must be ≥ 70 — a genuine connection
+//     to a followed theme/sector; secondary and off-thesis stories score below it.
+//   • signal_score (institutional conviction, 0–100) must be ≥ 60.
+export const MIN_RELEVANCE_SCORE  = 70;
+export const MIN_CONVICTION_SCORE = 60;
+
+/** True when a ranked story clears both quality bars (relevance AND conviction). */
+export function passesQualityGate(c: RankedCluster): boolean {
+  return c.relevance_score >= MIN_RELEVANCE_SCORE
+      && (c.primary.signal_score ?? 0) >= MIN_CONVICTION_SCORE;
+}
+
 /**
- * Preference-first ranking. Every story gets an additive affinity score with a
- * severe penalty for zero theme/sector overlap, then the feed is sorted by that
- * single finalRank (signal_score breaks ties). On-thesis infrastructure / private-
- * capital stories rise to the top; off-thesis headlines sink to the bottom even
- * when their raw news signal is strong.
+ * Preference-first ranking + strict quality gate. Every story gets an additive
+ * affinity score (severe penalty for zero theme/sector overlap), the list is
+ * sorted by finalRank (signal_score breaks ties), then everything below the
+ * relevance/conviction bars is DROPPED — not backfilled. On-thesis infrastructure
+ * / private-capital stories rise to the top; weak or off-thesis stories don't
+ * appear at all. When no prefs are set the gate is skipped (the unpersonalized
+ * feed has no relevance signal to threshold on).
  */
 export function rankClusters(
   clusters: StoryCluster[],
@@ -408,31 +426,37 @@ export function rankClusters(
       b.primary.signal_score - a.primary.signal_score,
     );
 
+  const gated = ranked.filter(passesQualityGate);
+
   if (isDev) {
-    const origPos    = new Map(clusters.map((c, i) => [c.id, i + 1]));
-    const onThesis   = ranked.filter(r => r.affinity?.hasAffinity).length;
+    const origPos = new Map(clusters.map((c, i) => [c.id, i + 1]));
     console.group(
-      `[feedRanker] on-thesis=${onThesis}  off-thesis(downranked)=${ranked.length - onThesis}  of ${ranked.length}`,
+      `[feedRanker] quality gate: kept ${gated.length} / ${ranked.length}  `
+      + `(relevance≥${MIN_RELEVANCE_SCORE} AND conviction≥${MIN_CONVICTION_SCORE})`,
     );
-    ranked.slice(0, 25).forEach((c, finalIdx) => {
+    ranked.slice(0, 25).forEach((c, idx) => {
       const a     = c.affinity!;
       const orig  = origPos.get(c.id) ?? "?";
-      const delta = typeof orig === "number" ? orig - (finalIdx + 1) : 0;
-      const arrow = delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : "=";
+      const kept  = passesQualityGate(c);
+      const sig   = Math.round(c.primary.signal_score ?? 0);
+      const fail  = kept ? "" :
+        c.relevance_score < MIN_RELEVANCE_SCORE && sig < MIN_CONVICTION_SCORE ? "  ✗ relevance+conviction"
+        : c.relevance_score < MIN_RELEVANCE_SCORE ? "  ✗ relevance"
+        : "  ✗ conviction";
       const why   = a.reasons.length ? `+ ${a.reasons.join("  + ")}` : "no preference overlap";
       console.log(
-        `%c${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) `
-        + `rank=${String(Math.round(c.relevance_score)).padStart(4)} `
-        + `[conv ${a.convictionScore} · thm ${a.themeMatchScore} · sec ${a.sectorMatchScore} · ast ${a.assetClassMatchScore} · mkt ${a.marketFocusScore}${a.penalty ? ` · pen ${a.penalty}` : ""}] `
-        + `${c.primary.title.slice(0, 48)}`,
-        a.hasAffinity ? "color:#6aad6a" : "color:#a05050",
-        `\n     Ranked because: ${why}`,
+        `%c${kept ? "✓" : "·"} ${String(idx + 1).padStart(2)}. (was #${String(orig).padStart(2)}) `
+        + `rank=${String(Math.round(c.relevance_score)).padStart(4)} conv=${String(sig).padStart(3)} `
+        + `[thm ${a.themeMatchScore} · sec ${a.sectorMatchScore} · ast ${a.assetClassMatchScore} · mkt ${a.marketFocusScore}${a.penalty ? ` · pen ${a.penalty}` : ""}]${fail} `
+        + `${c.primary.title.slice(0, 44)}`,
+        kept ? "color:#6aad6a" : "color:#777",
+        `\n     ${why}`,
       );
     });
     console.groupEnd();
   }
 
-  return ranked;
+  return gated;
 }
 
 // ── Cross-section personalization ─────────────────────────────────────────────
