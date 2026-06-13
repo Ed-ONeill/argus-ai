@@ -9,27 +9,29 @@ export interface UserPrefs {
 }
 
 export interface RankedCluster extends StoryCluster {
-  relevance_score: number;
-  _debug:          Record<string, number> | undefined;
+  relevance_score:  number;
+  _debug:           Record<string, number | string[]> | undefined;
 }
 
 // ── Theme keyword maps ────────────────────────────────────────────────────────
 // Matches cluster text against the curated theme list. Each theme has tight,
 // high-precision patterns to avoid false positives inflating scores.
 
+// Patterns use simple phrase alternations only — no order-dependent .* compounds.
+// Each alternative is a short phrase that unambiguously maps to the theme.
 const THEME_KEYWORDS: Record<string, RegExp> = {
-  "AI Infrastructure":      /\bai\b.*infra|artificial intelligence.*infra|gpu cluster|inference.*cluster|foundation model|llm.*deploy|ai data center|nvidia.*data center|ai chip|training compute/i,
-  "Defense Rearmament":      /rearmament|defense spend|military budget|\bnato\b.*spend|arms buildup|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|defense procure/i,
-  "Power Grid Expansion":    /power grid|grid expansion|grid infrastructure|transmission line|electricity grid|grid upgrade|high.voltage|grid invest|grid capacity/i,
-  "Private Credit":          /private credit|direct lending|private debt|\bbdc\b|unitranche|middle.market loan|credit fund.*private|private.*credit fund/i,
-  "Nuclear Renaissance":     /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear.*invest/i,
-  "Space Economy":           /space economy|commercial space|satellite.*launch|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital/i,
-  "Cybersecurity":           /cybersecurity|cyber attack|ransomware|data breach|zero.day|endpoint security|threat actor|cyber threat|cyberattack|infosec/i,
-  "Energy Security":         /energy security|energy independence|\blng\b|liquefied natural gas|strategic.*energy|fuel supply.*secur|energy.*supply.*secur/i,
-  "GLP-1 Economy":           /glp.1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight.loss drug|obesity drug|eli lilly|novo nordisk|glp1/i,
-  "Autonomous Systems":      /autonomous.*vehicle|self.driving|\buav\b|unmanned aerial|\bdrone\b.*militar|autonomous.*robot|lidar.*autonomous|full self/i,
-  "Reshoring":               /reshoring|nearshoring|onshoring|friend.shoring|supply chain.*relocat|manufacturing.*return|domestic.*manufactur|bring.*production.*home/i,
-  "Data Center Buildout":    /data center.*build|hyperscaler.*expand|colocation.*capacity|data center.*invest|server farm|data center.*power|new data center/i,
+  "AI Infrastructure":    /ai infrastructure|ai data center|gpu cluster|foundation model|ai chip|ai compute|training compute|inference hardware|inference infrastructure|llm infrastructure|model training|ai buildout|compute buildout|nvidia.*cluster|ai.*capacity/i,
+  "Defense Rearmament":   /rearmament|defense spending|defense budget|military spending|military budget|nato.*expansion|arms buildup|defense procurement|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|military buildup|defense investment/i,
+  "Power Grid Expansion": /power grid|grid expansion|grid infrastructure|transmission line|electricity grid|grid upgrade|grid investment|grid capacity|electrical grid|grid modernization|high.voltage transmission/i,
+  "Private Credit":       /private credit|direct lending|private debt|\bbdc\b|unitranche|middle.market loan|middle market lending|alternative lending|non.bank lending|private lending/i,
+  "Nuclear Renaissance":  /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear investment|nuclear expansion|nuclear.*build/i,
+  "Space Economy":        /space economy|commercial space|satellite launch|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital launch|space investment|launch.*satellite/i,
+  "Cybersecurity":        /cybersecurity|cyber attack|ransomware|data breach|zero.day|endpoint security|threat actor|cyber threat|cyberattack|infosec|network security|cyber incident/i,
+  "Energy Security":      /energy security|energy independence|\blng\b|liquefied natural gas|strategic energy|energy supply|fuel supply|energy resilience|energy self.sufficiency|energy transition.*security/i,
+  "GLP-1 Economy":        /glp.1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight.loss drug|obesity drug|eli lilly|novo nordisk|glp1|anti.obesity medication|obesity treatment/i,
+  "Autonomous Systems":   /autonomous vehicle|autonomous driving|self.driving|driverless|\buav\b|unmanned aerial|military drone|autonomous robot|autonomous system|robotics.*autonomous|full self.driving/i,
+  "Reshoring":            /reshoring|nearshoring|onshoring|friendshoring|friend.shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|bring.*manufacturing.*home|factory.*domestic/i,
+  "Data Center Buildout": /data center construction|data center expansion|data center investment|data center buildout|data center development|hyperscaler expansion|colocation expansion|server farm|new data center|data center capacity/i,
 };
 
 // ── Sector / asset class keyword maps ─────────────────────────────────────────
@@ -91,24 +93,32 @@ function matchCount(text: string, rx: RegExp): number {
 
 // ── Scoring functions ─────────────────────────────────────────────────────────
 
-function sectorScore(text: string, sectors: string[]): number {
-  if (!sectors.length) return 0;
+function sectorScore(
+  text: string,
+  sectors: string[],
+): { score: number; matched: string[] } {
+  if (!sectors.length) return { score: 0, matched: [] };
   let score = 0;
+  const matched: string[] = [];
   for (const sector of sectors) {
     const rx = SECTOR_KEYWORDS[sector];
-    if (rx?.test(text)) score += 30;
+    if (rx?.test(text)) { score += 30; matched.push(sector); }
   }
-  return Math.min(score, 60);
+  return { score: Math.min(score, 60), matched };
 }
 
-function assetScore(text: string, assets: string[]): number {
-  if (!assets.length) return 0;
+function assetScore(
+  text: string,
+  assets: string[],
+): { score: number; matched: string[] } {
+  if (!assets.length) return { score: 0, matched: [] };
   let score = 0;
+  const matched: string[] = [];
   for (const asset of assets) {
     const rx = ASSET_KEYWORDS[asset];
-    if (rx?.test(text)) score += 20;
+    if (rx?.test(text)) { score += 20; matched.push(asset); }
   }
-  return Math.min(score, 40);
+  return { score: Math.min(score, 40), matched };
 }
 
 function regionScore(text: string, region: string): number {
@@ -132,14 +142,18 @@ function roleScore(cluster: StoryCluster, role: string): number {
 }
 
 // Priority 1 — strongest signal: +40 per followed theme match (capped at 80)
-function followedThemeScore(text: string, themes: string[]): number {
-  if (!themes.length) return 0;
+function followedThemeScore(
+  text: string,
+  themes: string[],
+): { score: number; matched: string[] } {
+  if (!themes.length) return { score: 0, matched: [] };
   let score = 0;
+  const matched: string[] = [];
   for (const theme of themes) {
     const rx = THEME_KEYWORDS[theme];
-    if (rx?.test(text)) score += 40;
+    if (rx?.test(text)) { score += 40; matched.push(theme); }
   }
-  return Math.min(score, 80);
+  return { score: Math.min(score, 80), matched };
 }
 
 function themeScore(text: string, sectors: string[], assets: string[]): number {
@@ -186,18 +200,28 @@ export function scoreCluster(
   prefs: UserPrefs,
   debug = false,
 ): RankedCluster {
-  const text = textOf(cluster);
-  const th   = followedThemeScore(text, prefs.followed_themes);
-  const s    = sectorScore(text, prefs.followed_sectors);
-  const a    = assetScore(text, prefs.followed_asset_classes);
-  const r    = regionScore(text, prefs.region_focus);
-  const ro   = roleScore(cluster, prefs.user_role);
-  const tm   = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
+  const text  = textOf(cluster);
+  const th    = followedThemeScore(text, prefs.followed_themes);
+  const s     = sectorScore(text, prefs.followed_sectors);
+  const a     = assetScore(text, prefs.followed_asset_classes);
+  const r     = regionScore(text, prefs.region_focus);
+  const ro    = roleScore(cluster, prefs.user_role);
+  const tm    = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
 
   return {
     ...cluster,
-    relevance_score: th + s + a + r + ro + tm,
-    _debug: debug ? { followedTheme: th, sector: s, asset: a, region: r, role: ro, themeDepth: tm } : undefined,
+    relevance_score: th.score + s.score + a.score + r + ro + tm,
+    _debug: debug ? {
+      followedTheme: th.score,
+      sector:        s.score,
+      asset:         a.score,
+      region:        r,
+      role:          ro,
+      themeDepth:    tm,
+      matchedThemes:  th.matched,
+      matchedSectors: s.matched,
+      matchedAssets:  a.matched,
+    } : undefined,
   };
 }
 
@@ -232,10 +256,29 @@ export function rankClusters(
   const ranked = [...breaking, ...trending, ...rest];
 
   if (isDev) {
-    console.group("[feedRanker]");
-    ranked.slice(0, 8).forEach((c, i) =>
-      console.log(`${i + 1}. [rel=${c.relevance_score}] ${c.primary.title.slice(0, 60)}`, c._debug),
-    );
+    const origPos = new Map(clusters.map((c, i) => [c.id, i + 1]));
+    const moved   = ranked.filter((c, i) => origPos.get(c.id) !== i + 1).length;
+    console.group(`[feedRanker] ${moved} of ${ranked.length} clusters reordered by personalization`);
+    ranked.slice(0, 20).forEach((c, finalIdx) => {
+      const orig   = origPos.get(c.id) ?? "?";
+      const delta  = typeof orig === "number" ? orig - (finalIdx + 1) : 0;
+      const arrow  = delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : "=";
+      const themes  = (c._debug?.matchedThemes  as string[] | undefined) ?? [];
+      const sectors = (c._debug?.matchedSectors as string[] | undefined) ?? [];
+      const assets  = (c._debug?.matchedAssets  as string[] | undefined) ?? [];
+      const labels  = [
+        ...themes.map(t  => `theme:${t}`),
+        ...sectors.map(s => `sector:${s}`),
+        ...assets.map(a  => `asset:${a}`),
+        ...(c._debug?.region ? [`region(+${c._debug.region})`] : []),
+        ...(c._debug?.role   ? [`role(+${c._debug.role})`]     : []),
+      ].join(", ") || "no match";
+      console.log(
+        `%c${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) [rel=${String(c.relevance_score).padStart(3)}] ${c.primary.title.slice(0, 55)}`,
+        c.relevance_score > 0 ? "color:#6aad6a" : "color:#888",
+        `\n     ${labels}`,
+      );
+    });
     console.groupEnd();
   }
 
