@@ -39,6 +39,8 @@ _PUNCT_RE = re.compile(r"[^\w\s]+")
 _MIN_EVIDENCE_COUNT = 2   # distinct contributing sources
 _MIN_BREADTH        = 2   # distinct industries spanned by contributing clusters
 _MIN_CONFIDENCE     = 20  # post-competition confidence floor
+_MIN_STORIES        = 2   # independent contributing clusters (stories) — a theme
+                          # must be supported by ≥2 independent stories, never a one-off
 
 
 def _norm(text: str) -> str:
@@ -413,6 +415,8 @@ def extract_themes(
         # runs after Pass 2 so penalised themes that fall below the floor are also
         # dropped.  Reasons are logged for observability.
         gate_fail = []
+        if n_clusters < _MIN_STORIES:
+            gate_fail.append(f"stories={n_clusters}<{_MIN_STORIES}")
         if evidence_count < _MIN_EVIDENCE_COUNT:
             gate_fail.append(f"evidence={evidence_count}<{_MIN_EVIDENCE_COUNT}")
         if breadth_raw < _MIN_BREADTH:

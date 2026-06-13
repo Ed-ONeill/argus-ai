@@ -102,6 +102,72 @@ _RETAIL_ARTICLE_HARD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Off-topic hard-negative filter ──────────────────────────────────────────────
+# Topic-level exclusion (score 0, before scoring) for content that would never come
+# up on a hedge-fund morning call: personal finance, retirement planning, ETF/fund
+# advice, stock-picking, portfolio tips, lifestyle/consumer investing, and trivia.
+# Every pattern is anchored to ADVICE / LIFESTYLE framing so institutional stories
+# that merely share vocabulary survive, e.g.:
+#   keep: "IRA subsidies", "pension fund commits to private credit", "ETF inflows",
+#         "Social Security trust fund insolvency", "mortgage rates climb", "Roth
+#         IRA"→only as advice, "annuity sales hit record" (insurer flow).
+#   drop: "Roth IRA conversion guide", "best ETFs to buy", "is Tesla stock a buy?",
+#         "how to retire early", "build your emergency fund".
+_OFF_TOPIC_HARD_RE = re.compile(
+    r"(?:"
+    # ── Retirement planning (consumer) — NOT pension/retirement funds as allocators
+    r"\b401\s*\(?\s*k\s*\)?\b"
+    r"|\broth\s+(?:ira|conversion|401\s*\(?k\)?)\b"
+    r"|\bira\s+(?:contribution|rollover|roll\s+over|withdrawal|limit)\b"
+    r"|\brequired\s+minimum\s+distribution\b|\brmds?\b"
+    r"|\bnest\s+egg\b"
+    r"|\bretire\s+(?:early|at\s+\d|comfortably|rich|by\s+\d)\b"
+    r"|\bhow\s+(?:much|to)\b.{0,20}\bretire\b"
+    r"|\bretirement\s+(?:savings?|account|plan(?:ning)?|tips?|advice|guide|strateg(?:y|ies)|mistakes?|calculator|readiness)\b"
+    r"|\bretirees?\s+(?:should|can|need\s+to|guide|tips?|how\s+to|when\s+to)\b"
+    r"|\bsocial\s+security\b.{0,18}(?:when\s+to\s+claim|claiming\s+strateg|benefits?\s+(?:guide|tips?|calculator|when)|how\s+(?:much|to)\s+(?:claim|collect|maximize))"
+    r"|\bannuit(?:y|ies)\b.{0,24}(?:guide|tips?|should\s+you|worth\s+it|explained|best|for\s+retire)\b"
+    r"|\bpension\s+(?:tips?|advice|guide|how\s+to)\b"
+    # ── Personal / lifestyle finance ──────────────────────────────────────────
+    r"|\bpersonal\s+finance\b|\bbudgeting\b"
+    r"|\bhow\s+to\s+(?:save|budget)\b|\bsave\s+(?:money|on\s+your)\b"
+    r"|\bemergency\s+fund\b|\bside\s+hustle\b|\bpassive\s+income\b"
+    r"|\b(?:build|grow)\s+(?:your\s+)?wealth\b|\bget\s+rich\b|\bbecome\s+a\s+millionaire\b"
+    r"|\bnet\s+worth\s+(?:by\s+age|goals?|tracker|calculator)\b"
+    r"|\bfinancial\s+(?:freedom|independence|wellness|literacy)\b"
+    r"|\bfrugal\b|\bmoney\s+(?:habits|moves|hacks)\b"
+    r"|\bcredit\s+score\b|\bcredit\s+card\s+(?:debt|rewards?|points?|tips?|best|sign.?up\s+bonus)\b"
+    r"|\bstudent\s+loan\s+(?:tips?|advice|refinanc|payoff|forgiveness\s+(?:guide|tips?|help))\b"
+    r"|\bmortgage\s+(?:tips?|advice|calculator|how\s+much|application\s+guide)\b"
+    # ── ETF / fund advice — NOT flows / launches / approvals ───────────────────
+    r"|\b(?:best|top)\s+(?:\d+\s+)?(?:etfs?|index\s+funds?|mutual\s+funds?|dividend\s+(?:etfs?|funds?))\b"
+    r"|\b(?:etfs?|index\s+funds?|mutual\s+funds?)\s+to\s+(?:buy|own|consider|watch|avoid)\b"
+    r"|\bwhich\s+(?:etf|index\s+fund|mutual\s+fund|fund)\s+(?:should|to\s+buy|is\s+best)\b"
+    r"|\b\d{1,2}\s+(?:etfs?|funds?)\s+to\s+(?:buy|own|watch)\b"
+    # ── Stock-picking / "is X a buy" ──────────────────────────────────────────
+    r"|\bis\s+[\w.\-&' ]{1,30}?\s+stock\s+a\s+(?:buy|sell|hold)\b"
+    r"|\b(?:buy|sell)\s+or\s+(?:sell|hold)\b"
+    r"|\b[\w.\-&']{2,20}\s+stock\s+(?:forecast|prediction|price\s+target)\b.{0,12}20\d\d"
+    r"|\bbull\s+vs\.?\s+bear\b|\bbear\s+vs\.?\s+bull\b"
+    r"|\b(?:over|under)valued\s+stock\b|\b(?:hidden\s+gem|under.the.radar)\s+stocks?\b"
+    # ── Portfolio tips ────────────────────────────────────────────────────────
+    r"|\b(?:your|diversify\s+your|rebalance\s+your|build\s+a)\s+portfolio\b"
+    r"|\bportfolio\s+(?:tips?|advice|for\s+(?:beginners?|retirees?))\b"
+    r"|\b60/40\s+portfolio\b|\basset\s+allocation\s+(?:guide|tips?|for\s+(?:beginners?|retirees?))\b"
+    # ── Consumer / beginner investing ─────────────────────────────────────────
+    r"|\binvesting\s+(?:101|for\s+beginners?|for\s+dummies|basics)\b"
+    r"|\bhow\s+to\s+(?:start\s+)?invest(?:ing)?\b"
+    r"|\b(?:best|top)\s+(?:brokerage|broker|robo.?advisor|investing\s+app)s?\b"
+    r"|\bdollar.cost\s+averaging\b|\bbeginner'?s?\s+guide\s+to\b"
+    # ── Trivia / lifestyle filler ─────────────────────────────────────────────
+    r"|\bfun\s+facts?\b|\bdid\s+you\s+know\b|\btrivia\b|\bquiz\b"
+    r"|\bthis\s+day\s+in\s+(?:market\s+|wall\s+street\s+|financial\s+)?history\b"
+    r"|\bthings?\s+you\s+(?:probably\s+)?didn'?t\s+know\b"
+    r"|\b(?:surprising|weird|crazy|shocking)\s+(?:facts?|stats?|charts?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 # ── Content-derived category classification ────────────────────────────────────
 # Applied after fetch to every item, overriding the source-assigned category.
@@ -568,6 +634,12 @@ FEED_REGISTRY: list[tuple[str, str, str]] = [
         "https://feeds.bloomberg.com/markets/news.rss",
         "Markets",
     ),
+    # The Information — original tech / AI / deal scoops (flagship, Tier 1).
+    (
+        "The Information",
+        "https://www.theinformation.com/feed",
+        "Markets",   # reclassified by content (Company / M&A / Tech)
+    ),
     (
         "CNBC Economy",
         "https://www.cnbc.com/id/20910258/device/rss/rss.html",
@@ -698,6 +770,34 @@ FEED_REGISTRY: list[tuple[str, str, str]] = [
         "https://www.datacenterdynamics.com/en/rss/",
         "Markets",
     ),
+    # ── Energy / grid / power infrastructure ────────────────────────────────────
+    (
+        "Canary Media",                                   # energy transition, AI power demand
+        "https://www.canarymedia.com/articles.rss",
+        "Markets",
+    ),
+    (
+        "RTO Insider",                                    # grid / ISO-RTO / FERC market regulation
+        "https://www.rtoinsider.com/feed",
+        "Markets",
+    ),
+    (
+        "Power Magazine",                                 # power generation, utilities, projects
+        "https://www.powermag.com/feed/",
+        "Markets",
+    ),
+    # ── Private equity / private capital deals ──────────────────────────────────
+    (
+        "Buyouts",                                        # PE fund + buyout deal flow
+        "https://www.buyoutsinsider.com/feed/",
+        "M&A",
+    ),
+    # ── Data-center / infrastructure hardware ───────────────────────────────────
+    (
+        "Blocks & Files",                                 # data-center storage / infrastructure
+        "https://blocksandfiles.com/feed/",
+        "Markets",
+    ),
 ]
 
 
@@ -809,6 +909,8 @@ _SOURCE_TIERS: dict[str, float] = {
     "EIA":                  48,   # crude/nat-gas inventories, STEO
     "FERC":                 44,   # transmission/interconnection orders (Google-News-sourced; no native RSS)
 
+    "The Information":       48,  # original tech/AI/deal scoops — flagship (Tier 1)
+
     # ── Tier 2: specialist trade press (authoritative for core themes) ──────────
     "PitchBook":             42,  # private-capital deal data
     "Private Debt Investor": 42,  # direct lending / private credit
@@ -817,6 +919,11 @@ _SOURCE_TIERS: dict[str, float] = {
     "Data Center Dynamics":  42,  # data-center buildout primary coverage
     "SemiAnalysis":          44,  # deep semiconductor / AI-compute research
     "Utility Dive":          40,  # utilities, grid, power demand
+    "Canary Media":          40,  # energy transition / AI power demand
+    "RTO Insider":           41,  # grid / ISO-RTO / FERC market regulation
+    "Power Magazine":        38,  # power generation, utilities, projects
+    "Buyouts":               40,  # PE fund + buyout deal flow
+    "Blocks & Files":        34,  # data-center storage / infrastructure (Tier 3 — niche/vendor)
 }
 
 # High-value finance keywords (+15 per match, cap 40)
@@ -1116,6 +1223,34 @@ def _source_quality(source: str) -> float:
     return min(100.0, _SOURCE_TIERS.get(source, 20) * 2.0)
 
 
+# ── Source tiers & dominance caps ───────────────────────────────────────────────
+# Formal tier bands over the 0–50 _SOURCE_TIERS quality scale. The per-source feed
+# cap is how a publisher's authority translates into how much of the feed it may
+# occupy: flagship wires / primary sources may dominate when they have genuine
+# stories; low-authority publishers are hard-capped so they can never pad the feed.
+#
+#   Tier 1 (≥46)  flagship wires + primary releases (Bloomberg, FT, The Information,
+#                 SEC, Fed, Treasury, BLS, EIA)          → effectively uncapped
+#   Tier 2 (38–45) quality specialist / strong general   → up to 6
+#   Tier 3 (30–37) solid but secondary                   → up to 3
+#   Tier 4 (<30)   low-authority / aggregator (Yahoo …)  → up to 2
+_TIER_FEED_CAP: dict[int, int] = {1: 12, 2: 6, 3: 3, 4: 2}
+
+
+def _source_tier(source: str) -> int:
+    """Classify a source into tier 1–4 from its quality score."""
+    q = _SOURCE_TIERS.get(source, 20)
+    if q >= 46: return 1
+    if q >= 38: return 2
+    if q >= 30: return 3
+    return 4
+
+
+def _per_source_cap(source: str) -> int:
+    """Max items a single source may contribute to the final feed (by tier)."""
+    return _TIER_FEED_CAP[_source_tier(source)]
+
+
 def score_item(item: "FeedItem") -> float:
     """
     Score a FeedItem for signal quality on a 0–100 scale.
@@ -1164,9 +1299,12 @@ def score_item(item: "FeedItem") -> float:
     else:
         rec_score = 0.0
 
-    # 4. Hard exclusions — newsletter/podcast/sponsored CTAs + generic retail
-    #    investing articles ("should you buy", "top stocks", "here's why"…).
-    if _HARD_EXCLUDE_RE.search(item.title) or _RETAIL_ARTICLE_HARD_RE.search(item.title):
+    # 4. Hard exclusions — newsletter/podcast/sponsored CTAs, generic retail
+    #    investing articles, and off-topic content (personal finance, retirement,
+    #    ETF/portfolio advice, stock-picking, lifestyle finance, trivia).
+    if (_HARD_EXCLUDE_RE.search(item.title)
+            or _RETAIL_ARTICLE_HARD_RE.search(item.title)
+            or _OFF_TOPIC_HARD_RE.search(item.title)):
         item.source_quality_score   = 0.0
         item.consumer_noise_penalty = 0.0
         item.retail_content_penalty = 0.0
@@ -1421,6 +1559,28 @@ class FeedManager:
             _STRENGTH_RANK.get(i.signal_strength, 1),          # within hour: strong → medium → weak
             -(i.institutional_score * 0.45 + i.signal_score * 0.55),  # quality composite
         ))
+
+        # ── Source-diversity cap ──────────────────────────────────────────────
+        # Stop low-authority publishers from padding the feed: keep only each
+        # source's best N items (N by tier — flagship/primary effectively
+        # uncapped, aggregators hard-capped). Walks best-first, so the items kept
+        # per source are its highest-quality ones. Composition control, not scoring.
+        capped: list[FeedItem] = []
+        per_source: dict[str, int] = {}
+        dropped_by_cap = 0
+        for i in scored:
+            n = per_source.get(i.source, 0)
+            if n >= _per_source_cap(i.source):
+                dropped_by_cap += 1
+                continue
+            per_source[i.source] = n + 1
+            capped.append(i)
+        if dropped_by_cap:
+            log.info(
+                "[feed] source-diversity cap dropped %d item(s); kept %d across %d sources",
+                dropped_by_cap, len(capped), len(per_source),
+            )
+        scored = capped
 
         return scored
 
