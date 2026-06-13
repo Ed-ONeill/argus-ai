@@ -53,7 +53,9 @@ const THEME_TIERS: Record<string, ThemeTiers> = {
   "Reshoring":            { t1: /reshoring|nearshoring|onshoring|friendshoring|friend shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|reshore/i },
 };
 
-const TIER_WEIGHT = { t1: 40, t2: 18, t3: 6 } as const;
+// Aggressive tier separation: a tier-1 infrastructure hit must dominate sector /
+// region / role signals combined, while a tier-3 generic mention is near-inert.
+const TIER_WEIGHT = { t1: 100, t2: 30, t3: 3 } as const;
 
 // ── Sector / asset class keyword maps ─────────────────────────────────────────
 
@@ -200,7 +202,7 @@ function followedThemeScore(
       bestTier = bestTier === 0 ? tier : Math.min(bestTier, tier);
     }
   }
-  return { score: Math.min(score, 100), matched, bestTier };
+  return { score: Math.min(score, 200), matched, bestTier };
 }
 
 function themeScore(text: string, sectors: string[], assets: string[]): number {
@@ -268,11 +270,19 @@ function computeBreakdown(cluster: StoryCluster, prefs: UserPrefs): ScoreBreakdo
   };
 }
 
-// A cluster is a STRONG theme match only when it hits tier 1 or 2 of a followed
-// theme. A bare generic mention (tier 3) is demoted to the sector tier so that
-// "AI is changing investor sentiment" never leads over genuine infrastructure.
-function isStrongTheme(b: ScoreBreakdown): boolean {
-  return b.themeTier === 1 || b.themeTier === 2;
+// Ranking tier for a cluster, matching the user-facing relevance model:
+//   Tier 1 — tier-1 theme hit (infra / semis / data centers / utilities / power /
+//            private credit / transmission / hyperscalers). Heavily dominates.
+//   Tier 2 — tier-2 theme hit (AI software / adoption / regulation), OR a genuine
+//            followed-sector match with no generic-theme noise. Moderate boost.
+//   Tier 3 — generic (tier-3) theme mentions + everything else. Near the bottom.
+// A bare generic mention ("AI is changing markets") is forced to Tier 3 even when
+// it incidentally trips the broad sector regex, so it rarely appears near the top.
+function clusterTier(b: ScoreBreakdown): 1 | 2 | 3 {
+  if (b.themeTier === 1) return 1;
+  if (b.themeTier === 2) return 2;
+  if (b.themeTier === 0 && b.sectorScore > 0) return 2;
+  return 3;
 }
 
 function toRanked(cluster: StoryCluster, b: ScoreBreakdown, debug: boolean): RankedCluster {
@@ -302,11 +312,11 @@ export function scoreCluster(
 }
 
 /**
- * Tiered ranking — a strong followed-theme match always outranks any non-theme
- * story, regardless of signal score:
- *   Tier 1 — strong theme match (tier 1/2 keywords: real infrastructure/substance)
- *   Tier 2 — followed sector match, OR a generic (tier 3) theme mention
- *   Tier 3 — everything else
+ * Tiered ranking — a tier-1 theme match always outranks everything below it,
+ * regardless of signal score:
+ *   Tier 1 — tier-1 theme hit (real infrastructure / semis / data centers / etc.)
+ *   Tier 2 — tier-2 theme hit, OR a genuine followed-sector match
+ *   Tier 3 — generic (tier-3) theme mentions + everything else
  * Within each tier, sort by relevance score, then signal score.
  */
 export function rankClusters(
@@ -321,12 +331,12 @@ export function rankClusters(
 
   const scored = clusters.map(c => {
     const b = computeBreakdown(c, prefs);
-    return { rc: toRanked(c, b, isDev), b };
+    return { rc: toRanked(c, b, isDev), b, tier: clusterTier(b) };
   });
 
-  const tier1 = scored.filter(x => isStrongTheme(x.b));
-  const tier2 = scored.filter(x => !isStrongTheme(x.b) && (x.b.themeScore > 0 || x.b.sectorScore > 0));
-  const tier3 = scored.filter(x => !isStrongTheme(x.b) && x.b.themeScore === 0 && x.b.sectorScore === 0);
+  const tier1 = scored.filter(x => x.tier === 1);
+  const tier2 = scored.filter(x => x.tier === 2);
+  const tier3 = scored.filter(x => x.tier === 3);
 
   const byScore = (a: typeof scored[number], b: typeof scored[number]) =>
     b.rc.relevance_score      - a.rc.relevance_score ||
@@ -341,10 +351,8 @@ export function rankClusters(
 
   if (isDev) {
     const origPos = new Map(clusters.map((c, i) => [c.id, i + 1]));
-    const tierOf  = (x: typeof scored[number]) =>
-      isStrongTheme(x.b) ? 1 : (x.b.themeScore > 0 || x.b.sectorScore > 0) ? 2 : 3;
     console.group(
-      `[feedRanker] tier1(theme)=${tier1.length}  tier2(sector)=${tier2.length}  tier3(other)=${tier3.length}  of ${ranked.length}`,
+      `[feedRanker] tier1(infra)=${tier1.length}  tier2(sector/adjacent)=${tier2.length}  tier3(generic/other)=${tier3.length}  of ${ranked.length}`,
     );
     ordered.slice(0, 20).forEach((x, finalIdx) => {
       const c     = x.rc;
@@ -359,8 +367,8 @@ export function rankClusters(
         ...(x.b.role   ? [`role(+${x.b.role})`]     : []),
       ].join(", ") || "no match";
       console.log(
-        `%cT${tierOf(x)} ${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) sig=${String(Math.round(c.primary.signal_score)).padStart(3)} rel=${String(c.relevance_score).padStart(3)} ${c.primary.title.slice(0, 50)}`,
-        x.b.themeScore > 0 ? "color:#6aad6a" : x.b.sectorScore > 0 ? "color:#c8a040" : "color:#888",
+        `%cT${x.tier} ${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) sig=${String(Math.round(c.primary.signal_score)).padStart(3)} rel=${String(c.relevance_score).padStart(3)} ${c.primary.title.slice(0, 50)}`,
+        x.tier === 1 ? "color:#6aad6a" : x.tier === 2 ? "color:#c8a040" : "color:#888",
         `\n     ${labels}`,
       );
     });
@@ -389,9 +397,10 @@ export function textPreferenceScore(text: string, prefs: UserPrefs): number {
   const th = followedThemeScore(t, prefs.followed_themes);
   const s  = sectorScore(t, prefs.followed_sectors);
   const a  = assetScore(t, prefs.followed_asset_classes);
-  // Weight themes heavily so a strong theme hit dominates the engine's own
+  // Weight themes heavily so a tier-1 theme hit (100) dominates the engine's own
   // confidence-based scores (which run ~0–150) when used as an additive boost.
-  return th.score * 2.5 + s.score * 1.5 + a.score;
+  // A tier-3 generic mention (3) stays near-inert here too.
+  return th.score * 2 + s.score * 1 + a.score * 0.75;
 }
 
 /** All descriptive text fields of a theme-intelligence object, joined. */
