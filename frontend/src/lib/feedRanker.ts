@@ -17,32 +17,33 @@ export interface RankedCluster extends StoryCluster {
 // Matches cluster text against the curated theme list. Each theme has tight,
 // high-precision patterns to avoid false positives inflating scores.
 
-// Patterns use simple phrase alternations only — no order-dependent .* compounds.
-// Each alternative is a short phrase that unambiguously maps to the theme.
+// Patterns run against normalize()'d text (lowercase, de-hyphenated, US spelling).
+// Broadened to match real headline language ("AI boom", "AI-chip", "data centre")
+// rather than only rigid compound phrases.
 const THEME_KEYWORDS: Record<string, RegExp> = {
-  "AI Infrastructure":    /ai infrastructure|ai data center|gpu cluster|foundation model|ai chip|ai compute|training compute|inference hardware|inference infrastructure|llm infrastructure|model training|ai buildout|compute buildout|nvidia.*cluster|ai.*capacity/i,
-  "Defense Rearmament":   /rearmament|defense spending|defense budget|military spending|military budget|nato.*expansion|arms buildup|defense procurement|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|military buildup|defense investment/i,
-  "Power Grid Expansion": /power grid|grid expansion|grid infrastructure|transmission line|electricity grid|grid upgrade|grid investment|grid capacity|electrical grid|grid modernization|high.voltage transmission/i,
-  "Private Credit":       /private credit|direct lending|private debt|\bbdc\b|unitranche|middle.market loan|middle market lending|alternative lending|non.bank lending|private lending/i,
-  "Nuclear Renaissance":  /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear investment|nuclear expansion|nuclear.*build/i,
-  "Space Economy":        /space economy|commercial space|satellite launch|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital launch|space investment|launch.*satellite/i,
-  "Cybersecurity":        /cybersecurity|cyber attack|ransomware|data breach|zero.day|endpoint security|threat actor|cyber threat|cyberattack|infosec|network security|cyber incident/i,
-  "Energy Security":      /energy security|energy independence|\blng\b|liquefied natural gas|strategic energy|energy supply|fuel supply|energy resilience|energy self.sufficiency|energy transition.*security/i,
-  "GLP-1 Economy":        /glp.1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight.loss drug|obesity drug|eli lilly|novo nordisk|glp1|anti.obesity medication|obesity treatment/i,
-  "Autonomous Systems":   /autonomous vehicle|autonomous driving|self.driving|driverless|\buav\b|unmanned aerial|military drone|autonomous robot|autonomous system|robotics.*autonomous|full self.driving/i,
-  "Reshoring":            /reshoring|nearshoring|onshoring|friendshoring|friend.shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|bring.*manufacturing.*home|factory.*domestic/i,
-  "Data Center Buildout": /data center construction|data center expansion|data center investment|data center buildout|data center development|hyperscaler expansion|colocation expansion|server farm|new data center|data center capacity/i,
+  "AI Infrastructure":    /\bai\b|artificial intelligence|\bgpu\b|\bgpus\b|nvidia|\bamd\b|inference|training cluster|\bllm\b|\bllms\b|foundation model|hyperscaler|cloud compute|compute capacity|ai infrastructure|ai data center|ai chip|ai compute|ai buildout|accelerated computing/i,
+  "Defense Rearmament":   /rearmament|defense spending|defense budget|defence|military spending|military budget|\bnato\b|arms buildup|defense procurement|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|military buildup|defense investment/i,
+  "Power Grid Expansion": /transmission|substation|utility infrastructure|grid capacity|grid upgrade|power demand|electricity demand|transmission line|power grid|grid expansion|electrical grid|grid investment|grid modernization|electricity grid/i,
+  "Private Credit":       /private credit|direct lending|private debt|\bbdc\b|unitranche|middle market loan|middle market lending|alternative lending|non bank lending|private lending|credit fund/i,
+  "Nuclear Renaissance":  /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear investment|nuclear expansion|nuclear plant/i,
+  "Space Economy":        /space economy|commercial space|\bsatellite\b|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital launch|space investment/i,
+  "Cybersecurity":        /cybersecurity|cyber attack|ransomware|data breach|zero day|endpoint security|threat actor|cyber threat|cyberattack|infosec|network security|cyber incident|crowdstrike|palo alto networks/i,
+  "Energy Security":      /energy security|energy independence|\blng\b|liquefied natural gas|strategic energy|energy supply|fuel supply|energy resilience|energy self sufficiency/i,
+  "GLP-1 Economy":        /glp.?1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight loss drug|obesity drug|eli lilly|novo nordisk|anti obesity|obesity treatment/i,
+  "Autonomous Systems":   /autonomous vehicle|autonomous driving|self driving|driverless|\buav\b|unmanned aerial|military drone|autonomous robot|autonomous system|full self driving|robotaxi/i,
+  "Reshoring":            /reshoring|nearshoring|onshoring|friendshoring|friend shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|reshore/i,
+  "Data Center Buildout": /data center|server farm|colocation|hyperscale|rack capacity|power demand|cloud region|data center buildout|data center expansion|data center capacity|data center construction/i,
 };
 
 // ── Sector / asset class keyword maps ─────────────────────────────────────────
 
 const SECTOR_KEYWORDS: Record<string, RegExp> = {
-  "Technology":             /tech|software|\bai\b|artificial intelligence|semiconductor|cloud|digital|cyber|saas|data center/i,
-  "Healthcare":             /health|pharma|biotech|medical|drug|\bfda\b|clinical|hospital|therapeutics|vaccine/i,
-  "Financial Services":     /\bbank|finance|financial|credit|insurance|monetary|hedge fund|asset manager|broker/i,
-  "Energy":                 /\boil\b|natural gas|energy|crude|opec|pipeline|renewable|solar|wind|\blng\b|refin/i,
+  "Technology":             /technolog|\btech\b|\bsoftware\b|\bai\b|artificial intelligence|semiconductor|\bchips?\b|\bcloud\b|\bsaas\b|data center|\bgpu\b|\bdigital\b|\bcyber/i,
+  "Healthcare":             /health|pharma|biotech|medical|\bdrug\b|\bfda\b|clinical|hospital|therapeutics|vaccine/i,
+  "Financial Services":     /\bbank|finance|financial|\bcredit\b|insurance|monetary|hedge fund|asset manager|broker/i,
+  "Energy":                 /\boil\b|natural gas|energy|crude|opec|pipeline|renewable|solar|\bwind\b|\blng\b|refin/i,
   "Industrials":            /manufactur|aerospace|defense|industrial|logistics|transport|freight/i,
-  "Consumer Discretionary": /retail|consumer discret|automaker|\bauto\b|luxury|restaurant|hotel|travel|apparel|e-commerce/i,
+  "Consumer Discretionary": /retail|consumer discret|automaker|\bauto\b|luxury|restaurant|hotel|travel|apparel|e commerce/i,
   "Materials":              /mining|steel|alumin|copper|chemical|commodity|metal|lithium|cement/i,
   "Real Estate":            /real estate|\breit\b|property market|housing|mortgage|commercial property/i,
   "Communication Services": /\bmedia\b|telecom|streaming|social media|advertising|content|broadcast|wireless/i,
@@ -73,9 +74,23 @@ const REGION_KEYWORDS: Record<string, RegExp | null> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Normalize text before matching so headline variants converge:
+//   - lowercase everything
+//   - British → American spelling ("data centre" → "data center")
+//   - hyphens / en-dashes / em-dashes → spaces ("AI-chip" → "ai chip")
+//   - collapse whitespace
+function normalize(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/centre/g, "center")
+    .replace(/[-‐‑‒–—―]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function textOf(cluster: StoryCluster): string {
   const p = cluster.primary;
-  return [
+  return normalize([
     p.title,
     p.summary,
     p.why_it_matters,
@@ -83,7 +98,7 @@ function textOf(cluster: StoryCluster): string {
     cluster.theme_label,
     ...(p.affected_entities ?? []),
     ...(cluster.related?.map(r => r.title) ?? []),
-  ].join(" ");
+  ].join(" "));
 }
 
 function matchCount(text: string, rx: RegExp): number {
@@ -170,19 +185,6 @@ function themeScore(text: string, sectors: string[], assets: string[]): number {
   return Math.min(hits * 5, 15);
 }
 
-// ── Override detection ────────────────────────────────────────────────────────
-
-function isBreaking(cluster: StoryCluster): boolean {
-  return cluster.primary.signal_strength === "strong" && cluster.primary.signal_score >= 80;
-}
-
-function isTrending(cluster: StoryCluster): boolean {
-  return (
-    cluster.cluster_score >= 0.75 ||
-    (cluster.story_count >= 3 && cluster.primary.signal_score >= 65)
-  );
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 function prefsAreEmpty(prefs: UserPrefs): boolean {
@@ -195,36 +197,77 @@ function prefsAreEmpty(prefs: UserPrefs): boolean {
   );
 }
 
+// Full score breakdown — always computed (tiering depends on theme/sector hits,
+// which must work in production, not only in dev/debug mode).
+interface ScoreBreakdown {
+  relevance:      number;
+  themeScore:     number;
+  sectorScore:    number;
+  assetScore:     number;
+  region:         number;
+  role:           number;
+  themeDepth:     number;
+  matchedThemes:  string[];
+  matchedSectors: string[];
+  matchedAssets:  string[];
+}
+
+function computeBreakdown(cluster: StoryCluster, prefs: UserPrefs): ScoreBreakdown {
+  const text = textOf(cluster);
+  const th   = followedThemeScore(text, prefs.followed_themes);
+  const s    = sectorScore(text, prefs.followed_sectors);
+  const a    = assetScore(text, prefs.followed_asset_classes);
+  const r    = regionScore(text, prefs.region_focus);
+  const ro   = roleScore(cluster, prefs.user_role);
+  const td   = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
+  return {
+    relevance:      th.score + s.score + a.score + r + ro + td,
+    themeScore:     th.score,
+    sectorScore:    s.score,
+    assetScore:     a.score,
+    region:         r,
+    role:           ro,
+    themeDepth:     td,
+    matchedThemes:  th.matched,
+    matchedSectors: s.matched,
+    matchedAssets:  a.matched,
+  };
+}
+
+function toRanked(cluster: StoryCluster, b: ScoreBreakdown, debug: boolean): RankedCluster {
+  return {
+    ...cluster,
+    relevance_score: b.relevance,
+    _debug: debug ? {
+      followedTheme:  b.themeScore,
+      sector:         b.sectorScore,
+      asset:          b.assetScore,
+      region:         b.region,
+      role:           b.role,
+      themeDepth:     b.themeDepth,
+      matchedThemes:  b.matchedThemes,
+      matchedSectors: b.matchedSectors,
+      matchedAssets:  b.matchedAssets,
+    } : undefined,
+  };
+}
+
 export function scoreCluster(
   cluster: StoryCluster,
   prefs: UserPrefs,
   debug = false,
 ): RankedCluster {
-  const text  = textOf(cluster);
-  const th    = followedThemeScore(text, prefs.followed_themes);
-  const s     = sectorScore(text, prefs.followed_sectors);
-  const a     = assetScore(text, prefs.followed_asset_classes);
-  const r     = regionScore(text, prefs.region_focus);
-  const ro    = roleScore(cluster, prefs.user_role);
-  const tm    = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
-
-  return {
-    ...cluster,
-    relevance_score: th.score + s.score + a.score + r + ro + tm,
-    _debug: debug ? {
-      followedTheme: th.score,
-      sector:        s.score,
-      asset:         a.score,
-      region:        r,
-      role:          ro,
-      themeDepth:    tm,
-      matchedThemes:  th.matched,
-      matchedSectors: s.matched,
-      matchedAssets:  a.matched,
-    } : undefined,
-  };
+  return toRanked(cluster, computeBreakdown(cluster, prefs), debug);
 }
 
+/**
+ * Tiered ranking — a followed-theme match always outranks any non-theme story,
+ * regardless of signal score:
+ *   Tier 1 — clusters matching a followed theme
+ *   Tier 2 — clusters matching a followed sector (but no followed theme)
+ *   Tier 3 — everything else
+ * Within each tier, sort by signal score (relevance score breaks ties).
+ */
 export function rankClusters(
   clusters: StoryCluster[],
   prefs: UserPrefs,
@@ -233,49 +276,50 @@ export function rankClusters(
     return clusters.map(c => ({ ...c, relevance_score: 0, _debug: undefined }));
   }
 
-  const isDev  = process.env.NODE_ENV === "development";
-  const scored = clusters.map(c => scoreCluster(c, prefs, isDev));
+  const isDev = process.env.NODE_ENV === "development";
 
-  const breaking: RankedCluster[] = [];
-  const trending: RankedCluster[] = [];
-  const rest:     RankedCluster[] = [];
+  const scored = clusters.map(c => {
+    const b = computeBreakdown(c, prefs);
+    return { rc: toRanked(c, b, isDev), b };
+  });
 
-  for (const c of scored) {
-    if (isBreaking(c))  breaking.push(c);
-    else if (isTrending(c)) trending.push(c);
-    else rest.push(c);
-  }
+  const tier1 = scored.filter(x => x.b.themeScore > 0);
+  const tier2 = scored.filter(x => x.b.themeScore === 0 && x.b.sectorScore > 0);
+  const tier3 = scored.filter(x => x.b.themeScore === 0 && x.b.sectorScore === 0);
 
-  const byRelevance = (a: RankedCluster, b: RankedCluster) =>
-    b.relevance_score - a.relevance_score ||
-    b.primary.signal_score - a.primary.signal_score;
+  const bySignal = (a: typeof scored[number], b: typeof scored[number]) =>
+    b.rc.primary.signal_score - a.rc.primary.signal_score ||
+    b.rc.relevance_score      - a.rc.relevance_score;
 
-  trending.sort(byRelevance);
-  rest.sort(byRelevance);
+  tier1.sort(bySignal);
+  tier2.sort(bySignal);
+  tier3.sort(bySignal);
 
-  const ranked = [...breaking, ...trending, ...rest];
+  const ordered = [...tier1, ...tier2, ...tier3];
+  const ranked  = ordered.map(x => x.rc);
 
   if (isDev) {
     const origPos = new Map(clusters.map((c, i) => [c.id, i + 1]));
-    const moved   = ranked.filter((c, i) => origPos.get(c.id) !== i + 1).length;
-    console.group(`[feedRanker] ${moved} of ${ranked.length} clusters reordered by personalization`);
-    ranked.slice(0, 20).forEach((c, finalIdx) => {
-      const orig   = origPos.get(c.id) ?? "?";
-      const delta  = typeof orig === "number" ? orig - (finalIdx + 1) : 0;
-      const arrow  = delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : "=";
-      const themes  = (c._debug?.matchedThemes  as string[] | undefined) ?? [];
-      const sectors = (c._debug?.matchedSectors as string[] | undefined) ?? [];
-      const assets  = (c._debug?.matchedAssets  as string[] | undefined) ?? [];
-      const labels  = [
-        ...themes.map(t  => `theme:${t}`),
-        ...sectors.map(s => `sector:${s}`),
-        ...assets.map(a  => `asset:${a}`),
-        ...(c._debug?.region ? [`region(+${c._debug.region})`] : []),
-        ...(c._debug?.role   ? [`role(+${c._debug.role})`]     : []),
+    const tierOf  = (x: typeof scored[number]) =>
+      x.b.themeScore > 0 ? 1 : x.b.sectorScore > 0 ? 2 : 3;
+    console.group(
+      `[feedRanker] tier1(theme)=${tier1.length}  tier2(sector)=${tier2.length}  tier3(other)=${tier3.length}  of ${ranked.length}`,
+    );
+    ordered.slice(0, 20).forEach((x, finalIdx) => {
+      const c     = x.rc;
+      const orig  = origPos.get(c.id) ?? "?";
+      const delta = typeof orig === "number" ? orig - (finalIdx + 1) : 0;
+      const arrow = delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : "=";
+      const labels = [
+        ...x.b.matchedThemes.map(t  => `theme:${t}`),
+        ...x.b.matchedSectors.map(s => `sector:${s}`),
+        ...x.b.matchedAssets.map(a  => `asset:${a}`),
+        ...(x.b.region ? [`region(+${x.b.region})`] : []),
+        ...(x.b.role   ? [`role(+${x.b.role})`]     : []),
       ].join(", ") || "no match";
       console.log(
-        `%c${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) [rel=${String(c.relevance_score).padStart(3)}] ${c.primary.title.slice(0, 55)}`,
-        c.relevance_score > 0 ? "color:#6aad6a" : "color:#888",
+        `%cT${tierOf(x)} ${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) sig=${String(Math.round(c.primary.signal_score)).padStart(3)} rel=${String(c.relevance_score).padStart(3)} ${c.primary.title.slice(0, 50)}`,
+        x.b.themeScore > 0 ? "color:#6aad6a" : x.b.sectorScore > 0 ? "color:#c8a040" : "color:#888",
         `\n     ${labels}`,
       );
     });
