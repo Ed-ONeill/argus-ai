@@ -61,6 +61,13 @@ _SINGLE_PREFER_AGE_HOURS = 36
 
 _MIN_TOP_STORIES_SCORE = 40
 
+# Signal Picks conviction bars — these cards are the flagship "what matters" grid,
+# so they hold to a much higher bar than the stream. Raising these (and excluding
+# any item carrying a consumer/retail/opinion penalty) yields fewer, higher-
+# conviction cards; slots are left EMPTY rather than backfilled with weak content.
+_MIN_SIGNAL_PICK_SCORE = 60   # raw signal floor (was 40)
+_MIN_SIGNAL_PICK_INST  = 55   # institutional-quality floor (source prestige + depth)
+
 _TS_EXCLUDE_RE = re.compile(
     r"(?:"
     r"(?:car|auto|home(?:owner)?s?|life|health|pet|renters?|umbrella)\s+insurance\b"
@@ -220,9 +227,12 @@ def _select_top_stories(
         redundant headlines from claiming two spotlight cards.
 
     Eligibility gate (applied before slot selection AND all fallbacks):
-      - signal_score >= _MIN_TOP_STORIES_SCORE (40)
+      - signal_score >= _MIN_SIGNAL_PICK_SCORE (60)  — high-conviction only
+      - institutional_score >= _MIN_SIGNAL_PICK_INST (55)
       - Title+snippet contains at least one keyword from _TS_RELEVANCE_KW
       - Title+snippet does NOT match _TS_EXCLUDE_RE
+      - No consumer / retail / opinion penalty on the item
+      Slots with no qualifying item are left EMPTY (fewer, higher-conviction cards).
 
     Debug: pass a list to debug_log to receive per-candidate decision records.
     Each line: "[SlotName] ACCEPT|REJECT|FALLBACK|EMPTY: 'title…' — reason"
@@ -261,11 +271,18 @@ def _select_top_stories(
     def _ts_excluded(i: "FeedItem") -> bool:
         return bool(_TS_EXCLUDE_RE.search(i.title + " " + i.snippet))
 
+    # High-conviction eligibility — applies to slot selection AND every fallback,
+    # since both draw from `qualified`. Items carrying any consumer/retail/opinion
+    # penalty are barred from the flagship grid entirely.
     qualified = [
         i for i in items
-        if i.signal_score >= _MIN_TOP_STORIES_SCORE
+        if i.signal_score >= _MIN_SIGNAL_PICK_SCORE
+        and getattr(i, "institutional_score", 0.0) >= _MIN_SIGNAL_PICK_INST
         and _has_finance_kw(i)
         and not _ts_excluded(i)
+        and getattr(i, "event_article_penalty",  0.0) == 0.0
+        and getattr(i, "consumer_noise_penalty", 0.0) == 0.0
+        and getattr(i, "retail_content_penalty", 0.0) == 0.0
     ]
 
     ordered = sorted(qualified, key=lambda i: (

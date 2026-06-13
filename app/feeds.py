@@ -78,6 +78,30 @@ _HARD_EXCLUDE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Generic retail-investor articles — hard exclude (score 0, before scoring) ─────
+# These are retail/SEO investing articles, not market intelligence. High-precision,
+# mostly title-start-anchored so they can be removed entirely (not just penalized).
+# The softer/fuzzier opinion cases stay on the −60 _ARTICLE_OPINION_RE penalty.
+_RETAIL_ARTICLE_HARD_RE = re.compile(
+    r"(?:"
+    # "Is [stock] a good stock to buy (now)?"
+    r"\bis\s+[\w.\-&' ]{1,30}?\ba\s+(?:good|great|strong|smart|top|buy|solid)\s+(?:stock|buy|investment)\b"
+    r"|\b(?:good|great|smart|strong|top|solid)\s+stock\s+to\s+buy\b"
+    # "Should you / Should I buy/sell/own..."
+    r"|\bshould\s+(?:you|i|investors?)\s+(?:buy|sell|own|hold|invest|dump|avoid)\b"
+    # "Top stocks..." / "Best stocks..." (title start) + "N stocks to buy/watch"
+    r"|^[\[(\s]*top\s+\d*\s*[\w/&'\- ]{0,30}?stocks?\b"
+    r"|^[\[(\s]*best\s+[\w/&'\- ]{0,30}?stocks?\b"
+    r"|\b(?:best|top)\s+stocks?\s+to\s+(?:buy|watch|own)\b"
+    r"|\b\d{1,2}\s+(?:top\s+|best\s+)?[\w/&'\- ]{0,24}?stocks?\s+to\s+(?:buy|watch|own)\b"
+    r"|\bstocks?\s+to\s+buy\s+(?:now|today|right\s+now|this\s+(?:week|month))\b"
+    # "Why investors should..." / "Here's why..." (title start)
+    r"|\bwhy\s+investors\s+should\b"
+    r"|^[\[(\s]*here'?s\s+why\b|^[\[(\s]*here\s+is\s+why\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 # ── Content-derived category classification ────────────────────────────────────
 # Applied after fetch to every item, overriding the source-assigned category.
@@ -1140,13 +1164,16 @@ def score_item(item: "FeedItem") -> float:
     else:
         rec_score = 0.0
 
-    # 4. Hard exclusions — newsletter CTAs, podcast promos, etc.
-    if _HARD_EXCLUDE_RE.search(item.title):
+    # 4. Hard exclusions — newsletter/podcast/sponsored CTAs + generic retail
+    #    investing articles ("should you buy", "top stocks", "here's why"…).
+    if _HARD_EXCLUDE_RE.search(item.title) or _RETAIL_ARTICLE_HARD_RE.search(item.title):
         item.source_quality_score   = 0.0
         item.consumer_noise_penalty = 0.0
         item.retail_content_penalty = 0.0
         item.macro_relevance_bonus  = 0.0
         item.cross_asset_bonus      = 0.0
+        item.event_article_penalty  = 0.0
+        item.event_signal_bonus     = 0.0
         item.institutional_score    = 0.0
         return 0.0
 

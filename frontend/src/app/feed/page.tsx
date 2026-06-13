@@ -22,7 +22,7 @@ import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
-import { rankClusters, rankWhatMattersNow, rankThemes } from "@/lib/feedRanker";
+import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from "@/lib/feedRanker";
 import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
 
 function itemsToFallbackClusters(items: FeedItem[]): StoryCluster[] {
@@ -98,10 +98,11 @@ export default function FeedPage() {
   const allClusters     = data?.clusters?.length
     ? data.clusters
     : itemsToFallbackClusters(data?.items ?? []);
-  // rankClusters applies the strict quality gate (when personalized); we then cap
-  // the qualifiers at MAX_FEED_SIZE. The feed is the shorter of {qualifiers, 25}.
+  // Pipeline: rank + strict quality gate → event-dominance cap (≤2 cards per event)
+  // → hard ceiling of MAX_FEED_SIZE. The feed is the shorter of {qualifiers, 25}.
   const rankedClusters  = useMemo(() => rankClusters(allClusters, prefs), [allClusters, prefs]);
-  const cappedClusters  = useMemo(() => rankedClusters.slice(0, MAX_FEED_SIZE), [rankedClusters]);
+  const dedupedClusters = useMemo(() => capEventDominance(rankedClusters), [rankedClusters]);
+  const cappedClusters  = useMemo(() => dedupedClusters.slice(0, MAX_FEED_SIZE), [dedupedClusters]);
   const visibleClusters = cappedClusters.slice(0, visibleCount);
   const hasMore         = visibleCount < cappedClusters.length;
 
@@ -115,8 +116,9 @@ export default function FeedPage() {
     !!prefs.user_role || !!prefs.region_focus
   );
   const qualified      = rankedClusters.length;                 // cleared the gate
+  const available      = dedupedClusters.length;                // after event-dominance cap
   const belowThreshold = personalized ? Math.max(0, allClusters.length - qualified) : 0;
-  const cappedAway     = Math.max(0, qualified - cappedClusters.length); // passed but over the 25-cap
+  const cappedAway     = Math.max(0, available - cappedClusters.length); // available but over the 25-cap
 
   // Personalize the high-visibility derived sections (not just the stream) so the
   // homepage prioritizes followed themes/sectors within the first screen.
@@ -350,7 +352,7 @@ export default function FeedPage() {
               style={{ color: "rgba(255,255,255,0.22)" }}>
               {personalized
                 ? `${cappedClusters.length} high-signal ${cappedClusters.length === 1 ? "story" : "stories"}`
-                  + (cappedAway > 0 ? ` (top ${MAX_FEED_SIZE} of ${qualified})` : "")
+                  + (cappedAway > 0 ? ` (top ${MAX_FEED_SIZE} of ${available})` : "")
                   + ` · ${belowThreshold} below quality threshold · ${data.sources.length} sources`
                 : `${data.total} stories · ${data.sources.length} sources`}
               {Object.keys(data.errors).length > 0 && (

@@ -459,6 +459,73 @@ export function rankClusters(
   return gated;
 }
 
+// ── Event dominance cap ───────────────────────────────────────────────────────
+// A single underlying event (a named company/IPO/deal) should not flood the feed.
+// We derive a lightweight "event anchor" set per cluster from proper-noun tokens
+// in the headline (+ ticker entities) and allow at most MAX_PER_EVENT clusters
+// sharing an anchor to remain visible — 1 primary + 1 secondary — suppressing the
+// rest. Clusters with no anchor (no recognizable named subject) are never capped.
+const MAX_PER_EVENT = 2;
+
+// Tokens too generic to identify a specific event — regions, sectors, price-action
+// verbs, and headline filler. A proper-noun anchor must NOT be one of these.
+const EVENT_ANCHOR_STOP: ReadonlySet<string> = new Set([
+  // regions / broad geographies
+  "asia", "asian", "america", "american", "americas", "europe", "european",
+  "africa", "global", "world", "china", "chinese", "united", "states", "west", "east",
+  // sectors / asset classes
+  "energy", "utilities", "financials", "banks", "bank", "semiconductors", "software",
+  "technology", "healthcare", "biotech", "pharma", "defense", "industrials", "materials",
+  "mining", "consumer", "retail", "media", "telecom", "crypto", "markets", "market",
+  "stocks", "stock", "shares", "bonds", "treasury", "equities",
+  // price-action / event verbs (capitalized by Title-Case sources)
+  "raises", "lowers", "cuts", "beats", "misses", "reports", "announces", "launches",
+  "approves", "surges", "slides", "jumps", "plunges", "tumbles", "soars", "rises", "falls",
+  // headline filler / quantifiers
+  "after", "amid", "over", "with", "from", "into", "what", "why", "how", "here", "this",
+  "that", "biggest", "largest", "record", "first", "historic", "ever", "could", "will",
+  "should", "billion", "million", "trillion", "results", "guidance", "forecast", "outlook",
+  "update", "company", "companies", "group", "capital", "partners", "holdings",
+]);
+
+/** Proper-noun-ish event anchors for a cluster (lowercased). */
+function eventAnchors(cluster: StoryCluster): string[] {
+  const out = new Set<string>();
+  const title = cluster.primary.title || "";
+  for (const m of title.matchAll(/[A-Za-z][A-Za-z.'&-]{2,}/g)) {
+    const w = m[0];
+    if (w[0] >= "A" && w[0] <= "Z") {                 // capitalized in the original headline
+      const lw = w.toLowerCase().replace(/[^a-z]/g, "");
+      if (lw.length >= 4 && !EVENT_ANCHOR_STOP.has(lw)) out.add(lw);
+    }
+  }
+  for (const e of cluster.primary.affected_entities ?? []) {
+    if (/^[A-Z]{2,5}$/.test(e)) out.add(e.toLowerCase());  // ticker-like entity
+  }
+  return [...out];
+}
+
+/**
+ * Suppress event over-representation: walking the ranked list, keep a cluster only
+ * if none of its event anchors has already reached MAX_PER_EVENT kept clusters.
+ * The top-ranked story of an event becomes the primary, the next its secondary;
+ * further manifestations of the same event are dropped.
+ */
+export function capEventDominance(
+  clusters: RankedCluster[],
+  maxPerEvent: number = MAX_PER_EVENT,
+): RankedCluster[] {
+  const counts = new Map<string, number>();
+  const kept: RankedCluster[] = [];
+  for (const c of clusters) {
+    const anchors = eventAnchors(c);
+    if (anchors.some(a => (counts.get(a) ?? 0) >= maxPerEvent)) continue;  // event already saturated
+    kept.push(c);
+    for (const a of anchors) counts.set(a, (counts.get(a) ?? 0) + 1);
+  }
+  return kept;
+}
+
 // ── Cross-section personalization ─────────────────────────────────────────────
 // The cluster stream is not the only personalized surface. The homepage's
 // derived modules (What Matters Now, the Intelligence Strip's Opportunity / Risk
