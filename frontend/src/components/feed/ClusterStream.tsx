@@ -3,8 +3,15 @@
 import { motion } from "framer-motion";
 import { ClusterCard } from "./ClusterCard";
 import type { StoryCluster, FeedItem, ThemeIntelligence } from "@/lib/types";
+import type { RankedCluster } from "@/lib/feedRanker";
 
 function clusterTier(cluster: StoryCluster): 1 | 2 | 3 {
+  // Off-thesis stories (no followed-theme/sector overlap) are visually compressed
+  // regardless of raw signal, so a strong but irrelevant headline never renders as
+  // a prominent card. Falls back to the signal-based tier when no prefs are set.
+  const aff = (cluster as RankedCluster).affinity;
+  if (aff && !aff.hasAffinity) return 3;
+
   const score    = Math.round(cluster.primary.signal_score);
   const strength = cluster.primary.signal_strength;
   if (score >= 75) return 1;
@@ -117,6 +124,7 @@ export function ClusterStream({
                   }
                   watchedEntities={watchedEntities}
                   matchedTheme={matchedTheme}
+                  affinity={(cluster as RankedCluster).affinity}
                 />
               </motion.div>
             );

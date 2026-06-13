@@ -9,7 +9,8 @@ export interface UserPrefs {
 }
 
 export interface RankedCluster extends StoryCluster {
-  relevance_score:  number;
+  relevance_score:  number;          // = affinity.finalRank
+  affinity?:        ClusterAffinity; // explicit preference-affinity breakdown
   _debug:           Record<string, number | string[]> | undefined;
 }
 
@@ -79,9 +80,37 @@ const THEME_TIERS: Record<string, ThemeTiers> = {
   "Reshoring":            { t1: /reshoring|nearshoring|onshoring|friendshoring|friend shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|reshore/i },
 };
 
-// Aggressive tier separation: a tier-1 infrastructure hit must dominate sector /
-// region / role signals combined, while a tier-3 generic mention is near-inert.
-const TIER_WEIGHT = { t1: 100, t2: 30, t3: 3 } as const;
+// ── Affinity model weights ────────────────────────────────────────────────────
+// finalRank = convictionScore
+//           + themeMatchScore + sectorMatchScore + assetClassMatchScore + marketFocusScore
+//           + noOverlapPenalty
+//
+// The model is deliberately preference-first: a real theme hit (t1/t2) dwarfs the
+// conviction (signal) base, and a story that connects to NONE of the user's
+// followed themes or sectors takes a severe negative penalty so it sinks below
+// every relevant story regardless of how strong its raw news signal is. This is
+// what turns the feed from "most interesting finance headlines" into "what a
+// technology / infrastructure / private-capital investor wants to see first".
+const THEME_WEIGHT = { t1: 120, t2: 50, t3: 10 } as const; // t3 = generic mention, does NOT count as affinity
+const THEME_CAP    = 240;                                   // up to two strong theme hits
+
+const SECTOR_WEIGHT_EACH = 30, SECTOR_DEPTH_BONUS = 10, SECTOR_CAP = 80;
+const ASSET_WEIGHT_EACH  = 12, ASSET_DEPTH_BONUS  = 4,  ASSET_CAP  = 44;
+const MARKET_MATCH = 20, MARKET_GLOBAL = 10;
+
+const CONVICTION_SCALE = 0.6;   // signal_score (0–100) → 0–60
+const CONVICTION_CAP   = 80;
+
+// Two-band downrank for stories that miss the user's followed THEMES and SECTORS:
+//   • NO_OVERLAP   — zero preference overlap at all (no theme, sector, asset, or
+//     specific-region match): coffee, screwworm, gaming, foreign infra. Buried.
+//   • WEAK_OVERLAP — overlaps only on a broad asset class or the user's region
+//     (e.g. a US Treasury macro story for a Fixed-Income + United States user):
+//     ranked below every on-thesis story but above the zero-overlap floor.
+// The severe magnitude exceeds the max positive from conviction + asset + market,
+// so secondary signals can never lift an off-thesis story into the on-thesis band.
+const NO_OVERLAP_PENALTY   = -200;
+const WEAK_OVERLAP_PENALTY = -60;
 
 // ── Sector / asset class keyword maps ─────────────────────────────────────────
 
@@ -165,9 +194,14 @@ function sectorScore(
   const matched: string[] = [];
   for (const sector of sectors) {
     const rx = SECTOR_KEYWORDS[sector];
-    if (rx?.test(text)) { score += 30; matched.push(sector); }
+    if (rx?.test(text)) {
+      score += SECTOR_WEIGHT_EACH;
+      // Repeated mentions → dominant subject, not a passing reference.
+      if (matchCount(text, rx) >= 2) score += SECTOR_DEPTH_BONUS;
+      matched.push(sector);
+    }
   }
-  return { score: Math.min(score, 60), matched };
+  return { score: Math.min(score, SECTOR_CAP), matched };
 }
 
 function assetScore(
@@ -179,16 +213,20 @@ function assetScore(
   const matched: string[] = [];
   for (const asset of assets) {
     const rx = ASSET_KEYWORDS[asset];
-    if (rx?.test(text)) { score += 20; matched.push(asset); }
+    if (rx?.test(text)) {
+      score += ASSET_WEIGHT_EACH;
+      if (matchCount(text, rx) >= 2) score += ASSET_DEPTH_BONUS;
+      matched.push(asset);
+    }
   }
-  return { score: Math.min(score, 40), matched };
+  return { score: Math.min(score, ASSET_CAP), matched };
 }
 
-function regionScore(text: string, region: string): number {
-  if (!region) return 0;
+function regionScore(text: string, region: string): { score: number; matched: string | null } {
+  if (!region) return { score: 0, matched: null };
   const rx = REGION_KEYWORDS[region];
-  if (rx === null) return 15; // "Global" always matches
-  return rx?.test(text) ? 15 : 0;
+  if (rx === null) return { score: MARKET_GLOBAL, matched: region }; // "Global" always matches
+  return rx?.test(text) ? { score: MARKET_MATCH, matched: region } : { score: 0, matched: null };
 }
 
 function roleScore(cluster: StoryCluster, role: string): number {
@@ -204,45 +242,45 @@ function roleScore(cluster: StoryCluster, role: string): number {
   }
 }
 
-// Priority 1 — strongest signal. Each followed theme contributes the weight of
-// its highest matched tier (t1 +40 / t2 +18 / t3 +6). `bestTier` is the strongest
-// tier hit across all followed themes (1 = strongest); 0 = no theme match.
+// Strongest preference signal. Each followed theme contributes the weight of its
+// highest matched tier (t1 / t2 / t3). `matchedStrong` lists only themes hit at
+// t1 or t2 — a bare t3 generic mention ("AI is changing markets") adds a token
+// score but is NOT treated as a genuine theme connection. `bestTier` is the
+// strongest tier hit across all followed themes (1 = strongest); 0 = no match.
 function followedThemeScore(
   text: string,
   themes: string[],
-): { score: number; matched: string[]; bestTier: number } {
-  if (!themes.length) return { score: 0, matched: [], bestTier: 0 };
+): { score: number; matchedStrong: string[]; bestTier: number } {
+  if (!themes.length) return { score: 0, matchedStrong: [], bestTier: 0 };
   let score = 0;
   let bestTier = 0;
-  const matched: string[] = [];
+  const matchedStrong: string[] = [];
   for (const theme of themes) {
     const tiers = THEME_TIERS[theme];
     if (!tiers) continue;
     let w = 0, tier = 0;
-    if      (tiers.t1.test(text))  { w = TIER_WEIGHT.t1; tier = 1; }
-    else if (tiers.t2?.test(text)) { w = TIER_WEIGHT.t2; tier = 2; }
-    else if (tiers.t3?.test(text)) { w = TIER_WEIGHT.t3; tier = 3; }
+    if      (tiers.t1.test(text))  { w = THEME_WEIGHT.t1; tier = 1; }
+    else if (tiers.t2?.test(text)) { w = THEME_WEIGHT.t2; tier = 2; }
+    else if (tiers.t3?.test(text)) { w = THEME_WEIGHT.t3; tier = 3; }
     if (w > 0) {
       score += w;
-      matched.push(theme);
+      if (tier <= 2) matchedStrong.push(theme);
       bestTier = bestTier === 0 ? tier : Math.min(bestTier, tier);
     }
   }
-  return { score: Math.min(score, 200), matched, bestTier };
+  return { score: Math.min(score, THEME_CAP), matchedStrong, bestTier };
 }
 
-function themeScore(text: string, sectors: string[], assets: string[]): number {
-  // Bonus for topics that appear repeatedly — indicates a dominant theme, not a passing mention.
-  let hits = 0;
-  for (const s of sectors) {
-    const rx = SECTOR_KEYWORDS[s];
-    if (rx && matchCount(text, rx) >= 2) hits++;
-  }
-  for (const a of assets) {
-    const rx = ASSET_KEYWORDS[a];
-    if (rx && matchCount(text, rx) >= 2) hits++;
-  }
-  return Math.min(hits * 5, 15);
+// Conviction base — the raw news signal, scaled so it stays subordinate to a real
+// theme/sector match but still differentiates within the relevant pool.
+function convictionScore(cluster: StoryCluster, role: string): number {
+  const sig      = cluster.primary.signal_score ?? 0;
+  const strength = cluster.primary.signal_strength;
+  let c = Math.max(0, sig) * CONVICTION_SCALE;
+  if (strength === "strong")    c += 6;
+  else if (strength === "weak") c -= 4;
+  c += roleScore(cluster, role);
+  return Math.max(0, Math.min(c, CONVICTION_CAP));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -257,74 +295,83 @@ function prefsAreEmpty(prefs: UserPrefs): boolean {
   );
 }
 
-// Full score breakdown — always computed (tiering depends on theme/sector hits,
-// which must work in production, not only in dev/debug mode).
-interface ScoreBreakdown {
-  relevance:      number;
-  themeScore:     number;
-  themeTier:      number;   // 0 none · 1 strong · 2 adjacent · 3 generic
-  sectorScore:    number;
-  assetScore:     number;
-  region:         number;
-  role:           number;
-  themeDepth:     number;
-  matchedThemes:  string[];
-  matchedSectors: string[];
-  matchedAssets:  string[];
+// ── Preference affinity ─────────────────────────────────────────────────────
+// The explicit, debuggable breakdown attached to every ranked cluster:
+//   finalRank = convictionScore
+//             + themeMatchScore + sectorMatchScore + assetClassMatchScore
+//             + marketFocusScore + penalty
+// `reasons` lists the human-readable preference matches that lifted the story —
+// the source of the dev-mode "Ranked because:" annotation.
+export interface ClusterAffinity {
+  finalRank:            number;
+  convictionScore:      number;
+  themeMatchScore:      number;
+  sectorMatchScore:     number;
+  assetClassMatchScore: number;
+  marketFocusScore:     number;
+  penalty:              number;   // 0, or NO_OVERLAP_PENALTY when off-thesis
+  themeTier:            number;   // 0 none · 1 strong · 2 adjacent · 3 generic
+  hasAffinity:          boolean;  // true when a real theme (t1/t2) or sector hit exists
+  reasons:              string[]; // positive contributors, in priority order
 }
 
-function computeBreakdown(cluster: StoryCluster, prefs: UserPrefs): ScoreBreakdown {
+export function computeAffinity(cluster: StoryCluster, prefs: UserPrefs): ClusterAffinity {
   const text = textOf(cluster);
-  const th   = followedThemeScore(text, prefs.followed_themes);
-  const s    = sectorScore(text, prefs.followed_sectors);
-  const a    = assetScore(text, prefs.followed_asset_classes);
-  const r    = regionScore(text, prefs.region_focus);
-  const ro   = roleScore(cluster, prefs.user_role);
-  const td   = themeScore(text, prefs.followed_sectors, prefs.followed_asset_classes);
+  const th = followedThemeScore(text, prefs.followed_themes);
+  const se = sectorScore(text, prefs.followed_sectors);
+  const as = assetScore(text, prefs.followed_asset_classes);
+  const mk = regionScore(text, prefs.region_focus);
+  const conviction = convictionScore(cluster, prefs.user_role);
+
+  // A story is on-thesis (full prominence) only when it connects to a followed
+  // THEME (t1/t2) or a followed SECTOR. A broad asset-class or specific-region
+  // match alone is "secondary" — relevant, but not what a thematic investor wants
+  // first. Anything with no overlap whatsoever takes the severe penalty.
+  const hasThesis    = th.bestTier === 1 || th.bestTier === 2 || se.score > 0;
+  const hasSecondary = as.score > 0 || mk.score >= MARKET_MATCH; // MARKET_GLOBAL alone doesn't count
+  const penalty = hasThesis
+    ? 0
+    : hasSecondary ? WEAK_OVERLAP_PENALTY : NO_OVERLAP_PENALTY;
+  const hasAffinity = hasThesis;
+
+  const finalRank =
+    conviction + th.score + se.score + as.score + mk.score + penalty;
+
+  const reasons: string[] = [
+    ...th.matchedStrong,
+    ...se.matched,
+    ...as.matched,
+    ...(mk.matched ? [mk.matched] : []),
+  ];
+
   return {
-    relevance:      th.score + s.score + a.score + r + ro + td,
-    themeScore:     th.score,
-    themeTier:      th.bestTier,
-    sectorScore:    s.score,
-    assetScore:     a.score,
-    region:         r,
-    role:           ro,
-    themeDepth:     td,
-    matchedThemes:  th.matched,
-    matchedSectors: s.matched,
-    matchedAssets:  a.matched,
+    finalRank,
+    convictionScore:      Math.round(conviction),
+    themeMatchScore:      th.score,
+    sectorMatchScore:     se.score,
+    assetClassMatchScore: as.score,
+    marketFocusScore:     mk.score,
+    penalty,
+    themeTier:            th.bestTier,
+    hasAffinity,
+    reasons,
   };
 }
 
-// Ranking tier for a cluster, matching the user-facing relevance model:
-//   Tier 1 — tier-1 theme hit (infra / semis / data centers / utilities / power /
-//            private credit / transmission / hyperscalers). Heavily dominates.
-//   Tier 2 — tier-2 theme hit (AI software / adoption / regulation), OR a genuine
-//            followed-sector match with no generic-theme noise. Moderate boost.
-//   Tier 3 — generic (tier-3) theme mentions + everything else. Near the bottom.
-// A bare generic mention ("AI is changing markets") is forced to Tier 3 even when
-// it incidentally trips the broad sector regex, so it rarely appears near the top.
-function clusterTier(b: ScoreBreakdown): 1 | 2 | 3 {
-  if (b.themeTier === 1) return 1;
-  if (b.themeTier === 2) return 2;
-  if (b.themeTier === 0 && b.sectorScore > 0) return 2;
-  return 3;
-}
-
-function toRanked(cluster: StoryCluster, b: ScoreBreakdown, debug: boolean): RankedCluster {
+function toRanked(cluster: StoryCluster, a: ClusterAffinity, debug: boolean): RankedCluster {
   return {
     ...cluster,
-    relevance_score: b.relevance,
+    relevance_score: a.finalRank,
+    affinity:        a,
     _debug: debug ? {
-      followedTheme:  b.themeScore,
-      sector:         b.sectorScore,
-      asset:          b.assetScore,
-      region:         b.region,
-      role:           b.role,
-      themeDepth:     b.themeDepth,
-      matchedThemes:  b.matchedThemes,
-      matchedSectors: b.matchedSectors,
-      matchedAssets:  b.matchedAssets,
+      finalRank:    a.finalRank,
+      conviction:   a.convictionScore,
+      theme:        a.themeMatchScore,
+      sector:       a.sectorMatchScore,
+      asset:        a.assetClassMatchScore,
+      market:       a.marketFocusScore,
+      penalty:      a.penalty,
+      reasons:      a.reasons,
     } : undefined,
   };
 }
@@ -334,68 +381,52 @@ export function scoreCluster(
   prefs: UserPrefs,
   debug = false,
 ): RankedCluster {
-  return toRanked(cluster, computeBreakdown(cluster, prefs), debug);
+  return toRanked(cluster, computeAffinity(cluster, prefs), debug);
 }
 
 /**
- * Tiered ranking — a tier-1 theme match always outranks everything below it,
- * regardless of signal score:
- *   Tier 1 — tier-1 theme hit (real infrastructure / semis / data centers / etc.)
- *   Tier 2 — tier-2 theme hit, OR a genuine followed-sector match
- *   Tier 3 — generic (tier-3) theme mentions + everything else
- * Within each tier, sort by relevance score, then signal score.
+ * Preference-first ranking. Every story gets an additive affinity score with a
+ * severe penalty for zero theme/sector overlap, then the feed is sorted by that
+ * single finalRank (signal_score breaks ties). On-thesis infrastructure / private-
+ * capital stories rise to the top; off-thesis headlines sink to the bottom even
+ * when their raw news signal is strong.
  */
 export function rankClusters(
   clusters: StoryCluster[],
   prefs: UserPrefs,
 ): RankedCluster[] {
   if (prefsAreEmpty(prefs)) {
-    return clusters.map(c => ({ ...c, relevance_score: 0, _debug: undefined }));
+    return clusters.map(c => ({ ...c, relevance_score: 0, affinity: undefined, _debug: undefined }));
   }
 
   const isDev = process.env.NODE_ENV === "development";
 
-  const scored = clusters.map(c => {
-    const b = computeBreakdown(c, prefs);
-    return { rc: toRanked(c, b, isDev), b, tier: clusterTier(b) };
-  });
-
-  const tier1 = scored.filter(x => x.tier === 1);
-  const tier2 = scored.filter(x => x.tier === 2);
-  const tier3 = scored.filter(x => x.tier === 3);
-
-  const byScore = (a: typeof scored[number], b: typeof scored[number]) =>
-    b.rc.relevance_score      - a.rc.relevance_score ||
-    b.rc.primary.signal_score - a.rc.primary.signal_score;
-
-  tier1.sort(byScore);
-  tier2.sort(byScore);
-  tier3.sort(byScore);
-
-  const ordered = [...tier1, ...tier2, ...tier3];
-  const ranked  = ordered.map(x => x.rc);
+  const ranked = clusters
+    .map(c => toRanked(c, computeAffinity(c, prefs), isDev))
+    .sort((a, b) =>
+      b.relevance_score      - a.relevance_score ||
+      b.primary.signal_score - a.primary.signal_score,
+    );
 
   if (isDev) {
-    const origPos = new Map(clusters.map((c, i) => [c.id, i + 1]));
+    const origPos    = new Map(clusters.map((c, i) => [c.id, i + 1]));
+    const onThesis   = ranked.filter(r => r.affinity?.hasAffinity).length;
     console.group(
-      `[feedRanker] tier1(infra)=${tier1.length}  tier2(sector/adjacent)=${tier2.length}  tier3(generic/other)=${tier3.length}  of ${ranked.length}`,
+      `[feedRanker] on-thesis=${onThesis}  off-thesis(downranked)=${ranked.length - onThesis}  of ${ranked.length}`,
     );
-    ordered.slice(0, 20).forEach((x, finalIdx) => {
-      const c     = x.rc;
+    ranked.slice(0, 25).forEach((c, finalIdx) => {
+      const a     = c.affinity!;
       const orig  = origPos.get(c.id) ?? "?";
       const delta = typeof orig === "number" ? orig - (finalIdx + 1) : 0;
       const arrow = delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : "=";
-      const labels = [
-        ...x.b.matchedThemes.map(t  => `theme:${t}`),
-        ...x.b.matchedSectors.map(s => `sector:${s}`),
-        ...x.b.matchedAssets.map(a  => `asset:${a}`),
-        ...(x.b.region ? [`region(+${x.b.region})`] : []),
-        ...(x.b.role   ? [`role(+${x.b.role})`]     : []),
-      ].join(", ") || "no match";
+      const why   = a.reasons.length ? `+ ${a.reasons.join("  + ")}` : "no preference overlap";
       console.log(
-        `%cT${x.tier} ${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) sig=${String(Math.round(c.primary.signal_score)).padStart(3)} rel=${String(c.relevance_score).padStart(3)} ${c.primary.title.slice(0, 50)}`,
-        x.tier === 1 ? "color:#6aad6a" : x.tier === 2 ? "color:#c8a040" : "color:#888",
-        `\n     ${labels}`,
+        `%c${String(finalIdx + 1).padStart(2)}. (was #${String(orig).padStart(2)} ${arrow.padEnd(4)}) `
+        + `rank=${String(Math.round(c.relevance_score)).padStart(4)} `
+        + `[conv ${a.convictionScore} · thm ${a.themeMatchScore} · sec ${a.sectorMatchScore} · ast ${a.assetClassMatchScore} · mkt ${a.marketFocusScore}${a.penalty ? ` · pen ${a.penalty}` : ""}] `
+        + `${c.primary.title.slice(0, 48)}`,
+        a.hasAffinity ? "color:#6aad6a" : "color:#a05050",
+        `\n     Ranked because: ${why}`,
       );
     });
     console.groupEnd();

@@ -9,6 +9,42 @@ import {
 import { cn, catColor } from "@/lib/utils";
 import { analyzeItemDeep } from "@/lib/api";
 import type { StoryCluster, FeedItem, RelatedStory, DeepAnalysis, ThemeIntelligence } from "@/lib/types";
+import type { ClusterAffinity } from "@/lib/feedRanker";
+
+const IS_DEV = process.env.NODE_ENV === "development";
+
+// Dev-only annotation explaining why a story landed where it did in the ranked
+// feed. Renders the additive affinity breakdown + the matched-preference reasons.
+function RankedBecause({ affinity }: { affinity: ClusterAffinity }) {
+  if (!IS_DEV) return null;
+  // Three states: on-thesis (theme/sector) · secondary (asset/region only) · none.
+  const state: "thesis" | "secondary" | "none" =
+    affinity.hasAffinity ? "thesis" : affinity.reasons.length ? "secondary" : "none";
+  const palette = {
+    thesis:    { bg: "rgba(82,176,200,0.07)",  bd: "rgba(82,176,200,0.18)",  fg: "rgba(82,176,200,0.92)" },
+    secondary: { bg: "rgba(200,160,64,0.07)",  bd: "rgba(200,160,64,0.20)",  fg: "rgba(210,180,110,0.92)" },
+    none:      { bg: "rgba(160,80,80,0.08)",   bd: "rgba(160,80,80,0.20)",   fg: "rgba(210,140,140,0.92)" },
+  }[state];
+  return (
+    <div
+      className="mb-1.5 px-2 py-1 rounded text-[9.5px] leading-snug font-mono"
+      style={{ background: palette.bg, border: `1px solid ${palette.bd}`, color: palette.fg }}
+    >
+      <span className="opacity-70">rank {Math.round(affinity.finalRank)}</span>
+      <span className="opacity-40">
+        {" "}· conv {affinity.convictionScore} · thm {affinity.themeMatchScore}
+        {" "}· sec {affinity.sectorMatchScore} · ast {affinity.assetClassMatchScore}
+        {" "}· mkt {affinity.marketFocusScore}
+        {affinity.penalty ? ` · pen ${affinity.penalty}` : ""}
+      </span>
+      <div className="mt-0.5 font-sans font-semibold">
+        {state === "thesis"    && <>Ranked because: {affinity.reasons.map(r => `+ ${r}`).join("  ")}</>}
+        {state === "secondary" && <>Secondary (downranked): {affinity.reasons.map(r => `+ ${r}`).join("  ")}</>}
+        {state === "none"      && <>Downranked — no preference overlap</>}
+      </div>
+    </div>
+  );
+}
 
 const MOMENTUM_COLOR: Record<string, string> = {
   accelerating:  "#10B981",
@@ -188,10 +224,11 @@ interface ClusterCardProps {
   isWatched?:       boolean;
   watchedEntities?: Set<string>;
   matchedTheme?:    ThemeIntelligence;
+  affinity?:        ClusterAffinity;  // preference-affinity breakdown (dev annotation)
 }
 
 export function ClusterCard({
-  cluster, isSaved, onSave, isNew, isWatched, watchedEntities, matchedTheme,
+  cluster, isSaved, onSave, isNew, isWatched, watchedEntities, matchedTheme, affinity,
 }: ClusterCardProps) {
   const { primary: item, related, story_count, theme_label, id } = cluster;
 
@@ -268,6 +305,7 @@ export function ClusterCard({
           opacity:      0.62,
         }}
       >
+        {IS_DEV && affinity && <div className="px-3.5 pt-2"><RankedBecause affinity={affinity} /></div>}
         <div className="px-3.5 py-2 flex items-center gap-2.5 min-w-0">
           <span className="text-[9.5px] font-medium shrink-0" style={{ color }}>
             {item.category}
@@ -319,6 +357,9 @@ export function ClusterCard({
       }}
     >
       <div className={cn("px-3.5", tier === 1 ? "pt-4 pb-4" : "pt-2.5 pb-3")}>
+
+        {/* ── Dev: why this story ranked here ──────────────────────────── */}
+        {IS_DEV && affinity && <RankedBecause affinity={affinity} />}
 
         {/* ── Theme intelligence row ───────────────────────────────────── */}
         {matchedTheme ? (
