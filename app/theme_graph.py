@@ -31,6 +31,15 @@ if TYPE_CHECKING:
 
 _PUNCT_RE = re.compile(r"[^\w\s]+")
 
+# ── Emission quality gates ──────────────────────────────────────────────────────
+# A theme must clear ALL of these before it is emitted into theme_intelligence.
+# These exist to suppress thin, single-source, generic-keyword-driven themes that
+# would otherwise dilute the ontology-driven narratives downstream consumers rely
+# on (What Matters Now, Market Regime, Opportunity/Risk, Feed ranking).
+_MIN_EVIDENCE_COUNT = 2   # distinct contributing sources
+_MIN_BREADTH        = 2   # distinct industries spanned by contributing clusters
+_MIN_CONFIDENCE     = 20  # post-competition confidence floor
+
 
 def _norm(text: str) -> str:
     return " " + _PUNCT_RE.sub(" ", text.lower()) + " "
@@ -352,13 +361,22 @@ def extract_themes(
             + recency_bonus
         ))
 
-        # ── Phase 8: generic keyword penalty ─────────────────────────────────
-        # Only apply when confidence is already solid (≥30) to avoid
-        # pushing borderline themes below a usable level.
+        # ── Generic keyword penalty ──────────────────────────────────────────
+        # Themes carried mostly by broad single-word triggers ("ai", "oil",
+        # "china") are down-weighted so specific ontology matches (named entities,
+        # multi-word phrases) dominate the emitted set.  The penalty scales with
+        # how generic the match was: a 60% generic ratio shaves ~15%, a fully
+        # generic match (100%) shaves ~30%.  Applied from confidence ≥ 25 so a
+        # purely-generic theme can be pushed toward/below the emission floor —
+        # that is the intended effect, not a bug.
         generic_ratio = generic_kw_hits_total / max(all_kw_hits_total, 1)
-        if generic_ratio > 0.6 and confidence >= 30:
-            confidence = max(1, int(confidence * 0.88))
-            log.debug("[theme] generic_penalty  %s  ratio=%.2f  conf→%d", theme_id, generic_ratio, confidence)
+        if generic_ratio > 0.6 and confidence >= 25:
+            penalty = min(0.30, 0.15 + (generic_ratio - 0.6) * 0.375)  # 0.15 → 0.30
+            confidence = max(1, int(confidence * (1.0 - penalty)))
+            log.info(
+                "[theme] generic_penalty  %-36s  ratio=%.2f  penalty=%.0f%%  conf→%d",
+                theme_id, generic_ratio, penalty * 100, confidence,
+            )
 
         # NOTE: confidence_floor from the ontology is kept as metadata (logged
         # below for visibility) but does NOT gate theme inclusion.  The
@@ -385,7 +403,26 @@ def extract_themes(
         momentum = _majority_sentiment(sentiments)
 
         # ── Breadth: industries spanned by contributing clusters (capped at related count)
-        breadth_raw = min(len(cfg.get("related_industries", [])), max(1, n_clusters))
+        breadth_raw    = min(len(cfg.get("related_industries", [])), max(1, n_clusters))
+        evidence_count = len(sources)
+
+        # ── Quality gate (Pass 1): evidence + breadth + confidence ────────────
+        # Suppress thin themes BEFORE they enter the momentum tracker or results
+        # list so they cannot pollute persistence history or downstream surfaces.
+        # The confidence check here is pre-competition; a post-competition re-gate
+        # runs after Pass 2 so penalised themes that fall below the floor are also
+        # dropped.  Reasons are logged for observability.
+        gate_fail = []
+        if evidence_count < _MIN_EVIDENCE_COUNT:
+            gate_fail.append(f"evidence={evidence_count}<{_MIN_EVIDENCE_COUNT}")
+        if breadth_raw < _MIN_BREADTH:
+            gate_fail.append(f"breadth={breadth_raw}<{_MIN_BREADTH}")
+        if confidence < _MIN_CONFIDENCE:
+            gate_fail.append(f"conf={confidence}<{_MIN_CONFIDENCE}")
+        if gate_fail:
+            log.info("[theme] gate_suppress  %-36s  %s", theme_id, ", ".join(gate_fail))
+            continue
+
         _momentum_tracker.record_breadth(theme_id, breadth_raw)
 
         # ── Tracker: record first, then derive momentum metrics ───────────────
@@ -423,7 +460,7 @@ def extract_themes(
             relationship_weights     = dict(cfg.get("relationship_graph", {})),
             confidence_label         = conf_label,
             signal_quality           = quality,
-            evidence_count           = len(sources),
+            evidence_count           = evidence_count,
             persistence_score        = persist_sc,
             volatility_score         = volat_sc,
             cross_category_confirmed = cross_cat,
@@ -456,6 +493,18 @@ def extract_themes(
                 "[theme] competition_penalty  %s  penalty=%.0f%%  conf→%d",
                 t.id, penalty_frac * 100, t.confidence,
             )
+
+    # ── Quality gate (post-competition): re-apply the confidence floor ────────
+    # Competition penalties can push a theme that passed Pass 1 below the floor.
+    # Drop those here so every emitted theme clears _MIN_CONFIDENCE in its final,
+    # competition-adjusted state.
+    before = len(results)
+    results = [t for t in results if t.confidence >= _MIN_CONFIDENCE]
+    if len(results) < before:
+        log.info(
+            "[theme] gate_suppress(post-competition): dropped %d theme(s) below conf=%d",
+            before - len(results), _MIN_CONFIDENCE,
+        )
 
     # ── Pass 3: causal narrative ──────────────────────────────────────────────
     try:

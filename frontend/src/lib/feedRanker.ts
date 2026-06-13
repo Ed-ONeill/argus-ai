@@ -41,9 +41,35 @@ const THEME_TIERS: Record<string, ThemeTiers> = {
     t2: /utility capex|electricity capacity|power capacity|renewable buildout|baseload|grid operator/i,
     t3: /\butility\b|utilities|electricity|\bpower\b/i,
   },
+  "AI Compute Arms Race": {
+    t1: /compute arms race|frontier model|training cluster|ai supercluster|gpu cluster|gpu allocation|ai accelerator|foundation model|blackwell|gb200|\bh100\b|\bh200\b|ai compute|compute capacity|compute scarcity|stargate|exaflop|gigawatt cluster/i,
+    t2: /ai training|inference|model training|ai capex|ai infrastructure|ai investment/i,
+    t3: /\bai\b|\bgpu\b|\bcompute\b/i,
+  },
+  "Hyperscaler Capex": {
+    t1: /hyperscaler capex|cloud capex|capex guidance|capital expenditure guidance|azure capex|aws capex|capex commitment|capex ramp|capex surge|hyperscaler spending|capital intensity/i,
+    t2: /cloud capital spending|cloud spending|capex cycle|capex outlook|capex raise/i,
+    t3: /\bcapex\b|\bcloud\b/i,
+  },
+  "Grid Modernization": {
+    t1: /grid modernization|transmission line|transmission capacity|transmission buildout|transmission investment|grid upgrade|grid investment|grid infrastructure|transformer shortage|switchgear|high voltage|interconnection queue|grid resilience|grid equipment/i,
+    t2: /grid expansion|electricity infrastructure|grid operator|t&d capex/i,
+    t3: /\bgrid\b|transmission/i,
+  },
+  "Utility Capex Supercycle": {
+    t1: /utility capex|rate base growth|ratebase|rate base|load growth|regulated utility|utility ratebase|utility investment|rate case|integrated resource plan|electrification/i,
+    t2: /utility earnings growth|power demand growth|electricity demand growth|utility capital|capital plan/i,
+    t3: /\butility\b|utilities|electricity/i,
+  },
+  "Private Capital Takeover": {
+    t1: /take private|going private|public to private|leveraged buyout|\blbo\b|private equity buyout|sponsor backed|club deal|management buyout|mega buyout|sponsor takeover|continuation fund/i,
+    t2: /buyout fund|dry powder|pe acquisition|sponsor bid|private equity bid|carve out/i,
+    t3: /buyout|private equity/i,
+  },
   // Remaining themes use a single strong tier (preserves prior single-regex behavior).
   "Defense Rearmament":   { t1: /rearmament|defense spending|defense budget|defence|military spending|military budget|\bnato\b|arms buildup|defense procurement|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|military buildup|defense investment/i },
   "Private Credit":       { t1: /private credit|direct lending|private debt|\bbdc\b|unitranche|middle market loan|middle market lending|alternative lending|non bank lending|private lending|credit fund/i },
+  "Direct Lending Expansion": { t1: /direct lending|private debt fund|private credit fund|\bbdc\b|business development company|unitranche|senior secured loan|asset based lending|nav financing|perpetual capital|insurance capital|fund formation|fee related earnings/i },
   "Nuclear Renaissance":  { t1: /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear investment|nuclear expansion|nuclear plant/i },
   "Space Economy":        { t1: /space economy|commercial space|\bsatellite\b|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital launch|space investment/i },
   "Cybersecurity":        { t1: /cybersecurity|cyber attack|ransomware|data breach|zero day|endpoint security|threat actor|cyber threat|cyberattack|infosec|network security|cyber incident|crowdstrike|palo alto networks/i },

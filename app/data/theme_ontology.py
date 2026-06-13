@@ -71,10 +71,11 @@ THEME_ONTOLOGY: dict[str, dict] = {
         },
         # Phase 8
         "regime_affinity":   ["Risk-On Neutral", "Risk-On Dovish"],
-        "competing_themes":  ["nuclear-power-renaissance", "semiconductor-capex-cycle"],
+        "competing_themes":  ["nuclear-power-renaissance", "semiconductor-capex-cycle",
+                              "ai-compute-arms-race", "data-center-buildout", "hyperscaler-capex"],
         "generic_keywords":  ["ai", "openai", "anthropic"],
-        "causal_inputs":     ["semiconductor-capex-cycle"],
-        "causal_outputs":    ["nuclear-power-renaissance"],
+        "causal_inputs":     ["semiconductor-capex-cycle", "hyperscaler-capex", "ai-compute-arms-race"],
+        "causal_outputs":    ["nuclear-power-renaissance", "data-center-buildout", "grid-modernization"],
         "confidence_floor":  15,
         "decay_rate":        0.85,
     },
@@ -224,10 +225,11 @@ THEME_ONTOLOGY: dict[str, dict] = {
         },
         # Phase 8
         "regime_affinity":   ["Risk-Off Hawkish", "Risk-On Neutral"],
-        "competing_themes":  ["treasury-yield-pressure", "liquidity-tightening"],
+        "competing_themes":  ["treasury-yield-pressure", "liquidity-tightening",
+                              "direct-lending-expansion", "private-capital-takeover"],
         "generic_keywords":  ["blackstone", "apollo", "ares", "buyout"],
         "causal_inputs":     ["treasury-yield-pressure"],
-        "causal_outputs":    [],
+        "causal_outputs":    ["private-capital-takeover"],
         "confidence_floor":  12,
         "decay_rate":        0.82,
     },
@@ -474,10 +476,10 @@ THEME_ONTOLOGY: dict[str, dict] = {
         },
         # Phase 8
         "regime_affinity":   ["Risk-On Neutral", "Risk-On Dovish"],
-        "competing_themes":  ["ai-energy-demand"],
+        "competing_themes":  ["ai-energy-demand", "ai-compute-arms-race"],
         "generic_keywords":  ["nvidia", "amd", "tsmc", "broadcom", "qualcomm"],
         "causal_inputs":     ["defense-reindustrialization"],
-        "causal_outputs":    ["ai-energy-demand"],
+        "causal_outputs":    ["ai-energy-demand", "ai-compute-arms-race"],
         "confidence_floor":  15,
         "decay_rate":        0.88,
     },
@@ -573,9 +575,9 @@ THEME_ONTOLOGY: dict[str, dict] = {
         },
         # Phase 8
         "regime_affinity":   ["Risk-On Neutral", "Stagflationary"],
-        "competing_themes":  ["ai-energy-demand", "energy-security"],
+        "competing_themes":  ["ai-energy-demand", "energy-security", "utility-capex-supercycle"],
         "generic_keywords":  ["nuclear", "uranium", "constellation", "vistra"],
-        "causal_inputs":     ["ai-energy-demand"],
+        "causal_inputs":     ["ai-energy-demand", "data-center-buildout"],
         "causal_outputs":    [],
         "confidence_floor":  12,
         "decay_rate":        0.85,
@@ -630,6 +632,338 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "causal_outputs":    [],
         "confidence_floor":  12,
         "decay_rate":        0.85,
+    },
+
+    # ── 13 ───────────────────────────────────────────────────────────────────────
+    "ai-compute-arms-race": {
+        "label":       "AI Compute Arms Race",
+        "name":        "AI Compute Arms Race",
+        "description": (
+            "Frontier-model labs and hyperscalers are committing to multi-gigawatt "
+            "training clusters faster than accelerator supply can scale, turning raw "
+            "compute access into the binding competitive constraint and a durable "
+            "demand floor under the entire AI hardware stack."
+        ),
+        "keywords": [
+            "ai compute", "compute arms race", "frontier model", "training cluster",
+            "ai training", "inference demand", "compute capacity", "model training",
+            "gpu allocation", "gpu cluster", "ai accelerator", "foundation model",
+            "frontier lab", "compute budget", "ai capex commitment", "training run",
+            "ai supercluster", "supercomputer", "exaflop", "gigawatt cluster",
+            "blackwell", "gb200", "h100", "h200", "openai compute", "anthropic compute",
+            "xai", "stargate", "ai compute demand", "compute scarcity",
+            "ai", "compute", "gpu",
+        ],
+        "entities": frozenset({
+            "NVDA", "AMD", "AVGO", "MSFT", "GOOGL", "META", "AMZN", "ORCL",
+            "Nvidia", "Microsoft", "Meta", "Google", "OpenAI", "Anthropic", "xAI", "Oracle",
+        }),
+        "related_industries":    ["Semiconductors", "Software", "Utilities", "Energy"],
+        "related_assets":        ["NVDA", "AVGO", "AMD", "MSFT", "ORCL"],
+        "related_macro_factors": ["AI Capex Supercycle", "GPU Supply Stack", "Accelerator Lead Times", "Frontier Model Scaling"],
+        "second_order_effects": [
+            "Compute access becomes the binding moat — frontier capability now tracks GPU allocation more tightly than algorithmic edge",
+            "Multi-year accelerator purchase commitments create a demand floor that decouples chip revenue from the broader tech cycle",
+            "Custom-silicon (TPU, Trainium, MTIA) investment accelerates as hyperscalers seek to escape single-vendor pricing power",
+            "Training-cluster scale pulls forward power-procurement and data-centre siting decisions years ahead of grid capacity",
+        ],
+        "podcast_topics": ["Tech / AI", "Markets"],
+        "relationship_graph": {
+            "Semiconductors": {"weight": 0.96, "type": "direct",        "direction": "positive"},
+            "Software":       {"weight": 0.82, "type": "direct",        "direction": "positive"},
+            "Utilities":      {"weight": 0.60, "type": "indirect",      "direction": "positive"},
+            "Energy":         {"weight": 0.45, "type": "macro_overlap", "direction": "positive"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Risk-On Dovish"],
+        "competing_themes":  ["ai-energy-demand", "semiconductor-capex-cycle", "hyperscaler-capex"],
+        "generic_keywords":  ["ai", "compute", "gpu"],
+        "causal_inputs":     ["semiconductor-capex-cycle"],
+        "causal_outputs":    ["data-center-buildout", "ai-energy-demand"],
+        "confidence_floor":  15,
+        "decay_rate":        0.85,
+    },
+
+    # ── 14 ───────────────────────────────────────────────────────────────────────
+    "data-center-buildout": {
+        "label":       "Data Center Buildout",
+        "name":        "Data Center Buildout",
+        "description": (
+            "Hyperscaler and AI demand has turned physical data-centre capacity — land, "
+            "power interconnection, and cooling — into the scarce input, re-rating "
+            "colocation REITs and the electrical/thermal equipment supply chain on "
+            "multi-year pre-leased backlogs."
+        ),
+        "keywords": [
+            "data center buildout", "data center construction", "data center capacity",
+            "hyperscale data center", "colocation", "server farm", "rack density",
+            "data center reit", "data center campus", "data center pipeline",
+            "megawatt capacity", "data center vacancy", "interconnection queue",
+            "data center power", "cooling infrastructure", "liquid cooling",
+            "data center lease", "data center demand", "data centre", "power demand",
+            "substation", "grid capacity",
+            "data center", "colocation",
+        ],
+        "entities": frozenset({
+            "EQIX", "DLR", "IRM", "VRT", "SMCI", "ETN", "GEV",
+            "Equinix", "Digital Realty", "Vertiv", "Eaton",
+        }),
+        "related_industries":    ["Real Estate", "Utilities", "Industrials", "Semiconductors"],
+        "related_assets":        ["EQIX", "DLR", "VRT", "ETN", "GEV"],
+        "related_macro_factors": ["Power Interconnection Queue", "Data Center Vacancy", "Pre-Lease Backlog", "Cooling Capex"],
+        "second_order_effects": [
+            "Power-interconnection timelines, not capital, are now the gating constraint on capacity — siting shifts toward stranded generation",
+            "Pre-leased backlogs give colocation REITs utility-like cash-flow visibility, compressing their risk premium versus traditional property",
+            "Liquid-cooling adoption inflects with rack-power density, opening a new equipment TAM for thermal-management suppliers",
+            "Electrical-equipment lead times (transformers, switchgear) lengthen, handing pricing power to the T&D supply chain",
+        ],
+        "podcast_topics": ["Tech / AI", "Markets"],
+        "relationship_graph": {
+            "Real Estate":    {"weight": 0.90, "type": "direct",        "direction": "positive"},
+            "Utilities":      {"weight": 0.78, "type": "direct",        "direction": "positive"},
+            "Industrials":    {"weight": 0.70, "type": "indirect",      "direction": "positive"},
+            "Semiconductors": {"weight": 0.48, "type": "macro_overlap", "direction": "positive"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Risk-On Dovish"],
+        "competing_themes":  ["ai-energy-demand", "hyperscaler-capex"],
+        "generic_keywords":  ["data center", "colocation"],
+        "causal_inputs":     ["hyperscaler-capex", "ai-compute-arms-race"],
+        "causal_outputs":    ["grid-modernization", "ai-energy-demand"],
+        "confidence_floor":  15,
+        "decay_rate":        0.85,
+    },
+
+    # ── 15 ───────────────────────────────────────────────────────────────────────
+    "hyperscaler-capex": {
+        "label":       "Hyperscaler Capex",
+        "name":        "Hyperscaler Capex",
+        "description": (
+            "The mega-cap cloud platforms are guiding to step-function increases in "
+            "capital expenditure to fund AI infrastructure, converting their balance "
+            "sheets into the primary funding engine for the compute, data-centre, and "
+            "power buildout downstream."
+        ),
+        "keywords": [
+            "hyperscaler capex", "cloud capex", "capex guidance", "capital expenditure guidance",
+            "microsoft capex", "google capex", "amazon capex", "meta capex",
+            "capex cycle", "cloud capital spending", "capex raise", "capex outlook",
+            "azure capex", "aws capex", "capital spending guidance", "capex commitment",
+            "capex surge", "hyperscaler spending", "capex ramp", "ai infrastructure spending",
+            "free cash flow", "capital intensity",
+            "capex", "cloud",
+        ],
+        "entities": frozenset({
+            "MSFT", "GOOGL", "AMZN", "META", "ORCL",
+            "Microsoft", "Alphabet", "Amazon", "Meta", "Oracle",
+        }),
+        "related_industries":    ["Software", "Semiconductors", "Real Estate", "Utilities"],
+        "related_assets":        ["MSFT", "GOOGL", "AMZN", "META", "ORCL"],
+        "related_macro_factors": ["Cloud Capex Cycle", "Capital Intensity", "Free Cash Flow Margin", "AI Capex Supercycle"],
+        "second_order_effects": [
+            "Rising capital intensity compresses hyperscaler free-cash-flow margins, shifting the equity narrative from buybacks to reinvestment",
+            "Hyperscaler capex guidance is the single best leading indicator for semiconductor and data-centre equipment order books",
+            "Depreciation schedules lengthen as GPU useful-life assumptions are tested, creating a forward earnings-quality debate",
+            "Capex commitments anchor multi-year power-purchase demand, transmitting cloud balance-sheet strength into utility planning",
+        ],
+        "podcast_topics": ["Tech / AI", "Company"],
+        "relationship_graph": {
+            "Software":       {"weight": 0.92, "type": "direct",        "direction": "positive"},
+            "Semiconductors": {"weight": 0.85, "type": "direct",        "direction": "positive"},
+            "Real Estate":    {"weight": 0.62, "type": "indirect",      "direction": "positive"},
+            "Utilities":      {"weight": 0.55, "type": "indirect",      "direction": "positive"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Risk-On Dovish"],
+        "competing_themes":  ["ai-energy-demand", "ai-compute-arms-race", "data-center-buildout"],
+        "generic_keywords":  ["capex", "cloud"],
+        "causal_inputs":     ["ai-compute-arms-race"],
+        "causal_outputs":    ["data-center-buildout", "semiconductor-capex-cycle"],
+        "confidence_floor":  15,
+        "decay_rate":        0.85,
+    },
+
+    # ── 16 ───────────────────────────────────────────────────────────────────────
+    "grid-modernization": {
+        "label":       "Grid Modernization",
+        "name":        "Grid Modernization",
+        "description": (
+            "Two decades of underinvestment colliding with electrification and "
+            "data-centre load is forcing an accelerated transmission-and-distribution "
+            "capex cycle, with transformer and switchgear scarcity handing durable "
+            "pricing power to grid-equipment makers."
+        ),
+        "keywords": [
+            "grid modernization", "transmission line", "transmission capacity",
+            "grid upgrade", "grid investment", "grid infrastructure", "electrical grid",
+            "transmission and distribution", "interconnection queue", "grid equipment",
+            "transformer shortage", "switchgear", "high voltage", "grid resilience",
+            "transmission buildout", "grid expansion", "power grid upgrade",
+            "electricity infrastructure", "grid operator", "transmission investment",
+            "grid", "transmission",
+        ],
+        "entities": frozenset({
+            "GEV", "ETN", "PWR", "PRIM", "MYRG", "HUBB",
+            "GE Vernova", "Eaton", "Quanta", "Hubbell",
+        }),
+        "related_industries":    ["Utilities", "Industrials", "Energy"],
+        "related_assets":        ["GEV", "ETN", "PWR", "HUBB"],
+        "related_macro_factors": ["T&D Capex Cycle", "Transformer Lead Times", "Interconnection Backlog", "Electrification Demand"],
+        "second_order_effects": [
+            "Transformer and switchgear lead times stretching past 2 years convert equipment makers into price-setters with multi-year backlogs",
+            "Interconnection-queue congestion becomes the rate-limiter on both renewable and data-centre load additions",
+            "Grid-hardening mandates create a non-cyclical capex floor insulated from the rate environment",
+            "Skilled-labour scarcity for high-voltage work emerges as a second bottleneck behind equipment supply",
+        ],
+        "podcast_topics": ["Markets", "Macro"],
+        "relationship_graph": {
+            "Utilities":   {"weight": 0.93, "type": "direct",        "direction": "positive"},
+            "Industrials": {"weight": 0.86, "type": "direct",        "direction": "positive"},
+            "Energy":      {"weight": 0.50, "type": "macro_overlap", "direction": "positive"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Stagflationary"],
+        "competing_themes":  ["ai-energy-demand", "utility-capex-supercycle"],
+        "generic_keywords":  ["grid", "transmission"],
+        "causal_inputs":     ["data-center-buildout", "ai-energy-demand"],
+        "causal_outputs":    ["utility-capex-supercycle"],
+        "confidence_floor":  15,
+        "decay_rate":        0.85,
+    },
+
+    # ── 17 ───────────────────────────────────────────────────────────────────────
+    "utility-capex-supercycle": {
+        "label":       "Utility Capex Supercycle",
+        "name":        "Utility Capex Supercycle",
+        "description": (
+            "Structural load growth from electrification and data centres is ending two "
+            "decades of flat power demand, driving regulated rate-base expansion that "
+            "compounds utility earnings growth well above the historical GDP-linked "
+            "trend."
+        ),
+        "keywords": [
+            "utility capex", "rate base growth", "ratebase", "regulated utility",
+            "load growth", "utility investment", "rate case", "utility earnings growth",
+            "capital plan", "electricity demand growth", "utility ratebase",
+            "power demand growth", "utility spending", "electrification",
+            "demand forecast", "integrated resource plan", "utility capital",
+            "rate base", "power load growth",
+            "utility", "electricity",
+        ],
+        "entities": frozenset({
+            "NEE", "SO", "DUK", "AEP", "EXC", "D", "XEL", "PEG",
+            "NextEra", "Southern Company", "Duke", "Exelon",
+        }),
+        "related_industries":    ["Utilities", "Energy", "Industrials"],
+        "related_assets":        ["NEE", "SO", "DUK", "AEP", "XEL"],
+        "related_macro_factors": ["Rate-Base Growth", "Load Growth Forecast", "Allowed ROE", "Electrification Demand"],
+        "second_order_effects": [
+            "Load growth ends the decoupling era — utilities re-rate from bond-proxy defensives toward structural earnings compounders",
+            "Rising capital plans pressure balance sheets, lifting equity-issuance and putting the allowed-ROE regulatory debate in focus",
+            "Demand visibility from data-centre anchor load reduces the regulatory risk premium embedded in utility multiples",
+            "Capex intensity favours utilities with constructive regulatory jurisdictions and large interconnection pipelines",
+        ],
+        "podcast_topics": ["Markets", "Macro"],
+        "relationship_graph": {
+            "Utilities":   {"weight": 0.95, "type": "direct",        "direction": "positive"},
+            "Energy":      {"weight": 0.55, "type": "macro_overlap", "direction": "positive"},
+            "Industrials": {"weight": 0.48, "type": "indirect",      "direction": "positive"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Defensive Rotation", "Stagflationary"],
+        "competing_themes":  ["grid-modernization", "ai-energy-demand", "nuclear-power-renaissance"],
+        "generic_keywords":  ["utility", "electricity"],
+        "causal_inputs":     ["grid-modernization", "ai-energy-demand"],
+        "causal_outputs":    [],
+        "confidence_floor":  15,
+        "decay_rate":        0.87,
+    },
+
+    # ── 18 ───────────────────────────────────────────────────────────────────────
+    "direct-lending-expansion": {
+        "label":       "Direct Lending Expansion",
+        "name":        "Direct Lending Expansion",
+        "description": (
+            "Permanent and insurance-linked capital is flooding into direct lending, "
+            "extending non-bank credit beyond the middle market into investment-grade "
+            "and asset-based finance — a fund-formation supercycle that compounds "
+            "fee-related earnings for the largest credit platforms."
+        ),
+        "keywords": [
+            "direct lending", "private credit fund", "bdc", "business development company",
+            "unitranche", "middle market lending", "senior secured loan", "direct lender",
+            "private debt fund", "asset based lending", "fund formation", "credit fund raise",
+            "perpetual capital", "insurance capital", "private credit deployment",
+            "nav financing", "investment grade private credit", "fee related earnings",
+            "dry powder", "private debt",
+            "lending", "credit",
+        ],
+        "entities": frozenset({
+            "ARES", "OWL", "BXSL", "ARCC", "OBDC", "FSK", "GBDC", "APO",
+            "Ares", "Blue Owl", "Blackstone", "Apollo",
+        }),
+        "related_industries":    ["Financials", "Real Estate"],
+        "related_assets":        ["ARES", "OWL", "ARCC", "OBDC"],
+        "related_macro_factors": ["Fund Formation Pace", "Fee-Related Earnings", "Insurance Capital Inflows", "Credit Spread Regime"],
+        "second_order_effects": [
+            "Insurance-balance-sheet capital makes direct-lending AUM stickier and less cyclical, re-rating manager fee streams",
+            "Migration up-market into investment-grade private credit puts non-bank lenders in direct competition with bank syndication desks",
+            "Fee-related earnings growth de-risks alt-manager equity stories versus carry-dependent, mark-to-market PE models",
+            "Asset-based finance expansion extends private credit into consumer, equipment, and infrastructure cash-flow streams",
+        ],
+        "podcast_topics": ["Private Markets", "Markets"],
+        "relationship_graph": {
+            "Financials":  {"weight": 0.92, "type": "direct",        "direction": "positive"},
+            "Real Estate": {"weight": 0.42, "type": "macro_overlap", "direction": "negative"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Risk-Off Hawkish"],
+        "competing_themes":  ["private-credit-expansion", "private-capital-takeover"],
+        "generic_keywords":  ["lending", "credit"],
+        "causal_inputs":     ["treasury-yield-pressure"],
+        "causal_outputs":    ["private-capital-takeover"],
+        "confidence_floor":  12,
+        "decay_rate":        0.82,
+    },
+
+    # ── 19 ───────────────────────────────────────────────────────────────────────
+    "private-capital-takeover": {
+        "label":       "Private Capital Takeover",
+        "name":        "Private Capital Takeover",
+        "description": (
+            "Record private-equity dry powder, paired with deep private-credit financing, "
+            "is accelerating take-privates and sponsor-led buyouts — migrating value "
+            "creation off public exchanges and shrinking the listed-equity universe in "
+            "targeted sectors."
+        ),
+        "keywords": [
+            "take private", "going private", "leveraged buyout", "lbo",
+            "private equity buyout", "public to private", "carve out", "sponsor backed",
+            "pe acquisition", "club deal", "buyout fund", "dry powder", "take private deal",
+            "sponsor bid", "private equity bid", "delisting", "management buyout",
+            "continuation fund", "mega buyout", "sponsor takeover",
+            "buyout", "private equity",
+        ],
+        "entities": frozenset({
+            "BX", "KKR", "APO", "CG", "ARES", "TPG", "EQT", "OWL",
+            "Blackstone", "KKR", "Apollo", "Carlyle", "TPG",
+        }),
+        "related_industries":    ["Financials", "Real Estate", "Industrials"],
+        "related_assets":        ["BX", "KKR", "APO", "CG", "TPG"],
+        "related_macro_factors": ["PE Dry Powder", "Take-Private Volume", "Financing Spread", "Sponsor Exit Backlog"],
+        "second_order_effects": [
+            "Take-private flow shrinks the listed-equity universe in targeted sectors, raising scarcity value for remaining public comps",
+            "Deal velocity is gated by private-credit financing availability — the two themes move as a single capital-formation engine",
+            "Continuation funds extend hold periods, deferring DPI and pressuring LPs even as headline fundraising stays strong",
+            "Sponsor competition for scarce assets compresses return assumptions, pushing funds toward operational rather than financial leverage",
+        ],
+        "podcast_topics": ["Private Markets", "M&A"],
+        "relationship_graph": {
+            "Financials":  {"weight": 0.90, "type": "direct",        "direction": "positive"},
+            "Industrials": {"weight": 0.45, "type": "indirect",      "direction": "positive"},
+            "Real Estate": {"weight": 0.40, "type": "macro_overlap", "direction": "positive"},
+        },
+        "regime_affinity":   ["Risk-On Neutral", "Risk-On Dovish"],
+        "competing_themes":  ["private-credit-expansion", "direct-lending-expansion"],
+        "generic_keywords":  ["buyout", "private equity"],
+        "causal_inputs":     ["direct-lending-expansion"],
+        "causal_outputs":    [],
+        "confidence_floor":  12,
+        "decay_rate":        0.80,
     },
 }
 

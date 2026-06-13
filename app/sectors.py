@@ -752,7 +752,8 @@ def derive_extended_regime(
     Called in background.py after both sectors and themes are computed.
 
     Returns one of:
-      AI Capex Expansion | Energy Supply Risk | Yield Shock | Liquidity Tightening
+      AI Capex Expansion | Power Infrastructure Cycle | Energy Supply Risk
+      Yield Shock | Liquidity Tightening | Private Capital Cycle
       Defensive Rotation | Commodity Expansion | Risk-On Expansion
       Geopolitical Premium | Energy Infrastructure Cycle | Inflation Pressure
       Macro Stabilization
@@ -767,30 +768,47 @@ def derive_extended_regime(
     cons = sc.get("Consumer",    0.0)
     ind  = sc.get("Industrials", 0.0)
 
-    has_ai      = "ai-energy-demand"                  in active_themes or "semiconductor-capex-cycle" in active_themes
+    # AI demand cluster — the broad theme plus the granular supercycle decompositions
+    has_ai      = any(t in active_themes for t in (
+        "ai-energy-demand", "semiconductor-capex-cycle",
+        "ai-compute-arms-race", "hyperscaler-capex", "data-center-buildout",
+    ))
     has_yield   = "treasury-yield-pressure"           in active_themes or "liquidity-tightening"       in active_themes
     has_energy  = "energy-security"                   in active_themes
     has_defense = "defense-reindustrialization"       in active_themes
     has_nuclear = "nuclear-power-renaissance"         in active_themes
     has_consumer = "consumer-stress"                  in active_themes
     has_credit  = "liquidity-tightening"              in active_themes
+    # Power/grid buildout cluster — data centres pulling through grid + utility capex
+    has_power   = any(t in active_themes for t in (
+        "grid-modernization", "utility-capex-supercycle",
+        "data-center-buildout", "nuclear-power-renaissance",
+    ))
+    # Private-capital cluster — the lending + buyout flywheel
+    has_private_capital = any(t in active_themes for t in (
+        "private-credit-expansion", "direct-lending-expansion", "private-capital-takeover",
+    ))
 
     # Ranked checks — most specific conditions evaluated first
     if tech > 50 and has_ai:
         return "AI Capex Expansion"
+    if (util > 30 or ind > 30) and has_power and has_ai:
+        return "Power Infrastructure Cycle"
     if ene > 45 and has_energy:
         return "Energy Supply Risk"
     if has_yield and has_credit:
         return "Liquidity Tightening"
     if has_yield and fin > 35:
         return "Yield Shock"
+    if has_private_capital and fin > 35:
+        return "Private Capital Cycle"
     if (hc + util) > (tech + cons) * 0.9 and hc > 20:
         return "Defensive Rotation"
     if ene > 38 and mat > 32:
         return "Commodity Expansion"
     if has_defense and ene > 28:
         return "Geopolitical Premium"
-    if has_nuclear and tech > 30:
+    if (has_nuclear or has_power) and tech > 30:
         return "Energy Infrastructure Cycle"
     if has_consumer and cons > 25:
         return "Inflation Pressure"
