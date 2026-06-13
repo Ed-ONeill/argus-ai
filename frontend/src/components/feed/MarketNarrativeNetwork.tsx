@@ -13,6 +13,7 @@ import { useTemporalMarket } from "@/hooks/useTemporalMarket";
 import { useMarketRhythm } from "@/hooks/useMarketRhythm";
 import { useParticipantDynamics } from "@/hooks/useParticipantDynamics";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
+import { textPreferenceScore, type UserPrefs } from "@/lib/feedRanker";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
 // W/H define the SVG coordinate space. PAD_X is generous atmospheric dead-space
@@ -447,7 +448,7 @@ function Skeleton() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function MarketNarrativeNetwork() {
+export function MarketNarrativeNetwork({ prefs }: { prefs?: UserPrefs }) {
   const { data, isLoading, isFetching } = useNarrativeNetwork();
   const ms = useMarketState();
   const rf = useReflexivity();
@@ -692,7 +693,14 @@ export function MarketNarrativeNetwork() {
   if (isLoading) return <Skeleton />;
   if (!data || data.nodes.length < 2) return null;
 
-  const sortedChains         = [...data.chains].sort((a, b) => b.confidence - a.confidence);
+  // Transmission paths are ordered by preference relevance first (so a followed-
+  // theme path leads), then by confidence. Falls back to pure confidence ordering
+  // when no prefs are set or nothing matches.
+  const sortedChains = [...data.chains].sort((a, b) => {
+    const pa = prefs ? textPreferenceScore(`${a.title} ${a.summary}`, prefs) : 0;
+    const pb = prefs ? textPreferenceScore(`${b.title} ${b.summary}`, prefs) : 0;
+    return (pb - pa) || (b.confidence - a.confidence);
+  });
   const presentRelationships = [...new Set(data.edges.map(e => e.relationship))];
   const anyFocusOrChain      = focusedNodeId !== null || activeChain !== null;
   const focusedNodeStyle     = focusedNode ? (NODE_STYLE[focusedNode.type] ?? NODE_STYLE.theme) : null;

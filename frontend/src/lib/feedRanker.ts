@@ -1,4 +1,4 @@
-import type { StoryCluster } from "./types";
+import type { StoryCluster, ThemeIntelligence, WhatMattersNowItem } from "./types";
 
 export interface UserPrefs {
   followed_themes:        string[];
@@ -13,27 +13,47 @@ export interface RankedCluster extends StoryCluster {
   _debug:           Record<string, number | string[]> | undefined;
 }
 
-// ── Theme keyword maps ────────────────────────────────────────────────────────
-// Matches cluster text against the curated theme list. Each theme has tight,
-// high-precision patterns to avoid false positives inflating scores.
-
+// ── Tiered theme keyword maps ─────────────────────────────────────────────────
 // Patterns run against normalize()'d text (lowercase, de-hyphenated, US spelling).
-// Broadened to match real headline language ("AI boom", "AI-chip", "data centre")
-// rather than only rigid compound phrases.
-const THEME_KEYWORDS: Record<string, RegExp> = {
-  "AI Infrastructure":    /\bai\b|artificial intelligence|\bgpu\b|\bgpus\b|nvidia|\bamd\b|inference|training cluster|\bllm\b|\bllms\b|foundation model|hyperscaler|cloud compute|compute capacity|ai infrastructure|ai data center|ai chip|ai compute|ai buildout|accelerated computing/i,
-  "Defense Rearmament":   /rearmament|defense spending|defense budget|defence|military spending|military budget|\bnato\b|arms buildup|defense procurement|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|military buildup|defense investment/i,
-  "Power Grid Expansion": /transmission|substation|utility infrastructure|grid capacity|grid upgrade|power demand|electricity demand|transmission line|power grid|grid expansion|electrical grid|grid investment|grid modernization|electricity grid/i,
-  "Private Credit":       /private credit|direct lending|private debt|\bbdc\b|unitranche|middle market loan|middle market lending|alternative lending|non bank lending|private lending|credit fund/i,
-  "Nuclear Renaissance":  /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear investment|nuclear expansion|nuclear plant/i,
-  "Space Economy":        /space economy|commercial space|\bsatellite\b|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital launch|space investment/i,
-  "Cybersecurity":        /cybersecurity|cyber attack|ransomware|data breach|zero day|endpoint security|threat actor|cyber threat|cyberattack|infosec|network security|cyber incident|crowdstrike|palo alto networks/i,
-  "Energy Security":      /energy security|energy independence|\blng\b|liquefied natural gas|strategic energy|energy supply|fuel supply|energy resilience|energy self sufficiency/i,
-  "GLP-1 Economy":        /glp.?1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight loss drug|obesity drug|eli lilly|novo nordisk|anti obesity|obesity treatment/i,
-  "Autonomous Systems":   /autonomous vehicle|autonomous driving|self driving|driverless|\buav\b|unmanned aerial|military drone|autonomous robot|autonomous system|full self driving|robotaxi/i,
-  "Reshoring":            /reshoring|nearshoring|onshoring|friendshoring|friend shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|reshore/i,
-  "Data Center Buildout": /data center|server farm|colocation|hyperscale|rack capacity|power demand|cloud region|data center buildout|data center expansion|data center capacity|data center construction/i,
+//
+// Each theme defines up to three relevance tiers so the engine can tell a genuine
+// infrastructure story from a passing mention:
+//   t1 — core infrastructure / supply-chain / named players  → +40 (heavily favored)
+//   t2 — adjacent adoption / software / regulation            → +18
+//   t3 — generic mentions, sentiment, commentary              → +6  (small nudge)
+// A story is only treated as a strong theme match when it hits t1 or t2; a bare
+// "AI" mention (t3) earns a token boost but never out-ranks genuine substance.
+interface ThemeTiers { t1: RegExp; t2?: RegExp; t3?: RegExp }
+
+const THEME_TIERS: Record<string, ThemeTiers> = {
+  "AI Infrastructure": {
+    t1: /data center|compute infrastructure|\bgpu\b|\bgpus\b|nvidia|\bamd\b|broadcom|tsmc|anthropic|openai|semiconductor|chip supply|chipmaker|foundation model|hyperscaler|cloud infrastructure|cloud region|ai capex|ai capital spending|ai capital expenditure|ai spending|ai investment|ai buildout|inference|training cluster|accelerated computing|power demand|substation|electricity demand/i,
+    t2: /enterprise ai|ai adoption|ai software|ai platform|ai productivity|ai tool|ai agent|ai regulation|ai model|machine learning|generative ai|copilot|ai startup/i,
+    t3: /\bai\b|artificial intelligence/i,
+  },
+  "Data Center Buildout": {
+    t1: /data center|server farm|colocation|hyperscale|rack capacity|cloud region|data center capacity|data center construction|data center expansion|data center buildout|power demand|substation|grid capacity/i,
+    t2: /cloud capacity|cloud spending|cloud infrastructure|compute capacity|cloud capex/i,
+    t3: /\bcloud\b|hosting|hyperscaler/i,
+  },
+  "Power Grid Expansion": {
+    t1: /transmission line|transmission|substation|grid capacity|grid expansion|grid upgrade|electrical grid|electricity grid|power grid|grid investment|grid modernization|utility infrastructure|power demand|electricity demand|interconnection queue/i,
+    t2: /utility capex|electricity capacity|power capacity|renewable buildout|baseload|grid operator/i,
+    t3: /\butility\b|utilities|electricity|\bpower\b/i,
+  },
+  // Remaining themes use a single strong tier (preserves prior single-regex behavior).
+  "Defense Rearmament":   { t1: /rearmament|defense spending|defense budget|defence|military spending|military budget|\bnato\b|arms buildup|defense procurement|defense contract|lockheed|raytheon|\bbae\b|rheinmetall|military buildup|defense investment/i },
+  "Private Credit":       { t1: /private credit|direct lending|private debt|\bbdc\b|unitranche|middle market loan|middle market lending|alternative lending|non bank lending|private lending|credit fund/i },
+  "Nuclear Renaissance":  { t1: /nuclear renaissance|nuclear power|nuclear energy|small modular reactor|\bsmr\b|uranium|nuclear reactor|fission|nuclear investment|nuclear expansion|nuclear plant/i },
+  "Space Economy":        { t1: /space economy|commercial space|\bsatellite\b|launch vehicle|low earth orbit|\bleo\b|spacex|rocket lab|space tourism|orbital launch|space investment/i },
+  "Cybersecurity":        { t1: /cybersecurity|cyber attack|ransomware|data breach|zero day|endpoint security|threat actor|cyber threat|cyberattack|infosec|network security|cyber incident|crowdstrike|palo alto networks/i },
+  "Energy Security":      { t1: /energy security|energy independence|\blng\b|liquefied natural gas|strategic energy|energy supply|fuel supply|energy resilience|energy self sufficiency/i },
+  "GLP-1 Economy":        { t1: /glp.?1|ozempic|wegovy|semaglutide|tirzepatide|mounjaro|weight loss drug|obesity drug|eli lilly|novo nordisk|anti obesity|obesity treatment/i },
+  "Autonomous Systems":   { t1: /autonomous vehicle|autonomous driving|self driving|driverless|\buav\b|unmanned aerial|military drone|autonomous robot|autonomous system|full self driving|robotaxi/i },
+  "Reshoring":            { t1: /reshoring|nearshoring|onshoring|friendshoring|friend shoring|supply chain relocation|domestic manufacturing|manufacturing repatriation|onshore production|reshore/i },
 };
+
+const TIER_WEIGHT = { t1: 40, t2: 18, t3: 6 } as const;
 
 // ── Sector / asset class keyword maps ─────────────────────────────────────────
 
@@ -156,19 +176,31 @@ function roleScore(cluster: StoryCluster, role: string): number {
   }
 }
 
-// Priority 1 — strongest signal: +40 per followed theme match (capped at 80)
+// Priority 1 — strongest signal. Each followed theme contributes the weight of
+// its highest matched tier (t1 +40 / t2 +18 / t3 +6). `bestTier` is the strongest
+// tier hit across all followed themes (1 = strongest); 0 = no theme match.
 function followedThemeScore(
   text: string,
   themes: string[],
-): { score: number; matched: string[] } {
-  if (!themes.length) return { score: 0, matched: [] };
+): { score: number; matched: string[]; bestTier: number } {
+  if (!themes.length) return { score: 0, matched: [], bestTier: 0 };
   let score = 0;
+  let bestTier = 0;
   const matched: string[] = [];
   for (const theme of themes) {
-    const rx = THEME_KEYWORDS[theme];
-    if (rx?.test(text)) { score += 40; matched.push(theme); }
+    const tiers = THEME_TIERS[theme];
+    if (!tiers) continue;
+    let w = 0, tier = 0;
+    if      (tiers.t1.test(text))  { w = TIER_WEIGHT.t1; tier = 1; }
+    else if (tiers.t2?.test(text)) { w = TIER_WEIGHT.t2; tier = 2; }
+    else if (tiers.t3?.test(text)) { w = TIER_WEIGHT.t3; tier = 3; }
+    if (w > 0) {
+      score += w;
+      matched.push(theme);
+      bestTier = bestTier === 0 ? tier : Math.min(bestTier, tier);
+    }
   }
-  return { score: Math.min(score, 80), matched };
+  return { score: Math.min(score, 100), matched, bestTier };
 }
 
 function themeScore(text: string, sectors: string[], assets: string[]): number {
@@ -202,6 +234,7 @@ function prefsAreEmpty(prefs: UserPrefs): boolean {
 interface ScoreBreakdown {
   relevance:      number;
   themeScore:     number;
+  themeTier:      number;   // 0 none · 1 strong · 2 adjacent · 3 generic
   sectorScore:    number;
   assetScore:     number;
   region:         number;
@@ -223,6 +256,7 @@ function computeBreakdown(cluster: StoryCluster, prefs: UserPrefs): ScoreBreakdo
   return {
     relevance:      th.score + s.score + a.score + r + ro + td,
     themeScore:     th.score,
+    themeTier:      th.bestTier,
     sectorScore:    s.score,
     assetScore:     a.score,
     region:         r,
@@ -232,6 +266,13 @@ function computeBreakdown(cluster: StoryCluster, prefs: UserPrefs): ScoreBreakdo
     matchedSectors: s.matched,
     matchedAssets:  a.matched,
   };
+}
+
+// A cluster is a STRONG theme match only when it hits tier 1 or 2 of a followed
+// theme. A bare generic mention (tier 3) is demoted to the sector tier so that
+// "AI is changing investor sentiment" never leads over genuine infrastructure.
+function isStrongTheme(b: ScoreBreakdown): boolean {
+  return b.themeTier === 1 || b.themeTier === 2;
 }
 
 function toRanked(cluster: StoryCluster, b: ScoreBreakdown, debug: boolean): RankedCluster {
@@ -261,12 +302,12 @@ export function scoreCluster(
 }
 
 /**
- * Tiered ranking — a followed-theme match always outranks any non-theme story,
- * regardless of signal score:
- *   Tier 1 — clusters matching a followed theme
- *   Tier 2 — clusters matching a followed sector (but no followed theme)
+ * Tiered ranking — a strong followed-theme match always outranks any non-theme
+ * story, regardless of signal score:
+ *   Tier 1 — strong theme match (tier 1/2 keywords: real infrastructure/substance)
+ *   Tier 2 — followed sector match, OR a generic (tier 3) theme mention
  *   Tier 3 — everything else
- * Within each tier, sort by signal score (relevance score breaks ties).
+ * Within each tier, sort by relevance score, then signal score.
  */
 export function rankClusters(
   clusters: StoryCluster[],
@@ -283,17 +324,17 @@ export function rankClusters(
     return { rc: toRanked(c, b, isDev), b };
   });
 
-  const tier1 = scored.filter(x => x.b.themeScore > 0);
-  const tier2 = scored.filter(x => x.b.themeScore === 0 && x.b.sectorScore > 0);
-  const tier3 = scored.filter(x => x.b.themeScore === 0 && x.b.sectorScore === 0);
+  const tier1 = scored.filter(x => isStrongTheme(x.b));
+  const tier2 = scored.filter(x => !isStrongTheme(x.b) && (x.b.themeScore > 0 || x.b.sectorScore > 0));
+  const tier3 = scored.filter(x => !isStrongTheme(x.b) && x.b.themeScore === 0 && x.b.sectorScore === 0);
 
-  const bySignal = (a: typeof scored[number], b: typeof scored[number]) =>
-    b.rc.primary.signal_score - a.rc.primary.signal_score ||
-    b.rc.relevance_score      - a.rc.relevance_score;
+  const byScore = (a: typeof scored[number], b: typeof scored[number]) =>
+    b.rc.relevance_score      - a.rc.relevance_score ||
+    b.rc.primary.signal_score - a.rc.primary.signal_score;
 
-  tier1.sort(bySignal);
-  tier2.sort(bySignal);
-  tier3.sort(bySignal);
+  tier1.sort(byScore);
+  tier2.sort(byScore);
+  tier3.sort(byScore);
 
   const ordered = [...tier1, ...tier2, ...tier3];
   const ranked  = ordered.map(x => x.rc);
@@ -301,7 +342,7 @@ export function rankClusters(
   if (isDev) {
     const origPos = new Map(clusters.map((c, i) => [c.id, i + 1]));
     const tierOf  = (x: typeof scored[number]) =>
-      x.b.themeScore > 0 ? 1 : x.b.sectorScore > 0 ? 2 : 3;
+      isStrongTheme(x.b) ? 1 : (x.b.themeScore > 0 || x.b.sectorScore > 0) ? 2 : 3;
     console.group(
       `[feedRanker] tier1(theme)=${tier1.length}  tier2(sector)=${tier2.length}  tier3(other)=${tier3.length}  of ${ranked.length}`,
     );
@@ -327,4 +368,97 @@ export function rankClusters(
   }
 
   return ranked;
+}
+
+// ── Cross-section personalization ─────────────────────────────────────────────
+// The cluster stream is not the only personalized surface. The homepage's
+// derived modules (What Matters Now, the Intelligence Strip's Opportunity / Risk
+// / Leaders selections, the Narrative Network's transmission paths) are computed
+// from theme-intelligence and WMN pools. These helpers score arbitrary text and
+// theme objects with the same tiered model so every high-visibility section can
+// be reordered/weighted toward the user's followed themes and sectors.
+
+/**
+ * Generic preference score for any free text (a theme description, a narrative
+ * chain, a story title). Theme matches dominate; sectors and assets add weight.
+ * Returns 0 when prefs are empty (callers should leave ordering untouched).
+ */
+export function textPreferenceScore(text: string, prefs: UserPrefs): number {
+  if (prefsAreEmpty(prefs)) return 0;
+  const t  = normalize(text);
+  const th = followedThemeScore(t, prefs.followed_themes);
+  const s  = sectorScore(t, prefs.followed_sectors);
+  const a  = assetScore(t, prefs.followed_asset_classes);
+  // Weight themes heavily so a strong theme hit dominates the engine's own
+  // confidence-based scores (which run ~0–150) when used as an additive boost.
+  return th.score * 2.5 + s.score * 1.5 + a.score;
+}
+
+/** All descriptive text fields of a theme-intelligence object, joined. */
+function themeText(theme: ThemeIntelligence): string {
+  return [
+    theme.name,
+    theme.description,
+    theme.causal_narrative,
+    ...(theme.related_industries    ?? []),
+    ...(theme.related_assets        ?? []),
+    ...(theme.related_macro_factors ?? []),
+    ...(theme.second_order_effects  ?? []),
+  ].join(" ");
+}
+
+/**
+ * Preference score for a theme-intelligence object. Used as an additive boost in
+ * the Intelligence Strip so Opportunity / Risk / Leaders selections surface the
+ * user's followed themes and sectors first.
+ */
+export function themePreferenceScore(theme: ThemeIntelligence, prefs: UserPrefs): number {
+  return textPreferenceScore(themeText(theme), prefs);
+}
+
+/** True when a theme has any preference relevance — used for hard prioritization. */
+export function themeMatchesPrefs(theme: ThemeIntelligence, prefs: UserPrefs): boolean {
+  return themePreferenceScore(theme, prefs) > 0;
+}
+
+/**
+ * Reorder What Matters Now items toward followed themes/sectors. Items are scored
+ * on their cluster's primary story text + theme label; stable-sorted so the
+ * backend's signal ordering is preserved within equal-relevance groups. Returns
+ * the input unchanged when prefs are empty.
+ */
+export function rankWhatMattersNow(
+  items: WhatMattersNowItem[],
+  prefs: UserPrefs,
+): WhatMattersNowItem[] {
+  if (prefsAreEmpty(prefs) || items.length === 0) return items;
+  const scoreOf = (it: WhatMattersNowItem) => {
+    const p = it.cluster.primary;
+    const text = [
+      p.title, p.summary, p.why_it_matters, p.impact,
+      it.cluster.theme_label, it.wmn_label, it.thesis,
+      ...(p.affected_entities ?? []),
+    ].join(" ");
+    return textPreferenceScore(text, prefs);
+  };
+  return items
+    .map((it, i) => ({ it, i, s: scoreOf(it) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map(x => x.it);
+}
+
+/**
+ * Reorder a theme list toward followed themes/sectors (stable). Drives the
+ * theme-tag matching in What Matters Now and any leaderboard that renders themes
+ * in array order. Returns the input unchanged when prefs are empty.
+ */
+export function rankThemes(
+  themes: ThemeIntelligence[],
+  prefs: UserPrefs,
+): ThemeIntelligence[] {
+  if (prefsAreEmpty(prefs) || themes.length === 0) return themes;
+  return themes
+    .map((t, i) => ({ t, i, s: themePreferenceScore(t, prefs) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map(x => x.t);
 }

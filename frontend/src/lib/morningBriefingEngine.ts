@@ -82,6 +82,7 @@ export function computeScorecard(themes: ThemeIntelligence[]): BriefingScorecard
 export function computeOpportunities(
   themes: ThemeIntelligence[],
   limit = 3,
+  boost: (t: ThemeIntelligence) => number = () => 0,
 ): BriefingOpportunity[] {
   const MOMENTUM_BONUS: Record<string, number> = {
     accelerating:  25,
@@ -98,7 +99,8 @@ export function computeOpportunities(
       theme: t,
       score: (t.confidence ?? 0) +
              Math.max(t.momentum_delta ?? 0, 0) * 1.5 +
-             (MOMENTUM_BONUS[t.momentum_label] ?? 0),
+             (MOMENTUM_BONUS[t.momentum_label] ?? 0) +
+             boost(t),   // preference boost — surfaces followed themes/sectors first
     }))
     .sort((a, b) => b.score - a.score);
 
@@ -128,6 +130,7 @@ export function computeOpportunities(
 export function computeRisks(
   themes: ThemeIntelligence[],
   limit = 3,
+  boost: (t: ThemeIntelligence) => number = () => 0,
 ): BriefingRisk[] {
   const severity = (t: ThemeIntelligence): number => {
     const delta    = t.momentum_delta ?? 0;
@@ -138,13 +141,15 @@ export function computeRisks(
            Math.max(0, 55 - (t.confidence ?? 55));
   };
 
+  // Preference boost is applied only to genuinely deteriorating themes — never in
+  // backfill — so a followed-but-healthy theme is never forced onto a Risk card.
   const allDeterioration = [...themes]
     .filter(t =>
       (t.momentum_delta ?? 0) < 0 ||
       t.momentum_label === "reversing" ||
       t.momentum_label === "cooling"
     )
-    .map(t => ({ theme: t, severity: severity(t) }))
+    .map(t => ({ theme: t, severity: severity(t) + boost(t) }))
     .sort((a, b) => b.severity - a.severity);
 
   // Deduplicate by primary industry: if multiple themes share a sector, keep the worst.
@@ -217,6 +222,7 @@ export function detectTransitions(themes: ThemeIntelligence[]): MomentumTransiti
 export function computeIndustryRotation(
   themes: ThemeIntelligence[],
   limit = 6,
+  industryBoost: (industry: string) => number = () => 0,
 ): IndustryRotationSignal[] {
   const WEIGHTS = [1.0, 0.6, 0.35];
   const map = new Map<string, { delta: number; count: number }>();
@@ -230,6 +236,9 @@ export function computeIndustryRotation(
     });
   }
 
+  // Ranking key adds the preference boost so followed-sector industries surface in
+  // Leaders/Laggards; the displayed `delta` (and its sign) is left untouched, so
+  // leader vs. laggard classification stays faithful to the underlying momentum.
   return [...map.entries()]
     .map(([industry, { delta, count }]) => ({
       industry,
@@ -237,7 +246,7 @@ export function computeIndustryRotation(
       count,
     }))
     .filter(x => x.count >= 2 || Math.abs(x.delta) >= 5)
-    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .sort((a, b) => (Math.abs(b.delta) + industryBoost(b.industry)) - (Math.abs(a.delta) + industryBoost(a.industry)))
     .slice(0, limit);
 }
 

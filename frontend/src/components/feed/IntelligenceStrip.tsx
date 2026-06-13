@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { ThemeIntelligence } from "@/lib/types";
 import type { MarketState, RiskRegime } from "@/hooks/useMarketState";
 import { useMarketState } from "@/hooks/useMarketState";
+import { themePreferenceScore, type UserPrefs } from "@/lib/feedRanker";
 import {
   computeScorecard,
   computeOpportunities,
@@ -633,15 +634,37 @@ function getPublicDriverLabel(theme: ThemeIntelligence): string {
 
 interface IntelligenceStripProps {
   themes: ThemeIntelligence[];
+  prefs?: UserPrefs;
 }
 
-export function IntelligenceStrip({ themes }: IntelligenceStripProps) {
+export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
   const ms = useMarketState();
 
+  // Preference boosts — applied to Opportunity / Risk / Leaders selection so the
+  // strip is personalized toward followed themes/sectors. No-ops when prefs absent.
+  const themeBoost = useMemo<(t: ThemeIntelligence) => number>(() => {
+    if (!prefs) return () => 0;
+    const m = new Map(themes.map(t => [t.id, themePreferenceScore(t, prefs)]));
+    return (t: ThemeIntelligence) => m.get(t.id) ?? 0;
+  }, [themes, prefs]);
+
+  const industryBoost = useMemo<(industry: string) => number>(() => {
+    if (!prefs) return () => 0;
+    const m = new Map<string, number>();
+    for (const t of themes) {
+      const s = themePreferenceScore(t, prefs);
+      if (s <= 0) continue;
+      for (const ind of (t.related_industries ?? [])) {
+        m.set(ind, Math.max(m.get(ind) ?? 0, s));
+      }
+    }
+    return (industry: string) => m.get(industry) ?? 0;
+  }, [themes, prefs]);
+
   const scorecard  = useMemo(() => computeScorecard(themes),        [themes]);
-  const opps       = useMemo(() => computeOpportunities(themes, 2), [themes]);
-  const risks      = useMemo(() => computeRisks(themes, 2),         [themes]);
-  const rotation   = useMemo(() => computeIndustryRotation(themes), [themes]);
+  const opps       = useMemo(() => computeOpportunities(themes, 2, themeBoost), [themes, themeBoost]);
+  const risks      = useMemo(() => computeRisks(themes, 2, themeBoost),         [themes, themeBoost]);
+  const rotation   = useMemo(() => computeIndustryRotation(themes, 6, industryBoost), [themes, industryBoost]);
   const balance    = useMemo(() => computeSignalBalance(themes, scorecard), [themes, scorecard]);
   const changes    = useMemo(() => computeTodaysChanges(themes, rotation), [themes, rotation]);
   const conviction = useMemo(() => computeConvictionTier(themes, scorecard, balance), [themes, scorecard, balance]);

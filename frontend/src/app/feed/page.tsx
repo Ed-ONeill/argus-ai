@@ -22,7 +22,7 @@ import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
-import { rankClusters } from "@/lib/feedRanker";
+import { rankClusters, rankWhatMattersNow, rankThemes } from "@/lib/feedRanker";
 import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
 
 function itemsToFallbackClusters(items: FeedItem[]): StoryCluster[] {
@@ -97,6 +97,14 @@ export default function FeedPage() {
   const rankedClusters  = useMemo(() => rankClusters(allClusters, prefs), [allClusters, prefs]);
   const visibleClusters = rankedClusters.slice(0, visibleCount);
   const hasMore         = visibleCount < rankedClusters.length;
+
+  // Personalize the high-visibility derived sections (not just the stream) so the
+  // homepage prioritizes followed themes/sectors within the first screen.
+  const personalizedThemes = useMemo(() => rankThemes(themes, prefs), [themes, prefs]);
+  const personalizedWmn    = useMemo(
+    () => rankWhatMattersNow(data?.what_matters_now ?? [], prefs),
+    [data?.what_matters_now, prefs],
+  );
 
   useEffect(() => {
     console.log("[feed]", {
@@ -218,7 +226,7 @@ export default function FeedPage() {
         />
 
         {/* ── Market Narrative Network — full-bleed hero ───────────────────── */}
-        <MarketNarrativeNetwork />
+        <MarketNarrativeNetwork prefs={prefs} />
 
         {/* Atmospheric continuity — field pressure color bleeds into intelligence feed */}
         <div aria-hidden className="w-full h-7 pointer-events-none"
@@ -242,16 +250,16 @@ export default function FeedPage() {
 
           {/* ── Narrative pressure themes ──────────────────────────────── */}
           <WhatMattersNow
-            items={data?.what_matters_now ?? []}
+            items={personalizedWmn}
             isLoading={isLoading}
-            themes={data?.theme_intelligence ?? []}
+            themes={personalizedThemes}
             marketIntensity={ms.atmosphereIntensity}
             trendLabel={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
           />
 
           {/* ── Intelligence strip — leaderboard + change feed ─────────── */}
           {!isLoading && themes.length > 0 && (
-            <IntelligenceStrip themes={themes} />
+            <IntelligenceStrip themes={themes} prefs={prefs} />
           )}
 
           {/* ── Category filter strip ──────────────────────────────────── */}
