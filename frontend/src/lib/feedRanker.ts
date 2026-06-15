@@ -295,16 +295,50 @@ function prefsAreEmpty(prefs: UserPrefs): boolean {
   );
 }
 
+// ── Source authority ──────────────────────────────────────────────────────────
+// Publisher tiers (mirror app/feeds.py _SOURCE_TIERS bands). Source authority is an
+// explicit ranking factor: the feed heavily favors Tier 1 / Tier 2 and demotes
+// Tier 4 (blogs / promotional / unknown).
+const SOURCE_TIER: Record<string, 1 | 2 | 3 | 4> = {
+  // Tier 1 — global wires, papers of record, central banks, primary releases
+  "Bloomberg Markets": 1, "Reuters": 1, "Reuters M&A": 1, "Reuters Business": 1, "Reuters World": 1,
+  "WSJ Markets": 1, "Wall Street Journal": 1, "FT Deals": 1, "FT Companies": 1, "Financial Times": 1,
+  "Nikkei Asia": 1, "CNBC Economy": 1, "CNBC Companies": 1, "The Information": 1, "AP Business": 1, "AP World": 1,
+  "Federal Reserve": 1, "US Treasury": 1, "ECB": 1, "BIS": 1, "IMF": 1, "World Bank": 1,
+  "SEC Filings": 1, "BLS": 1, "EIA": 1,
+  // Tier 2 — major financial media / quality general
+  "NYT DealBook": 2, "BBC World": 2, "MarketWatch": 2, "Barron's": 2, "Yahoo Finance": 2, "Seeking Alpha": 2,
+  // Tier 3 — industry trade publications
+  "PitchBook": 3, "SemiAnalysis": 3, "Private Debt Investor": 3, "Infrastructure Investor": 3, "RTO Insider": 3,
+  "Buyouts": 3, "PE Hub": 3, "PE Hub Wire": 3, "Utility Dive": 3, "Data Center Dynamics": 3, "Canary Media": 3,
+  "FERC": 3, "Politico": 3, "Power Magazine": 3, "PE Wire": 3, "Benzinga": 3, "Blocks & Files": 3,
+  // Tier 4 — PR wires / promotional
+  "GlobeNewswire M&A": 4, "Business Wire M&A": 4, "PR Newswire M&A": 4,
+};
+const SOURCE_AUTHORITY: Record<1 | 2 | 3 | 4, number> = { 1: 50, 2: 26, 3: 8, 4: -25 };
+const SOURCE_TIER_LABEL: Record<1 | 2 | 3 | 4, string> = { 1: "T1", 2: "T2", 3: "T3", 4: "T4" };
+
+function sourceTier(source: string): 1 | 2 | 3 | 4 {
+  return SOURCE_TIER[source] ?? 4;   // unknown publishers treated as Tier 4
+}
+
+// Institutional desk topics — what a hedge-fund morning call covers. Stories that
+// hit these are prioritized over local / niche / isolated single-company items.
+const INSTITUTIONAL_TOPIC = /\b(?:fed|fomc|ecb|boj|central bank|rate (?:cut|hike|decision)|inflation|cpi|ppi|treasury|yield|bond|sovereign|credit spread|private credit|direct lending|leveraged loan|\bclo\b|high yield|default|restructur|oil|crude|opec|brent|natural gas|\blng\b|commodit|copper|gold|geopolit|sanction|tariff|war|election|ai infrastructure|data center|hyperscaler|\bgpu\b|semiconductor|\bchips?\b|nvidia|tsmc|grid|transmission|nuclear|utilit|power demand|energy|merger|acquisition|buyout|takeover|\blbo\b|\bipo\b|capital markets|fund raise|raises \$|earnings|guidance)\b/i;
+const TOPIC_PRIORITY_BONUS = 28;
+
 // ── Preference affinity ─────────────────────────────────────────────────────
 // The explicit, debuggable breakdown attached to every ranked cluster:
-//   finalRank = convictionScore
+//   finalRank = convictionScore + sourceAuthorityScore + topicPriorityScore
 //             + themeMatchScore + sectorMatchScore + assetClassMatchScore
 //             + marketFocusScore + penalty
-// `reasons` lists the human-readable preference matches that lifted the story —
-// the source of the dev-mode "Ranked because:" annotation.
+// `reasons` lists the human-readable contributors — the source of the dev-mode
+// "Ranked because:" annotation.
 export interface ClusterAffinity {
   finalRank:            number;
   convictionScore:      number;
+  sourceAuthorityScore: number;   // publisher tier weight (T1/T2 favored, T4 demoted)
+  topicPriorityScore:   number;   // institutional-desk topic boost
   themeMatchScore:      number;
   sectorMatchScore:     number;
   assetClassMatchScore: number;
@@ -334,19 +368,32 @@ export function computeAffinity(cluster: StoryCluster, prefs: UserPrefs): Cluste
     : hasSecondary ? WEAK_OVERLAP_PENALTY : NO_OVERLAP_PENALTY;
   const hasAffinity = hasThesis;
 
+  // Source authority — heavily favor Tier 1 / Tier 2, demote Tier 4 / unknown.
+  const tier             = sourceTier(cluster.primary.source ?? "");
+  const sourceAuthority  = SOURCE_AUTHORITY[tier];
+  // Institutional-desk topic priority — macro / rates / credit / commodities /
+  // geopolitics / AI infra / semis / energy / M&A / capital markets.
+  const isInstitutional  = INSTITUTIONAL_TOPIC.test(text);
+  const topicPriority    = isInstitutional ? TOPIC_PRIORITY_BONUS : 0;
+
   const finalRank =
-    conviction + th.score + se.score + as.score + mk.score + penalty;
+    conviction + sourceAuthority + topicPriority
+    + th.score + se.score + as.score + mk.score + penalty;
 
   const reasons: string[] = [
     ...th.matchedStrong,
     ...se.matched,
     ...as.matched,
     ...(mk.matched ? [mk.matched] : []),
+    ...(tier <= 2 ? [`${cluster.primary.source} (${SOURCE_TIER_LABEL[tier]})`] : []),
+    ...(isInstitutional ? ["institutional topic"] : []),
   ];
 
   return {
     finalRank,
     convictionScore:      Math.round(conviction),
+    sourceAuthorityScore: sourceAuthority,
+    topicPriorityScore:   topicPriority,
     themeMatchScore:      th.score,
     sectorMatchScore:     se.score,
     assetClassMatchScore: as.score,
@@ -366,6 +413,8 @@ function toRanked(cluster: StoryCluster, a: ClusterAffinity, debug: boolean): Ra
     _debug: debug ? {
       finalRank:    a.finalRank,
       conviction:   a.convictionScore,
+      source:       a.sourceAuthorityScore,
+      topic:        a.topicPriorityScore,
       theme:        a.themeMatchScore,
       sector:       a.sectorMatchScore,
       asset:        a.assetClassMatchScore,
@@ -447,7 +496,7 @@ export function rankClusters(
       console.log(
         `%c${kept ? "✓" : "·"} ${String(idx + 1).padStart(2)}. (was #${String(orig).padStart(2)}) `
         + `rank=${String(Math.round(c.relevance_score)).padStart(4)} conv=${String(sig).padStart(3)} `
-        + `[thm ${a.themeMatchScore} · sec ${a.sectorMatchScore} · ast ${a.assetClassMatchScore} · mkt ${a.marketFocusScore}${a.penalty ? ` · pen ${a.penalty}` : ""}]${fail} `
+        + `[src ${a.sourceAuthorityScore} · top ${a.topicPriorityScore} · thm ${a.themeMatchScore} · sec ${a.sectorMatchScore} · ast ${a.assetClassMatchScore} · mkt ${a.marketFocusScore}${a.penalty ? ` · pen ${a.penalty}` : ""}]${fail} `
         + `${c.primary.title.slice(0, 44)}`,
         kept ? "color:#6aad6a" : "color:#777",
         `\n     ${why}`,

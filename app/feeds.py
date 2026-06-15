@@ -726,6 +726,18 @@ FEED_REGISTRY: list[tuple[str, str, str]] = [
         "https://www.federalreserve.gov/feeds/press_all.xml",
         "Markets",
     ),
+    # ECB — Governing Council monetary-policy decisions and press releases.
+    (
+        "ECB",
+        "https://www.ecb.europa.eu/rss/press.html",
+        "Markets",
+    ),
+    # Nikkei Asia — Asia macro / markets / corporate (Tier 1).
+    (
+        "Nikkei Asia",
+        "https://asia.nikkei.com/rss/feed/nar",
+        "Markets",
+    ),
     # US Treasury — auction announcements (TreasuryDirect). Captures the auction
     # calendar / sizing that drives the "Treasury auction weakens" type of event.
     (
@@ -871,59 +883,72 @@ _SEC_MAX_PER_CO   = 5     # cap material filings surfaced per company per refres
 # ── Signal scoring ────────────────────────────────────────────────────────────
 
 # Source quality ceiling (out of 50 points — raised to widen Tier-1 vs PR gap)
+# Source authority on a 0–50 scale. The numeric value places each source in a tier
+# band used by _source_tier (≥46 → T1, ≥38 → T2, ≥30 → T3, <30 → T4) which drives
+# both the per-source feed cap and the source-authority ranking factor. The feed
+# heavily favors Tier 1 / Tier 2; Tier 3 (trade press) contributes selectively;
+# Tier 4 (blogs / promotional / unknown) is hard-capped.
 _SOURCE_TIERS: dict[str, float] = {
-    "Bloomberg Markets": 50,   # Bloomberg flagship — hard market/macro news
-    "FT Deals":          48,   # FT M&A desk — pure deal journalism
-    "FT Companies":      47,   # FT company desk — earnings, guidance, CEO/CFO
-    "NYT DealBook":      44,   # strong deal journalism; reclassified by content
-    "MarketWatch":       42,
-    "CNBC Economy":      40,
-    "BBC World":         40,   # authoritative international; geo/sanctions/trade
-    "CNBC Companies":    38,   # earnings, guidance, exec changes
-    "PE Hub":            40,   # PE deal flow — acquisitions, LBOs, growth investments (Tier 2)
-    "PE Wire":           34,   # PE industry news — fund closes, portfolio M&A
-    "Yahoo Finance":     28,   # aggregator — high SEO/opinion content; authority-discounted
-    "Politico":          30,   # US policy and regulatory
-    # Dead / replaced sources — kept so any stale-cache items still score correctly
-    "WSJ Markets":       50,
-    "AP Business":       44,
-    "AP World":          43,
-    "Benzinga":          36,
-    "GlobeNewswire M&A": 14,
-    "Reuters M&A":       48,
-    "Reuters Business":  46,
-    "Reuters World":     45,
-    "Business Wire M&A": 14,
-    "PR Newswire M&A":   12,
 
-    # ── Tier 1: primary sources & wires (event-driven, highest authority) ───────
-    # Encoded here so they score at the top when wired into FEED_REGISTRY. Primary
-    # filings/releases are the canonical event source — they ARE the event.
-    "Reuters":              48,
-    "Financial Times":      48,
-    "Wall Street Journal":  50,
-    "SEC Filings":          50,   # 8-K / 10-Q / S-1 — the event itself
-    "Federal Reserve":      50,   # FOMC statements, H.15, press releases
-    "US Treasury":          50,   # auction results, refunding, TIC
-    "BLS":                  50,   # CPI, PPI, jobs report
-    "EIA":                  48,   # crude/nat-gas inventories, STEO
-    "FERC":                 44,   # transmission/interconnection orders (Google-News-sourced; no native RSS)
+    # ── Tier 1: global wires, papers of record, central banks & primary releases ─
+    "Bloomberg Markets":     50,
+    "Reuters":               50,
+    "Reuters M&A":           50,
+    "Reuters Business":      48,
+    "Reuters World":         48,
+    "WSJ Markets":           50,
+    "Wall Street Journal":   50,
+    "FT Deals":              50,
+    "FT Companies":          50,
+    "Financial Times":       50,
+    "Nikkei Asia":           48,   # Nikkei — Asia macro / markets / corporate
+    "CNBC Economy":          46,
+    "CNBC Companies":        46,
+    "The Information":        48,   # original tech / AI / deal scoops (flagship)
+    "AP Business":           48,
+    "AP World":              47,
+    # Central banks / multilaterals / primary government releases
+    "Federal Reserve":       50,   # FOMC, H.15, press
+    "US Treasury":           50,   # auctions, refunding, TIC
+    "ECB":                   50,   # Governing Council decisions, press
+    "BIS":                   48,   # (tier encoded; no native RSS wired)
+    "IMF":                   48,   # (tier encoded; no native RSS wired)
+    "World Bank":            46,   # (tier encoded; no native RSS wired)
+    "SEC Filings":           50,   # 8-K / 10-Q / S-1 — the event itself
+    "BLS":                   50,   # CPI, PPI, jobs report
+    "EIA":                   48,   # crude / nat-gas balances, STEO
 
-    "The Information":       48,  # original tech/AI/deal scoops — flagship (Tier 1)
+    # ── Tier 2: major financial media / quality general ─────────────────────────
+    "NYT DealBook":          44,
+    "BBC World":             42,   # authoritative international; geo/sanctions/trade
+    "MarketWatch":           42,
+    "Barron's":              42,
+    "Yahoo Finance":         40,
+    "Seeking Alpha":         38,   # crowd/analysis — low end of Tier 2
 
-    # ── Tier 2: specialist trade press (authoritative for core themes) ──────────
-    "PitchBook":             42,  # private-capital deal data
-    "Private Debt Investor": 42,  # direct lending / private credit
-    "Infrastructure Investor":42,  # infra funds, energy/data-center capital
-    "PE Hub Wire":           40,
-    "Data Center Dynamics":  42,  # data-center buildout primary coverage
-    "SemiAnalysis":          44,  # deep semiconductor / AI-compute research
-    "Utility Dive":          40,  # utilities, grid, power demand
-    "Canary Media":          40,  # energy transition / AI power demand
-    "RTO Insider":           41,  # grid / ISO-RTO / FERC market regulation
-    "Power Magazine":        38,  # power generation, utilities, projects
-    "Buyouts":               40,  # PE fund + buyout deal flow
-    "Blocks & Files":        34,  # data-center storage / infrastructure (Tier 3 — niche/vendor)
+    # ── Tier 3: industry trade publications (specialist, secondary authority) ────
+    "PitchBook":             36,   # private-capital deal data
+    "SemiAnalysis":          36,   # semiconductor / AI-compute research
+    "Private Debt Investor": 35,   # direct lending / private credit
+    "Infrastructure Investor":35,  # infra funds
+    "RTO Insider":           35,   # grid / ISO-RTO / FERC market regulation
+    "Buyouts":               34,   # PE fund + buyout deal flow
+    "PE Hub":                34,   # PE deal flow
+    "PE Hub Wire":           34,
+    "Utility Dive":          34,   # utilities, grid, power demand
+    "Data Center Dynamics":  34,   # data-center buildout
+    "Canary Media":          34,   # energy transition / AI power demand
+    "FERC":                  34,   # transmission orders (Google-News-sourced)
+    "Politico":              34,   # US policy / regulatory
+    "Power Magazine":        32,   # power generation, utilities
+    "PE Wire":               32,   # PE industry news
+    "Benzinga":              32,
+    "Blocks & Files":        30,   # data-center storage / infrastructure (niche/vendor)
+
+    # ── Tier 4: PR wires / promotional (hard-capped; unknown sources default here)
+    "GlobeNewswire M&A":     14,
+    "Business Wire M&A":     14,
+    "PR Newswire M&A":       12,
 }
 
 # High-value finance keywords (+15 per match, cap 40)

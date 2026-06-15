@@ -32,7 +32,8 @@ function RankedBecause({ affinity }: { affinity: ClusterAffinity }) {
     >
       <span className="opacity-70">rank {Math.round(affinity.finalRank)}</span>
       <span className="opacity-40">
-        {" "}· conv {affinity.convictionScore} · thm {affinity.themeMatchScore}
+        {" "}· conv {affinity.convictionScore} · src {affinity.sourceAuthorityScore}
+        {" "}· top {affinity.topicPriorityScore} · thm {affinity.themeMatchScore}
         {" "}· sec {affinity.sectorMatchScore} · ast {affinity.assetClassMatchScore}
         {" "}· mkt {affinity.marketFocusScore}
         {affinity.penalty ? ` · pen ${affinity.penalty}` : ""}
