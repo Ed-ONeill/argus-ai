@@ -14,52 +14,19 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from app.clustering        import StoryCluster, WhatMattersNowItem
-from app.data.theme_ontology import THEME_ONTOLOGY
+from app.clustering import StoryCluster, WhatMattersNowItem
 
 log = logging.getLogger(__name__)
 
-# ── Structural-theme mapping (ontology-only WMN labels) ─────────────────────────
-# A "What Matters Now" card displays ONLY an ontology-backed structural theme name.
-# There are NO generated labels: a cluster either maps confidently to a curated
-# structural theme (and the card shows that theme's name), or it stays a standalone
-# story and never appears in WMN. "Confident" = a direct entity (ticker) hit, or
-# ≥_WMN_MIN_KW distinct specific (non-generic) keywords from the SAME theme.
-_WMN_MIN_KW = 2
-
-# Per ontology theme: (display name, specific-keyword set, entity set), in the
-# ontology's declared order (more structural / foundational themes listed first).
-_STRUCTURAL_THEMES: list[tuple[str, frozenset[str], frozenset[str]]] = []
-for _cfg in THEME_ONTOLOGY.values():
-    _generic = set(_cfg.get("generic_keywords", []))
-    _STRUCTURAL_THEMES.append((
-        _cfg.get("name") or _cfg.get("label") or "",
-        frozenset(k.lower() for k in _cfg.get("keywords", []) if k.lower() not in _generic),
-        frozenset(e.upper() for e in _cfg.get("entities", set())),
-    ))
-
-
-def _match_structural_theme(cluster: StoryCluster) -> str | None:
-    """
-    Return the NAME of the structural ontology theme this cluster maps to, or None
-    if it does not map confidently (→ standalone story, excluded from WMN).
-    Picks the theme with the strongest evidence (entity hit, else most specific
-    keyword hits ≥ _WMN_MIN_KW).
-    """
-    p = cluster.primary
-    text     = (getattr(p, "title", "") + " " + getattr(p, "snippet", "")).lower()
-    entities = {e.upper() for e in (getattr(p, "affected_entities", None) or [])}
-
-    best_name: str | None = None
-    best_score = 0
-    for name, kw_set, ent_set in _STRUCTURAL_THEMES:
-        if entities & ent_set:
-            return name                      # entity hit = unambiguous, take it
-        hits = sum(1 for kw in kw_set if kw in text)
-        if hits >= _WMN_MIN_KW and hits > best_score:
-            best_score = hits
-            best_name  = name
-    return best_name
+# ── WMN prominence bar ──────────────────────────────────────────────────────────
+# "What Matters Now" is driven by the emitted theme_intelligence (the structural
+# ontology themes that already passed extract_themes' corroboration gates). A theme
+# becomes prominent in WMN only when it is confirmed by multiple independent
+# stories, multiple sources, AND cross-sector transmission — never a one-off.
+_WMN_MIN_STORIES    = 2    # independent confirming stories (contributing_story_count)
+_WMN_MIN_SOURCES    = 2    # distinct confirming sources (evidence_count)
+_WMN_MIN_SECTORS    = 2    # sectors the theme transmits across (breadth_score)
+_WMN_MIN_CONFIDENCE = 35   # only solid themes are promoted to the WMN strip
 
 
 # ── Scoring weights ────────────────────────────────────────────────────────────
@@ -89,60 +56,63 @@ _COMMODITIES: frozenset[str] = frozenset({"Oil", "WTI", "Brent", "Gold", "Silver
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def select_what_matters_now(
+    themes: list,                       # list[ThemeIntelligence] (duck-typed)
     clusters: list[StoryCluster],
     n: int = 5,
-    now: datetime | None = None,
+    now: datetime | None = None,        # accepted for signature stability; unused
 ) -> list[WhatMattersNowItem]:
     """
-    Score all clusters, sort descending, return the top-n as WhatMattersNowItems.
-    Mutates cluster.cluster_score in-place for downstream use by the API layer.
+    Build "What Matters Now" from the emitted structural themes (theme_intelligence).
 
-    Duplicate-label guard: if two clusters would produce the same wmn_label (e.g.
-    both fall back to "Market Volatility" when the LLM is unavailable), the lower-
-    ranked duplicate is skipped and the next distinct cluster is used instead.
-    This prevents visually identical cards in the What Matters Now row.
+    Each WMN card is ONE ontology-backed structural theme — already the aggregation
+    of every story that corroborates it — so duplicate stories collapse into a
+    single intelligence card. A theme is promoted only when it clears the
+    prominence bar: confirmed by ≥_WMN_MIN_STORIES independent stories, from
+    ≥_WMN_MIN_SOURCES sources, transmitting across ≥_WMN_MIN_SECTORS sectors, at
+    confidence ≥ _WMN_MIN_CONFIDENCE. Unmapped / under-corroborated narratives stay
+    standalone stories and never appear here.
     """
-    if not clusters:
+    if not themes:
         return []
 
-    if now is None:
-        now = datetime.now(timezone.utc)
+    by_id = {c.id: c for c in clusters}
 
-    scored: list[tuple[float, StoryCluster]] = [
-        (score_cluster(c, now), c) for c in clusters
+    eligible = [
+        t for t in themes
+        if getattr(t, "evidence_count", 0)            >= _WMN_MIN_SOURCES
+        and getattr(t, "breadth_score", 0)            >= _WMN_MIN_SECTORS
+        and getattr(t, "contributing_story_count", 0) >= _WMN_MIN_STORIES
+        and getattr(t, "confidence", 0)               >= _WMN_MIN_CONFIDENCE
     ]
-    scored.sort(key=lambda x: x[0], reverse=True)
+    eligible.sort(key=lambda t: getattr(t, "confidence", 0), reverse=True)
 
-    result:      list[WhatMattersNowItem] = []
-    seen_labels: set[str]                 = set()
+    result: list[WhatMattersNowItem] = []
     rank = 1
-
-    for s, cluster in scored:
+    for t in eligible:
         if len(result) >= n:
             break
-        cluster.cluster_score = round(s, 4)
-        # Ontology-only theme gate: a WMN card must map confidently to a curated
-        # structural theme. Unmapped clusters stay standalone stories (never WMN).
-        label = _match_structural_theme(cluster)
-        if label is None:
-            log.debug(
-                "[wmn] no structural-theme map; standalone story: %.60s",
-                getattr(cluster.primary, "title", ""),
-            )
+        # Anchor the card on the theme's top contributing cluster (one must be
+        # present in the live cluster set to render the card).
+        anchor = next(
+            (by_id[cid] for cid in (getattr(t, "contributing_cluster_ids", None) or []) if cid in by_id),
+            None,
+        )
+        if anchor is None:
             continue
-        if label in seen_labels:
-            log.debug("[wmn] skipping duplicate structural theme %r (cluster %s)", label, cluster.id)
-            continue
-        seen_labels.add(label)
+        src_ct  = int(getattr(t, "evidence_count", 0))
+        stories = int(getattr(t, "contributing_story_count", 0))
+        sectors = int(getattr(t, "breadth_score", 0))
         result.append(WhatMattersNowItem(
             rank=rank,
-            cluster=cluster,
-            reason=_make_reason(cluster),
-            thesis=_make_thesis(cluster),
-            wmn_label=label,
+            cluster=anchor,
+            reason=f"{src_ct} sources · {stories} stories · {sectors} sectors",
+            thesis=_make_thesis(anchor) or getattr(t, "description", ""),
+            wmn_label=getattr(t, "name", ""),
+            source_count=src_ct,
+            confirming_count=stories,
+            sector_count=sectors,
         ))
         rank += 1
-
     return result
 
 

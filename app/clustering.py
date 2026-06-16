@@ -158,7 +158,12 @@ class WhatMattersNowItem:
     cluster:   StoryCluster
     reason:    str
     thesis:    str       # 1-sentence "why this matters for markets"
-    wmn_label: str = "" # LLM-generated theme label, e.g. "Iron Ore Supply Constraints"
+    wmn_label: str = "" # ontology structural-theme name (no generated labels)
+    # Corroboration evidence — a WMN theme must be confirmed by multiple stories,
+    # multiple sources, and cross-sector transmission before it appears here.
+    source_count:     int = 0   # distinct confirming sources
+    confirming_count: int = 0   # independent confirming stories (clusters)
+    sector_count:     int = 0   # sectors the theme transmits across
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────

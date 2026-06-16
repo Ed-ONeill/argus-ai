@@ -188,10 +188,20 @@ def run_pipeline(
         sum(1 for c in clusters if c.story_count > 1),
     )
 
-    # ── 5. What Matters Now ───────────────────────────────────────────────────
-    wmn = select_what_matters_now(clusters, n=5)
+    # ── 5. Theme intelligence graph (must precede WMN — WMN is theme-driven) ──
+    try:
+        from app.theme_graph import extract_themes
+        theme_intelligence = extract_themes(clusters)
+    except Exception:
+        log.exception("[bg] extract_themes FAILED — falling back to empty list")
+        theme_intelligence = []
+    t_theme0 = time.perf_counter()
+    log.info("[bg] themes done in %.3fs  active=%d", t_theme0 - t_cluster, len(theme_intelligence))
+
+    # ── 5b. What Matters Now — corroborated structural themes only ────────────
+    wmn = select_what_matters_now(theme_intelligence, clusters, n=5)
     t_wmn = time.perf_counter()
-    log.info("[bg] WMN done in %.3fs  themes=%d", t_wmn - t_cluster, len(wmn))
+    log.info("[bg] WMN done in %.3fs  cards=%d", t_wmn - t_theme0, len(wmn))
 
     # ── 6. Market take + structured brief ────────────────────────────────────
     try:
@@ -226,17 +236,10 @@ def run_pipeline(
         len(sector_data.rotation_signals),
     )
 
-    # ── 6c. Theme intelligence graph ──────────────────────────────────────────
-    try:
-        from app.theme_graph import extract_themes
-        theme_intelligence = extract_themes(clusters)
-    except Exception:
-        log.exception("[bg] extract_themes FAILED — falling back to empty list")
-        theme_intelligence = []
+    # ── 6c. Theme intelligence graph (already computed in step 5, before WMN) ──
     t_themes = time.perf_counter()
     log.info(
-        "[bg] themes done in %.3fs  active=%d  strong=%d",
-        t_themes - t_sector,
+        "[bg] themes active=%d  strong=%d",
         len(theme_intelligence),
         sum(1 for t in theme_intelligence if t.signal_strength == "strong"),
     )

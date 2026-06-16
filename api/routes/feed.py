@@ -154,11 +154,14 @@ class StoryClusterSchema(BaseModel):
 
 
 class WhatMattersNowItemSchema(BaseModel):
-    rank:      int
-    cluster:   StoryClusterSchema
-    reason:    str
-    thesis:    str
-    wmn_label: str
+    rank:             int
+    cluster:          StoryClusterSchema
+    reason:           str
+    thesis:           str
+    wmn_label:        str
+    source_count:     int = 0
+    confirming_count: int = 0
+    sector_count:     int = 0
 
 
 class SectorIntelligenceSchema(BaseModel):
@@ -295,7 +298,10 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             cluster=_cluster_to_schema(w.cluster),
             reason=w.reason,
             thesis=w.thesis,
-            wmn_label=w.wmn_label or w.cluster.theme_label,
+            wmn_label=w.wmn_label,   # ontology theme name only; no generated fallback
+            source_count=getattr(w, "source_count", 0),
+            confirming_count=getattr(w, "confirming_count", 0),
+            sector_count=getattr(w, "sector_count", 0),
         )
         for w in (entry.what_matters_now or [])
     ]

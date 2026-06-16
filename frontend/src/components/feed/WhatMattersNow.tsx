@@ -154,7 +154,10 @@ function PrimaryDriverCard({
   const barColor       = pressureBarColor(score, color);
   const sentiment      = classifyImpact(p.impact ?? "");
   const dirConfig      = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
-  const storyLabel     = cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
+  // Prefer corroboration evidence (confirming sources) over a single cluster's count.
+  const storyLabel     = (item.source_count ?? 0) >= 2
+    ? `${item.source_count} sources confirming`
+    : cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
   const accentOpacity  = 0.30 + (score / 100) * 0.60;
 
   return (
@@ -281,7 +284,10 @@ function WMNCard({
   const color          = mutedColor(catColor(p.category));
   const score          = Math.round(p.signal_score ?? 0);
   const barColor       = pressureBarColor(score, color);
-  const storyLabel     = cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
+  // Prefer corroboration evidence (confirming sources) over a single cluster's count.
+  const storyLabel     = (item.source_count ?? 0) >= 2
+    ? `${item.source_count} sources confirming`
+    : cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
   const sentiment      = classifyImpact(p.impact ?? "");
   const dirConfig      = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
   const accentOpacity  = 0.25 + (score / 100) * 0.55;

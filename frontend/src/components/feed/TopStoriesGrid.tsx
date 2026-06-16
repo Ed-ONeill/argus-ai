@@ -15,7 +15,7 @@ interface TopStoriesGridProps {
 const SLOT_META: { key: keyof TopStories; label: string; emptyLabel: string }[] = [
   { key: "top_deal",        label: "Deal",        emptyLabel: "No high-signal deal"     },
   { key: "top_macro",       label: "Macro",       emptyLabel: "No macro signal"         },
-  { key: "top_single_name", label: "Single name", emptyLabel: "No single-name catalyst" },
+  { key: "top_single_name", label: "Capital flow", emptyLabel: "No capital-flow catalyst" },
   { key: "top_price_move",  label: "Price move",  emptyLabel: "No major price move"     },
   { key: "top_policy_risk", label: "Policy/risk", emptyLabel: "No policy story"         },
 ];

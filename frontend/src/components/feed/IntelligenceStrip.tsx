@@ -211,179 +211,6 @@ function deriveEffectiveRegime(
 // ── Narrative generators ──────────────────────────────────────────────────────
 
 /**
- * 2–3 sentence strategist summary.
- * S1: the leading economic force and its sector consequence (mechanism-first).
- * S2: the opposing or complicating force; names shared drivers when opp and
- *     risk stem from the same macro variable.
- * S3: synthesis — what the net of these forces means for positioning.
- */
-function deriveRegimeNarrative(
-  ms:              MarketState,
-  rotation:        IndustryRotationSignal[],
-  opps:            BriefingOpportunity[],
-  risks:           BriefingRisk[],
-  scorecard:       BriefingScorecard,
-  effectiveRegime: RiskRegime,
-): string {
-  const { ratesRegime, volRegime, dollarRegime } = ms;
-  const riskRegime = effectiveRegime;
-  const topOpp  = opps[0]?.theme;
-  const topRisk = risks[0]?.theme;
-  const opp2    = opps[1]?.theme;
-  const topInd  = rotation.filter(r => r.delta > 0)[0];
-  const sentences: string[] = [];
-
-  const riskInd  = (topRisk?.related_industries ?? [])[0];
-  const oppInd   = (topOpp?.related_industries  ?? [])[0] ?? topInd?.industry;
-  const opp2Ind  = (opp2?.related_industries ?? [])[0];
-
-  // ── S1: Lead with the economic mechanism, name sector as consequence ───────
-  // Avoids the passive "X is benefiting" pattern — starts with the force itself.
-  if (topOpp) {
-    const causal = causalSentence(topOpp.causal_narrative);
-    const eff    = (topOpp.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15);
-    const macro0 = (topOpp.related_macro_factors ?? [])[0];
-    const ind1   = (topOpp.related_industries ?? [])[1];
-
-    if (causal) {
-      // Use the causal narrative directly — it already names the mechanism
-      sentences.push(causal.endsWith(".") ? causal : causal + ".");
-    } else if (eff && oppInd) {
-      const lc = eff.charAt(0).toLowerCase() + eff.slice(1).replace(/\.$/, "");
-      sentences.push(`In ${oppInd}, ${lc}.`);
-    } else if (macro0 && oppInd && ind1 && topOpp.cross_category_confirmed) {
-      sentences.push(`${cleanMacroLabel(macro0)} is generating earnings upgrades in both ${oppInd} and ${ind1}.`);
-    } else if (macro0 && oppInd) {
-      sentences.push(`${cleanMacroLabel(macro0)} dynamics are lifting earnings estimates in ${oppInd}, with pricing power and volume both moving in the same direction.`);
-    } else if (oppInd) {
-      if (topOpp.momentum_label === "accelerating") {
-        sentences.push(`${oppInd} order volume and pricing are both rising, with the acceleration confirmed across multiple data points in the supply chain.`);
-      } else {
-        sentences.push(`${oppInd} earnings estimates are improving on volume gains and stable-to-rising pricing.`);
-      }
-    } else {
-      sentences.push("Earnings revisions are positive across the leading sectors, with volume and pricing both contributing.");
-    }
-  } else if (topInd) {
-    sentences.push(`${topInd.industry} is leading the earnings revision cycle as capital spending and demand data converge in the same direction.`);
-  } else if (riskRegime === "risk-on") {
-    sentences.push("Cyclical sectors are outperforming as earnings revision momentum turns positive across the industrial base.");
-  } else {
-    sentences.push("Earnings and policy signals are currently pulling in different directions, with no single sector anchoring a broad move.");
-  }
-
-  // ── S2: The opposing force — name the tension explicitly ──────────────────
-  // When opp and risk stem from the same macro variable, call it out directly
-  // so the reader understands whether the forces are conflicting or independent.
-  if (topRisk) {
-    const genuineRisk = topRisk.momentum_label === "reversing"
-      || topRisk.momentum_label === "cooling"
-      || (topRisk.momentum_delta ?? 0) < 0;
-    const riskCausalRaw = genuineRisk && isThemeBearish(topRisk) ? causalSentence(topRisk.causal_narrative) : null;
-    const riskCausal    = riskCausalRaw && !hasBullishProse(riskCausalRaw) ? riskCausalRaw : null;
-    const riskEff       = genuineRisk && isThemeBearish(topRisk)
-      ? (topRisk.second_order_effects ?? []).find(e => e && !isRawChain(e) && e.length > 15)
-      : null;
-    const riskMacro0 = (topRisk.related_macro_factors ?? [])[0];
-
-    // Detect whether opp and risk share a macro driver
-    const oppMacros  = new Set((topOpp?.related_macro_factors ?? []).map(m => m.toLowerCase()));
-    const riskMacros = (topRisk.related_macro_factors ?? []).map(m => m.toLowerCase());
-    const sharedMacroRaw = riskMacros.find(m => oppMacros.has(m));
-    const sharedMacro    = sharedMacroRaw ? cleanMacroLabel(sharedMacroRaw) : null;
-
-    if (riskCausal && riskInd) {
-      const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-      if (sharedMacro && oppInd) {
-        sentences.push(`The same ${sharedMacro} environment is cutting estimates in ${riskInd} as ${lc}.`);
-      } else {
-        sentences.push(`Against this, ${lc}, pressuring estimates in ${riskInd}.`);
-      }
-    } else if (riskCausal) {
-      const lc = riskCausal.charAt(0).toLowerCase() + riskCausal.slice(1).replace(/\.$/, "");
-      sentences.push(`Offsetting this, ${lc}, with margin assumptions the primary exposure.`);
-    } else if (riskEff && riskInd) {
-      const lc = riskEff.charAt(0).toLowerCase() + riskEff.slice(1).replace(/\.$/, "");
-      sentences.push(`Against this, ${riskInd} faces pressure as ${lc}.`);
-    } else if (riskInd) {
-      if (topRisk.momentum_label === "reversing") {
-        const desc = describeThemeImpact(topRisk);
-        sentences.push(`Against this, ${riskInd} estimates are being cut as ${desc} reverses, with margin assumptions the first casualty.`);
-      } else {
-        const cleanRiskMacro = riskMacro0 ? cleanMacroLabel(riskMacro0) : null;
-        sentences.push(cleanRiskMacro
-          ? `Against this, ${cleanRiskMacro} pressure is compressing earnings in ${riskInd} as demand assumptions are revised lower.`
-          : `Against this, ${riskInd} estimates are being revised lower as demand softens faster than supply adjusts.`
-        );
-      }
-    } else {
-      if (topRisk.momentum_label === "reversing") {
-        sentences.push("Against this, order cancellations are rising and margin guidance is being cut in exposed sectors.");
-      } else {
-        sentences.push("Offsetting this, end-demand is softening in rate-sensitive sectors as revenue assumptions move lower.");
-      }
-    }
-  } else if (ratesRegime === "rising" && riskRegime !== "risk-on") {
-    sentences.push(
-      "Rising Treasury yields are compressing risk premiums in long-duration and rate-sensitive sectors."
-    );
-  } else if (volRegime === "elevated" || volRegime === "high") {
-    sentences.push(
-      "Elevated volatility is limiting multiple expansion and compressing participation across rate-sensitive sectors."
-    );
-  } else if (dollarRegime === "strong" && riskRegime !== "risk-on") {
-    sentences.push(
-      "Dollar strength is compressing foreign earnings translations, creating a headwind for internationally-exposed sectors."
-    );
-  }
-
-  // ── S3: Synthesis — what the net means for positioning ───────────────────
-  const net        = scorecard.accelerating - scorecard.reversing;
-  const oppSector  = oppInd  ?? null;
-  const riskSector = riskInd ?? null;
-
-  // Detect shared driver at the synthesis level for conflict/reinforcement framing
-  const oppMacroSet  = new Set((topOpp?.related_macro_factors ?? []).map(m => m.toLowerCase()));
-  const riskMacroSet = (topRisk?.related_macro_factors ?? []).map(m => m.toLowerCase());
-  const sharedAtS3Raw = riskMacroSet.find(m => oppMacroSet.has(m));
-  const sharedAtS3    = sharedAtS3Raw ? cleanMacroLabel(sharedAtS3Raw) : null;
-
-  if (sharedAtS3 && oppSector && riskSector) {
-    sentences.push(`${oppSector} and ${riskSector} are responding differently to the same ${sharedAtS3} environment: the former benefits while the latter faces estimate pressure.`);
-  } else if (net >= 4 && scorecard.highConviction >= 3) {
-    if (oppSector && opp2Ind && oppSector !== opp2Ind) {
-      sentences.push(`Earnings upgrade momentum spans both ${oppSector} and ${opp2Ind}, suggesting the recovery is sector-led rather than driven by multiple expansion.`);
-    } else if (oppSector) {
-      sentences.push(`${oppSector} is carrying the most durable earnings upgrade story, with revision breadth and conviction both at cycle highs.`);
-    } else {
-      sentences.push("The balance of upgrades to downgrades is positive. Revision momentum is tilted toward volume-driven growth.");
-    }
-  } else if (net >= 2) {
-    if (oppSector && riskSector) {
-      sentences.push(`The upgrade cycle in ${oppSector} is narrow and has not yet offset downward pressure in ${riskSector}. The net balance favours selective rather than broad exposure.`);
-    } else if (oppSector) {
-      sentences.push(`${oppSector} is leading, but the improvement has not yet spread to adjacent sectors.`);
-    } else {
-      sentences.push("The improvement is concentrated in a small number of names and has not yet broadened across the industrial base.");
-    }
-  } else if (net <= -2) {
-    sentences.push(riskSector
-      ? `Downward estimate revisions in ${riskSector} are running faster than new upgrades. The revision cycle is net negative.`
-      : "Downward estimate revisions are outnumbering upgrades. The correction is spreading across the sector base.");
-  } else {
-    if (oppSector && riskSector) {
-      sentences.push(`${oppSector} earnings are improving while ${riskSector} estimates are being cut on different underlying drivers — the moves are not correlated.`);
-    } else if (oppSector) {
-      sentences.push(`${oppSector} has the strongest near-term earnings revision story in an otherwise mixed market.`);
-    } else {
-      sentences.push("No sector has earnings momentum strong enough to anchor a broad move. Positioning should remain selective.");
-    }
-  }
-
-  return sentences.join(" ");
-}
-
-/**
  * Sector-focused explanation for opportunity cards.
  * Prioritises causal_narrative, falls back to template.
  */
@@ -683,11 +510,19 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
   const effectiveRegime = deriveEffectiveRegime(ms.riskRegime, balance, scorecard);
   const regimeColor     = REGIME_COLOR[effectiveRegime]    ?? "#8898b8";
   const regimeHeadline  = REGIME_HEADLINE[effectiveRegime] ?? "Neutral Market";
-  const narrative       = sanitize(deriveRegimeNarrative(ms, rotation, opps, deduplicatedRisks, scorecard, effectiveRegime));
   const oneSentence     = sanitize(deriveOneSentence(opps, deduplicatedRisks, ms, balance, effectiveRegime));
 
   const leaders  = rotation.filter(r => r.delta > 0).slice(0, 3);
   const laggards = rotation.filter(r => r.delta < 0).slice(0, 3);
+
+  // Evidence-first regime read: lead with the data, then one conclusion.
+  const bullishSectors  = leaders.map(l => l.industry).slice(0, 4);
+  const bearishSectors  = laggards.map(l => l.industry).slice(0, 4);
+  const sectorsTouched  = new Set(themes.flatMap(t => t.related_industries ?? []));
+  const breadthScore    = Math.round(100 * Math.min(sectorsTouched.size, 12) / 12);
+  const convictionScore = themes.length
+    ? Math.round(themes.reduce((s, t) => s + (t.confidence ?? 0), 0) / themes.length)
+    : 0;
 
   // Pre-compute rotation explanations with a shared deduplication set so the
   // same effect sentence cannot appear for two different industries.
@@ -710,64 +545,64 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
       }}
     >
 
-      {/* ══ SECTION 1 — Market Regime (hero) ══════════════════════════════════ */}
+      {/* ══ SECTION 1 — Market Regime (evidence-first) ════════════════════════ */}
       <div className="px-5 pt-5 pb-4" style={DIV}>
 
-        {/* Label row */}
-        <div className="flex items-center justify-between mb-3">
+        {/* Label row: regime chip + conviction tier */}
+        <div className="flex items-center justify-between mb-3.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="text-[7px] font-bold uppercase tracking-[0.28em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.32)" }}
+            >
+              Market Regime
+            </span>
+            <span
+              className="text-[9px] font-bold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded truncate"
+              style={{ color: regimeColor, background: `${regimeColor}1c` }}
+            >
+              {regimeHeadline}
+            </span>
+          </div>
           <span
-            className="text-[7px] font-bold uppercase tracking-[0.28em]"
-            style={{ color: "rgba(255,255,255,0.32)" }}
-          >
-            Market Regime
-          </span>
-          {/* Conviction pill */}
-          <span
-            className="text-[8px] font-semibold px-2 py-0.5 rounded-full"
-            style={{
-              color:      regimeColor,
-              background: `${regimeColor}18`,
-              letterSpacing: "0.03em",
-            }}
+            className="text-[8px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+            style={{ color: regimeColor, background: `${regimeColor}18`, letterSpacing: "0.03em" }}
           >
             {conviction}
           </span>
         </div>
 
-        {/* Regime headline — the dominant element */}
-        <p
-          className="font-black leading-none tracking-tight mb-3"
-          style={{ fontSize: "22px", color: regimeColor, letterSpacing: "-0.02em" }}
-        >
-          {regimeHeadline.toUpperCase()}
-        </p>
-
-        {/* 2-3 sentence strategist narrative */}
-        <p
-          className="leading-relaxed mb-4"
-          style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.64)", maxWidth: "640px" }}
-        >
-          {narrative}
-        </p>
-
-        {/* Signal balance — numbers only, no sub-label noise */}
-        <div
-          className="flex items-center gap-4"
-          style={{ paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.07)" }}
-        >
-          <SignalStat label="Bullish" count={balance.bullish} color="#10B981" />
-          <SignalStat label="Bearish" count={balance.bearish} color="#EF4444" />
-          <div className="h-3 w-px shrink-0" style={{ background: "rgba(255,255,255,0.10)" }} />
-          <div className="flex items-center gap-1">
-            <span
-              className="text-[11px] font-bold tabular-nums"
-              style={{ color: balance.netSignal > 0 ? "#10B981" : balance.netSignal < 0 ? "#EF4444" : "rgba(255,255,255,0.40)" }}
-            >
-              {balance.netSignal > 0 ? "+" : ""}{balance.netSignal}
-            </span>
-            <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.28)" }}>Net</span>
-          </div>
+        {/* Evidence grid — lead with the data, not the narrative */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mb-3.5">
+          <RegimeEvidence
+            label="Bullish Sectors" accent="#10B981"
+            value={bullishSectors.length ? bullishSectors.join(" · ") : "None"}
+          />
+          <RegimeEvidence
+            label="Bearish Sectors" accent="#EF4444"
+            value={bearishSectors.length ? bearishSectors.join(" · ") : "None"}
+          />
+          <RegimeEvidence
+            label="Breadth" accent="#52b0c8"
+            value={`${breadthScore}`} suffix="/100"
+            sub={`${balance.bullish}↑  ${balance.bearish}↓`}
+          />
+          <RegimeEvidence
+            label="Conviction" accent={regimeColor}
+            value={`${convictionScore}`} suffix="/100" sub={conviction}
+          />
         </div>
+
+        {/* Single concise conclusion */}
+        <p
+          className="leading-relaxed"
+          style={{
+            fontSize: "12.5px", color: "rgba(255,255,255,0.66)",
+            paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.07)",
+          }}
+        >
+          {oneSentence}
+        </p>
 
       </div>
 
@@ -865,34 +700,43 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
         </div>
       )}
 
-      {/* ══ SECTION 5 — Market In One Sentence ════════════════════════════════ */}
-      <div className="px-5 py-3.5" style={{ ...DIV, borderLeft: `2px solid ${regimeColor}28` }}>
-        <p
-          className="leading-relaxed"
-          style={{ fontSize: "12px", color: "rgba(255,255,255,0.58)", fontStyle: "italic", paddingLeft: "10px" }}
-        >
-          {oneSentence}
-        </p>
-      </div>
-
     </div>
   );
 }
 
-// ── Signal stat pill ──────────────────────────────────────────────────────────
+// ── Regime evidence cell ──────────────────────────────────────────────────────
 
-function SignalStat({ label, count, color }: { label: string; count: number; color: string }) {
+function RegimeEvidence({
+  label, value, accent, suffix, sub,
+}: { label: string; value: string; accent: string; suffix?: string; sub?: string }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[11px] font-bold tabular-nums" style={{ color }}>
-        {count}
-      </span>
-      <span className="text-[8.5px]" style={{ color: "rgba(255,255,255,0.30)" }}>
+    <div className="min-w-0">
+      <p
+        className="text-[7.5px] font-bold uppercase tracking-[0.18em] mb-1 truncate"
+        style={{ color: accent, opacity: 0.9 }}
+      >
         {label}
-      </span>
+      </p>
+      <p
+        className="text-[12.5px] font-semibold leading-tight truncate"
+        style={{ color: "rgba(255,255,255,0.88)" }}
+      >
+        {value}
+        {suffix && (
+          <span className="text-[9px] font-normal" style={{ color: "rgba(255,255,255,0.32)" }}>
+            {suffix}
+          </span>
+        )}
+      </p>
+      {sub && (
+        <p className="text-[8.5px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.38)" }}>
+          {sub}
+        </p>
+      )}
     </div>
   );
 }
+
 
 // ── Change row ────────────────────────────────────────────────────────────────
 

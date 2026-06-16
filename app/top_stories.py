@@ -52,6 +52,27 @@ _COMPANY_KW = frozenset({
 
 _STRONG_DEAL_KW = frozenset({"acqui", "merger", "buyout", "takeover", "lbo"})
 
+# Capital-markets / flow catalysts — what fills the Capital Flow slot. Generic
+# company news (product launches, exec quotes) lacks these and is excluded.
+_CAPITAL_FLOW_KW: frozenset[str] = frozenset({
+    "ipo", "listing", "public offering", "secondary offering", "follow-on",
+    "share buyback", "buyback", "repurchase", "special dividend", "dividend hike",
+    "stock split", "capital raise", "raises $", "raise $", "fund close",
+    "closes fund", "fund raise", "fundraise", "debt issuance", "bond sale",
+    "notes offering", "convertible", "rights issue", "private placement",
+    "recapitalization", "recapitalisation", "refinanc", "direct listing",
+    "block trade", "stake sale", "equity stake", "fund flows", "etf flows",
+    "inflows", "outflows", "redemptions", "capital commitment", "raised $",
+    "raises billion", "spac", "issuance", "syndicated loan", "term loan",
+})
+
+# Liquidity / funding catalysts — folded into the macro slot's eligibility.
+_LIQUIDITY_KW: frozenset[str] = frozenset({
+    "repo", "reverse repo", "quantitative tightening", "quantitative easing",
+    "balance sheet", "bank reserves", "financial conditions", "liquidity",
+    "money supply", "credit spread", "funding stress", "swap line", "qt", "qe",
+})
+
 _PR_NEWSWIRE_SOURCE = "PR Newswire M&A"
 
 _DEAL_MAX_AGE_HOURS      = 72
@@ -211,9 +232,9 @@ def _select_top_stories(
     Slot semantics:
       Top Deal          — M&A activity (strong deal vocabulary required)
       Top Macro Story   — Central bank / rates / economic data
-      Top Single Name   — Single-company catalyst (earnings, guidance, analyst
-                          action, CEO/CFO, product).  Requires Company category
-                          from content-derived reclassification.
+      Top Capital Flow  — Capital-markets activity: IPOs, buybacks, issuance,
+                          fund raises, ETF/fund flows. Generic company stories
+                          (product launches, exec quotes) are excluded.
       Top Price Move    — Price action where a tradeable instrument is the
                           grammatical subject of the headline (oil, stocks,
                           yields, FX, crypto).
@@ -322,26 +343,31 @@ def _select_top_stories(
         if top["Top Macro Story"] is None and key not in claimed_keys:
             if item.category != "Markets":
                 _dbg("Top Macro Story", item, False, f"category={item.category}, not Markets")
-            elif not any(k in txt for k in _STRICT_MACRO_KW):
+            elif not any(k in txt for k in (_STRICT_MACRO_KW | _LIQUIDITY_KW)):
                 _dbg("Top Macro Story", item, False,
-                     "no strict macro kw (Fed/rate-cut/CPI/GDP/unemployment/FOMC)")
+                     "no strict macro/liquidity kw (Fed/rate/CPI/GDP/QT/repo/liquidity)")
             elif _echoes_filled(item):
                 _dbg("Top Macro Story", item, False, "echoes filled slot")
             else:
-                kw = next(k for k in _STRICT_MACRO_KW if k in txt)
-                _dbg("Top Macro Story", item, True, f"Markets + strict macro kw: '{kw}'")
+                kw = next(k for k in (_STRICT_MACRO_KW | _LIQUIDITY_KW) if k in txt)
+                _dbg("Top Macro Story", item, True, f"Markets + macro/liquidity kw: '{kw}'")
                 top["Top Macro Story"] = item
                 claimed_keys.add(key)
 
-        # ── Top Single Name ───────────────────────────────────────────────────
+        # ── Top Capital Flow ──────────────────────────────────────────────────
+        # Capital-markets activity (issuance, buybacks, IPOs, fund raises, flows).
+        # Generic company stories without a capital-markets catalyst are excluded.
         if top["Top Single Name"] is None and key not in claimed_keys:
-            if item.category != "Company":
-                _dbg("Top Single Name", item, False,
-                     f"category={item.category}, requires Company (earnings/guidance/CEO/analyst)")
+            if item.category == "M&A":
+                _dbg("Top Capital Flow", item, False, "M&A → Top Deal slot")
+            elif not any(k in txt for k in _CAPITAL_FLOW_KW):
+                _dbg("Top Capital Flow", item, False,
+                     "no capital-markets / flow catalyst (generic company story excluded)")
             elif _echoes_filled(item):
-                _dbg("Top Single Name", item, False, "echoes filled slot")
+                _dbg("Top Capital Flow", item, False, "echoes filled slot")
             else:
-                _dbg("Top Single Name", item, True, "Company category — single-company catalyst")
+                kw = next(k for k in _CAPITAL_FLOW_KW if k in txt)
+                _dbg("Top Capital Flow", item, True, f"capital-flow catalyst: '{kw}'")
                 top["Top Single Name"] = item
 
         # ── Top Price Move ────────────────────────────────────────────────────
@@ -407,28 +433,29 @@ def _select_top_stories(
     if top["Top Macro Story"] is None:
         fk  = {_item_key(v) for v in top.values() if v is not None}
         _mt = lambda i: (i.title + " " + i.snippet).lower()
+        _macro_liq = _STRICT_MACRO_KW | _LIQUIDITY_KW
         top["Top Macro Story"] = (
             next((i for i in qualified
                   if i.category == "Markets" and _item_key(i) not in fk
-                  and any(k in _mt(i) for k in _STRICT_MACRO_KW)
+                  and any(k in _mt(i) for k in _macro_liq)
                   and i.source != _PR_NEWSWIRE_SOURCE), None)
             or next((i for i in qualified
                      if i.category == "Markets" and _item_key(i) not in fk
-                     and any(k in _mt(i) for k in _STRICT_MACRO_KW)), None)
+                     and any(k in _mt(i) for k in _macro_liq)), None)
         )
         _fb("Top Macro Story", top["Top Macro Story"])
 
     if top["Top Single Name"] is None:
-        fk = {_item_key(v) for v in top.values() if v is not None}
-        top["Top Single Name"] = (
-            next((i for i in qualified
-                  if i.category == "Company" and _item_key(i) not in fk
-                  and _age_hours(i) <= _SINGLE_PREFER_AGE_HOURS), None)
-            or next((i for i in qualified
-                     if i.category == "Company" and _item_key(i) not in fk
-                     and _age_hours(i) <= _SINGLE_MAX_AGE_HOURS), None)
-        )
-        _fb("Top Single Name", top["Top Single Name"])
+        fk  = {_item_key(v) for v in top.values() if v is not None}
+        _ct = lambda i: (i.title + " " + i.snippet).lower()
+        # Capital-flow fallback — NO generic-company backfill. Stays empty if no
+        # capital-markets catalyst qualifies, rather than padding with company news.
+        top["Top Single Name"] = next(
+            (i for i in qualified
+             if i.category != "M&A" and _item_key(i) not in fk
+             and any(k in _ct(i) for k in _CAPITAL_FLOW_KW)
+             and _age_hours(i) <= _SINGLE_MAX_AGE_HOURS), None)
+        _fb("Top Capital Flow", top["Top Single Name"])
 
     if top["Top Price Move"] is None:
         fk  = {_item_key(v) for v in top.values() if v is not None}

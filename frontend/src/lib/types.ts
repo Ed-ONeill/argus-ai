@@ -94,6 +94,9 @@ export interface WhatMattersNowItem {
   reason:    string;
   thesis:    string;
   wmn_label: string;
+  source_count?:     number;   // distinct confirming sources
+  confirming_count?: number;   // independent confirming stories
+  sector_count?:     number;   // sectors the theme transmits across
 }
 
 // ── Sector intelligence ───────────────────────────────────────────────────────
