@@ -441,7 +441,7 @@ export function scoreCluster(
 //     to a followed theme/sector; secondary and off-thesis stories score below it.
 //   • signal_score (institutional conviction, 0–100) must be ≥ 60.
 export const MIN_RELEVANCE_SCORE  = 70;
-export const MIN_CONVICTION_SCORE = 60;
+export const MIN_CONVICTION_SCORE = 72;   // raised +12 — only exceptional stories clear
 
 /** True when a ranked story clears both quality bars (relevance AND conviction). */
 export function passesQualityGate(c: RankedCluster): boolean {

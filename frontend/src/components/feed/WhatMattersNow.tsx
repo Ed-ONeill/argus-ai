@@ -217,7 +217,7 @@ function PrimaryDriverCard({
 
         {/* Title */}
         <p className="font-bold leading-snug" style={{ fontSize: "17px", color: "rgba(255,255,255,0.93)" }}>
-          {wmn_label || cluster.theme_label}
+          {wmn_label}
         </p>
 
         {/* Thesis */}
@@ -324,7 +324,7 @@ function WMNCard({
           className="font-bold leading-snug line-clamp-2"
           style={{ fontSize: "13.5px", color: "rgba(255,255,255,0.88)", paddingRight: "14px" }}
         >
-          {wmn_label || cluster.theme_label}
+          {wmn_label}
         </p>
 
         {/* Thesis */}

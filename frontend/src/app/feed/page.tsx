@@ -43,9 +43,9 @@ function formatAge(seconds: number): string {
 }
 
 // Hard ceiling on the curated feed — signal density over volume. The gate decides
-// what qualifies; this caps how many of the qualifiers we show. Target 10–20
-// exceptional stories: if 14 pass, show 14; if 50 pass, show the top 20.
-const MAX_FEED_SIZE = 20;
+// what qualifies; this caps how many of the qualifiers we show. Target 10–15
+// exceptional stories: if 11 pass, show 11; if 50 pass, show the top 15.
+const MAX_FEED_SIZE = 15;
 const PAGE_SIZE = MAX_FEED_SIZE;
 
 const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(

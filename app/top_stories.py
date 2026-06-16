@@ -65,7 +65,7 @@ _MIN_TOP_STORIES_SCORE = 40
 # so they hold to a much higher bar than the stream. Raising these (and excluding
 # any item carrying a consumer/retail/opinion penalty) yields fewer, higher-
 # conviction cards; slots are left EMPTY rather than backfilled with weak content.
-_MIN_SIGNAL_PICK_SCORE = 60   # raw signal floor (was 40)
+_MIN_SIGNAL_PICK_SCORE = 72   # raw signal floor — exceptional only (raised +12)
 _MIN_SIGNAL_PICK_INST  = 55   # institutional-quality floor (source prestige + depth)
 
 _TS_EXCLUDE_RE = re.compile(
