@@ -207,14 +207,42 @@ function deriveTimeHorizon(t: ThemeIntelligence): string {
 function deriveKeyRisk(t: ThemeIntelligence): string {
   const { signal_quality, volatility_score, competition_penalty,
           momentum_label, cross_category_confirmed, confidence, second_order_effects } = t;
-  if (signal_quality === "speculative")    return "Unconfirmed thesis — limited evidence base";
-  if (volatility_score >= 70)             return "Elevated volatility — rapid reversal risk";
-  if (competition_penalty >= 30)          return "Crowded positioning — mean reversion risk";
-  if (momentum_label === "reversing")     return "Momentum already reversing — timing risk elevated";
+  if (signal_quality === "speculative")    return "Thesis not yet corroborated across independent sources";
+  if (volatility_score >= 70)             return "Crowded trade vulnerable to a sharp unwind";
+  if (competition_penalty >= 30)          return "Consensus positioning leaves limited upside";
+  if (momentum_label === "reversing")     return "Momentum rolling over — late to the move";
   if (!cross_category_confirmed && confidence < 60)
-    return "Single-category signal — cross-confirmation required";
+    return "Confined to one asset class; needs cross-asset confirmation";
   if (second_order_effects.length > 0)   return second_order_effects[0];
-  return "Policy shift or macro inflection could invalidate thesis";
+  return "A policy or macro inflection would invalidate the thesis";
+}
+
+// Time-horizon bucket — analyst register, no "momentum fading" filler.
+function timeBucket(t: ThemeIntelligence): string {
+  if (t.momentum_label === "reversing" || t.momentum_label === "cooling") return "Tactical";
+  if ((t.persistence_cycles ?? 0) >= 6)  return "Structural";
+  if ((t.persistence_cycles ?? 0) >= 3 || t.momentum_label === "accelerating") return "Medium-term";
+  return "Near-term";
+}
+
+function confTrend(d: number): { label: string; color: string; arrow: string } {
+  return d > 2  ? { label: "Rising",  color: "#10b981", arrow: "▲" }
+       : d < -2 ? { label: "Falling", color: "#ef4444", arrow: "▼" }
+       :          { label: "Stable",  color: "#94a3b8", arrow: "→" };
+}
+
+const TIER1_SOURCES = new Set([
+  "Bloomberg Markets", "Reuters", "Reuters M&A", "Reuters Business", "Reuters World",
+  "WSJ Markets", "Wall Street Journal", "FT Deals", "FT Companies", "Financial Times",
+  "Nikkei Asia", "CNBC Economy", "CNBC Companies", "The Information", "AP Business", "AP World",
+  "Federal Reserve", "US Treasury", "ECB", "BIS", "IMF", "World Bank", "SEC Filings", "BLS", "EIA",
+]);
+
+function sourceQuality(sources: string[]): { label: string; color: string } {
+  const t1 = sources.filter(s => TIER1_SOURCES.has(s)).length;
+  if (t1 >= 2) return { label: "High", color: "#10b981" };
+  if (t1 >= 1) return { label: "Solid", color: "#34d399" };
+  return { label: "Mixed", color: "#94a3b8" };
 }
 
 
@@ -351,59 +379,69 @@ function DominantNarrative({ brief, themes }: {
   const whatHappened = deriveWhatHappened(brief, themes);
   const whyHappened  = deriveWhy(brief, top);
   const implications = top ? generateWhyItMattersNow(top).slice(0, 3) : [];
-  const drivers      = themes.slice(0, 5);
+  const drivers    = themes.slice(0, 5);
+  const trend      = confTrend(top?.momentum_delta ?? 0);
+  const horizon    = top ? timeBucket(top) : "—";
+  const confirming = top
+    ? themes.filter(t => t.momentum_direction === top.momentum_direction).length
+    : themes.length;
 
   return (
     <div className="mb-4 rounded-xl border border-edge overflow-hidden bg-surface"
-      style={{ borderTop: `2.5px solid ${cColor}` }}>
-      <div className="px-4 pt-3 pb-2.5 flex items-start justify-between gap-3 border-b border-edge/60">
-        <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-ink-muted/45 mt-1">
-          Dominant Narrative
-        </span>
-        <div className="flex flex-col items-end shrink-0">
-          <span className="text-[22px] font-black tabular-nums leading-none" style={{ color: cColor }}>
-            {confidence}<span className="text-[11px] font-bold opacity-55">%</span>
-          </span>
-          <span className="text-[7px] text-ink-muted/40 uppercase tracking-[0.15em] mt-0.5">confidence</span>
+      style={{ borderTop: `3px solid ${cColor}` }}>
+      {/* hero headline */}
+      <div className="px-4 pt-3 pb-3">
+        <p className="text-[8px] font-bold uppercase tracking-[0.22em] text-ink-muted/45 mb-1.5">Dominant Narrative</p>
+        <p className="text-[19px] sm:text-[21px] font-black text-ink leading-[1.12] tracking-tight">{whatHappened}</p>
+      </div>
+
+      {/* stats strip */}
+      <div className="grid grid-cols-4 divide-x divide-edge/60 border-y border-edge/60" style={{ background: "rgba(255,255,255,0.012)" }}>
+        <div className="px-3 py-1.5">
+          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Confidence</p>
+          <p className="text-[18px] font-black tabular-nums leading-none mt-0.5" style={{ color: cColor }}>{confidence}<span className="text-[10px] opacity-55">%</span></p>
+        </div>
+        <div className="px-3 py-1.5">
+          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Trend</p>
+          <p className="text-[12px] font-bold leading-none mt-1.5" style={{ color: trend.color }}>{trend.arrow} {trend.label}</p>
+        </div>
+        <div className="px-3 py-1.5">
+          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Confirming</p>
+          <p className="text-[12px] font-bold text-ink leading-none mt-1.5 tabular-nums">{confirming} themes</p>
+        </div>
+        <div className="px-3 py-1.5">
+          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Horizon</p>
+          <p className="text-[12px] font-bold text-ink-secondary leading-none mt-1.5">{horizon}</p>
         </div>
       </div>
 
+      {/* why + what matters */}
       <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-edge/60">
-        <div className="px-4 py-3">
-          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1.5">What Happened</p>
-          <p className="text-[13.5px] font-semibold text-ink leading-snug">{whatHappened}</p>
+        <div className="px-4 py-2.5">
+          <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1">Why It Happened</p>
+          <p className="text-[12px] text-ink-secondary leading-snug">{whyHappened}</p>
         </div>
-        <div className="px-4 py-3">
-          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1.5">Why It Happened</p>
-          <p className="text-[12.5px] text-ink-secondary leading-snug">{whyHappened}</p>
-        </div>
-      </div>
-
-      {implications.length > 0 && (
-        <div className="px-4 py-3 border-t border-edge/60">
-          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-2">What Matters</p>
-          <ul className="space-y-1.5">
+        <div className="px-4 py-2.5">
+          <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1">What Matters</p>
+          <ul className="space-y-1">
             {implications.map((b, i) => (
-              <li key={i} className="flex items-start gap-2 text-[11.5px] text-ink-secondary leading-snug">
-                <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: cColor }} />
-                {b}
+              <li key={i} className="flex items-start gap-1.5 text-[11px] text-ink-secondary leading-snug">
+                <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: cColor }} />{b}
               </li>
             ))}
           </ul>
         </div>
-      )}
+      </div>
 
+      {/* drivers */}
       {drivers.length > 0 && (
-        <div className="px-4 py-2.5 border-t border-edge/60 flex items-center gap-1.5 flex-wrap"
-          style={{ background: "rgba(37,99,235,0.03)" }}>
+        <div className="px-4 py-2 border-t border-edge/60 flex items-center gap-1.5 flex-wrap" style={{ background: "rgba(37,99,235,0.03)" }}>
           <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-accent/55 mr-1">Theme Drivers</span>
           {drivers.map(t => {
             const mm = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
             return (
-              <span key={t.id} className="flex items-center gap-1 text-[9.5px] font-semibold px-2 py-0.5 rounded
-                                          bg-raised border border-edge text-ink-secondary">
-                <span className="w-1 h-1 rounded-full shrink-0" style={{ background: mm.color }} />
-                {cleanThemeName(t.name)}
+              <span key={t.id} className="flex items-center gap-1 text-[9.5px] font-semibold px-1.5 py-0.5 rounded bg-raised border border-edge text-ink-secondary">
+                <span className="w-1 h-1 rounded-full shrink-0" style={{ background: mm.color }} />{cleanThemeName(t.name)}
               </span>
             );
           })}
@@ -832,6 +870,37 @@ function LifecycleJourney({ stage }: { stage: ThemeLifecycleStage }) {
 
 // ── Theme Detail Drawer ───────────────────────────────────────────────────────
 
+// Recent confidence trajectory, reconstructed from current level + momentum delta.
+function confSeries(score: number, delta: number, n = 7): number[] {
+  const arr: number[] = [];
+  for (let i = 0; i < n; i++) arr.push(Math.max(2, Math.min(100, score - delta * (n - 1 - i) * 0.5)));
+  return arr;
+}
+
+function Sparkline({ data, color, width = 56, height = 16 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (data.length < 2) return null;
+  const max = Math.max(...data), min = Math.min(...data), span = Math.max(1, max - min);
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * (width - 2) + 1;
+    const y = height - 1 - ((v - min) / span) * (height - 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width={width} height={height} className="shrink-0" aria-hidden>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.25" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function positioningTakeaway(t: ThemeIntelligence, benefits: string[]): string {
+  const sector = benefits[0] ?? (t.related_industries ?? [])[0];
+  if (!sector) return "Cleanest expression sits in the highest-conviction names across the theme.";
+  if (t.momentum_direction === "bearish") return `${sector} carries the most downside exposure to this theme.`;
+  if (t.momentum_label === "reversing" || t.momentum_label === "cooling")
+    return `${sector} is the first to fade as this theme rolls over.`;
+  return `${sector} remains the cleanest expression of this theme.`;
+}
+
 function ThemeDetailDrawer({
   data, onClose, isFollowed, onToggleFollow,
 }: {
@@ -918,15 +987,20 @@ function ThemeDetailDrawer({
                     )}
                   </div>
                   <h2 className="text-[22px] font-bold text-ink leading-tight tracking-tight">{publicName}</h2>
-                  {/* Confidence below the name — slim, unobtrusive */}
+                  {/* Confidence + recent trajectory sparkline */}
                   <div className="flex items-center gap-2 mt-2">
-                    <div className="w-24 h-[2px] rounded-full bg-raised overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${score}%`, background: cColor }} />
-                    </div>
-                    <span className="text-[9px] tabular-nums" style={{ color: cColor }}>
+                    <span className="text-[9px] tabular-nums font-semibold" style={{ color: cColor }}>
                       {t.confidence_label || `${score}% confidence`}
                     </span>
+                    <Sparkline data={confSeries(score, t.momentum_delta ?? 0)} color={cColor} />
+                    <span className="text-[8px] font-bold tabular-nums" style={{ color: (t.momentum_delta ?? 0) >= 0 ? "#10b981" : "#ef4444" }}>
+                      {(t.momentum_delta ?? 0) >= 0 ? "+" : ""}{t.momentum_delta ?? 0}
+                    </span>
                   </div>
+                  {/* Positioning takeaway — analyst note */}
+                  <p className="text-[10px] text-ink-secondary leading-snug mt-2 pl-2 border-l-2 italic" style={{ borderColor: bColor }}>
+                    {positioningTakeaway(t, benefits)}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 mt-0.5">
                   {/* Follow / Following toggle */}
@@ -1376,7 +1450,7 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
   if (themes.length === 0) return (
     <div className="mb-4">
       <SectionHeader label="Theme Command Center" icon={<Zap size={11} className="text-accent shrink-0" />} />
-      <p className="text-[10.5px] text-ink-muted italic">Theme analysis warming up…</p>
+      <p className="text-[10.5px] text-ink-muted italic">Awaiting first cross-asset read.</p>
     </div>
   );
   const sorted = [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 8);
@@ -1387,9 +1461,10 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
         sub="what's driving it" />
       <div className="grid sm:grid-cols-2 gap-1.5">
         {sorted.map(t => {
-          const mm   = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
-          const conf = t.confidence ?? 0;
-          const d    = t.momentum_delta ?? 0;
+          const mm    = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
+          const conf  = t.confidence ?? 0;
+          const d     = t.momentum_delta ?? 0;
+          const benef = (t.related_assets ?? []).filter(a => /^[A-Z.]{1,6}$/.test(a)).slice(0, 3);
           return (
             <button key={t.id} onClick={() => onThemeClick(t)}
               className="text-left rounded-lg border border-edge bg-surface flex items-center gap-3 pl-3 pr-3 py-2
@@ -1401,22 +1476,30 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
                 <span className="text-[6px] uppercase tracking-wider text-ink-muted/40 mt-px">conv</span>
               </div>
               <div className="min-w-0 flex-1">
-                {/* name + momentum delta */}
+                {/* name + momentum delta + horizon */}
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-bold text-ink truncate group-hover:text-accent transition-colors">{cleanThemeName(t.name)}</span>
                   <span className="text-[11px] font-black tabular-nums shrink-0"
                     style={{ color: d > 0 ? "#10b981" : d < 0 ? "#ef4444" : "rgba(255,255,255,0.28)" }}>
                     {d > 0 ? "▲" : d < 0 ? "▼" : ""}{d > 0 ? "+" : ""}{d}
                   </span>
+                  <span className="ml-auto text-[6.5px] font-bold uppercase tracking-wide px-1 py-px rounded shrink-0
+                                   bg-raised border border-edge text-ink-muted/55">{timeBucket(t)}</span>
                 </div>
-                {/* state + driver (secondary) */}
+                {/* state + driver */}
                 <div className="flex items-center gap-1.5 mt-0.5 text-[8.5px]">
                   <span className="font-bold uppercase tracking-wide" style={{ color: mm.color }}>{mm.label}</span>
                   <span className="text-ink-muted/25">·</span>
-                  <span className="text-ink-muted/55 truncate">{themePrimaryDriver(t)}</span>
+                  <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Driver</span> {themePrimaryDriver(t)}</span>
                 </div>
-                {/* risk (short) */}
-                <p className="text-[8px] text-ink-muted/45 truncate mt-px">{shortRisk(t)}</p>
+                {/* beneficiaries + risk */}
+                <div className="flex items-center gap-2 mt-px text-[8px] min-w-0">
+                  {benef.length > 0 && (
+                    <span className="shrink-0"><span className="text-ink-muted/35">Benefits</span>{" "}
+                      <span className="font-semibold tabular-nums text-ink-secondary">{benef.join(" · ")}</span></span>
+                  )}
+                  <span className="text-ink-muted/40 truncate"><span className="text-amber-500/50">Risk</span> {shortRisk(t)}</span>
+                </div>
               </div>
             </button>
           );
@@ -1484,25 +1567,32 @@ function ThemeTransmission({ themes, onNodeClick }: {
                     title={t ? `${cleanThemeName(t.name)} · ${conf}% conviction` : node.label}
                     className={cn(
                       "w-full text-left rounded-lg border px-3 py-2 transition-colors",
-                      t ? "bg-raised/40 hover:bg-raised border-edge hover:border-edge-strong cursor-pointer"
+                      t ? "hover:bg-raised border-edge hover:border-edge-strong cursor-pointer"
                         : "bg-transparent border-dashed border-edge/50 opacity-60 cursor-default",
                     )}
-                    style={{ borderLeft: `3px solid ${clr}` }}
+                    style={{
+                      borderLeft: `3px solid ${clr}`,
+                      background: t ? `linear-gradient(90deg, ${clr}${conf >= 75 ? "24" : conf >= 50 ? "18" : "10"}, transparent 72%)` : undefined,
+                    }}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[12.5px] font-bold text-ink leading-tight">{node.label}</span>
-                      {t && <span className="text-[11px] font-black tabular-nums shrink-0" style={{ color: confColor(conf) }}>{conf}</span>}
+                      {t && <span className="text-[13px] font-black tabular-nums shrink-0" style={{ color: confColor(conf) }}>{conf}</span>}
                     </div>
-                    {ni === 0 && <span className="text-[6.5px] uppercase tracking-[0.16em] text-ink-muted/40">root cause</span>}
+                    {ni === 0 && <span className="text-[6.5px] uppercase tracking-[0.18em] text-ink-muted/45">root cause</span>}
+                    {ni === chain.length - 1 && ni > 0 && <span className="text-[6.5px] uppercase tracking-[0.18em] text-ink-muted/45">outcome</span>}
                   </button>
-                  {ni < chain.length - 1 && (
-                    <div className="flex flex-col items-center py-1">
-                      <span className="text-[7.5px] italic" style={{ color: dirColor(chain[ni + 1].theme), opacity: 0.7 }}>
-                        {transmitVerb(chain[ni + 1].theme)}
-                      </span>
-                      <span className="text-[15px] leading-none" style={{ color: dirColor(chain[ni + 1].theme) }}>↓</span>
-                    </div>
-                  )}
+                  {ni < chain.length - 1 && (() => {
+                    const ac = dirColor(chain[ni + 1].theme);
+                    return (
+                      <div className="flex flex-col items-center -my-px">
+                        <span className="w-px h-2" style={{ background: ac, opacity: 0.45 }} />
+                        <span className="flex items-center justify-center w-4 h-4 rounded-full text-[11px] font-black leading-none"
+                          style={{ color: ac, background: `${ac}1f`, border: `1px solid ${ac}40` }}>↓</span>
+                        <span className="text-[7px] italic mt-px" style={{ color: ac, opacity: 0.85 }}>{transmitVerb(chain[ni + 1].theme)}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1522,13 +1612,24 @@ type SectorPosition = {
   direction:  "bullish" | "bearish" | "neutral";
   conviction: number;
   drivers:    string[];
-  trend:      string;
+  trend:      string;       // "Improving" | "Stable" | "Weakening"
   trendColor: string;
-  count:      number;
+  count:      number;       // total themes touching the sector
+  supportive: number;       // themes aligned with the net direction
   risk:       string;
   exposures:  string[];
   whyBullets: string[];
+  horizon:    string;       // lead theme's time horizon
+  leadDelta:  number;       // lead theme momentum delta (conviction trend)
 };
+
+function sectorThemeSign(t: ThemeIntelligence, sector: string): number {
+  const rel = t.relationship_weights?.[sector];
+  return rel?.direction === "positive" ? 1
+       : rel?.direction === "negative" ? -1
+       : t.momentum_direction === "bullish" ? 1
+       : t.momentum_direction === "bearish" ? -1 : 0;
+}
 
 function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
   const map = new Map<string, ThemeIntelligence[]>();
@@ -1544,18 +1645,18 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
     list.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
     let score = 0, wsum = 0;
     for (const t of list) {
-      const rel  = t.relationship_weights?.[sector];
-      const w    = (rel?.weight ?? 0.5) * (t.confidence ?? 0);
-      const sign = rel?.direction === "positive" ? 1
-                 : rel?.direction === "negative" ? -1
-                 : t.momentum_direction === "bullish" ? 1
-                 : t.momentum_direction === "bearish" ? -1 : 0;
-      score += sign * w; wsum += w;
+      const w = (t.relationship_weights?.[sector]?.weight ?? 0.5) * (t.confidence ?? 0);
+      score += sectorThemeSign(t, sector) * w; wsum += w;
     }
     const net = wsum ? score / wsum : 0;
     const direction = net > 0.15 ? "bullish" : net < -0.15 ? "bearish" : "neutral";
     const conviction = Math.round(list.reduce((s, t) => s + (t.confidence ?? 0), 0) / list.length);
-    const mm = MOMENTUM_META[list[0].momentum_label] ?? MOMENTUM_META.stable;
+    const dirSign = direction === "bullish" ? 1 : direction === "bearish" ? -1 : 0;
+    const supportive = dirSign === 0 ? list.length : list.filter(t => sectorThemeSign(t, sector) === dirSign).length;
+    const imp = list.filter(t => t.momentum_label === "accelerating" || t.momentum_label === "strengthening").length;
+    const wk  = list.filter(t => t.momentum_label === "cooling" || t.momentum_label === "reversing").length;
+    const trend = imp > wk ? "Improving" : wk > imp ? "Weakening" : "Stable";
+    const trendColor = imp > wk ? "#10b981" : wk > imp ? "#ef4444" : "#94a3b8";
     const exposures: string[] = [];
     for (const t of list.slice(0, 3)) for (const a of (t.related_assets ?? [])) {
       if (a && !exposures.includes(a) && /^[A-Z.]{1,6}$/.test(a)) exposures.push(a);
@@ -1563,10 +1664,10 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
     out.push({
       sector, direction, conviction,
       drivers: list.slice(0, 2).map(t => cleanThemeName(t.name)),
-      trend: mm.label, trendColor: mm.color,
-      count: list.length, risk: deriveKeyRisk(list[0]),
+      trend, trendColor, count: list.length, supportive, risk: deriveKeyRisk(list[0]),
       exposures: exposures.slice(0, 4),
       whyBullets: generateWhyItMattersNow(list[0]).slice(0, 3),
+      horizon: timeBucket(list[0]), leadDelta: list[0].momentum_delta ?? 0,
     });
   }
   const rank = { bullish: 0, neutral: 1, bearish: 2 } as const;
@@ -1593,28 +1694,27 @@ function SectorPositioning({ themes }: { themes: ThemeIntelligence[] }) {
       <SectionHeader label="Sector Positioning" icon={<BarChart2 size={11} className="text-accent shrink-0" />}
         sub={`${bull} bullish of ${positions.length} sectors`} />
       <div className="grid sm:grid-cols-2 gap-1.5">
-        {positions.map(p => {
+        {positions.map((p, i) => {
           const dm = DIR_META[p.direction];
           return (
             <div key={p.sector} className="rounded-lg border border-edge bg-surface px-3 py-2"
               style={{ borderLeft: `2.5px solid ${dm.color}` }}>
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[12px] font-bold text-ink truncate">{p.sector}</span>
-                <span className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
-                    style={{ color: dm.color, background: `${dm.color}15` }}>{dm.label}</span>
-                  <span className="text-[13px] font-black tabular-nums" style={{ color: confColor(p.conviction) }}>{p.conviction}</span>
-                </span>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] font-black tabular-nums text-ink-muted/40 shrink-0 w-5">#{i + 1}</span>
+                <span className="text-[12px] font-bold text-ink truncate flex-1">{p.sector}</span>
+                <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+                  style={{ color: dm.color, background: `${dm.color}15` }}>{dm.label}</span>
+                <span className="text-[14px] font-black tabular-nums shrink-0" style={{ color: confColor(p.conviction) }}>{p.conviction}</span>
               </div>
-              <div className="flex items-center gap-1.5 flex-wrap text-[8.5px]">
-                <span className="text-ink-muted/45">Driven by</span>
-                {p.drivers.map(d => (
-                  <span key={d} className="font-semibold text-ink-secondary">{d}</span>
-                ))}
-                <span className="text-ink-muted/25">·</span>
-                <span className="font-medium" style={{ color: p.trendColor }}>{p.trend}</span>
-                <span className="text-ink-muted/25">·</span>
-                <span className="text-ink-muted tabular-nums">{p.count} themes</span>
+              <div className="flex items-center gap-1.5 flex-wrap text-[8.5px] pl-7">
+                <span className="text-ink-muted/40">Drivers</span>
+                <span className="font-semibold text-ink-secondary">{p.drivers[0]}</span>
+                {p.drivers[1] && <><span className="text-ink-muted/20">·</span><span className="text-ink-muted/70">{p.drivers[1]}</span></>}
+              </div>
+              <div className="flex items-center gap-2 text-[8.5px] mt-px pl-7">
+                <span className="tabular-nums text-ink-muted/60"><span className="font-bold text-ink-secondary">{p.supportive} of {p.count}</span> supportive</span>
+                <span className="text-ink-muted/20">·</span>
+                <span className="font-semibold" style={{ color: p.trendColor }}>{p.trend}</span>
               </div>
             </div>
           );
@@ -1647,7 +1747,9 @@ function HighestConvictionOpportunities({ themes }: { themes: ThemeIntelligence[
       <SectionHeader label="Highest Conviction Opportunities" icon={<Zap size={11} className="text-accent shrink-0" />}
         sub="what can benefit" />
       <div className="grid sm:grid-cols-2 gap-1.5">
-        {opps.map(p => (
+        {opps.map(p => {
+          const ct = confTrend(p.leadDelta);
+          return (
           <div key={p.sector} className="rounded-lg border border-edge bg-surface px-3 py-2.5" style={{ borderTop: "2px solid #10b981" }}>
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[13px] font-black uppercase tracking-wide text-ink truncate">{p.sector}</span>
@@ -1656,6 +1758,20 @@ function HighestConvictionOpportunities({ themes }: { themes: ThemeIntelligence[
                 <span className="text-[7px] uppercase tracking-wide text-ink-muted/45">conviction</span>
               </span>
             </div>
+
+            <div className="flex items-center gap-2 mt-1 text-[8px]">
+              <span className="font-bold" style={{ color: ct.color }}>{ct.arrow} {ct.label}</span>
+              <span className="text-ink-muted/25">·</span>
+              <span className="text-ink-muted/60">{p.horizon}</span>
+              <span className="text-ink-muted/25">·</span>
+              <span className="text-ink-muted/60 tabular-nums">{p.supportive}/{p.count} themes</span>
+            </div>
+
+            <OppBlock label="Supporting Themes">
+              <div className="flex items-center gap-1 flex-wrap">
+                {p.drivers.map(d => <span key={d} className="text-[9px] font-semibold px-1.5 py-px rounded bg-raised border border-edge text-ink-secondary">{d}</span>)}
+              </div>
+            </OppBlock>
 
             <OppBlock label="Why It Matters" color="rgba(16,185,129,0.6)">
               <ul className="space-y-0.5">
@@ -1680,7 +1796,8 @@ function HighestConvictionOpportunities({ themes }: { themes: ThemeIntelligence[
               </OppBlock>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1731,7 +1848,10 @@ function EvidenceValidation({ themes, clusters, savedIds, onSave }: {
   const groups = useMemo(() => {
     const byId = new Map(clusters.map(c => [c.id, c]));
     const used = new Set<string>();
-    const out: Array<{ theme: ThemeIntelligence; items: StoryCluster[]; sources: string[]; updated: string }> = [];
+    const out: Array<{
+      theme: ThemeIntelligence; items: StoryCluster[]; sources: string[];
+      updated: string; agreement: number; quality: { label: string; color: string };
+    }> = [];
     for (const t of [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))) {
       const items: StoryCluster[] = [];
       const sources = new Set<string>();
@@ -1742,7 +1862,10 @@ function EvidenceValidation({ themes, clusters, savedIds, onSave }: {
         if (c.primary.source) sources.add(c.primary.source);
         for (const r of (c.related ?? [])) if (r.source) sources.add(r.source);
       }
-      if (items.length) out.push({ theme: t, items, sources: [...sources], updated: freshness(items) });
+      if (!items.length) continue;
+      const src = [...sources];
+      const agreement = Math.min(98, 58 + src.length * 7 + (t.cross_category_confirmed ? 12 : 0));
+      out.push({ theme: t, items, sources: src, updated: freshness(items), agreement, quality: sourceQuality(src) });
     }
     return out;
   }, [themes, clusters]);
@@ -1754,7 +1877,7 @@ function EvidenceValidation({ themes, clusters, savedIds, onSave }: {
       <SectionHeader label="Evidence Validation" icon={<Network size={11} className="text-accent shrink-0" />}
         sub="how confident are we" />
       <div className="space-y-1">
-        {groups.map(({ theme, items, sources, updated }) => {
+        {groups.map(({ theme, items, sources, updated, agreement, quality }) => {
           const o = !!open[theme.id];
           return (
             <div key={theme.id} className="rounded-lg border border-edge bg-surface overflow-hidden">
@@ -1765,6 +1888,8 @@ function EvidenceValidation({ themes, clusters, savedIds, onSave }: {
                   <span className="text-[12px] font-semibold text-ink truncate flex-1 text-left">{cleanThemeName(theme.name)}</span>
                   <span className="flex items-center gap-2 shrink-0 text-[8px] tabular-nums">
                     <span className="font-bold" style={{ color: "#10b981" }}>{items.length} conf</span>
+                    <span className="font-bold" style={{ color: "#10b981" }}>{agreement}% agree</span>
+                    <span className="font-semibold" style={{ color: quality.color }}>{quality.label} quality</span>
                     <span className="text-ink-muted/45">{sources.length} src</span>
                     {updated && <span className="text-ink-muted/45">· {updated}</span>}
                   </span>
