@@ -11,8 +11,7 @@ import { cn } from "@/lib/utils";
 import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useMarketData } from "@/hooks/useMarketData";
-import { ClusterStream } from "@/components/feed/ClusterStream";
-import type { StoryCluster, ThemeIntelligence, SectorData, MarketBrief } from "@/lib/types";
+import type { StoryCluster, ThemeIntelligence, SectorData, MarketBrief, FeedItem } from "@/lib/types";
 import type { TickerData } from "@/hooks/useMarketData";
 import {
   computeThemeEvolutionState,
@@ -24,7 +23,6 @@ import {
 import {
   buildThemeRelationshipMap,
   detectContradictions,
-  getConflictedThemeIds,
   computeBreadthSnapshot,
   generateIntelligenceBriefing,
   generateBullBearCases,
@@ -197,12 +195,6 @@ function regimeAccentColor(regime: string): string {
   return "#818cf8";
 }
 
-function clusterMatchesFilter(c: StoryCluster, keywords: string[]): boolean {
-  const hay = [c.primary.title, c.primary.category, ...c.primary.affected_entities]
-    .join(" ").toLowerCase();
-  return keywords.some(kw => hay.includes(kw.toLowerCase()));
-}
-
 function findMoveExplanation(tickerKey: string, clusters: StoryCluster[]): string | null {
   const kws = TICKER_MATCH_KW[tickerKey] ?? [];
   if (kws.length === 0) return null;
@@ -262,116 +254,160 @@ function deriveKeyRisk(t: ThemeIntelligence): string {
 }
 
 
+// ── Market Intelligence Snapshot ──────────────────────────────────────────────
+
+function SnapCell({ label, value, color, sub }: {
+  label: string; value: string; color?: string; sub?: string;
+}) {
+  return (
+    <div className="min-w-0 px-3 py-2 border-r border-edge/60 last:border-r-0">
+      <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/45 mb-1 truncate">{label}</p>
+      <p className="text-[12px] font-bold leading-tight truncate" style={{ color: color ?? "rgba(255,255,255,0.88)" }}>
+        {value}
+      </p>
+      {sub && <p className="text-[8px] text-ink-muted/45 mt-0.5 truncate">{sub}</p>}
+    </div>
+  );
+}
+
+function MarketSnapshot({ themes, sectorData, regime, brief }: {
+  themes:     ThemeIntelligence[];
+  sectorData: SectorData | null;
+  regime:     string;
+  brief:      MarketBrief | null | undefined;
+}) {
+  const snap = useMemo(() => computeBreadthSnapshot(themes, sectorData), [themes, sectorData]);
+  if (themes.length === 0) return null;
+
+  const confirming = snap.filter(s => s.direction === "positive" || s.direction === "mixed").length;
+  const conviction = brief?.confidence
+    ?? (themes.length ? Math.round(themes.reduce((s, t) => s + (t.confidence ?? 0), 0) / themes.length) : 0);
+  const dominant = themes[0];
+  const fastest  = [...themes].sort((a, b) => (b.momentum_delta ?? 0) - (a.momentum_delta ?? 0))[0];
+  const risk     = [...themes].filter(t => t.momentum_direction === "bearish")
+                     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  const opp      = [...themes].filter(t => t.momentum_direction === "bullish")
+                     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  const state    = regime || brief?.market_regime || "Neutral";
+  const accent   = regimeAccentColor(state);
+
+  return (
+    <div className="mb-4 rounded-xl border border-edge bg-surface overflow-hidden"
+      style={{ borderTop: `2px solid ${accent}` }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-y divide-edge/60 sm:divide-y-0">
+        <SnapCell label="Market State" value={state} color={accent} />
+        <SnapCell label="Conviction" value={`${conviction}%`} color={confColor(conviction)} />
+        <SnapCell label="Breadth" value={`${confirming} / ${snap.length}`} sub="sectors confirming" />
+        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "—"} />
+        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "—"}
+          color="#10b981" sub={fastest ? `${(fastest.momentum_delta ?? 0) >= 0 ? "+" : ""}${fastest.momentum_delta ?? 0} momentum` : undefined} />
+        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "—"} color="#ef4444"
+          sub={risk ? `${risk.confidence}% conviction` : undefined} />
+        <SnapCell label="Largest Opportunity" value={opp ? cleanThemeName(opp.name) : "—"} color="#10b981"
+          sub={opp ? `${opp.confidence}% conviction` : undefined} />
+      </div>
+    </div>
+  );
+}
+
 // ── Dominant Narrative ────────────────────────────────────────────────────────
 
-function DominantNarrative({
-  brief, themes,
-}: {
+const _MOMENTUM_VERB: Record<string, string> = {
+  accelerating: "accelerated", strengthening: "strengthened", stable: "held firm",
+  cooling: "cooled", reversing: "reversed", emerging: "emerged",
+};
+
+function deriveWhatHappened(brief: MarketBrief | null | undefined, themes: ThemeIntelligence[]): string {
+  const bull = themes.filter(t => t.momentum_direction === "bullish").length;
+  const bear = themes.filter(t => t.momentum_direction === "bearish").length;
+  const net  = bull - bear;
+  const r    = (brief?.market_regime ?? "").toLowerCase();
+  if (r.includes("risk-off") || net <= -2) return "Risk appetite weakened across asset classes.";
+  if (r.includes("risk-on")  || net >=  2) return "Risk appetite firmed across asset classes.";
+  return "Markets traded mixed with no dominant directional bias.";
+}
+
+function deriveWhy(brief: MarketBrief | null | undefined, top: ThemeIntelligence | undefined): string {
+  if (!top) return brief?.narrative_shift ?? "";
+  const verb   = _MOMENTUM_VERB[top.momentum_label] ?? "remained in focus";
+  const factor = (top.related_macro_factors ?? [])[0];
+  return `${cleanThemeName(top.name)} ${verb}${factor ? `, driven by ${cleanMacroLabel(factor)}` : ""}.`;
+}
+
+function DominantNarrative({ brief, themes }: {
   brief:  MarketBrief | null | undefined;
   themes: ThemeIntelligence[];
 }) {
-  const topTheme = themes[0];
-  if (!brief && !topTheme) return null;
+  const top = themes[0];
+  if (!brief && !top) return null;
 
-  const headline    = brief?.primary_driver   || topTheme?.causal_narrative || "";
-  const confidence  = brief?.confidence       ?? topTheme?.confidence ?? 0;
-  const tradeImpl   = brief?.trade_implication;
-  const riskScenario = brief?.risk_scenario;
-
-  const sectors = [
-    ...new Set(themes.slice(0, 4).flatMap(t => (t.related_industries ?? []).slice(0, 2))),
-  ].slice(0, 5);
-
-  const totalEvidence = themes.reduce((s, t) => s + (t.evidence_count ?? 0), 0);
-  const topThemeName  = topTheme ? cleanThemeName(topTheme.name) : null;
-  const cColor        = confColor(confidence);
-  const whyNow        = topTheme ? generateWhyItMattersNow(topTheme).slice(0, 2) : [];
+  const confidence   = brief?.confidence ?? top?.confidence ?? 0;
+  const cColor       = confColor(confidence);
+  const whatHappened = deriveWhatHappened(brief, themes);
+  const whyHappened  = deriveWhy(brief, top);
+  const implications = top ? generateWhyItMattersNow(top).slice(0, 3) : [];
+  const drivers      = themes.slice(0, 5);
 
   return (
-    <div
-      className="mb-4 rounded-xl border border-edge overflow-hidden bg-surface"
-      style={{ borderTop: `2.5px solid ${cColor}` }}
-    >
-      {/* Header row */}
-      <div className="px-4 pt-3 pb-0 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className="text-[8.5px] font-bold uppercase tracking-[0.18em] text-ink-muted/50">
-              Today&apos;s Dominant Narrative
-            </span>
-            {totalEvidence > 0 && (
-              <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-raised border border-edge text-ink-muted/45">
-                {totalEvidence} signals
-              </span>
-            )}
-          </div>
-          {topThemeName && (
-            <p className="text-[10px] font-semibold text-accent/70 mb-1">
-              {topThemeName}
-              {themes.length > 1 && (
-                <span className="text-ink-muted/40 font-normal">
-                  {" + "}{themes.length - 1} related theme{themes.length > 2 ? "s" : ""}
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-        {/* Confidence */}
-        <div className="flex flex-col items-end gap-0.5 shrink-0 mt-0.5">
-          <span className="text-[20px] font-black tabular-nums leading-none" style={{ color: cColor }}>
+    <div className="mb-4 rounded-xl border border-edge overflow-hidden bg-surface"
+      style={{ borderTop: `2.5px solid ${cColor}` }}>
+      <div className="px-4 pt-3 pb-2.5 flex items-start justify-between gap-3 border-b border-edge/60">
+        <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-ink-muted/45 mt-1">
+          Dominant Narrative
+        </span>
+        <div className="flex flex-col items-end shrink-0">
+          <span className="text-[22px] font-black tabular-nums leading-none" style={{ color: cColor }}>
             {confidence}<span className="text-[11px] font-bold opacity-55">%</span>
           </span>
-          <span className="text-[7.5px] text-ink-muted/40 uppercase tracking-wider">confidence</span>
+          <span className="text-[7px] text-ink-muted/40 uppercase tracking-[0.15em] mt-0.5">confidence</span>
         </div>
       </div>
 
-      {/* Primary narrative text */}
-      {headline && (
-        <div className="px-4 pt-2 pb-3">
-          <p className="text-[14px] leading-snug font-semibold text-ink">{headline}</p>
-          {whyNow.length > 0 && (
-            <ul className="mt-2.5 space-y-1">
-              {whyNow.map((b, i) => (
-                <li key={i} className="flex items-start gap-2 text-[11px] text-ink-secondary leading-snug">
-                  <span className="shrink-0 mt-px text-ink-muted/40">·</span>
-                  {b}
-                </li>
-              ))}
-            </ul>
-          )}
+      <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-edge/60">
+        <div className="px-4 py-3">
+          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1.5">What Happened</p>
+          <p className="text-[13.5px] font-semibold text-ink leading-snug">{whatHappened}</p>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1.5">Why It Happened</p>
+          <p className="text-[12.5px] text-ink-secondary leading-snug">{whyHappened}</p>
+        </div>
+      </div>
+
+      {implications.length > 0 && (
+        <div className="px-4 py-3 border-t border-edge/60">
+          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-2">What Matters</p>
+          <ul className="space-y-1.5">
+            {implications.map((b, i) => (
+              <li key={i} className="flex items-start gap-2 text-[11.5px] text-ink-secondary leading-snug">
+                <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: cColor }} />
+                {b}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Trade implication */}
-      {tradeImpl && (
-        <div className="px-4 py-2.5 border-t border-edge/60"
+      {drivers.length > 0 && (
+        <div className="px-4 py-2.5 border-t border-edge/60 flex items-center gap-1.5 flex-wrap"
           style={{ background: "rgba(37,99,235,0.03)" }}>
-          <span className="text-[7.5px] font-bold uppercase tracking-widest text-accent/55 mr-2">Implication</span>
-          <span className="text-[11.5px] text-ink-secondary leading-snug">{tradeImpl}</span>
-        </div>
-      )}
-
-      {/* Bottom: sectors + risk */}
-      {(sectors.length > 0 || riskScenario) && (
-        <div className="px-4 py-2.5 border-t border-edge/60 flex items-center gap-1.5 flex-wrap">
-          {sectors.map(s => (
-            <span key={s} className="text-[9px] font-medium px-2 py-0.5 rounded bg-raised border border-edge text-ink-secondary">
-              {s}
-            </span>
-          ))}
-          {riskScenario && (
-            <div className="flex items-center gap-1 ml-auto shrink-0">
-              <AlertTriangle size={9} className="text-amber-500/55 shrink-0" />
-              <span className="text-[9px] text-amber-600/65 line-clamp-1 max-w-[180px]">
-                {riskScenario.length > 60 ? riskScenario.slice(0, 60) + "…" : riskScenario}
+          <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-accent/55 mr-1">Theme Drivers</span>
+          {drivers.map(t => {
+            const mm = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
+            return (
+              <span key={t.id} className="flex items-center gap-1 text-[9.5px] font-semibold px-2 py-0.5 rounded
+                                          bg-raised border border-edge text-ink-secondary">
+                <span className="w-1 h-1 rounded-full shrink-0" style={{ background: mm.color }} />
+                {cleanThemeName(t.name)}
               </span>
-            </div>
-          )}
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
+
 
 
 // ── Section header ─────────────────────────────────────────────────────────────
@@ -1320,343 +1356,155 @@ function ThemeDetailDrawer({
 }
 
 
-// ── Compact Theme Card (analyst note style) ───────────────────────────────────
 
-function CompactThemeCard({
-  theme, isConflict, isFollowed, onClick, onFollowToggle,
-}: {
-  theme:          ThemeIntelligence;
-  isConflict:     boolean;
-  isFollowed:     boolean;
-  onClick:        () => void;
-  onFollowToggle: () => void;
-}) {
-  const t          = theme;
-  const evState    = computeThemeEvolutionState(t);
-  const evMeta     = THEME_EVOLUTION_META[evState];
-  const publicName = cleanThemeName(t.name);
-  const score      = t.confidence ?? 0;
-  const cColor     = confColor(score);
-  const bColor     = borderColorForTheme(t, evState);
-  const briefing   = generateIntelligenceBriefing(t);
-  const health     = computeThemeHealth(t);
+// ── THEME LEADERBOARD ─────────────────────────────────────────────────────────
 
-  const benefits:  string[] = [];
-  const pressures: string[] = [];
-  for (const ind of (t.related_industries ?? [])) {
-    const w = (t.relationship_weights ?? {})[ind];
-    if (w?.direction === "positive")      benefits.push(ind);
-    else if (w?.direction === "negative") pressures.push(ind);
-  }
+const MOMENTUM_META: Record<string, { label: string; color: string }> = {
+  accelerating:  { label: "Accelerating",  color: "#10b981" },
+  strengthening: { label: "Strengthening", color: "#34d399" },
+  stable:        { label: "Stable",        color: "#94a3b8" },
+  emerging:      { label: "Emerging",      color: "#52b0c8" },
+  cooling:       { label: "Cooling",       color: "#f59e0b" },
+  reversing:     { label: "Reversing",     color: "#ef4444" },
+};
 
-  const evColor = EVOLUTION_COLOR[evState] ?? "#94a3b8";
-
-  return (
-    <div
-      className="relative w-full bg-surface border border-edge rounded-lg
-                 hover:border-edge-strong hover:shadow-sm transition-all duration-100 group"
-      style={{ borderLeft: `3px solid ${bColor}` }}
-    >
-      {/* Main card — opens drawer */}
-      <button onClick={onClick} className="w-full text-left block">
-      <div className="px-4 pt-2.5 pb-2.5 pr-9 space-y-1.5">
-
-        {/* Status row: evolution badge + health badge + confidence + arrow */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full leading-none shrink-0"
-              style={{ color: evColor, background: `${evColor}14`, border: `1px solid ${evColor}22` }}
-            >
-              {evMeta.icon} {evMeta.label}
-            </span>
-            <span
-              className="text-[7.5px] font-bold px-1 py-0.5 rounded leading-none shrink-0"
-              style={{ color: health.color, background: `${health.color}14` }}
-            >
-              {health.label}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {isConflict && (
-              <span className="text-[8px] font-semibold text-amber-500 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded">
-                ⚠ conflict
-              </span>
-            )}
-            <div className="flex items-center gap-1">
-              <div className="w-16 h-[3px] rounded-full bg-raised overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${score}%`, background: cColor }} />
-              </div>
-              <span className="text-[8.5px] font-semibold tabular-nums" style={{ color: cColor }}>
-                {score}%
-              </span>
-            </div>
-            <ChevronRight
-              size={11}
-              className="text-ink-muted/30 group-hover:text-ink-muted/70 transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Theme name */}
-        <h3 className="text-[15px] font-bold text-ink leading-snug tracking-tight">
-          {publicName}
-        </h3>
-
-        {/* Intelligence briefing — first sentence */}
-        {briefing[0] && (
-          <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-2">
-            {briefing[0]}
-          </p>
-        )}
-
-        {/* Winners / Losers */}
-        {(benefits.length > 0 || pressures.length > 0) && (
-          <div className="space-y-0.5 pt-0.5 border-t border-edge/50">
-            {benefits.length > 0 && (
-              <p className="text-[10.5px] leading-snug">
-                <span className="text-emerald-600 font-semibold">↑ </span>
-                <span className="text-ink-secondary">
-                  {benefits.slice(0, 3).join(" · ")}
-                  {benefits.length > 3 && <span className="text-ink-muted"> +{benefits.length - 3}</span>}
-                </span>
-              </p>
-            )}
-            {pressures.length > 0 && (
-              <p className="text-[10.5px] leading-snug">
-                <span className="text-red-500 font-semibold">↓ </span>
-                <span className="text-ink-secondary">
-                  {pressures.slice(0, 3).join(" · ")}
-                  {pressures.length > 3 && <span className="text-ink-muted"> +{pressures.length - 3}</span>}
-                </span>
-              </p>
-            )}
-          </div>
-        )}
-
-      </div>
-      </button>
-
-      {/* Follow button — absolutely positioned, sibling to drawer button */}
-      <button
-        onClick={onFollowToggle}
-        className={cn(
-          "absolute top-2.5 right-2.5 p-1.5 rounded-md transition-all duration-150",
-          isFollowed
-            ? "text-accent"
-            : "text-ink-muted/20 hover:text-ink-muted/60 opacity-0 group-hover:opacity-100",
-        )}
-        title={isFollowed ? "Unfollow theme" : "Follow theme"}
-      >
-        {isFollowed
-          ? <BookmarkCheck size={13} />
-          : <Bookmark size={13} />
-        }
-      </button>
-    </div>
-  );
-}
-
-
-// ── WHAT'S DRIVING IT ─────────────────────────────────────────────────────────
-
-function IntelligenceThemes({
-  themes, conflictedIds, followedIds, onThemeClick, onFollowToggle,
-}: {
-  themes:         ThemeIntelligence[];
-  conflictedIds:  Set<string>;
-  followedIds:    string[];
-  onThemeClick:   (t: ThemeIntelligence) => void;
-  onFollowToggle: (t: ThemeIntelligence) => void;
+function ThemeLeaderboard({ themes, onThemeClick }: {
+  themes:       ThemeIntelligence[];
+  onThemeClick: (t: ThemeIntelligence) => void;
 }) {
   if (themes.length === 0) return (
     <div className="mb-3">
-      <SectionHeader label="What's Driving It" icon={<Network size={11} className="text-accent shrink-0" />} />
+      <SectionHeader label="Theme Leaderboard" icon={<BarChart2 size={11} className="text-accent shrink-0" />} />
       <p className="text-[10.5px] text-ink-muted italic">Theme analysis warming up…</p>
     </div>
   );
 
+  const sorted  = [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 12);
+  const maxConf = Math.max(...sorted.map(t => t.confidence ?? 0), 1);
+  const COLS    = "grid-cols-[1.5rem_1fr_2.6rem_2.4rem_5.4rem]";
+
   return (
     <div className="mb-3">
       <SectionHeader
-        label="What's Driving It"
-        icon={<Network size={11} className="text-accent shrink-0" />}
-        sub={`${themes.length} theme${themes.length !== 1 ? "s" : ""} · click to explore`}
+        label="Theme Leaderboard"
+        icon={<BarChart2 size={11} className="text-accent shrink-0" />}
+        sub={`${themes.length} active · ranked by conviction`}
       />
-      <div className="space-y-1.5">
-        {themes.map(t => (
-          <CompactThemeCard
-            key={t.id}
-            theme={t}
-            isConflict={conflictedIds.has(t.id)}
-            isFollowed={followedIds.includes(t.id)}
-            onClick={() => onThemeClick(t)}
-            onFollowToggle={() => onFollowToggle(t)}
-          />
-        ))}
+      <div className="rounded-lg border border-edge overflow-hidden bg-surface">
+        <div className={cn("grid items-center gap-2 px-3 py-1.5 border-b border-edge", COLS,
+          "text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/40")}>
+          <span className="text-right">#</span><span>Theme</span>
+          <span className="text-right">Score</span><span className="text-right">Δ</span><span>Status</span>
+        </div>
+        {sorted.map((t, i) => {
+          const mm   = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
+          const d    = t.momentum_delta ?? 0;
+          const conf = t.confidence ?? 0;
+          return (
+            <button
+              key={t.id}
+              onClick={() => onThemeClick(t)}
+              className={cn("w-full grid items-center gap-2 px-3 py-[7px] text-left group transition-colors",
+                COLS, "hover:bg-raised/60 border-b border-edge/40 last:border-0")}
+            >
+              <span className="text-right text-[10px] tabular-nums font-bold text-ink-muted/55">{i + 1}</span>
+              <div className="min-w-0">
+                <p className="text-[11.5px] font-semibold text-ink truncate group-hover:text-accent transition-colors">
+                  {cleanThemeName(t.name)}
+                </p>
+                <div className="mt-[3px] h-[2px] rounded-full bg-edge overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${(conf / maxConf) * 100}%`, background: mm.color }} />
+                </div>
+              </div>
+              <span className="text-right text-[13px] font-black tabular-nums leading-none" style={{ color: confColor(conf) }}>{conf}</span>
+              <span className="text-right text-[10px] font-bold tabular-nums"
+                style={{ color: d > 0 ? "#10b981" : d < 0 ? "#ef4444" : "rgba(255,255,255,0.28)" }}>
+                {d > 0 ? "+" : ""}{d}
+              </span>
+              <span className="flex items-center gap-1 text-[8.5px] font-semibold truncate" style={{ color: mm.color }}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: mm.color }} />
+                {mm.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 
-// ── Theme Relationship Chains ──────────────────────────────────────────────────
+// ── Theme Transmission Map ─────────────────────────────────────────────────────
+// Directed causal chains parsed from each theme's causal_narrative ("A → B → C").
 
-type ThemeChain = {
-  nodes: ThemeIntelligence[];
-  links: Array<{ linkType: string; strength: string }>;
-};
-
-function buildThemeChains(
-  themes: ThemeIntelligence[],
-  relMap: ReturnType<typeof buildThemeRelationshipMap>,
-): ThemeChain[] {
-  const chains:    ThemeChain[] = [];
-  const themeById  = new Map(themes.map(t => [t.id, t]));
-  const visited    = new Set<string>();
-  const sorted     = [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  const strengthRank = { strong: 0, moderate: 1, weak: 2 } as const;
-
-  for (const root of sorted) {
-    if (visited.has(root.id)) continue;
-    const rootRel = relMap.get(root.id);
-    if (!rootRel?.connected.length) continue;
-
-    const nodes: ThemeIntelligence[] = [root];
-    const links: ThemeChain["links"] = [];
-    visited.add(root.id);
-
-    let cursor = root;
-    for (let depth = 0; depth < 2; depth++) {
-      const curRel = relMap.get(cursor.id);
-      const best   = curRel?.connected
-        .filter(c => !visited.has(c.id))
-        .sort((a, b) =>
-          (strengthRank[a.strength as keyof typeof strengthRank] ?? 3) -
-          (strengthRank[b.strength as keyof typeof strengthRank] ?? 3),
-        )[0];
-      if (!best) break;
-      const next = themeById.get(best.id);
-      if (!next) break;
-      nodes.push(next);
-      links.push({ linkType: best.linkType, strength: best.strength });
-      visited.add(next.id);
-      cursor = next;
-    }
-
-    if (nodes.length >= 2) {
-      chains.push({ nodes, links });
-      if (chains.length >= 6) break;
-    }
-  }
-
-  return chains;
-}
-
-const LINK_LABEL: Record<string, string> = {
-  "shared-story":   "shared narrative",
-  "shared-asset":   "shared exposure",
-  "sector-overlap": "sector overlap",
-};
-
-function ThemeRelationshipChains({
-  themes, relMap, onNodeClick,
-}: {
+function ThemeTransmission({ themes, onNodeClick }: {
   themes:      ThemeIntelligence[];
-  relMap:      ReturnType<typeof buildThemeRelationshipMap>;
   onNodeClick: (t: ThemeIntelligence) => void;
 }) {
-  const chains = useMemo(() => buildThemeChains(themes, relMap), [themes, relMap]);
+  const chains = useMemo(() => {
+    const byName = new Map(themes.map(t => [t.name, t]));
+    const seen   = new Set<string>();
+    const out: Array<Array<{ theme?: ThemeIntelligence; label: string }>> = [];
+    for (const t of [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))) {
+      const cn = t.causal_narrative ?? "";
+      if (!cn.includes("→")) continue;
+      const parts = cn.split("→").map(s => s.trim()).filter(Boolean);
+      if (parts.length < 2) continue;
+      const key = parts.join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(parts.map(p => ({ theme: byName.get(p), label: cleanThemeName(p) })));
+      if (out.length >= 5) break;
+    }
+    return out;
+  }, [themes]);
 
   if (chains.length === 0) return null;
+
+  const dirColor = (t?: ThemeIntelligence) =>
+    t?.momentum_direction === "bullish" ? "#10b981"
+    : t?.momentum_direction === "bearish" ? "#ef4444" : "#64748b";
 
   return (
     <div className="mb-3">
       <SectionHeader
-        label="Theme Relationships"
+        label="Transmission Map"
         icon={<Network size={11} className="text-accent shrink-0" />}
-        sub={`${chains.length} causal chain${chains.length !== 1 ? "s" : ""} · click any node to explore`}
+        sub={`${chains.length} causal path${chains.length !== 1 ? "s" : ""} · cause → effect · click a node`}
       />
-
-      <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-        {chains.map(chain => (
-          <div
-            key={chain.nodes[0].id}
-            className="flex-shrink-0 w-[192px] border border-edge rounded-lg bg-surface
-                       overflow-hidden hover:border-edge-strong transition-colors"
-          >
-            {chain.nodes.map((node, ni) => {
-              const evState = computeThemeEvolutionState(node);
-              const evMeta  = THEME_EVOLUTION_META[evState];
-              const evClr   = EVOLUTION_COLOR[evState] ?? "#94a3b8";
-              const bClr    = borderColorForTheme(node, evState);
-              const score   = node.confidence ?? 0;
-              const link    = chain.links[ni];
-
+      <div className="rounded-lg border border-edge bg-surface divide-y divide-edge/50">
+        {chains.map((chain, ci) => (
+          <div key={ci} className="flex items-stretch gap-1.5 px-3 py-3 overflow-x-auto scrollbar-hide">
+            {chain.map((node, ni) => {
+              const t    = node.theme;
+              const clr  = dirColor(t);
+              const conf = t?.confidence ?? 0;
+              const mm   = t ? (MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable) : null;
               return (
-                <div key={node.id}>
-                  {/* Clickable node */}
+                <div key={ni} className="flex items-center gap-1.5 shrink-0">
                   <button
-                    onClick={() => onNodeClick(node)}
-                    className="w-full text-left px-3 py-2.5 hover:bg-raised/70 transition-colors group"
-                    style={{ borderLeft: `2.5px solid ${bClr}` }}
+                    onClick={() => t && onNodeClick(t)}
+                    disabled={!t}
+                    title={t ? `${cleanThemeName(t.name)} · ${conf}% conviction · ${mm?.label}` : node.label}
+                    className={cn(
+                      "text-left rounded-md border px-2.5 py-1.5 min-w-[8.5rem] max-w-[10rem] transition-colors",
+                      t ? "bg-raised/50 hover:bg-raised border-edge hover:border-edge-strong cursor-pointer"
+                        : "bg-transparent border-dashed border-edge/50 opacity-55 cursor-default",
+                    )}
+                    style={{ borderLeft: `2.5px solid ${clr}` }}
                   >
-                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                      <span
-                        className="text-[7.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full leading-none"
-                        style={{ color: evClr, background: `${evClr}15`, border: `1px solid ${evClr}20` }}
-                      >
-                        {evMeta.icon} {evMeta.label}
-                      </span>
-                      <span
-                        className="text-[8px] font-semibold tabular-nums"
-                        style={{ color: confColor(score) }}
-                      >
-                        {score}%
-                      </span>
-                    </div>
-                    <p className="text-[13px] font-bold text-ink leading-snug">
-                      {cleanThemeName(node.name)}
-                    </p>
-                    <ChevronRight
-                      size={10}
-                      className="mt-1 text-ink-muted/20 group-hover:text-ink-muted/50 transition-colors"
-                    />
-                  </button>
-
-                  {/* Connector between nodes */}
-                  {ni < chain.nodes.length - 1 && link && (() => {
-                    const sColor = link.strength === "strong"   ? "#10b981"
-                                 : link.strength === "moderate" ? "#64748b"
-                                 :                               "#cbd5e1";
-                    return (
-                      <div
-                        className="flex items-center gap-2 px-3 py-1.5"
-                        style={{ borderTop: "1px solid rgba(148,163,184,0.10)", borderBottom: "1px solid rgba(148,163,184,0.10)", background: "rgba(15,22,35,0.03)" }}
-                      >
-                        {/* CSS arrow */}
-                        <div className="flex flex-col items-center shrink-0 gap-[1px]">
-                          <div className="w-px h-2.5" style={{ background: sColor, opacity: 0.45 }} />
-                          <div style={{
-                            width: 0, height: 0,
-                            borderLeft: "3px solid transparent",
-                            borderRight: "3px solid transparent",
-                            borderTop: `3.5px solid ${sColor}`,
-                            opacity: 0.55,
-                          }} />
-                        </div>
-                        <span className="text-[7.5px] text-ink-muted/55 italic flex-1 leading-none">
-                          {LINK_LABEL[link.linkType] ?? "connected"}
-                        </span>
-                        {link.strength === "strong" && (
-                          <span className="text-[6.5px] font-bold uppercase tracking-wider shrink-0"
-                                style={{ color: sColor, opacity: 0.65 }}>
-                            strong
-                          </span>
-                        )}
+                    <p className="text-[11px] font-semibold text-ink leading-tight truncate">{node.label}</p>
+                    {t && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[9px] font-bold tabular-nums" style={{ color: confColor(conf) }}>{conf}%</span>
+                        {mm && <span className="w-1 h-1 rounded-full shrink-0" style={{ background: mm.color }} />}
+                        {mm && <span className="text-[7.5px] font-medium truncate" style={{ color: mm.color }}>{mm.label}</span>}
                       </div>
-                    );
-                  })()}
+                    )}
+                  </button>
+                  {ni < chain.length - 1 && (
+                    <ChevronRight size={14} className="shrink-0" style={{ color: clr, opacity: 0.7 }} />
+                  )}
                 </div>
               );
             })}
@@ -1668,28 +1516,21 @@ function ThemeRelationshipChains({
 }
 
 
+
 // ── WHERE IT MATTERS ──────────────────────────────────────────────────────────
 
-function WhereMattersList({ themes, sectorData }: {
+function WhereItMatters({ themes, sectorData }: {
   themes:     ThemeIntelligence[];
   sectorData: SectorData | null;
 }) {
-  const snapshot = useMemo(
-    () => computeBreadthSnapshot(themes, sectorData),
-    [themes, sectorData],
-  );
-
+  const snapshot = useMemo(() => computeBreadthSnapshot(themes, sectorData), [themes, sectorData]);
   if (snapshot.length === 0) return null;
 
-  // Sort: positives by score desc, then negatives by score desc, then mixed
   const sorted = [...snapshot].sort((a, b) => {
-    const order = { positive: 0, negative: 1, mixed: 2 } as const;
-    const dDiff = (order[a.direction as keyof typeof order] ?? 3)
-                - (order[b.direction as keyof typeof order] ?? 3);
-    return dDiff !== 0 ? dDiff : b.signalScore - a.signalScore;
+    const order = { positive: 0, mixed: 1, negative: 2 } as const;
+    const d = (order[a.direction as keyof typeof order] ?? 3) - (order[b.direction as keyof typeof order] ?? 3);
+    return d !== 0 ? d : b.signalScore - a.signalScore;
   });
-
-  const maxScore   = Math.max(...snapshot.map(s => s.signalScore), 1);
   const confirming = snapshot.filter(s => s.direction === "positive" || s.direction === "mixed").length;
 
   return (
@@ -1699,56 +1540,27 @@ function WhereMattersList({ themes, sectorData }: {
         icon={<BarChart2 size={11} className="text-accent shrink-0" />}
         sub={`${confirming} of ${snapshot.length} sectors confirming`}
       />
-
-      <div className="space-y-0">
-        {sorted.map((s, i) => {
-          const pos     = s.direction === "positive";
-          const neg     = s.direction === "negative";
-          const barClr  = pos ? "#16a34a" : neg ? "#dc2626" : "#d97706";
-          const barPct  = (s.signalScore / maxScore) * 100;
-          const dirLabel = pos ? "↑" : neg ? "↓" : "~";
-
+      <div className="grid sm:grid-cols-2 gap-1.5">
+        {sorted.map(s => {
+          const pos = s.direction === "positive", neg = s.direction === "negative";
+          const clr = pos ? "#10b981" : neg ? "#ef4444" : "#f59e0b";
+          const dir = pos ? "Bullish" : neg ? "Bearish" : "Mixed";
           return (
-            <div
-              key={s.sector}
-              className={cn(
-                "flex items-center gap-2.5 px-2 py-1.5 rounded transition-colors",
-                i % 2 === 0 ? "bg-transparent" : "bg-raised/40",
-              )}
-            >
-              {/* Rank */}
-              <span className="text-[8.5px] tabular-nums text-ink-muted w-4 shrink-0 text-right font-medium">
-                {i + 1}
-              </span>
-              {/* Direction dot */}
-              <span className="text-[11px] font-bold shrink-0 w-3" style={{ color: barClr }}>
-                {dirLabel}
-              </span>
-              {/* Sector name */}
-              <span className="text-[11px] font-semibold text-ink w-[6.5rem] shrink-0 truncate">
-                {s.sector}
-              </span>
-              {/* Signal bar */}
-              <div className="flex-1 h-[4px] rounded-full bg-edge overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${barPct}%`, background: barClr }}
-                />
+            <div key={s.sector} className="rounded-lg border border-edge bg-surface px-3 py-2"
+              style={{ borderLeft: `2.5px solid ${clr}` }}>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[12px] font-bold text-ink truncate">{s.sector}</span>
+                <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+                  style={{ color: clr, background: `${clr}15` }}>{dir}</span>
               </div>
-              {/* Theme count badge */}
-              {s.themeCount > 0 && (
-                <span
-                  className="text-[8.5px] font-bold tabular-nums px-1.5 py-0.5 rounded-full shrink-0"
-                  style={{ color: barClr, background: `${barClr}12` }}
-                >
-                  {s.themeCount}×
-                </span>
-              )}
-              {/* Dominant theme */}
+              <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[9.5px] text-ink-muted">
+                <span><span className="font-semibold text-ink-secondary tabular-nums">{s.themeCount}</span> themes active</span>
+                <span className="tabular-nums">Conviction <span className="font-bold" style={{ color: confColor(s.signalScore) }}>{Math.round(s.signalScore)}</span></span>
+              </div>
               {s.dominantTheme && (
-                <span className="text-[9px] text-ink-muted truncate hidden sm:block" style={{ maxWidth: "7rem" }}>
-                  {cleanThemeName(s.dominantTheme)}
-                </span>
+                <p className="text-[9.5px] text-ink-muted/70 mt-0.5 truncate">
+                  Driver: <span className="text-ink-secondary font-medium">{cleanThemeName(s.dominantTheme)}</span>
+                </p>
               )}
             </div>
           );
@@ -1757,6 +1569,114 @@ function WhereMattersList({ themes, sectorData }: {
     </div>
   );
 }
+
+// ── Evidence grouped by theme ─────────────────────────────────────────────────
+
+function EvidenceRow({ cluster, saved, onSave }: {
+  cluster: StoryCluster; saved: boolean; onSave: (item: FeedItem) => void;
+}) {
+  const p = cluster.primary;
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 hover:bg-raised/30 transition-colors group">
+      <span className="text-[8px] font-bold uppercase tracking-wide mt-[3px] shrink-0 w-12 truncate"
+        style={{ color: "rgba(82,176,200,0.6)" }}>{p.category}</span>
+      <div className="min-w-0 flex-1">
+        <a href={p.url} target="_blank" rel="noopener noreferrer"
+          className="text-[11.5px] font-medium text-ink leading-snug line-clamp-2 hover:text-accent transition-colors">
+          {p.title}
+        </a>
+        <p className="text-[8.5px] text-ink-muted/55 mt-0.5 truncate">
+          {p.source}{cluster.story_count > 1 ? ` · +${cluster.story_count - 1} confirming` : ""}
+        </p>
+      </div>
+      <button onClick={() => onSave(p)}
+        className={cn("p-1 rounded shrink-0 transition-opacity", saved ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
+        style={{ color: saved ? "#52b0c8" : "rgba(255,255,255,0.4)" }}>
+        {saved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
+      </button>
+    </div>
+  );
+}
+
+function EvidenceByTheme({ themes, clusters, savedIds, onSave }: {
+  themes:   ThemeIntelligence[];
+  clusters: StoryCluster[];
+  savedIds: string[];
+  onSave:   (item: FeedItem) => void;
+}) {
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+
+  const groups = useMemo(() => {
+    const byId = new Map(clusters.map(c => [c.id, c]));
+    const used = new Set<string>();
+    const out: Array<{ theme: ThemeIntelligence; items: StoryCluster[] }> = [];
+    for (const t of [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))) {
+      const items: StoryCluster[] = [];
+      for (const id of (t.contributing_cluster_ids ?? [])) {
+        const c = byId.get(id);
+        if (c && !used.has(id)) { items.push(c); used.add(id); }
+      }
+      if (items.length) out.push({ theme: t, items });
+    }
+    const other = clusters.filter(c => !used.has(c.id));
+    return { out, other };
+  }, [themes, clusters]);
+
+  if (groups.out.length === 0 && groups.other.length === 0) return null;
+
+  const isOpen = (id: string, idx: number) => overrides[id] ?? idx === 0;
+  const toggle = (id: string, idx: number) =>
+    setOverrides(p => ({ ...p, [id]: !(p[id] ?? idx === 0) }));
+
+  return (
+    <div>
+      <SectionHeader label="Supporting Evidence" sub="grouped by theme · most-confirmed first" />
+      <div className="space-y-1.5">
+        {groups.out.map(({ theme, items }, idx) => {
+          const o = isOpen(theme.id, idx);
+          return (
+            <div key={theme.id} className="rounded-lg border border-edge bg-surface overflow-hidden">
+              <button onClick={() => toggle(theme.id, idx)}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-raised/50 transition-colors">
+                <ChevronDown size={12} className={cn("text-ink-muted/50 transition-transform shrink-0", o ? "" : "-rotate-90")} />
+                <span className="text-[11.5px] font-semibold text-ink truncate flex-1 text-left">{cleanThemeName(theme.name)}</span>
+                <span className="text-[8.5px] font-bold tabular-nums px-1.5 py-0.5 rounded-full bg-raised border border-edge text-ink-muted shrink-0">
+                  {items.length}
+                </span>
+              </button>
+              {o && (
+                <div className="divide-y divide-edge/40 border-t border-edge/60">
+                  {items.map(c => <EvidenceRow key={c.id} cluster={c} saved={savedIds.includes(c.id)} onSave={onSave} />)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {groups.other.length > 0 && (() => {
+          const o = !!overrides["__other"];
+          return (
+            <div className="rounded-lg border border-edge/60 bg-surface/60 overflow-hidden">
+              <button onClick={() => setOverrides(p => ({ ...p, __other: !p["__other"] }))}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-raised/40 transition-colors">
+                <ChevronDown size={12} className={cn("text-ink-muted/40 transition-transform shrink-0", o ? "" : "-rotate-90")} />
+                <span className="text-[11px] font-medium text-ink-muted truncate flex-1 text-left">Other Signals</span>
+                <span className="text-[8.5px] font-bold tabular-nums px-1.5 py-0.5 rounded-full bg-raised border border-edge text-ink-muted shrink-0">
+                  {groups.other.length}
+                </span>
+              </button>
+              {o && (
+                <div className="divide-y divide-edge/40 border-t border-edge/60">
+                  {groups.other.slice(0, 20).map(c => <EvidenceRow key={c.id} cluster={c} saved={savedIds.includes(c.id)} onSave={onSave} />)}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
 
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -1767,7 +1687,7 @@ export default function MarketsPage() {
   const clusterRef = useRef<HTMLDivElement>(null);
 
   const { data: marketData, meta: marketMeta, heartbeatStatus, marketOpen } = useMarketData();
-  const { data, isLoading }       = useFeed({ use_ai: true });
+  const { data }                  = useFeed({ use_ai: true });
   const { riskRegime, volRegime }                              = useMarketState();
   const { savedIds, toggleSave }                               = useSaved();
   const { followed, followedIds, isFollowed, toggle: toggleFollow, unfollow } = useFollowedThemes();
@@ -1790,7 +1710,6 @@ export default function MarketsPage() {
     () => detectContradictions(visible, sectorData, riskRegime, volRegime),
     [visible, sectorData, riskRegime, volRegime],
   );
-  const conflictedIds = useMemo(() => getConflictedThemeIds(contradictions), [contradictions]);
 
   function openDrawer(t: ThemeIntelligence) {
     dismissAlert(t.id);
@@ -1811,17 +1730,6 @@ export default function MarketsPage() {
   const watchlistAlerts = alerts.filter(a => followedIds.includes(a.themeId));
 
   const activeCfg = SNAPSHOT_CONFIGS.find(c => c.key === activeKey) ?? null;
-
-  const visibleClusters = useMemo(() => {
-    if (activeCfg) {
-      const filtered = clusters.filter(c => clusterMatchesFilter(c, [...activeCfg.filterKw]));
-      return filtered.length > 0 ? filtered : clusters;
-    }
-    const focused = clusters.filter(
-      c => c.primary.category === "Markets" || c.primary.category === "Geopolitical",
-    );
-    return focused.length > 0 ? focused : clusters;
-  }, [clusters, activeCfg]);
 
   function handleTileClick(key: SnapshotKey) {
     if (activeKey === key) {
@@ -1863,8 +1771,11 @@ export default function MarketsPage() {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
 
-        {/* ── WHAT'S HAPPENING ─────────────────────────────── */}
-        <SectionHeader label="What's Happening" />
+        {/* ── MARKET INTELLIGENCE SNAPSHOT ─────────────────── */}
+        <MarketSnapshot themes={visible} sectorData={sectorData} regime={derivedRegime} brief={data?.market_brief} />
+
+        {/* ── MARKET TAPE ──────────────────────────────────── */}
+        <SectionHeader label="Market Tape" />
 
         {/* Live market snapshot — 6 instruments */}
         <MarketSnapshotStrip marketData={marketData} />
@@ -1921,47 +1832,22 @@ export default function MarketsPage() {
           alerts={watchlistAlerts}
         />
 
-        {/* ── WHAT'S DRIVING IT ────────────────────────────── */}
-        <IntelligenceThemes
-          themes={visible}
-          conflictedIds={conflictedIds}
-          followedIds={followedIds}
-          onThemeClick={openDrawer}
-          onFollowToggle={handleFollowToggle}
-        />
+        {/* ── THEME LEADERBOARD ────────────────────────────── */}
+        <ThemeLeaderboard themes={visible} onThemeClick={openDrawer} />
 
-        {/* ── THEME RELATIONSHIPS ───────────────────────────── */}
-        <ThemeRelationshipChains
-          themes={visible}
-          relMap={relMap}
-          onNodeClick={openDrawer}
-        />
+        {/* ── TRANSMISSION MAP (hero) ──────────────────────── */}
+        <ThemeTransmission themes={visible} onNodeClick={openDrawer} />
 
         {/* ── WHERE IT MATTERS ─────────────────────────────── */}
-        <WhereMattersList
-          themes={themes}
-          sectorData={sectorData}
-        />
+        <WhereItMatters themes={themes} sectorData={sectorData} />
 
-        {/* ── SUPPORTING EVIDENCE ──────────────────────────── */}
+        {/* ── SUPPORTING EVIDENCE (grouped by theme) ───────── */}
         <div ref={clusterRef}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">
-              Supporting Evidence
-            </span>
-            {!isLoading && clusters.length > 0 && (
-              <span className="text-[9px] text-ink-muted bg-raised px-1.5 py-px rounded-full border border-edge">
-                {visibleClusters.length}{activeCfg ? ` of ${clusters.length}` : ""}
-              </span>
-            )}
-            <span className="h-px flex-1 bg-edge" />
-          </div>
-          <ClusterStream
-            clusters={visibleClusters}
+          <EvidenceByTheme
+            themes={visible}
+            clusters={clusters}
             savedIds={savedIds}
             onSave={(item) => toggleSave(item)}
-            isLoading={isLoading}
-            themes={visible}
           />
         </div>
 
