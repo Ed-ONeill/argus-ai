@@ -59,7 +59,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
             "Natural gas demand may rise as data centres require firm peaker capacity to backstop intermittent renewable supply",
             "Grid infrastructure equipment makers benefit from an accelerated capex cycle as utilities compete for hyperscaler anchor contracts",
             "Higher electricity costs create unit-economics pressure for compute-intensive AI inference workloads at scale",
-            "The power constraint is structurally bullish for nuclear — the only zero-carbon dispatchable baseload option at scale",
+            "The power constraint is structurally bullish for nuclear. The only zero-carbon dispatchable baseload option at scale",
         ],
         "podcast_topics": ["Tech / AI", "Markets"],
         "relationship_graph": {
@@ -112,7 +112,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_assets":        ["TNX", "TLT", "JPM", "BAC", "EQIX"],
         "related_macro_factors": ["10Y Yield Re-anchoring", "Yield Curve", "Terminal Rate", "Break-Even Inflation"],
         "second_order_effects": [
-            "Long-duration software multiples face mechanical compression as the discount rate re-anchors — the denominator effect is non-linear above 5%",
+            "Long-duration software multiples face mechanical compression as the discount rate re-anchors. The denominator effect is non-linear above 5%",
             "Commercial real estate cap-rate widening forces loan book impairments at regional banks as refinancing cycles roll",
             "Bank NIM expansion on a steeper yield curve creates an earnings revision tailwind that partially offsets credit quality pressure",
             "Private credit spread widening raises the hurdle rate for leveraged buyouts, compressing PE deal flow",
@@ -193,7 +193,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "description": (
             "Structural capital-requirement increases under Basel III are accelerating "
             "the transfer of lending market share from regulated banks to alternative "
-            "credit managers — a secular shift that is creating fee-income winners "
+            "credit managers. A secular shift that is creating fee-income winners "
             "irrespective of the credit cycle."
         ),
         "keywords": [
@@ -360,7 +360,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "second_order_effects": [
             "Energy-price persistence sustains above-target inflation, extending the Fed's higher-for-longer rate posture",
             "Commodity FX pairs (CAD, NOK, AUD) appreciate with crude, creating cross-asset positioning opportunities",
-            "Airlines and freight carriers face margin compression from jet fuel cost escalation — unit revenue recovery lags fuel moves",
+            "Airlines and freight carriers face margin compression from jet fuel cost escalation. Unit revenue recovery lags fuel moves",
             "Consumer discretionary spending faces a demand compression headwind from higher energy bills and fuel costs",
         ],
         "podcast_topics": ["Markets", "Geopolitical", "Macro"],
@@ -513,9 +513,9 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_assets":        ["COIN", "MSTR", "MARA", "BTC"],
         "related_macro_factors": ["BTC ETF Flows", "Fed Policy", "Stablecoin Regulation", "Halving Cycle"],
         "second_order_effects": [
-            "Bitcoin spot-ETF approval separated the institutional demand signal from retail-cycle noise — flow data now provides genuine positioning intelligence",
+            "Bitcoin spot-ETF approval separated the institutional demand signal from retail-cycle noise. Flow data now provides genuine positioning intelligence",
             "Stablecoin regulatory clarity is the pre-condition for bank-grade digital payments infrastructure at institutional scale",
-            "Mining hardware demand follows the crypto price cycle with a 3-6 month lag — MARA and RIOT serve as leveraged cyclical proxies",
+            "Mining hardware demand follows the crypto price cycle with a 3-6 month lag. MARA and RIOT serve as leveraged cyclical proxies",
             "Exchange consolidation accelerates as compliance costs scale non-linearly with regulation, favouring Coinbase's regulatory moat",
         ],
         "podcast_topics": ["Markets", "Tech / AI"],
@@ -540,7 +540,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "name":        "Baseload Scarcity Premium",
         "description": (
             "Data-centre anchor demand and energy-security mandates are creating a "
-            "structural premium for dispatchable, zero-carbon baseload generation — "
+            "structural premium for dispatchable, zero-carbon baseload generation, "
             "repricing nuclear merchant generators well above their regulated-utility "
             "peers on multi-year PPA contract economics."
         ),
@@ -612,9 +612,9 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_assets":        ["WMT", "TGT", "HD", "AMZN"],
         "related_macro_factors": ["Real Wage Growth", "CPI Delta", "Credit Utilisation Rate", "Household Savings Rate"],
         "second_order_effects": [
-            "Value-channel retailers gain share as discretionary spending bifurcates by income cohort — a positioning rotation, not a sector decline",
+            "Value-channel retailers gain share as discretionary spending bifurcates by income cohort. A positioning rotation, not a sector decline",
             "Revolving credit utilisation approaching cycle highs signals spending-velocity compression 3-6 months ahead of reported retail sales",
-            "Restaurant and leisure traffic declines as non-essential spending is cut first — the consumer stress signal usually leads the headline number",
+            "Restaurant and leisure traffic declines as non-essential spending is cut first. The consumer stress signal usually leads the headline number",
             "Auto delinquency acceleration historically leads broader consumer credit quality deterioration by 2-4 quarters",
         ],
         "podcast_topics": ["Macro", "Markets", "Company"],
@@ -662,7 +662,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_assets":        ["NVDA", "AVGO", "AMD", "MSFT", "ORCL"],
         "related_macro_factors": ["AI Capex Supercycle", "GPU Supply Stack", "Accelerator Lead Times", "Frontier Model Scaling"],
         "second_order_effects": [
-            "Compute access becomes the binding moat — frontier capability now tracks GPU allocation more tightly than algorithmic edge",
+            "Compute access becomes the binding moat. Frontier capability now tracks GPU allocation more tightly than algorithmic edge",
             "Multi-year accelerator purchase commitments create a demand floor that decouples chip revenue from the broader tech cycle",
             "Custom-silicon (TPU, Trainium, MTIA) investment accelerates as hyperscalers seek to escape single-vendor pricing power",
             "Training-cluster scale pulls forward power-procurement and data-centre siting decisions years ahead of grid capacity",
@@ -688,8 +688,8 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "label":       "Data Center Buildout",
         "name":        "Data Center Buildout",
         "description": (
-            "Hyperscaler and AI demand has turned physical data-centre capacity — land, "
-            "power interconnection, and cooling — into the scarce input, re-rating "
+            "Hyperscaler and AI demand has turned physical data-centre capacity. Land, "
+            "power interconnection, and cooling. Into the scarce input, re-rating "
             "colocation REITs and the electrical/thermal equipment supply chain on "
             "multi-year pre-leased backlogs."
         ),
@@ -711,7 +711,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_assets":        ["EQIX", "DLR", "VRT", "ETN", "GEV"],
         "related_macro_factors": ["Power Interconnection Queue", "Data Center Vacancy", "Pre-Lease Backlog", "Cooling Capex"],
         "second_order_effects": [
-            "Power-interconnection timelines, not capital, are now the gating constraint on capacity — siting shifts toward stranded generation",
+            "Power-interconnection timelines, not capital, are now the gating constraint on capacity. Siting shifts toward stranded generation",
             "Pre-leased backlogs give colocation REITs utility-like cash-flow visibility, compressing their risk premium versus traditional property",
             "Liquid-cooling adoption inflects with rack-power density, opening a new equipment TAM for thermal-management suppliers",
             "Electrical-equipment lead times (transformers, switchgear) lengthen, handing pricing power to the T&D supply chain",
@@ -854,7 +854,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_assets":        ["NEE", "SO", "DUK", "AEP", "XEL"],
         "related_macro_factors": ["Rate-Base Growth", "Load Growth Forecast", "Allowed ROE", "Electrification Demand"],
         "second_order_effects": [
-            "Load growth ends the decoupling era — utilities re-rate from bond-proxy defensives toward structural earnings compounders",
+            "Load growth ends the decoupling era. Utilities re-rate from bond-proxy defensives toward structural earnings compounders",
             "Rising capital plans pressure balance sheets, lifting equity-issuance and putting the allowed-ROE regulatory debate in focus",
             "Demand visibility from data-centre anchor load reduces the regulatory risk premium embedded in utility multiples",
             "Capex intensity favours utilities with constructive regulatory jurisdictions and large interconnection pipelines",
@@ -881,7 +881,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "description": (
             "Permanent and insurance-linked capital is flooding into direct lending, "
             "extending non-bank credit beyond the middle market into investment-grade "
-            "and asset-based finance — a fund-formation supercycle that compounds "
+            "and asset-based finance. A fund-formation supercycle that compounds "
             "fee-related earnings for the largest credit platforms."
         ),
         "keywords": [
@@ -926,7 +926,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "name":        "Private Capital Takeover",
         "description": (
             "Record private-equity dry powder, paired with deep private-credit financing, "
-            "is accelerating take-privates and sponsor-led buyouts — migrating value "
+            "is accelerating take-privates and sponsor-led buyouts. Migrating value "
             "creation off public exchanges and shrinking the listed-equity universe in "
             "targeted sectors."
         ),
@@ -947,7 +947,7 @@ THEME_ONTOLOGY: dict[str, dict] = {
         "related_macro_factors": ["PE Dry Powder", "Take-Private Volume", "Financing Spread", "Sponsor Exit Backlog"],
         "second_order_effects": [
             "Take-private flow shrinks the listed-equity universe in targeted sectors, raising scarcity value for remaining public comps",
-            "Deal velocity is gated by private-credit financing availability — the two themes move as a single capital-formation engine",
+            "Deal velocity is gated by private-credit financing availability. The two themes move as a single capital-formation engine",
             "Continuation funds extend hold periods, deferring DPI and pressuring LPs even as headline fundraising stays strong",
             "Sponsor competition for scarce assets compresses return assumptions, pushing funds toward operational rather than financial leverage",
         ],

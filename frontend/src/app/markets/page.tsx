@@ -30,6 +30,9 @@ import {
   generateInvalidationSignals,
   computeThemeHealth,
   generateWhyItMattersNow,
+  themeBeneficiaries,
+  bestExpressions,
+  themeLosers,
 } from "@/lib/themeIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
@@ -80,6 +83,30 @@ const THEME_NAME_OVERRIDES: Record<string, string> = {
   "Credit Cycle Ascendancy":      "Credit Cycle",
   "Energy Transition Capex":      "Energy Transition",
 };
+
+// Keyword canonicalization so theme names read like sell-side coverage labels
+// (Bloomberg / Goldman / JPM / MS) even when the backend emits a dramatized
+// auto-generated name. Ordered most-specific first; first match wins.
+const THEME_CANON: Array<{ regex: RegExp; name: string }> = [
+  { regex: /private credit|direct lending|non.?bank|private capital|alternative (asset|credit)|shadow bank/i, name: "Private Credit" },
+  { regex: /nuclear|\bsmr\b|uranium/i,                                          name: "Nuclear Power" },
+  { regex: /hyperscal/i,                                                        name: "Hyperscaler Capex" },
+  { regex: /data ?center|datacenter/i,                                          name: "Data Center Buildout" },
+  { regex: /ai (compute|infra|arms|capex)|accelerated comput|ai spend/i,        name: "AI Infrastructure" },
+  { regex: /semiconductor|silicon|chip (capex|cycle)|foundry|wafer/i,           name: "Semiconductor Capex" },
+  { regex: /utility (capex|super|cycle)|utilities? capex/i,                     name: "Utility Capex Cycle" },
+  { regex: /grid|transmission|power infra|electrical buildout/i,                name: "Power Infrastructure" },
+  { regex: /reshor|deglobal|nearshor|onshoring|supply.?chain capex/i,           name: "Reshoring & Capex" },
+  { regex: /higher.?for.?longer|rate repric|interest rate|hawkish/i,            name: "Interest Rates" },
+  { regex: /fiscal domin|fiscal repric|deficit|treasury supply/i,              name: "Fiscal Policy" },
+  { regex: /defense spend|defense ascend|rearmament|military buildup/i,         name: "Defense Spending" },
+  { regex: /credit cycle|credit stress|default cycle/i,                         name: "Credit Cycle" },
+  { regex: /energy transition|decarboniz|clean energy capex/i,                  name: "Energy Transition" },
+  { regex: /\bm&a\b|dealmaking|consolidation wave|takeover wave/i,              name: "M&A Cycle" },
+  { regex: /industrial metal|commodity supercycle|copper/i,                     name: "Industrial Metals" },
+  { regex: /china (reopen|stimulus|pmi|recov|reflat)/i,                         name: "China Reflation" },
+  { regex: /electrification|power demand/i,                                     name: "Electrification" },
+];
 
 const EVOLUTION_CLS: Record<string, string> = {
   accelerating:  "text-emerald-500",
@@ -153,12 +180,15 @@ function cleanMacroLabel(raw: string): string {
 
 function cleanThemeName(raw: string): string {
   if (THEME_NAME_OVERRIDES[raw]) return THEME_NAME_OVERRIDES[raw];
+  for (const c of THEME_CANON) if (c.regex.test(raw)) return c.name;
+  // Fallback: strip dramatizing buzzwords the generator likes to append.
   return raw
-    .replace(/\bAscendancy\b/gi, "")
-    .replace(/\bRepricing\b/gi, "")
+    .replace(/\b(Ascendancy|Repricing|Renaissance|Supercycle|Arms Race|Takeover|Bonanza|Boom|Mania|Revolution)\b/gi, "")
     .replace(/\bSovereign(?:ty)?\b/gi, "")
     .replace(/\bDominance\b/gi, "")
+    .replace(/\bTrade\b\s*$/i, "")
     .replace(/\s{2,}/g, " ")
+    .replace(/\s+&\s*$/, "")
     .trim() || raw;
 }
 
@@ -172,6 +202,20 @@ function regimeAccentColor(regime: string): string {
 
 function confColor(score: number): string {
   return score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8";
+}
+
+// Conviction is rounded to the nearest 5 so a 76 vs 74 never reads as real
+// precision, and is always shown alongside the evidence that produced it.
+function convScore(n: number): number {
+  return Math.round((n ?? 0) / 5) * 5;
+}
+function convBasis(t: ThemeIntelligence): string {
+  const ev = t.evidence_count ?? 0;
+  const cy = t.persistence_cycles ?? 0;
+  const parts: string[] = [];
+  if (ev > 0) parts.push(`${ev} source${ev !== 1 ? "s" : ""}`);
+  if (cy > 0) parts.push(`${cy} cycle${cy !== 1 ? "s" : ""}`);
+  return parts.join(" · ");
 }
 
 function fmtSnapPrice(key: string, price: number): string {
@@ -192,29 +236,29 @@ function borderColorForTheme(t: ThemeIntelligence, evState: string): string {
 
 function deriveTimeHorizon(t: ThemeIntelligence): string {
   const { momentum_label, persistence_cycles, signal_quality, persistence_days } = t;
-  if (momentum_label === "reversing")  return "Deteriorating — exit window narrowing";
-  if (momentum_label === "cooling")    return "1–3 months (momentum fading)";
-  if (momentum_label === "emerging")   return "Near-term · 2–8 weeks";
-  if (persistence_cycles >= 6)         return "12+ months (structural)";
-  if (persistence_cycles >= 4)         return "6–12 months";
-  if (momentum_label === "accelerating" && signal_quality === "confirmed") return "3–6 months";
-  if (momentum_label === "strengthening") return "2–4 months";
-  if (persistence_days  >= 60)         return "3–6 months";
-  if (persistence_days  >= 30)         return "1–3 months";
-  return "1–3 months";
+  if (momentum_label === "reversing")  return "Late cycle";
+  if (momentum_label === "cooling")    return "1 to 3 months";
+  if (momentum_label === "emerging")   return "Near term";
+  if (persistence_cycles >= 6)         return "Structural";
+  if (persistence_cycles >= 4)         return "6 to 12 months";
+  if (momentum_label === "accelerating" && signal_quality === "confirmed") return "3 to 6 months";
+  if (momentum_label === "strengthening") return "2 to 4 months";
+  if (persistence_days  >= 60)         return "3 to 6 months";
+  if (persistence_days  >= 30)         return "1 to 3 months";
+  return "1 to 3 months";
 }
 
 function deriveKeyRisk(t: ThemeIntelligence): string {
   const { signal_quality, volatility_score, competition_penalty,
           momentum_label, cross_category_confirmed, confidence, second_order_effects } = t;
-  if (signal_quality === "speculative")    return "Thesis not yet corroborated across independent sources";
-  if (volatility_score >= 70)             return "Crowded trade vulnerable to a sharp unwind";
-  if (competition_penalty >= 30)          return "Consensus positioning leaves limited upside";
-  if (momentum_label === "reversing")     return "Momentum rolling over — late to the move";
+  if (signal_quality === "speculative")    return "The thesis is not yet corroborated across independent sources.";
+  if (volatility_score >= 70)             return "A crowded trade leaves it vulnerable to a sharp unwind.";
+  if (competition_penalty >= 30)          return "Consensus positioning leaves limited upside from current levels.";
+  if (momentum_label === "reversing")     return "Momentum is already rolling over and the entry looks late.";
   if (!cross_category_confirmed && confidence < 60)
-    return "Confined to one asset class; needs cross-asset confirmation";
+    return "The signal sits in a single asset class and needs cross-asset confirmation.";
   if (second_order_effects.length > 0)   return second_order_effects[0];
-  return "A policy or macro inflection would invalidate the thesis";
+  return "A policy or macro inflection would invalidate the thesis.";
 }
 
 // Time-horizon bucket — analyst register, no "momentum fading" filler.
@@ -296,13 +340,13 @@ function MarketSnapshot({ themes, sectorData, regime, brief }: {
     <div className="mb-2 rounded-xl border border-edge bg-surface overflow-hidden" style={{ borderTop: `2px solid ${accent}` }}>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-y divide-edge/60 sm:divide-y-0">
         <SnapCell label="Market State" value={state} color={accent} />
-        <SnapCell label="Conviction" value={`${conviction}%`} color={confColor(conviction)} />
+        <SnapCell label="Conviction" value={`${convScore(conviction)}`} color={confColor(conviction)} />
         <SnapCell label="Breadth" value={`${confirming}/${total}`} sub="sectors confirming" />
-        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "—"} />
-        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "—"} color="#10b981"
+        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "n/a"} />
+        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "n/a"} color="#10b981"
           sub={fastest ? `${(fastest.momentum_delta ?? 0) >= 0 ? "+" : ""}${fastest.momentum_delta ?? 0} mom` : undefined} />
-        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "—"} color="#ef4444" />
-        <SnapCell label="Largest Opportunity" value={opp ? opp.sector : "—"} color="#10b981"
+        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "n/a"} color="#ef4444" />
+        <SnapCell label="Largest Opportunity" value={opp ? opp.sector : "n/a"} color="#10b981"
           sub={opp ? `${opp.conviction}% conviction` : undefined} />
       </div>
     </div>
@@ -379,9 +423,11 @@ function DominantNarrative({ brief, themes }: {
   const whatHappened = deriveWhatHappened(brief, themes);
   const whyHappened  = deriveWhy(brief, top);
   const implications = top ? generateWhyItMattersNow(top).slice(0, 3) : [];
+  const benef      = top ? themeBeneficiaries(top, 5) : [];
+  const losers     = top ? themeLosers(top, 3) : null;
   const drivers    = themes.slice(0, 5);
   const trend      = confTrend(top?.momentum_delta ?? 0);
-  const horizon    = top ? timeBucket(top) : "—";
+  const horizon    = top ? timeBucket(top) : "n/a";
   const confirming = top
     ? themes.filter(t => t.momentum_direction === top.momentum_direction).length
     : themes.length;
@@ -422,7 +468,7 @@ function DominantNarrative({ brief, themes }: {
           <p className="text-[12px] text-ink-secondary leading-snug">{whyHappened}</p>
         </div>
         <div className="px-4 py-2.5">
-          <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1">What Matters</p>
+          <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1">Market Impact</p>
           <ul className="space-y-1">
             {implications.map((b, i) => (
               <li key={i} className="flex items-start gap-1.5 text-[11px] text-ink-secondary leading-snug">
@@ -433,10 +479,32 @@ function DominantNarrative({ brief, themes }: {
         </div>
       </div>
 
+      {/* who wins / who loses — prominent securities */}
+      {(benef.length > 0 || losers) && (
+        <div className="px-4 py-2.5 border-t border-edge/60 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {benef.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-emerald-700/70">Primary Beneficiaries</span>
+              {benef.map(tk => (
+                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-700 border border-emerald-500/25">{tk}</span>
+              ))}
+            </div>
+          )}
+          {losers && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-red-600/70">Most Exposed</span>
+              {losers.tickers.map(tk => (
+                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-red-500/8 text-red-600/90 border border-red-500/20">{tk}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* drivers */}
       {drivers.length > 0 && (
         <div className="px-4 py-2 border-t border-edge/60 flex items-center gap-1.5 flex-wrap" style={{ background: "rgba(37,99,235,0.03)" }}>
-          <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-accent/55 mr-1">Theme Drivers</span>
+          <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-accent/55 mr-1">Root Causes</span>
           {drivers.map(t => {
             const mm = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
             return (
@@ -700,7 +768,7 @@ function MarketSnapshotStrip({ marketData }: {
             {loading ? (
               <span className="text-[12px] font-bold text-ink-muted/30 tabular-nums">…</span>
             ) : offline ? (
-              <span className="text-[12px] font-bold text-ink-muted/25 tabular-nums">—</span>
+              <span className="text-[12px] font-bold text-ink-muted/25 tabular-nums">n/a</span>
             ) : (
               <>
                 <span className="text-[12px] font-bold text-ink tabular-nums leading-tight">
@@ -789,7 +857,7 @@ function MarketIntelBar({
                 {loading ? (
                   <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.15)" }}>…</span>
                 ) : offline ? (
-                  <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.12)" }}>—</span>
+                  <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.12)" }}>n/a</span>
                 ) : (
                   <span
                     className="text-[10px] font-bold tabular-nums"
@@ -893,12 +961,19 @@ function Sparkline({ data, color, width = 56, height = 16 }: { data: number[]; c
 }
 
 function positioningTakeaway(t: ThemeIntelligence, benefits: string[]): string {
+  // Short header pointer that names the securities; the full transmission
+  // mechanism and best expressions live in the drawer body below.
+  const tk = themeBeneficiaries(t, 3);
+  if (tk.length > 0) {
+    if (t.momentum_direction === "bearish") return `Most exposed to the downside: ${tk.join(", ")}.`;
+    return `Most direct exposure runs through ${tk.join(", ")}.`;
+  }
   const sector = benefits[0] ?? (t.related_industries ?? [])[0];
-  if (!sector) return "Cleanest expression sits in the highest-conviction names across the theme.";
-  if (t.momentum_direction === "bearish") return `${sector} carries the most downside exposure to this theme.`;
+  if (!sector) return "Exposure concentrates in the highest-conviction names across the theme.";
+  if (t.momentum_direction === "bearish") return `${sector} carries the most downside if the theme plays out.`;
   if (t.momentum_label === "reversing" || t.momentum_label === "cooling")
-    return `${sector} is the first to fade as this theme rolls over.`;
-  return `${sector} remains the cleanest expression of this theme.`;
+    return `${sector} tends to fade first as the theme rolls over.`;
+  return `${sector} is the most direct way to express the theme.`;
 }
 
 function ThemeDetailDrawer({
@@ -942,6 +1017,8 @@ function ThemeDetailDrawer({
   const watchSignals   = generateWatchSignals(t);
   const invalidations  = generateInvalidationSignals(t);
   const briefingSents  = generateIntelligenceBriefing(t);
+  const bestExpr       = bestExpressions(t);
+  const exposedLosers  = themeLosers(t);
 
   return (
     <AnimatePresence>
@@ -990,8 +1067,9 @@ function ThemeDetailDrawer({
                   {/* Confidence + recent trajectory sparkline */}
                   <div className="flex items-center gap-2 mt-2">
                     <span className="text-[9px] tabular-nums font-semibold" style={{ color: cColor }}>
-                      {t.confidence_label || `${score}% confidence`}
+                      {convScore(score)} conviction
                     </span>
+                    {convBasis(t) && <span className="text-[8px] text-ink-muted/50 tabular-nums">{convBasis(t)}</span>}
                     <Sparkline data={confSeries(score, t.momentum_delta ?? 0)} color={cColor} />
                     <span className="text-[8px] font-bold tabular-nums" style={{ color: (t.momentum_delta ?? 0) >= 0 ? "#10b981" : "#ef4444" }}>
                       {(t.momentum_delta ?? 0) >= 0 ? "+" : ""}{t.momentum_delta ?? 0}
@@ -1034,6 +1112,41 @@ function ThemeDetailDrawer({
             {/* Body */}
             <div className="px-5 py-5 space-y-4">
 
+              {/* ── Best Expressions — name the securities first ── */}
+              {bestExpr && (
+                <div className="rounded-lg border border-emerald-200/60 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-emerald-200/60 bg-emerald-50/40">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-700/80">Best Expressions</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {bestExpr.tickers.map(tk => (
+                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-emerald-500/12 text-emerald-700 border border-emerald-500/25">{tk}</span>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">{bestExpr.why}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Most Exposed Losers ─────────────────────────── */}
+              {exposedLosers && (
+                <div className="rounded-lg border border-red-200/60 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-red-200/60 bg-red-50/30 flex items-baseline gap-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-600/80">Most Exposed</p>
+                    <span className="text-[10px] font-semibold text-ink-secondary">{exposedLosers.sector}</span>
+                  </div>
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {exposedLosers.tickers.map(tk => (
+                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-red-500/8 text-red-600/90 border border-red-500/20">{tk}</span>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">{exposedLosers.risk}</p>
+                  </div>
+                </div>
+              )}
+
               {/* ── Trade Implications ─────────────────────────── */}
               {(() => {
                 const timeHorizon = deriveTimeHorizon(t);
@@ -1063,7 +1176,7 @@ function ThemeDetailDrawer({
                             )}
                           </div>
                         ) : (
-                          <p className="text-[11px] text-ink-muted italic">—</p>
+                          <p className="text-[11px] text-ink-muted italic">n/a</p>
                         )}
                       </div>
 
@@ -1085,7 +1198,7 @@ function ThemeDetailDrawer({
                             )}
                           </div>
                         ) : (
-                          <p className="text-[11px] text-ink-muted italic">—</p>
+                          <p className="text-[11px] text-ink-muted italic">n/a</p>
                         )}
                       </div>
 
@@ -1132,17 +1245,17 @@ function ThemeDetailDrawer({
               {/* Bull / Bear Cases */}
               <div className="rounded-lg border border-edge overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Bull / Bear Cases</p>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">{"What's Working / What's Breaking"}</p>
                 </div>
                 <div className="grid grid-cols-2">
                   <div className="px-3.5 py-3 border-r border-edge"
                        style={{ borderLeft: "2px solid rgba(16,185,129,0.35)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-600/60 mb-1.5">Bull Case</p>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-600/60 mb-1.5">{"What's Working"}</p>
                     <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bull}</p>
                   </div>
                   <div className="px-3.5 py-3"
                        style={{ borderLeft: "2px solid rgba(239,68,68,0.30)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-500/60 mb-1.5">Bear Case</p>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-500/60 mb-1.5">{"What's Breaking"}</p>
                     <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bear}</p>
                   </div>
                 </div>
@@ -1152,7 +1265,7 @@ function ThemeDetailDrawer({
               {(briefingSents.length > 0 || upstream.length > 0) && (
                 <div className="rounded-lg border border-edge overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Why It Matters</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Transmission Mechanism</p>
                   </div>
                   <div className="px-4 py-4 space-y-3">
                     {briefingSents.length > 0 && (
@@ -1229,7 +1342,7 @@ function ThemeDetailDrawer({
               {watchSignals.length > 0 && (
                 <div className="rounded-lg border border-amber-200/60 overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Watch Signals</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">What Changes Our View</p>
                   </div>
                   <div className="divide-y divide-amber-100/60">
                     {watchSignals.map((sig, i) => (
@@ -1246,7 +1359,7 @@ function ThemeDetailDrawer({
               {catalysts.length > 0 && (
                 <div className="rounded-lg border border-edge overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Next Catalysts</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">What Moves It Next</p>
                   </div>
                   <div className="divide-y divide-edge/50">
                     {catalysts.map((cat, i) => (
@@ -1307,7 +1420,7 @@ function ThemeDetailDrawer({
                   <div className="flex items-stretch gap-0">
                     {/* Drivers */}
                     <div className="flex-1 bg-raised px-3 py-3">
-                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Driver</p>
+                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Root Cause</p>
                       <div className="space-y-1">
                         {upstream.slice(0, 3).map(u => (
                           <p key={u} className="text-[11.5px] text-ink-secondary font-medium">{cleanMacroLabel(u)}</p>
@@ -1352,7 +1465,7 @@ function ThemeDetailDrawer({
                   <div className="flex items-center gap-2">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Lifecycle</p>
                     <span className="text-[9px] font-semibold" style={{ color: THEME_LIFECYCLE_META[lcStage].color }}>
-                      — {THEME_LIFECYCLE_META[lcStage].label}
+                      · {THEME_LIFECYCLE_META[lcStage].label}
                     </span>
                   </div>
                 </div>
@@ -1439,8 +1552,10 @@ function themePrimaryDriver(t: ThemeIntelligence): string {
 }
 
 function shortRisk(t: ThemeIntelligence): string {
-  const r = deriveKeyRisk(t).split(/[—,:]/)[0].trim();
-  return r.length > 46 ? r.slice(0, 44).trimEnd() + "…" : r;
+  const r = deriveKeyRisk(t).replace(/\.$/, "").trim();
+  if (r.length <= 50) return r;
+  const cut = r.slice(0, 48);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), 32)).trim() + "…";
 }
 
 function ThemeCommandCenter({ themes, onThemeClick }: {
@@ -1464,16 +1579,18 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
           const mm    = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
           const conf  = t.confidence ?? 0;
           const d     = t.momentum_delta ?? 0;
-          const benef = (t.related_assets ?? []).filter(a => /^[A-Z.]{1,6}$/.test(a)).slice(0, 3);
+          const benef  = themeBeneficiaries(t, 3);
+          const losers = themeLosers(t, 3);
           return (
             <button key={t.id} onClick={() => onThemeClick(t)}
               className="text-left rounded-lg border border-edge bg-surface flex items-center gap-3 pl-3 pr-3 py-2
                          group transition-colors hover:border-edge-strong hover:bg-raised/40"
               style={{ borderLeft: `3px solid ${mm.color}` }}>
-              {/* BIG conviction */}
-              <div className="flex flex-col items-center w-9 shrink-0">
-                <span className="text-[26px] font-black tabular-nums leading-none" style={{ color: confColor(conf) }}>{conf}</span>
-                <span className="text-[6px] uppercase tracking-wider text-ink-muted/40 mt-px">conv</span>
+              {/* BIG conviction — rounded, with the evidence that justifies it */}
+              <div className="flex flex-col items-center w-12 shrink-0">
+                <span className="text-[26px] font-black tabular-nums leading-none" style={{ color: confColor(conf) }}>{convScore(conf)}</span>
+                <span className="text-[6px] uppercase tracking-wider text-ink-muted/40 mt-px">conviction</span>
+                {convBasis(t) && <span className="text-[6.5px] text-ink-muted/45 tabular-nums leading-tight text-center mt-0.5">{convBasis(t)}</span>}
               </div>
               <div className="min-w-0 flex-1">
                 {/* name + momentum delta + horizon */}
@@ -1490,15 +1607,31 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
                 <div className="flex items-center gap-1.5 mt-0.5 text-[8.5px]">
                   <span className="font-bold uppercase tracking-wide" style={{ color: mm.color }}>{mm.label}</span>
                   <span className="text-ink-muted/25">·</span>
-                  <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Driver</span> {themePrimaryDriver(t)}</span>
+                  <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Catalyst</span> {themePrimaryDriver(t)}</span>
                 </div>
-                {/* beneficiaries + risk */}
-                <div className="flex items-center gap-2 mt-px text-[8px] min-w-0">
+                {/* who wins / who loses — prominent tickers */}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
                   {benef.length > 0 && (
-                    <span className="shrink-0"><span className="text-ink-muted/35">Benefits</span>{" "}
-                      <span className="font-semibold tabular-nums text-ink-secondary">{benef.join(" · ")}</span></span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-[6.5px] font-bold uppercase tracking-wide text-emerald-600/55">Wins</span>
+                      {benef.map(tk => (
+                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">{tk}</span>
+                      ))}
+                    </span>
                   )}
-                  <span className="text-ink-muted/40 truncate"><span className="text-amber-500/50">Risk</span> {shortRisk(t)}</span>
+                  {losers && (
+                    <span className="flex items-center gap-1">
+                      <span className="text-[6.5px] font-bold uppercase tracking-wide text-red-500/55">Loses</span>
+                      {losers.tickers.map(tk => (
+                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-red-500/8 text-red-600/90 border border-red-500/15">{tk}</span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+                {/* what changes the view */}
+                <div className="flex items-center gap-1 mt-px text-[8px] min-w-0">
+                  <span className="text-amber-500/50 font-bold uppercase tracking-wide shrink-0">Watch</span>
+                  <span className="text-ink-muted/45 truncate">{shortRisk(t)}</span>
                 </div>
               </div>
             </button>
@@ -1513,91 +1646,86 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
 
 // ── Transmission Map (market causality — the signature view) ──────────────────
 
-function transmitVerb(downstream?: ThemeIntelligence): string {
-  if (!downstream) return "drives";
-  return downstream.momentum_direction === "bullish" ? "lifts"
-       : downstream.momentum_direction === "bearish" ? "pressures" : "drives";
+function ChainStage({ caption, tone, children }: { caption: string; tone: string; children: React.ReactNode }) {
+  return (
+    <div className="shrink-0 rounded-md border border-edge bg-raised/40 px-2.5 py-1.5 flex flex-col justify-center min-w-[88px]">
+      <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] mb-0.5" style={{ color: tone }}>{caption}</p>
+      <p className="text-[11.5px] font-bold text-ink leading-tight">{children}</p>
+    </div>
+  );
 }
 
+function ChainArrow({ color }: { color: string }) {
+  return (
+    <div className="shrink-0 flex items-center px-0.5 self-center">
+      <span className="text-[15px] font-black leading-none" style={{ color, opacity: 0.7 }}>→</span>
+    </div>
+  );
+}
+
+// Transmission Map: a true causal chain ending in tradeable securities —
+// Macro Driver → Theme → Sector → Securities. Built from structured fields
+// (related_macro_factors, name, related_industries, themeBeneficiaries) rather
+// than parsed prose, so every chain terminates in instruments.
 function ThemeTransmission({ themes, onNodeClick }: {
   themes:      ThemeIntelligence[];
   onNodeClick: (t: ThemeIntelligence) => void;
 }) {
   const chains = useMemo(() => {
-    const byName = new Map(themes.map(t => [t.name, t]));
-    const seen   = new Set<string>();
-    const out: Array<Array<{ theme?: ThemeIntelligence; label: string }>> = [];
-    for (const t of [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))) {
-      const cn = t.causal_narrative ?? "";
-      if (!cn.includes("→")) continue;
-      const parts = cn.split("→").map(s => s.trim()).filter(Boolean);
-      if (parts.length < 2) continue;
-      const key = parts.join("|");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(parts.map(p => ({ theme: byName.get(p), label: cleanThemeName(p) })));
-      if (out.length >= 3) break;
-    }
-    // longest, most-developed chains first
-    return out.sort((a, b) => b.length - a.length);
+    return [...themes]
+      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+      .map(t => {
+        const sectors = t.related_industries ?? [];
+        const sector  = sectors.find(s => t.relationship_weights?.[s]?.direction === "positive") ?? sectors[0] ?? null;
+        const macro   = (t.related_macro_factors ?? [])[0] ?? null;
+        return { t, macro: macro ? cleanMacroLabel(macro) : null, sector, tickers: themeBeneficiaries(t, 3) };
+      })
+      .filter(c => c.sector && c.tickers.length > 0)
+      .slice(0, 5);
   }, [themes]);
 
   if (chains.length === 0) return null;
 
-  const dirColor = (t?: ThemeIntelligence) =>
-    t?.momentum_direction === "bullish" ? "#10b981"
-    : t?.momentum_direction === "bearish" ? "#ef4444" : "#64748b";
+  const dirColor = (t: ThemeIntelligence) =>
+    t.momentum_direction === "bullish" ? "#10b981"
+    : t.momentum_direction === "bearish" ? "#ef4444" : "#64748b";
 
   return (
     <div className="mb-4">
       <SectionHeader label="Transmission Map" icon={<Network size={11} className="text-accent shrink-0" />}
-        sub="how it spreads — trace the causal chain" />
-      <div className="rounded-xl border border-edge bg-surface p-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {chains.map((chain, ci) => (
-          <div key={ci} className="flex flex-col items-stretch">
-            {chain.map((node, ni) => {
-              const t    = node.theme;
-              const clr  = dirColor(t);
-              const conf = t?.confidence ?? 0;
-              return (
-                <div key={ni}>
-                  <button
-                    onClick={() => t && onNodeClick(t)}
-                    disabled={!t}
-                    title={t ? `${cleanThemeName(t.name)} · ${conf}% conviction` : node.label}
-                    className={cn(
-                      "w-full text-left rounded-lg border px-3 py-2 transition-colors",
-                      t ? "hover:bg-raised border-edge hover:border-edge-strong cursor-pointer"
-                        : "bg-transparent border-dashed border-edge/50 opacity-60 cursor-default",
-                    )}
-                    style={{
-                      borderLeft: `3px solid ${clr}`,
-                      background: t ? `linear-gradient(90deg, ${clr}${conf >= 75 ? "24" : conf >= 50 ? "18" : "10"}, transparent 72%)` : undefined,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[12.5px] font-bold text-ink leading-tight">{node.label}</span>
-                      {t && <span className="text-[13px] font-black tabular-nums shrink-0" style={{ color: confColor(conf) }}>{conf}</span>}
-                    </div>
-                    {ni === 0 && <span className="text-[6.5px] uppercase tracking-[0.18em] text-ink-muted/45">root cause</span>}
-                    {ni === chain.length - 1 && ni > 0 && <span className="text-[6.5px] uppercase tracking-[0.18em] text-ink-muted/45">outcome</span>}
-                  </button>
-                  {ni < chain.length - 1 && (() => {
-                    const ac = dirColor(chain[ni + 1].theme);
-                    return (
-                      <div className="flex flex-col items-center -my-px">
-                        <span className="w-px h-2" style={{ background: ac, opacity: 0.45 }} />
-                        <span className="flex items-center justify-center w-4 h-4 rounded-full text-[11px] font-black leading-none"
-                          style={{ color: ac, background: `${ac}1f`, border: `1px solid ${ac}40` }}>↓</span>
-                        <span className="text-[7px] italic mt-px" style={{ color: ac, opacity: 0.85 }}>{transmitVerb(chain[ni + 1].theme)}</span>
-                      </div>
-                    );
-                  })()}
+        sub="macro driver to security, cause to effect" />
+      <div className="rounded-xl border border-edge bg-surface divide-y divide-edge/50">
+        {chains.map((c, ci) => {
+          const clr = dirColor(c.t);
+          return (
+            <div key={ci} className="px-3 py-2.5 flex items-stretch gap-1 overflow-x-auto">
+              {/* Macro Driver */}
+              <ChainStage caption="Macro Driver" tone="#818cf8">{c.macro ?? "Macro backdrop"}</ChainStage>
+              <ChainArrow color={clr} />
+              {/* Theme — clickable */}
+              <button onClick={() => onNodeClick(c.t)}
+                className="shrink-0 text-left rounded-md border px-2.5 py-1.5 hover:bg-raised transition-colors min-w-[112px]"
+                style={{ borderColor: `${clr}55`, background: `${clr}12` }}>
+                <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] mb-0.5" style={{ color: clr, opacity: 0.85 }}>Theme</p>
+                <p className="text-[12px] font-bold text-ink leading-tight">{cleanThemeName(c.t.name)}</p>
+                <p className="text-[7px] tabular-nums mt-0.5" style={{ color: clr }}>{convScore(c.t.confidence ?? 0)} conviction</p>
+              </button>
+              <ChainArrow color={clr} />
+              {/* Sector */}
+              <ChainStage caption="Sector" tone="#64748b">{c.sector}</ChainStage>
+              <ChainArrow color={clr} />
+              {/* Securities — the expression */}
+              <div className="shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 py-1.5 flex flex-col justify-center">
+                <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-emerald-700/70 mb-0.5">Securities</p>
+                <div className="flex items-center gap-1">
+                  {c.tickers.map(tk => (
+                    <span key={tk} className="text-[11px] font-black tabular-nums text-emerald-700">{tk}</span>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1618,6 +1746,7 @@ type SectorPosition = {
   supportive: number;       // themes aligned with the net direction
   risk:       string;
   exposures:  string[];
+  expressWhy: string;       // concrete reason to own the expressions
   whyBullets: string[];
   horizon:    string;       // lead theme's time horizon
   leadDelta:  number;       // lead theme momentum delta (conviction trend)
@@ -1657,7 +1786,8 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
     const wk  = list.filter(t => t.momentum_label === "cooling" || t.momentum_label === "reversing").length;
     const trend = imp > wk ? "Improving" : wk > imp ? "Weakening" : "Stable";
     const trendColor = imp > wk ? "#10b981" : wk > imp ? "#ef4444" : "#94a3b8";
-    const exposures: string[] = [];
+    const be = bestExpressions(list[0]);
+    const exposures: string[] = be?.tickers ? [...be.tickers] : [];
     for (const t of list.slice(0, 3)) for (const a of (t.related_assets ?? [])) {
       if (a && !exposures.includes(a) && /^[A-Z.]{1,6}$/.test(a)) exposures.push(a);
     }
@@ -1666,6 +1796,7 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
       drivers: list.slice(0, 2).map(t => cleanThemeName(t.name)),
       trend, trendColor, count: list.length, supportive, risk: deriveKeyRisk(list[0]),
       exposures: exposures.slice(0, 4),
+      expressWhy: be?.why ?? "",
       whyBullets: generateWhyItMattersNow(list[0]).slice(0, 3),
       horizon: timeBucket(list[0]), leadDelta: list[0].momentum_delta ?? 0,
     });
@@ -1704,10 +1835,10 @@ function SectorPositioning({ themes }: { themes: ThemeIntelligence[] }) {
                 <span className="text-[12px] font-bold text-ink truncate flex-1">{p.sector}</span>
                 <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
                   style={{ color: dm.color, background: `${dm.color}15` }}>{dm.label}</span>
-                <span className="text-[14px] font-black tabular-nums shrink-0" style={{ color: confColor(p.conviction) }}>{p.conviction}</span>
+                <span className="text-[14px] font-black tabular-nums shrink-0" style={{ color: confColor(p.conviction) }}>{convScore(p.conviction)}</span>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap text-[8.5px] pl-7">
-                <span className="text-ink-muted/40">Drivers</span>
+                <span className="text-ink-muted/40">Driven By</span>
                 <span className="font-semibold text-ink-secondary">{p.drivers[0]}</span>
                 {p.drivers[1] && <><span className="text-ink-muted/20">·</span><span className="text-ink-muted/70">{p.drivers[1]}</span></>}
               </div>
@@ -1715,6 +1846,13 @@ function SectorPositioning({ themes }: { themes: ThemeIntelligence[] }) {
                 <span className="tabular-nums text-ink-muted/60"><span className="font-bold text-ink-secondary">{p.supportive} of {p.count}</span> supportive</span>
                 <span className="text-ink-muted/20">·</span>
                 <span className="font-semibold" style={{ color: p.trendColor }}>{p.trend}</span>
+                {p.exposures.length > 0 && (
+                  <span className="ml-auto flex items-center gap-1">
+                    {p.exposures.slice(0, 3).map(tk => (
+                      <span key={tk} className="text-[9px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-700/90 border border-emerald-500/20">{tk}</span>
+                    ))}
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -1754,7 +1892,7 @@ function HighestConvictionOpportunities({ themes }: { themes: ThemeIntelligence[
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[13px] font-black uppercase tracking-wide text-ink truncate">{p.sector}</span>
               <span className="flex items-baseline gap-1 shrink-0">
-                <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: "#10b981" }}>{p.conviction}</span>
+                <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: "#10b981" }}>{convScore(p.conviction)}</span>
                 <span className="text-[7px] uppercase tracking-wide text-ink-muted/45">conviction</span>
               </span>
             </div>
@@ -1773,26 +1911,29 @@ function HighestConvictionOpportunities({ themes }: { themes: ThemeIntelligence[
               </div>
             </OppBlock>
 
-            <OppBlock label="Why It Matters" color="rgba(16,185,129,0.6)">
+            <OppBlock label="Why Investors Care" color="rgba(16,185,129,0.6)">
               <ul className="space-y-0.5">
                 {p.whyBullets.map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-[9.5px] text-ink-secondary leading-snug">
                     <span className="shrink-0 mt-[4px] w-1 h-1 rounded-full bg-emerald-500/60" />
-                    {b.length > 64 ? b.slice(0, 62).trimEnd() + "…" : b}
+                    <span className="line-clamp-2">{b}</span>
                   </li>
                 ))}
               </ul>
             </OppBlock>
 
-            <OppBlock label="Risk" color="rgba(245,158,11,0.65)">
+            <OppBlock label="What Could Break It" color="rgba(245,158,11,0.65)">
               <p className="text-[9px] text-ink-muted/70 leading-snug line-clamp-2">{p.risk}</p>
             </OppBlock>
 
             {p.exposures.length > 0 && (
-              <OppBlock label="Key Exposures">
-                <span className="text-[10px] font-bold tabular-nums text-ink-secondary tracking-wide">
-                  {p.exposures.join("  •  ")}
-                </span>
+              <OppBlock label="Best Expressions">
+                <div className="flex items-center gap-1 flex-wrap">
+                  {p.exposures.map(tk => (
+                    <span key={tk} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">{tk}</span>
+                  ))}
+                </div>
+                {p.expressWhy && <p className="text-[8.5px] text-ink-muted/60 leading-snug mt-1">{p.expressWhy}</p>}
               </OppBlock>
             )}
           </div>

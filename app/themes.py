@@ -180,7 +180,7 @@ def score_cluster(cluster: StoryCluster, now: datetime | None = None) -> float:
 
 
 def _cross_asset_score(cluster: StoryCluster) -> float:
-    """Return 0–1 reflecting how broadly the theme spans asset classes."""
+    """Return 0-1 reflecting how broadly the theme spans asset classes."""
     p = cluster.primary
     score = 0.0
 
@@ -282,21 +282,21 @@ def _make_thesis(cluster: StoryCluster) -> str:
     if cat == "Geopolitical":
         return (
             f"{ent_str} tensions drive risk-off flows, pressuring equities and lifting safe-haven demand." if ent_str
-            else "Geopolitical escalation drives risk-off positioning — safe havens bid, risk assets pressured."
+            else "Geopolitical escalation drives risk-off positioning. Safe havens bid, risk assets pressured."
         )
     if cat == "M&A":
         return (
             f"Deal activity in {ent_str} signals sector re-rating and forces multiple repricing across peers." if ent_str
-            else "M&A signals sector re-rating — forces multiple repricing and lifts strategic premium expectations."
+            else "M&A signals sector re-rating. Forces multiple repricing and lifts strategic premium expectations."
         )
     if cat == "Markets":
         return (
-            f"Broad {ent_str} moves reflect macro repricing — triggers positioning shifts across asset classes." if ent_str
-            else "Macro repricing drives cross-asset positioning shifts — risk appetite and credit spreads in focus."
+            f"Broad {ent_str} moves reflect macro repricing. Triggers positioning shifts across asset classes." if ent_str
+            else "Macro repricing drives cross-asset positioning shifts. Risk appetite and credit spreads in focus."
         )
     if ent_str:
         return f"Developments at {ent_str} trigger sector repricing and pressure related exposures."
-    return "Cross-asset theme driving positioning shifts — monitor for macro spillover."
+    return "Cross-asset theme driving positioning shifts. Monitor for macro spillover."
 
 
 def _make_reason(cluster: StoryCluster) -> str:

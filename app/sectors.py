@@ -429,13 +429,13 @@ _INDUSTRY_DESCRIPTOR: dict[str, str] = {
 # industry always gets the same template, but different industries read differently.
 _NARRATIVE_VARIANTS: dict[tuple[str, str], list[str]] = {
     ("bullish", "tailwind"): [
-        "{d} is accelerating — macro tailwinds and fundamental signals are converging to lift institutional positioning.",
+        "{d} is accelerating. Macro tailwinds and fundamental signals are converging to lift institutional positioning.",
         "Capital continues rotating into {d} as regime conditions align with strengthening underlying catalysts.",
         "Positioning in {d} is gaining momentum with cross-asset confirmation reinforcing the primary thesis.",
     ],
     ("bullish", "headwind"): [
         "{d} is pressing higher on fundamental strength despite macro headwinds weighing on broader sector sentiment.",
-        "Forward expectations for {d} remain constructive — structural demand is overriding current cycle friction.",
+        "Forward expectations for {d} remain constructive. Structural demand is overriding current cycle friction.",
         "Markets are increasingly pricing in a {d} re-rating, with underlying drivers outpacing regime concerns.",
     ],
     ("bullish", "neutral"): [
@@ -444,34 +444,34 @@ _NARRATIVE_VARIANTS: dict[tuple[str, str], list[str]] = {
         "Positioning suggests {d} is attracting institutional attention on bottom-up fundamental strength.",
     ],
     ("bearish", "tailwind"): [
-        "{d} is retreating despite supportive macro conditions — a mean-reversion setup is developing.",
-        "Cross-asset behavior implies {d} weakness is idiosyncratic — regime tailwinds make a reversal more likely.",
+        "{d} is retreating despite supportive macro conditions. A mean-reversion setup is developing.",
+        "Cross-asset behavior implies {d} weakness is idiosyncratic. Regime tailwinds make a reversal more likely.",
         "Despite a constructive macro backdrop, {d} is facing profit-taking and near-term sentiment deterioration.",
     ],
     ("bearish", "headwind"): [
         "{d} faces compounding pressure as macro headwinds reinforce deteriorating fundamental signals.",
-        "The narrative is reinforcing against {d} — regime and sector signals are aligned to the downside.",
+        "The narrative is reinforcing against {d}. Regime and sector signals are aligned to the downside.",
         "Forward expectations remain sensitive to further {d} weakness as both macro and fundamental pressures build.",
     ],
     ("bearish", "neutral"): [
         "{d} is pulling back on profit-taking and a softening near-term outlook.",
-        "Positioning in {d} is consolidating lower — the near-term thesis is under review without macro conviction.",
+        "Positioning in {d} is consolidating lower. The near-term thesis is under review without macro conviction.",
         "{d} is encountering distribution pressure as sentiment softens ahead of catalyst clarity.",
     ],
     ("neutral", "tailwind"): [
-        "{d} is consolidating within a constructive macro backdrop — awaiting a specific catalyst to catalyse flow.",
+        "{d} is consolidating within a constructive macro backdrop. Awaiting a specific catalyst to catalyse flow.",
         "Macro tailwinds are present but {d} lacks the directional conviction to attract incremental capital.",
-        "Forward flows into {d} are pausing — the structural thesis is intact but near-term triggers are absent.",
+        "Forward flows into {d} are pausing. The structural thesis is intact but near-term triggers are absent.",
     ],
     ("neutral", "headwind"): [
         "{d} is navigating macro headwinds with limited directional conviction from institutional positioning.",
         "Cross-asset pressure is weighing on {d} sentiment, but no decisive breakdown has emerged.",
-        "Markets are pricing in {d} uncertainty — positioning is defensive and the risk/reward is unclear.",
+        "Markets are pricing in {d} uncertainty. Positioning is defensive and the risk/reward is unclear.",
     ],
     ("neutral", "neutral"): [
         "{d} shows mixed signals with no clear institutional positioning bias at current levels.",
-        "The {d} narrative is fragmented — no dominant macro or fundamental theme is driving capital allocation.",
-        "Forward expectations for {d} are balanced — investors are awaiting clearer signal confirmation.",
+        "The {d} narrative is fragmented. No dominant macro or fundamental theme is driving capital allocation.",
+        "Forward expectations for {d} are balanced. Investors are awaiting clearer signal confirmation.",
     ],
 }
 
@@ -722,7 +722,7 @@ def _detect_rotation(
             from_sector = "Industrials",
             to_sector   = "Technology",
             confidence  = round(conf, 2),
-            reason      = f"Technology ({tech:.0f}) dominates — AI/semiconductor cycle in progress",
+            reason      = f"Technology ({tech:.0f}) dominates. AI/semiconductor cycle in progress",
             pattern     = "ai-cycle",
         ))
 

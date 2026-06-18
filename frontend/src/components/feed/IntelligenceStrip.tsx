@@ -107,8 +107,8 @@ const FILLER_SUBS: [RegExp, string][] = [
 /** Final defensive pass before any public-facing narrative string is rendered. */
 function sanitize(text: string): string {
   let s = text;
-  s = s.replace(/ — /g, ", ");
-  s = s.replace(/—/g, "");
+  s = s.replace(/ .  /g, ", ");
+  s = s.replace(/. /g, "");
   for (const label of THEME_LABEL_BLOCKLIST) {
     s = s.replace(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "this driver");
   }
@@ -241,7 +241,7 @@ function deriveOpportunityExplanation(theme: ThemeIntelligence): string {
     if (persist >= 5)
       return `${ind0} has seen ${persist} consecutive periods of earnings upgrades without reverting. The trend has duration and is not a single-quarter anomaly.`;
     if (breadth >= 70)
-      return `${ind0} is benefiting with unusually broad participation — earnings improvement is distributed across the sector rather than concentrated in a few names.`;
+      return `${ind0} is benefiting with unusually broad participation. Earnings improvement is distributed across the sector rather than concentrated in a few names.`;
     return `${ind0} earnings estimates are being revised higher, with both top-line growth and margin assumptions moving in the same direction.`;
   }
 
@@ -545,7 +545,7 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
       }}
     >
 
-      {/* ══ SECTION 1 — Market Regime (evidence-first) ════════════════════════ */}
+      {/* ══ SECTION 1. Market Regime (evidence-first) ════════════════════════ */}
       <div className="px-5 pt-5 pb-4" style={DIV}>
 
         {/* Label row: regime chip + conviction tier */}
@@ -572,7 +572,7 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
           </span>
         </div>
 
-        {/* Evidence grid — lead with the data, not the narrative */}
+        {/* Evidence grid. Lead with the data, not the narrative */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mb-3.5">
           <RegimeEvidence
             label="Bullish Sectors" accent="#10B981"
@@ -606,7 +606,7 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
 
       </div>
 
-      {/* ══ SECTION 2 — What Changed Today ════════════════════════════════════ */}
+      {/* ══ SECTION 2. What Changed Today ════════════════════════════════════ */}
       {(changesUp.length > 0 || changesDown.length > 0) && (
         <div className="px-5 py-3" style={DIV}>
           <p
@@ -627,7 +627,7 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
         </div>
       )}
 
-      {/* ══ SECTION 3 — Opportunities vs Risks ════════════════════════════════ */}
+      {/* ══ SECTION 3. Opportunities vs Risks ════════════════════════════════ */}
       <div style={{ ...DIV, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
 
         {/* Opportunities */}
@@ -662,7 +662,7 @@ export function IntelligenceStrip({ themes, prefs }: IntelligenceStripProps) {
 
       </div>
 
-      {/* ══ SECTION 4 — Rotation Dashboard ═══════════════════════════════════ */}
+      {/* ══ SECTION 4. Rotation Dashboard ═══════════════════════════════════ */}
       {(leaders.length > 0 || laggards.length > 0) && (
         <div style={{ ...DIV, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
 
@@ -768,7 +768,7 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
 
   return (
     <div>
-      {/* Industry / sector — dominant, actionable title */}
+      {/* Industry / sector. Dominant, actionable title */}
       <p
         className="font-semibold leading-snug mb-1"
         style={{ fontSize: "13px", color: "rgba(255,255,255,0.94)", letterSpacing: "-0.01em" }}
@@ -782,7 +782,7 @@ function ThemeEntry({ theme, isOpp }: { theme: ThemeIntelligence; isOpp: boolean
       >
         {explanation}
       </p>
-      {/* Public driver label — never exposes raw internal theme name */}
+      {/* Public driver label. Never exposes raw internal theme name */}
       <p
         className="text-[9px] font-medium truncate"
         style={{ color: "rgba(255,255,255,0.32)" }}

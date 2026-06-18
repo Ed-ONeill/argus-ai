@@ -209,7 +209,7 @@ export function detectContradictions(
           type:        "regime-misalignment",
           severity:    "moderate",
           label:       `${t.name} vs ${riskRegime === "risk-off" ? "Risk-Off" : "High-Vol"} Regime`,
-          description: `Bullish accelerating theme active while market regime is ${riskRegime === "risk-off" ? "risk-off" : "high volatility"} — conviction may fade.`,
+          description: `Bullish accelerating theme active while market regime is ${riskRegime === "risk-off" ? "risk-off" : "high volatility"}. Conviction may fade.`,
           themeIds:    [t.id],
         });
       }
@@ -306,21 +306,21 @@ export function explainMAActivity(
   if (creditOpen) {
     parts.push(`Compressed credit spreads are enabling leveraged financing at competitive rates.`);
   } else if (creditTight) {
-    parts.push(`Deal activity is persisting despite tightened credit conditions — buyers are prioritizing all-equity or lower-leverage structures.`);
+    parts.push(`Deal activity is persisting despite tightened credit conditions. Buyers are prioritizing all-equity or lower-leverage structures.`);
   }
 
   // Characterise buyer mix
   if (sponsorCount > 0 && strategicCount > 0) {
-    parts.push(`Both strategic acquirers (${strategicCount}) and PE sponsors (${sponsorCount}) are active — broad-based deal appetite rather than opportunistic buying.`);
+    parts.push(`Both strategic acquirers (${strategicCount}) and PE sponsors (${sponsorCount}) are active. Broad-based deal appetite rather than opportunistic buying.`);
   } else if (sponsorCount > strategicCount) {
-    parts.push(`Sponsor-led activity is dominant (${sponsorCount} PE-backed deals) — private equity is deploying dry powder into motivated sellers.`);
+    parts.push(`Sponsor-led activity is dominant (${sponsorCount} PE-backed deals). Private equity is deploying dry powder into motivated sellers.`);
   } else if (strategicCount > 0) {
-    parts.push(`Strategic acquirers are leading (${strategicCount} deals) — corporate balance sheets funding transactions without leverage dependency.`);
+    parts.push(`Strategic acquirers are leading (${strategicCount} deals). Corporate balance sheets funding transactions without leverage dependency.`);
   }
 
   // Rumor signal
   if (rumoredCount > 2) {
-    parts.push(`Elevated rumor activity (${rumoredCount} reported deals) indicates buyer interest ahead of formal processes — expect announcement flow to follow.`);
+    parts.push(`Elevated rumor activity (${rumoredCount} reported deals) indicates buyer interest ahead of formal processes. Expect announcement flow to follow.`);
   }
 
   // Causal narrative from themes (the "why" layer)
@@ -336,7 +336,7 @@ export function explainMAActivity(
 
   return parts.length > 0
     ? parts.join(" ")
-    : `${deals.length} deals active — ${maLayer.signal.toLowerCase()} environment with ${creditLayer.signal.toLowerCase()} credit conditions.`;
+    : `${deals.length} deals active, ${maLayer.signal.toLowerCase()} environment with ${creditLayer.signal.toLowerCase()} credit conditions.`;
 }
 
 // ── 5. Market Breadth Snapshot ────────────────────────────────────────────────
@@ -486,10 +486,10 @@ function bestAlertForTheme(theme: ThemeIntelligence): IntelligenceAlert | null {
     return mk("major", "up", `Signal accelerating sharply (+${delta.toFixed(0)}), breadth expanding into ${ind0}`);
   }
   if (delta <= -15 || momentum === "reversing") {
-    return mk("major", "down", `Signal reversal underway (${delta.toFixed(0)} delta) — ${persist < 40 ? "low persistence increases downside risk" : "persistence provides partial support"}`);
+    return mk("major", "down", `Signal reversal underway (${delta.toFixed(0)} delta), ${persist < 40 ? "low persistence increases downside risk" : "persistence provides partial support"}`);
   }
   if (confirmed && delta > 8) {
-    return mk("major", "up", `Cross-category confirmation triggered with +${delta.toFixed(0)} delta — broadening beyond primary sector`);
+    return mk("major", "up", `Cross-category confirmation triggered with +${delta.toFixed(0)} delta. Broadening beyond primary sector`);
   }
 
   // ── NOTABLE ────────────────────────────────────────────────────────────────
@@ -498,16 +498,16 @@ function bestAlertForTheme(theme: ThemeIntelligence): IntelligenceAlert | null {
     return mk("notable", "up", `Breadth expanded across ~${indCount} industries with ${delta > 0 ? "+" : ""}${delta.toFixed(0)} delta`);
   }
   if (persist >= 80 && delta >= 0) {
-    return mk("notable", "up", `Persistence crossed 80th percentile — ${Math.round(persist)} score suggests structural theme formation`);
+    return mk("notable", "up", `Persistence crossed 80th percentile, ${Math.round(persist)} score suggests a durable, structurally embedded trend`);
   }
   if (delta >= 8) {
     return mk("notable", "up", `${ind0} exposure increased materially (+${delta.toFixed(0)} signal delta)`);
   }
   if (breadth < 28 && delta < -5) {
-    return mk("notable", "down", `Breadth narrowing (score: ${Math.round(breadth)}) with negative delta — watch for sector exit`);
+    return mk("notable", "down", `Breadth narrowing (score: ${Math.round(breadth)}) with negative delta. Watch for sector exit`);
   }
   if (stories <= 2 && delta < -5) {
-    return mk("notable", "down", `Story activity declining — ${stories} active ${stories === 1 ? "source" : "sources"} remaining with ${delta.toFixed(0)} delta`);
+    return mk("notable", "down", `Story activity declining, ${stories} active ${stories === 1 ? "source" : "sources"} remaining with ${delta.toFixed(0)} delta`);
   }
 
   // ── MINOR ──────────────────────────────────────────────────────────────────
@@ -515,7 +515,7 @@ function bestAlertForTheme(theme: ThemeIntelligence): IntelligenceAlert | null {
     return mk("minor", "up", `Momentum strengthening (+${delta.toFixed(0)}) in ${ind0}`);
   }
   if (momentum === "cooling" && delta <= -7) {
-    return mk("minor", "down", `Cooling signal in ${ind0} (${delta.toFixed(0)} delta) — monitor for reversal confirmation`);
+    return mk("minor", "down", `Cooling signal in ${ind0} (${delta.toFixed(0)} delta). Monitor for reversal confirmation`);
   }
 
   return null;
@@ -574,7 +574,7 @@ const CATALYST_RULES: Array<{
     regex:          /\bnvda\b|nvidia|\bgpu\b|data center capacity/,
     label:          "NVDA Earnings",
     getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
-    getReason:      _t => "Capex guidance is the leading indicator for downstream AI infrastructure demand — directly links to this theme's beneficiary thesis",
+    getReason:      _t => "Capex guidance is the leading indicator for downstream AI infrastructure demand. Directly links to this theme's beneficiary thesis",
     getSensitivity: _t => "High",
   },
   {
@@ -605,7 +605,7 @@ const CATALYST_RULES: Array<{
     regex:          /jobs|payroll|unemployment|labor market/,
     label:          "Nonfarm Payrolls",
     getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
-    getReason:      _t => "Labor market resilience sustains consumer demand visibility — a beat validates the top-line revenue assumptions embedded in this theme",
+    getReason:      _t => "Labor market resilience sustains consumer demand visibility. A beat validates the top-line revenue assumptions embedded in this theme",
     getSensitivity: _t => "Medium",
   },
   {
@@ -619,14 +619,14 @@ const CATALYST_RULES: Array<{
     regex:          /semiconductor|chip|tsmc|asml|fab/,
     label:          "Semiconductor Earnings",
     getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
-    getReason:      _t => "Order backlog and capex guidance determines whether the supply cycle is inflecting — the clearest leading indicator for this theme's duration",
+    getReason:      _t => "Order backlog and capex guidance determines whether the supply cycle is inflecting. The clearest leading indicator for this theme's duration",
     getSensitivity: _t => "High",
   },
   {
     regex:          /\bmsft\b|microsoft|azure|cloud spending/,
     label:          "Cloud Earnings (MSFT/AMZN)",
     getDir:         _t => "confirming",
-    getReason:      _t => "Enterprise AI and cloud spend growth rate is the primary validation signal for the infrastructure buildout thesis — a miss would reduce conviction materially",
+    getReason:      _t => "Enterprise AI and cloud spend growth rate is the primary validation signal for the infrastructure buildout thesis. A miss would reduce conviction materially",
     getSensitivity: _t => "High",
   },
 ];
@@ -714,7 +714,7 @@ export function generateBullBearCases(theme: ThemeIntelligence): BullBearCases {
 
   // neutral
   return {
-    bull: `A decisive catalyst from ${macros[0] ?? "macro data"} could resolve current ambiguity in favor of ${ind0}. Breadth expansion would confirm the directional shift.`,
+    bull: `A decisive catalyst from ${macros[0] ?? "macro data"} could resolve the current ambiguity in favor of ${ind0}. Breadth expansion would confirm which way the theme resolves.`,
     bear: `Without a resolution in ${driver}, ${name} remains in limbo. Extended neutral signal erodes conviction and risks capital rotation away from ${ind0}.`,
   };
 }
@@ -793,57 +793,57 @@ export function generateEvidenceItems(theme: ThemeIntelligence): EvidenceItem[] 
   const out: EvidenceItem[] = [];
 
   if (delta >= 14) {
-    out.push({ type: "positive", label: `Signal velocity is surging (+${Math.round(delta)}) — this is an institutional attention event, not incremental noise` });
+    out.push({ type: "positive", label: `Signal velocity is surging (+${Math.round(delta)}). This looks like an institutional attention event rather than incremental noise` });
   } else if (delta >= 6) {
     out.push({ type: "positive", label: `Positive signal drift (+${Math.round(delta)}) confirms the thesis is gaining traction above the noise floor` });
   }
 
   if (confirmed) {
     const note = ind1 ? `across ${ind0} and ${ind1}` : ind0 ? `into ${ind0}` : "beyond the primary sector";
-    out.push({ type: "positive", label: `Cross-category confirmation active — signal has propagated ${note}, reducing false-positive risk` });
+    out.push({ type: "positive", label: `Cross-category confirmation active. Signal has propagated ${note}, reducing false-positive risk` });
   }
 
   if (breadth >= 80) {
     const indNote = ind0 && ind1 ? `${ind0} and ${ind1}` : ind0 ? ind0 : "multiple sectors";
-    out.push({ type: "positive", label: `Demand is broadening across ${indNote} — this is thematic, not sector-specific` });
+    out.push({ type: "positive", label: `Demand is broadening across ${indNote}. This is thematic, not sector-specific` });
   } else if (breadth >= 58 && !confirmed) {
     const cnt  = Math.max(2, Math.round(breadth / 18));
     const note = ind0 && ind1 ? `${ind0} and ${ind1}` : ind0 ? ind0 : `${cnt} sectors`;
-    out.push({ type: "positive", label: `Exposure is expanding — ${note} both showing active participation` });
+    out.push({ type: "positive", label: `Exposure is expanding, ${note} both showing active participation` });
   }
 
   if (stories >= 10) {
-    out.push({ type: "positive", label: `Coverage density is high (${stories} active sources) — signal has institutional attention, not just retail noise` });
+    out.push({ type: "positive", label: `Coverage density is high (${stories} active sources). Signal has institutional attention, not just retail noise` });
   } else if (stories >= 5) {
-    out.push({ type: "positive", label: `${stories} active sources confirming — broad enough to rule out single-outlet bias` });
+    out.push({ type: "positive", label: `${stories} active sources confirming. Broad enough to rule out single-outlet bias` });
   } else if (stories >= 2) {
-    out.push({ type: "neutral", label: `${stories} sources in active coverage — adequate for monitoring, not broad confirmation` });
+    out.push({ type: "neutral", label: `${stories} sources in active coverage. Adequate for monitoring, not broad confirmation` });
   }
 
   if (cycles >= 8) {
-    out.push({ type: "positive", label: `${cycles}-cycle persistence classifies this as structurally embedded — not a news-cycle phenomenon` });
+    out.push({ type: "positive", label: `${cycles}-cycle persistence classifies this as structurally embedded. Not a news-cycle phenomenon` });
   } else if (cycles >= 4) {
-    out.push({ type: "positive", label: `${cycles} consecutive cycles of sustained signal — persistence is a structural characteristic, not survival bias` });
+    out.push({ type: "positive", label: `${cycles} consecutive cycles of sustained signal. Persistence is a structural characteristic, not survival bias` });
   }
 
   if (evidence >= 8) {
-    out.push({ type: "positive", label: `${evidence} independent evidence sources — corroboration depth supports higher conviction allocation` });
+    out.push({ type: "positive", label: `${evidence} independent evidence sources. Corroboration depth supports higher conviction allocation` });
   } else if (evidence >= 4) {
-    out.push({ type: "neutral", label: `${evidence} confirming sources — sufficient for thesis support, short of high-conviction threshold` });
+    out.push({ type: "neutral", label: `${evidence} confirming sources. Sufficient for thesis support, short of high-conviction threshold` });
   }
 
   if (momentum === "accelerating" && delta < 14) {
-    out.push({ type: "positive", label: `Acceleration confirmed in ${ind0 ?? "tracked sectors"} — early institutional positioning window is open` });
+    out.push({ type: "positive", label: `Acceleration confirmed in ${ind0 ?? "tracked sectors"}. Institutions appear to be positioning early` });
   } else if (momentum === "strengthening") {
-    out.push({ type: "positive", label: "Signal quality is improving — strengthening momentum reduces the probability this is noise" });
+    out.push({ type: "positive", label: "Signal quality is improving. Strengthening momentum reduces the probability this is noise" });
   }
 
   if (relCount >= 4) {
-    out.push({ type: "positive", label: `${relCount} confirmed cross-theme relationships — systematic exposure rather than isolated move` });
+    out.push({ type: "positive", label: `${relCount} confirmed links to related themes. Systematic exposure rather than isolated move` });
   }
 
   if (persist >= 78 && cycles < 4) {
-    out.push({ type: "positive", label: `Persistence score of ${Math.round(persist)} exceeds structural threshold — foundational characteristics present despite early stage` });
+    out.push({ type: "positive", label: `Persistence score of ${Math.round(persist)} exceeds structural threshold. Foundational characteristics present despite early stage` });
   }
 
   return out.slice(0, 5);
@@ -874,30 +874,30 @@ export function explainConviction(theme: ThemeIntelligence, conviction: number):
 
   if (breadth >= 65) {
     pos.push(
-      ind0 && ind1 ? `Broad participation — ${ind0} and ${ind1} both confirming` :
-      ind0         ? `Broad participation — ${ind0} and adjacent sectors confirming` :
+      ind0 && ind1 ? `Broad participation, ${ind0} and ${ind1} both confirming` :
+      ind0         ? `Broad participation, ${ind0} and adjacent sectors confirming` :
                      "Broad sector participation"
     );
   }
-  if (confirmed)                            pos.push("Cross-category confirmation — signal extends beyond primary sector");
-  if (persist >= 70)                        pos.push(`Persistence at ${Math.round(persist)} — signal has structural durability`);
-  if (stories >= 6)                         pos.push(`${stories} active sources — coverage depth supports thesis`);
-  if (evidence >= 5)                        pos.push(`${evidence} independent evidence points — corroboration is broad`);
-  if (theme.signal_strength === "strong")  pos.push("Strong signal classification — above institutional attention threshold");
-  if (delta >= 8)                           pos.push(`Accelerating delta (+${Math.round(delta)}) — momentum is building`);
-  if (cycles >= 5)                          pos.push(`${cycles}-cycle track record — structural credibility established`);
+  if (confirmed)                            pos.push("Cross-category confirmation. Signal extends beyond primary sector");
+  if (persist >= 70)                        pos.push(`Persistence at ${Math.round(persist)}. Signal has structural durability`);
+  if (stories >= 6)                         pos.push(`${stories} active sources. Coverage depth supports thesis`);
+  if (evidence >= 5)                        pos.push(`${evidence} independent evidence points. Corroboration is broad`);
+  if (theme.signal_strength === "strong")  pos.push("Strong signal classification. Above institutional attention threshold");
+  if (delta >= 8)                           pos.push(`Accelerating delta (+${Math.round(delta)}). Momentum is building`);
+  if (cycles >= 5)                          pos.push(`${cycles}-cycle track record. Structural credibility established`);
 
   if (breadth < 35) {
     neg.push(
-      ind0 ? `Confirmation concentrated in ${ind0} only — breadth not confirming` :
+      ind0 ? `Confirmation concentrated in ${ind0} only. Breadth has not yet confirmed the move` :
               "Sector participation is narrow"
     );
   }
-  if (persist < 30)   neg.push("Persistence below threshold — signal may not sustain");
-  if (evidence < 3)   neg.push("Thin evidence base — corroboration insufficient for high conviction");
-  if (penalty > 30)   neg.push("Signal crowding detected — alpha may be competed away");
-  if (stories <= 2)   neg.push("Low coverage depth — signal may be premature or noise");
-  if (delta < -8)     neg.push(`Declining velocity (${Math.round(delta)}) — thesis is losing momentum`);
+  if (persist < 30)   neg.push("Persistence below threshold. Signal may not sustain");
+  if (evidence < 3)   neg.push("Thin evidence base. Corroboration insufficient for high conviction");
+  if (penalty > 30)   neg.push("Signal crowding detected. The edge may be competed away");
+  if (stories <= 2)   neg.push("Low coverage depth. Signal may be premature or noise");
+  if (delta < -8)     neg.push(`Declining velocity (${Math.round(delta)}). Thesis is losing momentum`);
 
   const tone = conviction >= 55 ? "driven" : "limited";
   const factors =
@@ -918,7 +918,7 @@ export function explainConviction(theme: ThemeIntelligence, conviction: number):
 
 export interface ThemeHealthScore {
   label: "Excellent" | "Healthy" | "Watch" | "Fragile" | "Breaking";
-  score: number;   // 0–100
+  score: number;   // 0-100
   color: string;
 }
 
@@ -986,17 +986,17 @@ const INVALIDATION_RULES: Array<{ regex: RegExp; condition: string; impact: stri
   {
     regex:     /\bfed\b|rate.hike|monetary|fomc/,
     condition: "Policy reversal removes rate-pressure narrative",
-    impact:    "Eliminates the macro regime justification for this theme — positions built on rate-pressure assumptions would need to be unwound",
+    impact:    "Eliminates the macro regime justification for this theme. Positions built on rate-pressure assumptions would need to be unwound",
   },
   {
     regex:     /inflation|cpi|price.level/,
     condition: "Inflation normalization alters the macro regime",
-    impact:    "Softens the pricing power and margin expansion thesis — reduces the premium assigned to inflation beneficiaries in this theme",
+    impact:    "Softens the pricing power and margin expansion thesis. Reduces the premium assigned to inflation beneficiaries in this theme",
   },
   {
     regex:     /credit|lending|private.credit/,
     condition: "Bank lending reaccelerates, displacing alternative credit",
-    impact:    "Removes the supply constraint that created the private credit opportunity — compresses yields and reduces deal flow",
+    impact:    "Removes the supply constraint that created the private credit opportunity. Compresses yields and reduces deal flow",
   },
   {
     regex:     /semiconductor|chip|wafer/,
@@ -1006,32 +1006,32 @@ const INVALIDATION_RULES: Array<{ regex: RegExp; condition: string; impact: stri
   {
     regex:     /reshoring|supply.chain|nearshore/,
     condition: "Supply chain normalization removes nearshoring urgency",
-    impact:    "Reduces the policy and operational motivation for domestic capacity buildout — capital redirected to cheaper offshore alternatives",
+    impact:    "Reduces the policy and operational motivation for domestic capacity buildout. Capital redirected to cheaper offshore alternatives",
   },
   {
     regex:     /china|export|tariff|trade/,
     condition: "Trade normalization reduces domestic manufacturing premium",
-    impact:    "Narrows the cost advantage for domestic producers — competitive moat diminishes as tariff premium compresses",
+    impact:    "Narrows the cost advantage for domestic producers. Competitive moat diminishes as tariff premium compresses",
   },
   {
     regex:     /consumer|retail|spending/,
     condition: "Consumer spending softens materially below consensus",
-    impact:    "Removes top-line revenue support for consumer-exposed names — margin compression follows volume deterioration",
+    impact:    "Removes top-line revenue support for consumer-exposed names. Margin compression follows volume deterioration",
   },
   {
     regex:     /\boil\b|opec|crude/,
     condition: "OPEC supply increase creates energy price headwind",
-    impact:    "Lowers realized energy prices below the breakeven embedded in current positioning — upstream profitability deteriorates rapidly",
+    impact:    "Lowers realized energy prices below the breakeven embedded in current positioning. Upstream profitability deteriorates rapidly",
   },
   {
     regex:     /biotech|pharma|drug/,
     condition: "Regulatory setback invalidates approval timeline assumptions",
-    impact:    "Removes the near-term catalyst that is pricing-in peak probability of approval — binary downside on a rejection",
+    impact:    "Removes the near-term catalyst that is pricing-in peak probability of approval. Binary downside on a rejection",
   },
   {
     regex:     /real.estate|reit|property/,
     condition: "Rate relief removes distress thesis in real estate",
-    impact:    "Diminishes the discounted asset opportunity — competing buyers return as financing costs normalize",
+    impact:    "Diminishes the discounted asset opportunity. Competing buyers return as financing costs normalize",
   },
 ];
 
@@ -1062,18 +1062,18 @@ export function generateInvalidationSignals(theme: ThemeIntelligence): Invalidat
       const cap = chain[0].charAt(0).toUpperCase() + chain[0].slice(1);
       signals.push({
         condition: `${cap} reversal undermines the primary driver`,
-        impact:    "Removes the foundational causal link — the investment thesis loses its structural basis",
+        impact:    "Removes the foundational causal link. The investment thesis loses its structural basis",
       });
     }
     if (theme.momentum_direction === "bullish") {
       signals.push({
         condition: "Signal degradation below medium threshold removes conviction basis",
-        impact:    "Indicates institutional positioning is reversing — alpha window closes as signal weakens",
+        impact:    "Indicates institutional positioning is reversing. The opportunity narrows as the reading weakens",
       });
     } else if (theme.momentum_direction === "bearish") {
       signals.push({
         condition: "Macro stabilization or policy support removes the bearish catalyst",
-        impact:    "Re-prices the downside risk — short positions face squeeze as the macro backstop returns",
+        impact:    "Re-prices the downside risk. Short positions face squeeze as the macro backstop returns",
       });
     }
   }
@@ -1124,6 +1124,156 @@ export function generateThesis(theme: ThemeIntelligence): string {
   return `${s1} ${s2} ${s3}`;
 }
 
+// ── Mechanism Library ─────────────────────────────────────────────────────────
+// Each entry teaches HOW a driver transmits into prices, so a reader leaves the
+// page understanding the cause-and-effect, not just a label. Matched against the
+// theme's macro factors, name, industries and description.
+const MECHANISM_LIBRARY: Array<{ regex: RegExp; explain: string }> = [
+  { regex: /discount rate|\byield|treasury|\brates?\b|fed funds|duration/,
+    explain: "Valuations rest on the present value of future cash flows. When Treasury yields rise, that future cash is discounted more steeply, so multiples compress even when earnings estimates are unchanged. Long-duration sectors like software and biotech feel it first." },
+  { regex: /ai (compute|infra|capex)|\bgpu\b|accelerat|data ?center|hyperscal|model training/,
+    explain: "AI capability scales with compute, so every model advance pulls forward orders for GPUs, networking and memory. Hyperscaler capex commitments convert almost directly into revenue for the chip and equipment suppliers upstream, which is why their backlogs move before earnings do." },
+  { regex: /nuclear|smr|uranium/,
+    explain: "Data centers need power that runs around the clock with no carbon, and nuclear is the only source that delivers all three at scale. That structural demand reprices merchant nuclear generators the market had been valuing as declining assets." },
+  { regex: /grid|electric|\bpower\b|utility|transmission|baseload/,
+    explain: "Data centers draw constant baseload power that grids built for household demand cannot supply. Meeting it requires new generation and transmission, which redirects utility capital toward buildout and lifts demand for anything that produces dispatchable power." },
+  { regex: /private credit|direct lending|private capital|alternative (asset|credit)/,
+    explain: "Tighter bank capital rules push leveraged lending off bank balance sheets and into private funds. Those funds earn fees on assets under management regardless of where the credit cycle turns, so the shift creates fee-income winners even if defaults rise." },
+  { regex: /credit spread|high.?yield|\bhy\b|investment grade|\big\b|default/,
+    explain: "A credit spread is the extra yield lenders demand to hold risky debt over Treasuries. When spreads widen, borrowing costs rise across the economy and risk assets reprice lower, which is why spreads often warn before equities weaken." },
+  { regex: /\boil\b|crude|opec|brent|wti|gasoline/,
+    explain: "Oil feeds into transport, input and energy costs across the economy. A sustained price rise compresses margins for energy consumers while lifting cash flow for producers, so the same move helps one set of sectors and hurts another." },
+  { regex: /inflation|\bcpi\b|\bpce\b|core price/,
+    explain: "Persistent inflation forces central banks to hold policy rates high. That keeps discount rates and financing costs elevated, which pressures rate-sensitive valuations and delays the relief that risk assets are already pricing in." },
+  { regex: /\bdollar\b|\bdxy\b|currency|\busd\b|\bfx\b/,
+    explain: "A stronger dollar makes dollar debt and commodities more expensive abroad. That pressures emerging markets and commodity exporters, while flattering the import costs of domestic-facing US firms." },
+  { regex: /semiconductor|\bchip|tsmc|wafer|foundry|fab\b/,
+    explain: "Chip demand is cyclical and capital-intensive, so order books lead the cycle. A rising backlog signals capacity expansion upstream, while a falling one warns the build cycle is peaking before it shows up in reported earnings." },
+  { regex: /\bm&a\b|merger|acquisition|dealmaking|consolidat|takeover/,
+    explain: "A wave of deals re-rates a whole sector because acquirers reveal what assets are worth. Targets reprice toward takeout value, and advisers and lenders capture fees on the deal volume itself." },
+  { regex: /defense|geopolit|tariff|trade war|sanction|reshoring/,
+    explain: "Geopolitical stress pushes governments to spend on defense and supply-chain security. That spending is policy-driven rather than demand-driven, so it can persist even through an economic slowdown." },
+  { regex: /housing|mortgage|homebuild|residential|construction/,
+    explain: "Mortgage rates set housing affordability. When they fall, demand and construction recover with a lag, which pulls through building materials, appliances and the credit that finances them." },
+];
+
+// Returns a teaching explanation of how the theme's dominant driver transmits,
+// or null when no mechanism matches (so callers emit no generic filler).
+export function explainMechanism(theme: ThemeIntelligence): string | null {
+  const text = [
+    ...(theme.related_macro_factors ?? []),
+    theme.name        ?? "",
+    ...(theme.related_industries    ?? []),
+    ...(theme.related_assets        ?? []),
+    theme.description ?? "",
+  ].join(" ").toLowerCase();
+  for (const m of MECHANISM_LIBRARY) {
+    if (m.regex.test(text)) return m.explain;
+  }
+  return null;
+}
+
+// ── Security Expression Library ───────────────────────────────────────────────
+// Maps a sector/theme keyword to the securities that most directly express the
+// view, plus a concrete one-line reason a buyer wins and a seller loses. Lets
+// the page name instruments and investment implications, not just themes.
+const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
+interface SecEntry { regex: RegExp; tickers: string[]; winWhy: string; loseWhy: string; }
+const SECURITY_LIBRARY: SecEntry[] = [
+  { regex: /semiconductor|\bchip|\bgpu\b|accelerat|foundry/, tickers: ["NVDA", "AVGO", "AMD", "TSM"],
+    winWhy: "Direct leverage to AI accelerator and data-center chip demand.", loseWhy: "A capex slowdown shows up in order books before earnings." },
+  { regex: /semi.?cap|wafer|lithograph|etch|deposition|fab\b/, tickers: ["ASML", "AMAT", "LRCX", "KLAC"],
+    winWhy: "Fab buildout converts into multi-year equipment orders.", loseWhy: "Capex cuts hit equipment makers first in the cycle." },
+  { regex: /ai (compute|infra)|data ?center|hyperscal|server|networking/, tickers: ["NVDA", "AVGO", "DELL", "SMCI"],
+    winWhy: "Hyperscaler capex converts almost directly into hardware orders.", loseWhy: "A capex pause stalls the hardware build cycle." },
+  { regex: /nuclear|smr|uranium/, tickers: ["CEG", "VST", "TLN", "CCJ"],
+    winWhy: "Round-the-clock carbon-free demand reprices merchant generators.", loseWhy: "A power-demand miss deflates the re-rating." },
+  { regex: /utilit|grid|electric|\bpower\b|transmission|baseload/, tickers: ["NEE", "SO", "DUK", "AEP"],
+    winWhy: "Grid buildout expands rate base and load growth.", loseWhy: "Rising rates raise financing costs for regulated utilities." },
+  { regex: /electrical equip|power equip|cooling|grid equip/, tickers: ["ETN", "GEV", "PWR", "VRT"],
+    winWhy: "Grid and data-center buildout drives an equipment order cycle.", loseWhy: "Buildout delays push the order cycle out." },
+  { regex: /\boil\b|crude|\be&p\b|exploration|upstream|opec/, tickers: ["XOM", "CVX", "COP", "EOG"],
+    winWhy: "Higher crude lifts upstream cash flow and buybacks.", loseWhy: "Falling crude compresses upstream margins." },
+  { regex: /oil ?service|drilling|oilfield/, tickers: ["SLB", "HAL", "BKR"],
+    winWhy: "Rising activity drives oilfield service pricing.", loseWhy: "Producer capex cuts hit service demand first." },
+  { regex: /software|saas|application|enterprise app/, tickers: ["CRM", "NOW", "WDAY", "ADBE"],
+    winWhy: "Recurring revenue and pricing power compound through cycles.", loseWhy: "Higher discount rates compress long-duration multiples." },
+  { regex: /cybersecur|security software/, tickers: ["PANW", "CRWD", "ZS", "FTNT"],
+    winWhy: "Security budgets are defended even in downturns.", loseWhy: "Higher rates compress high-multiple growth names." },
+  { regex: /private credit|direct lending|alternative (asset|credit)|private capital/, tickers: ["BX", "KKR", "APO", "ARES"],
+    winWhy: "Fee income grows as lending shifts off bank balance sheets.", loseWhy: "A credit-cycle turn raises default losses on the book." },
+  { regex: /\bbank|deposit|regional bank|net interest/, tickers: ["JPM", "BAC", "WFC", "C"],
+    winWhy: "Wider net interest margins lift earnings.", loseWhy: "Tighter credit and deposit flight pressure earnings." },
+  { regex: /defense|aerospace|military|missile|munition/, tickers: ["LMT", "RTX", "NOC", "GD"],
+    winWhy: "Rising defense budgets back multi-year backlogs.", loseWhy: "Budget delays slip the backlog to the right." },
+  { regex: /homebuild|housing|residential|mortgage/, tickers: ["DHI", "LEN", "PHM"],
+    winWhy: "Lower mortgage rates revive demand and starts.", loseWhy: "Higher mortgage rates choke affordability and volume." },
+  { regex: /copper|industrial metal|\bmining\b/, tickers: ["FCX", "SCCO", "BHP"],
+    winWhy: "Electrification tightens copper supply against demand.", loseWhy: "A demand slowdown softens metal prices." },
+  { regex: /pharma|biotech|drug|therapeut/, tickers: ["LLY", "MRK", "PFE", "AMGN"],
+    winWhy: "Pipeline depth and pricing drive durable cash flow.", loseWhy: "Patent cliffs and pricing pressure weigh on earnings." },
+  { regex: /natural gas|\blng\b|pipeline|midstream/, tickers: ["LNG", "WMB", "KMI", "ET"],
+    winWhy: "Export demand underpins volumes and fee income.", loseWhy: "Low prices pressure producer economics upstream." },
+  { regex: /\bgold\b|precious metal|bullion/, tickers: ["GLD", "NEM", "AEM"],
+    winWhy: "Falling real rates lift gold and the miners' leverage to it.", loseWhy: "Rising real rates weigh on gold." },
+];
+
+function secEntryFor(text: string): SecEntry | null {
+  const lc = text.toLowerCase();
+  for (const e of SECURITY_LIBRARY) if (e.regex.test(lc)) return e;
+  return null;
+}
+
+// Primary beneficiary tickers: prefer the theme's own related_assets, fall back
+// to the library keyed off non-negative industries and the theme name.
+export function themeBeneficiaries(theme: ThemeIntelligence, max = 4): string[] {
+  const out: string[] = (theme.related_assets ?? []).filter(a => TICKER_RE.test(a));
+  if (out.length < 2) {
+    const posInds = (theme.related_industries ?? []).filter(
+      i => (theme.relationship_weights ?? {})[i]?.direction !== "negative",
+    );
+    for (const key of [...posInds, theme.name]) {
+      const e = secEntryFor(key);
+      if (e) for (const t of e.tickers) if (!out.includes(t)) out.push(t);
+      if (out.length >= max) break;
+    }
+  }
+  return out.slice(0, max);
+}
+
+// Best expressions: top beneficiary tickers + a concrete reason to own them.
+export interface BestExpression { tickers: string[]; why: string; }
+export function bestExpressions(theme: ThemeIntelligence): BestExpression | null {
+  const tickers = themeBeneficiaries(theme, 4);
+  if (tickers.length === 0) return null;
+  const posInds = (theme.related_industries ?? []).filter(
+    i => (theme.relationship_weights ?? {})[i]?.direction !== "negative",
+  );
+  let why = "";
+  for (const key of [...posInds, theme.name, ...(theme.related_macro_factors ?? [])]) {
+    const e = secEntryFor(key);
+    if (e) { why = e.winWhy; break; }
+  }
+  return { tickers, why: why || "Most direct exposure to the theme's primary driver." };
+}
+
+// Most exposed losers: the hurt sector, its securities, and the concrete risk.
+// Returns null when nothing is clearly hurt (so the section only shows when real).
+export interface ExposedLosers { sector: string; tickers: string[]; risk: string; }
+export function themeLosers(theme: ThemeIntelligence, max = 3): ExposedLosers | null {
+  const negInds = (theme.related_industries ?? []).filter(
+    i => (theme.relationship_weights ?? {})[i]?.direction === "negative",
+  );
+  let sector: string | null = null;
+  let entry: SecEntry | null = null;
+  for (const i of negInds) { const e = secEntryFor(i); if (e) { sector = i; entry = e; break; } }
+  if (!entry && theme.momentum_direction === "bearish") {
+    for (const i of (theme.related_industries ?? [])) { const e = secEntryFor(i); if (e) { sector = i; entry = e; break; } }
+  }
+  if (!entry || !sector) return null;
+  return { sector, tickers: entry.tickers.slice(0, max), risk: entry.loseWhy };
+}
+
 export function generateWhyItMattersNow(theme: ThemeIntelligence): string[] {
   const delta    = theme.momentum_delta           ?? 0;
   const breadth  = theme.breadth_score            ?? 0;
@@ -1139,44 +1289,48 @@ export function generateWhyItMattersNow(theme: ThemeIntelligence): string[] {
 
   // Bullet 1: Signal velocity / state
   if (momentum === "accelerating" && delta >= 10) {
-    bullets.push(`Signal is accelerating rapidly (+${Math.round(delta)} velocity) — the window for positioning ahead of institutional inflows may be narrowing`);
+    bullets.push(`Signal is accelerating rapidly (+${Math.round(delta)} velocity). Investors may have less time to build exposure before institutional flows arrive`);
   } else if (momentum === "accelerating") {
-    bullets.push(`Signal has entered acceleration phase — momentum is building above prior-cycle baseline`);
+    bullets.push(`Signal has entered acceleration phase. Momentum is building above prior-cycle baseline`);
   } else if (momentum === "strengthening" && delta >= 5) {
-    bullets.push(`Strengthening momentum (+${Math.round(delta)} delta) indicates the signal is not yet peaking — further appreciation is plausible`);
+    bullets.push(`Strengthening momentum (+${Math.round(delta)} delta) indicates the signal is not yet peaking. Further appreciation is plausible`);
   } else if (momentum === "reversing") {
-    bullets.push(`Signal is reversing — this is a positioning risk event, not a consolidation`);
+    bullets.push(`Signal is reversing. This is a positioning risk event, not a consolidation`);
   } else if (delta >= 6) {
-    bullets.push(`Positive signal delta of +${Math.round(delta)} marks a departure from the prior trend — early re-engagement signal`);
+    bullets.push(`Positive signal delta of +${Math.round(delta)} marks a departure from the prior trend. Early re-engagement signal`);
   } else if (delta <= -8) {
-    bullets.push(`Signal delta of ${Math.round(delta)} confirms deterioration is not noise — exit thesis is building`);
+    bullets.push(`Signal delta of ${Math.round(delta)} confirms deterioration is not noise. Exit thesis is building`);
   } else {
-    bullets.push(`Theme signal is ${momentum} — not an entry trigger, but warrants active monitoring`);
+    bullets.push(`Theme signal is ${momentum}. Not yet an entry signal, though it is worth tracking`);
   }
 
   // Bullet 2: Breadth / sector confirmation
   if (confirmed && breadth >= 65) {
     const indNote = ind1 ? `${ind0} and ${ind1}` : ind0;
-    bullets.push(`Cross-category confirmation is active — signal has spread beyond ${indNote}, reducing false-positive risk`);
+    bullets.push(`Cross-category confirmation is active. Signal has spread beyond ${indNote}, reducing false-positive risk`);
   } else if (breadth >= 70) {
     const cnt = Math.max(2, Math.round(breadth / 18));
-    bullets.push(`Sector breadth at ${Math.round(breadth)}% — participation across ~${cnt} industries reduces single-sector concentration risk`);
+    bullets.push(`Sector breadth at ${Math.round(breadth)}%. Participation across ~${cnt} industries reduces single-sector concentration risk`);
   } else if (breadth >= 45 && inds.length >= 2) {
-    bullets.push(`Signal is present in ${inds.length} tracked sectors — breadth is building but not yet broad-based`);
+    bullets.push(`Signal is present in ${inds.length} tracked sectors. Breadth is building but not yet broad-based`);
   } else {
-    bullets.push(`Exposure is concentrated in ${ind0} — breadth not yet confirming; risk of sector-specific rather than thematic move`);
+    bullets.push(`Exposure is concentrated in ${ind0}. Breadth has not confirmed, so the move could stay sector-specific rather than become thematic`);
   }
 
   // Bullet 3: Persistence / structural durability
   if (cycles >= 8) {
-    bullets.push(`${cycles}-cycle persistence establishes this as a structural theme — duration exposure is appropriate`);
+    bullets.push(`${cycles}-cycle persistence establishes this as a structural theme. A multi-quarter holding period is justified rather than a tactical trade`);
   } else if (cycles >= 4) {
-    bullets.push(`${cycles} consecutive signal cycles with ${relCount >= 3 ? `${relCount} confirmed cross-theme relationships` : "sustained presence"} — structural thesis is forming`);
+    bullets.push(`${cycles} consecutive signal cycles with ${relCount >= 3 ? `${relCount} confirmed links to related themes` : "sustained presence"}. The thesis is consolidating into a structural one`);
   } else if (cycles >= 2 && relCount >= 3) {
-    bullets.push(`Early persistence (${cycles} cycles) combined with ${relCount} related themes suggests systematic rather than idiosyncratic exposure`);
+    bullets.push(`Early persistence (${cycles} cycles) combined with ${relCount} related themes suggests a systematic driver rather than an idiosyncratic one`);
   } else {
-    bullets.push(`Signal is ${cycles <= 1 ? "newly emerging" : "early-stage"} — treat as a monitoring position, not a full structural allocation`);
+    bullets.push(`Signal is ${cycles <= 1 ? "newly emerging" : "early-stage"}. Treat it as a monitoring position rather than a core holding until it persists`);
   }
+
+  // Lead with the economic mechanism so the reader learns WHY before the signal stats
+  const mech = explainMechanism(theme);
+  if (mech) bullets.unshift(mech);
 
   return bullets;
 }
@@ -1219,40 +1373,43 @@ export function generateIntelligenceBriefing(theme: ThemeIntelligence): string[]
 
   sentences.push(`${name} ${stateVerb}${driverClause}.`);
 
-  // Sentence 2: Why it matters — mechanism and market impact
-  if (mech && mech.length > 8) {
+  // Sentence 2: Why it matters — teach the economic transmission first
+  const eduMech = explainMechanism(theme);
+  if (eduMech) {
+    sentences.push(eduMech);
+  } else if (mech && mech.length > 8) {
     const mechCap   = mech.charAt(0).toUpperCase() + mech.slice(1);
-    const impactVerb = dir === "bullish" ? "creating a structural advantage for"
-      : dir === "bearish" ? "creating material headwinds for" : "with cascading effects across";
+    const impactVerb = dir === "bullish" ? "raises pricing power for"
+      : dir === "bearish" ? "raises input and financing costs for" : "reshapes demand across";
     const indScope   = ind1 ? `${ind0} and ${ind1}` : ind0;
-    sentences.push(`${mechCap}, ${impactVerb} ${indScope}.`);
+    sentences.push(`${mechCap}, which ${impactVerb} ${indScope}.`);
   } else {
-    const verbPhrase = dir === "bullish" ? `creating pricing power in ${ind0}`
-      : dir === "bearish" ? `creating structural headwinds in ${ind0}`
-      : `with complex implications across ${ind0}`;
-    const assetClause = asset0 ? `, with direct exposure in ${asset0}` : "";
+    const verbPhrase = dir === "bullish" ? `lifts pricing power in ${ind0}`
+      : dir === "bearish" ? `raises costs and compresses margins in ${ind0}`
+      : `pulls in both directions across ${ind0}`;
+    const assetClause = asset0 ? `, with the most direct exposure in ${asset0}` : "";
     const indExt = ind1 ? ` and ${ind1}` : "";
-    sentences.push(`This dynamic is ${verbPhrase}${indExt}${assetClause}.`);
+    sentences.push(`That dynamic ${verbPhrase}${indExt}${assetClause}.`);
   }
 
-  // Sentence 3: Why NOW — the market gap or timing urgency
+  // Sentence 3: Why it matters now, framed to teach the underlying mechanism
   if (ml === "accelerating" && delta >= 10) {
-    sentences.push(`Signal velocity (+${Math.round(delta)}) is above institutional attention thresholds — the market may not yet have fully priced the structural implications.`);
+    sentences.push(`A move of this velocity (+${Math.round(delta)}) usually draws institutional capital before fundamentals fully reset, which is what tends to carry these trends past fair value before they peak.`);
   } else if (ml === "accelerating" && delta >= 5) {
-    sentences.push(`Momentum is building ahead of what could become a broader market catalyst — the positioning window is open but narrowing.`);
+    sentences.push(`The trend is broadening before it is widely recognized. That is typically the stage at which positions get built, because the move is still cheap relative to where consensus eventually settles.`);
   } else if (theme.cross_category_confirmed && breadth >= 60) {
     const cnt = Math.max(2, Math.round(breadth / 18));
-    sentences.push(`Cross-category confirmation has emerged across ~${cnt} sectors — this is no longer a single-sector story.`);
+    sentences.push(`Confirmation now spans roughly ${cnt} sectors. Broad participation, rather than a single-sector move, is what separates a durable regime from a short-lived rotation.`);
   } else if (ml === "reversing") {
-    sentences.push(`The reversal is accelerating — with ${cycles} cycle${cycles !== 1 ? "s" : ""} of prior strength now unwinding, the downside could be significant.`);
+    sentences.push(`The unwind is gathering pace. After ${cycles} cycle${cycles !== 1 ? "s" : ""} of prior strength, the risk is that crowded positions exit faster than they were built, which is how reversals tend to overshoot.`);
   } else if (cycles >= 6) {
-    sentences.push(`With ${cycles} consecutive signal cycles, this has transitioned from a trade to a structural theme — duration exposure is warranted.`);
+    sentences.push(`After ${cycles} consecutive cycles, this is no longer a tactical trade. The relevant question shifts from when to enter to how much to hold and for how long.`);
   } else if (persist >= 70 && ss === "strong") {
-    sentences.push(`Persistence at ${Math.round(persist)} with strong signal classification suggests the thesis has proven durable across multiple market conditions.`);
+    sentences.push(`The thesis has held at a persistence reading of ${Math.round(persist)} across changing conditions. A position that survives multiple regimes depends far less on any single macro assumption holding.`);
   } else if (ml === "strengthening" && delta >= 5) {
-    sentences.push(`The strengthening trend (+${Math.round(delta)} delta) suggests the thesis is gaining institutional traction ahead of broader consensus.`);
+    sentences.push(`The trend is gaining traction (+${Math.round(delta)}) ahead of consensus. Risk-reward is usually most favorable at this stage, before the move is fully recognized and priced.`);
   } else {
-    sentences.push(`Current conditions are creating a positioning window that may narrow as the theme reaches broader market consensus.`);
+    sentences.push(`The setup is still early. What decides it is whether breadth expands from here or the move stays confined to its first sector.`);
   }
 
   return sentences;
