@@ -536,102 +536,255 @@ export function generateIntelligenceAlerts(themes: ThemeIntelligence[]): Intelli
     .slice(0, 8);
 }
 
-// ── Phase 8: Next Catalyst Engine ────────────────────────────────────────────
+// ── Economic Catalyst Calendar ───────────────────────────────────────────────
+// A forward-looking calendar of scheduled market catalysts. Each theme is
+// matched to the catalyst KINDS that move it, then we surface the nearest dated
+// event with a countdown. This turns generic "watch the Fed" guidance into
+// "FOMC decision in 38 days (Jul 29)" for every major theme.
+//
+// The calendar is PROVIDER-BACKED: every consumer reads through the active
+// `CatalystCalendarProvider`, so the dated events can come from a real feed
+// (an economic-calendar API, a backend route, or a config file) without
+// touching any consumer. The shipped default, `placeholderCalendarProvider`,
+// is PLACEHOLDER INFRASTRUCTURE — it derives indicative dates from known
+// release cadences so the framework and UI work today. Swap in a real source at
+// app init with `setCatalystCalendarProvider(...)`; nothing downstream changes.
+
+export type CatalystKind =
+  | "fomc" | "cpi" | "pce" | "jobs" | "gdp"
+  | "nvda-earnings" | "cloud-earnings" | "semi-earnings" | "bank-earnings"
+  | "opec" | "treasury" | "china";
+
+export interface CalendarEvent {
+  kind:       CatalystKind;
+  date:       Date;
+  label:      string;
+  detail:     string;
+  estimated?: boolean;   // true when the date is a placeholder cadence, not a confirmed schedule
+}
+
+/** A source of forward catalyst events. A real implementation fetches confirmed
+ *  dates (and can populate this synchronously after an async load). */
+export type CatalystCalendarProvider = (from: Date) => CalendarEvent[];
+
+function mkDate(y: number, m: number, day: number): Date { return new Date(y, m - 1, day); }
+function startOfDay(d: Date): Date { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+
+// ── PLACEHOLDER calendar source ──────────────────────────────────────────────
+// Everything between here and the provider seam is replaceable placeholder data.
+// It approximates real release cadences; it does NOT carry confirmed dates.
+
+// The first occurrence of `weekday` (0=Sun..6=Sat) in a given month.
+function firstWeekdayOf(year: number, month0: number, weekday: number): Date {
+  const first = new Date(year, month0, 1);
+  const shift = (weekday - first.getDay() + 7) % 7;
+  return new Date(year, month0, 1 + shift);
+}
+
+// PLACEHOLDER: indicative FOMC decision dates so a rate catalyst is always
+// datable. Replace with the published FOMC schedule from a real source.
+const PLACEHOLDER_FOMC_DATES: Array<[number, number, number]> = [
+  [2026, 1, 28], [2026, 3, 18], [2026, 4, 29], [2026, 6, 17],
+  [2026, 7, 29], [2026, 9, 16], [2026, 10, 28], [2026, 12, 9],
+  [2027, 1, 27], [2027, 3, 17], [2027, 4, 28], [2027, 6, 16],
+  [2027, 7, 28], [2027, 9, 22], [2027, 11, 3], [2027, 12, 15],
+];
+
+// PLACEHOLDER provider: derives ~11 months of indicative events from typical
+// release cadences. Marked `estimated` so the UI can signal that dates are
+// provisional. A real provider returns the same CalendarEvent shape.
+export function placeholderCalendarProvider(from: Date): CalendarEvent[] {
+  const events: CalendarEvent[] = [];
+
+  for (let i = 0; i < 11; i++) {
+    const base = new Date(from.getFullYear(), from.getMonth() + i, 1);
+    const y  = base.getFullYear();
+    const m  = base.getMonth() + 1;   // 1-12
+    const m0 = base.getMonth();
+
+    // Monthly macro releases
+    events.push({ kind: "cpi",   date: mkDate(y, m, 13),          label: "CPI Report",          detail: "Inflation print sets the near-term rate path.",      estimated: true });
+    events.push({ kind: "pce",   date: mkDate(y, m, 27),          label: "Core PCE",            detail: "The Fed's preferred inflation gauge.",               estimated: true });
+    events.push({ kind: "jobs",  date: firstWeekdayOf(y, m0, 5),  label: "Nonfarm Payrolls",    detail: "Labor-market strength frames the demand outlook.",   estimated: true });
+    events.push({ kind: "china", date: mkDate(y, m, 15),          label: "China Activity Data", detail: "Output and retail sales gauge global demand.",       estimated: true });
+    events.push({ kind: "opec",  date: firstWeekdayOf(y, m0, 0),  label: "OPEC+ Meeting",       detail: "Production policy sets the crude supply path.",      estimated: true });
+
+    // Quarterly earnings and macro clusters (Jan/Apr/Jul/Oct)
+    if (m === 1 || m === 4 || m === 7 || m === 10) {
+      events.push({ kind: "bank-earnings",  date: mkDate(y, m, 14), label: "Major Bank Earnings",        detail: "Loan books and reserves reveal credit conditions.", estimated: true });
+      events.push({ kind: "semi-earnings",  date: mkDate(y, m, 16), label: "Semiconductor Earnings",     detail: "Order books and capex guidance lead the chip cycle.", estimated: true });
+      events.push({ kind: "cloud-earnings", date: mkDate(y, m, 28), label: "Cloud Earnings (MSFT/AMZN)", detail: "Cloud and AI spend validates the buildout thesis.", estimated: true });
+      events.push({ kind: "gdp",            date: mkDate(y, m, 29), label: "GDP Estimate",               detail: "Headline growth frames the macro regime.",          estimated: true });
+      events.push({ kind: "treasury",       date: mkDate(y, m, 5),  label: "Treasury Refunding",         detail: "Issuance size and duration mix steer the long end.", estimated: true });
+    }
+    // NVDA fiscal quarters report late Feb/May/Aug/Nov
+    if (m === 2 || m === 5 || m === 8 || m === 11) {
+      events.push({ kind: "nvda-earnings", date: mkDate(y, m, 26), label: "NVDA Earnings", detail: "Data-center guidance is the AI demand bellwether.", estimated: true });
+    }
+  }
+
+  for (const [yy, mm, dd] of PLACEHOLDER_FOMC_DATES) {
+    events.push({ kind: "fomc", date: mkDate(yy, mm, dd), label: "FOMC Decision", detail: "Rate decision and guidance reset discount rates.", estimated: true });
+  }
+
+  return events;
+}
+
+// ── Provider seam ────────────────────────────────────────────────────────────
+// Replace the default at app init to source real dates:
+//   setCatalystCalendarProvider(myApiBackedProvider)
+let _provider: CatalystCalendarProvider = placeholderCalendarProvider;
+let _calCache: { key: string; events: CalendarEvent[] } | null = null;
+
+export function setCatalystCalendarProvider(provider: CatalystCalendarProvider): void {
+  _provider = provider;
+  _calCache = null;   // invalidate cached view so the new source takes effect
+}
+
+// Forward, sorted, de-duplicated view from the active provider. Normalizes here
+// (filter to today-onward, sort soonest-first) so providers can return events
+// in any order without each one re-implementing the housekeeping.
+function economicCalendar(now: Date): CalendarEvent[] {
+  const key = `${_provider.name || "anon"}:${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  if (_calCache && _calCache.key === key) return _calCache.events;
+  const floor = startOfDay(now).getTime();
+  const events = [..._provider(now)]
+    .filter(e => e.date.getTime() >= floor)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  _calCache = { key, events };
+  return events;
+}
+
+/** True while the active calendar source is the shipped placeholder, so the UI
+ *  can label dates as indicative. Flips to false once a real provider is set. */
+export function isCatalystCalendarPlaceholder(): boolean {
+  return _provider === placeholderCalendarProvider;
+}
+
+function nextEventOfKind(cal: CalendarEvent[], kind: CatalystKind): CalendarEvent | null {
+  for (const e of cal) if (e.kind === kind) return e;
+  return null;
+}
+
+function daysUntil(from: Date, to: Date): number {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = new Date(to.getFullYear(),   to.getMonth(),   to.getDate());
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+function fmtMonthDay(dt: Date): string {
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ── Theme Catalyst Engine ────────────────────────────────────────────────────
 
 export interface ThemeCatalyst {
+  kind:        CatalystKind;
   label:       string;
   direction:   "confirming" | "risk";
   reason:      string;
   sensitivity: "High" | "Medium" | "Low";
+  date:        Date;
+  dateLabel:   string;   // "Jul 29"
+  daysAway:    number;
+  imminent:    boolean;  // within seven days
 }
 
 const CATALYST_RULES: Array<{
   regex:          RegExp;
-  label:          string;
+  kind:           CatalystKind;
   getDir:         (t: ThemeIntelligence) => "confirming" | "risk";
   getReason:      (t: ThemeIntelligence) => string;
   getSensitivity: (t: ThemeIntelligence) => "High" | "Medium" | "Low";
 }> = [
   {
-    regex:          /\bfed\b|fomc|federal reserve|monetary policy/,
-    label:          "FOMC Meeting",
+    regex:          /\bfed\b|fomc|federal reserve|monetary policy|\brates?\b|yield|treasury|discount rate|duration/,
+    kind:           "fomc",
     getDir:         t => t.momentum_direction === "bearish" ? "confirming" : "risk",
     getReason:      t => t.momentum_direction === "bearish"
-      ? "Rate path directly determines duration pressure on leveraged sectors central to this thesis"
-      : "Dovish pivot would compress the rate differential this theme's thesis depends on",
+      ? "The rate path directly drives duration pressure on the leveraged sectors central to this thesis"
+      : "A dovish pivot would compress the rate differential this theme's thesis depends on",
     getSensitivity: t => t.signal_strength === "strong" ? "High" : "Medium",
   },
   {
-    regex:          /\bcpi\b|inflation|price level|core pce/,
-    label:          "CPI Report",
+    regex:          /\bcpi\b|inflation|price level|core pce|\bpce\b/,
+    kind:           "cpi",
     getDir:         _t => "confirming",
     getReason:      t => t.momentum_direction === "bullish"
-      ? "Cooling inflation would accelerate the rate relief that underpins margin expansion for this theme"
+      ? "Cooling inflation accelerates the rate relief that underpins margin expansion for this theme"
       : "Re-acceleration would validate the inflationary pressure central to the bearish case",
     getSensitivity: _t => "High",
   },
   {
-    regex:          /\bnvda\b|nvidia|\bgpu\b|data center capacity/,
-    label:          "NVDA Earnings",
+    regex:          /\bnvda\b|nvidia|\bgpu\b|ai (compute|infra)|accelerat|data ?center/,
+    kind:           "nvda-earnings",
     getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
-    getReason:      _t => "Capex guidance is the leading indicator for downstream AI infrastructure demand. Directly links to this theme's beneficiary thesis",
+    getReason:      _t => "Data-center capex guidance is the leading indicator for downstream AI infrastructure demand, the core of this theme's beneficiary thesis",
     getSensitivity: _t => "High",
   },
   {
-    regex:          /\boil\b|opec|crude|energy supply/,
-    label:          "OPEC Production Decision",
+    regex:          /\bmsft\b|microsoft|azure|cloud|hyperscal/,
+    kind:           "cloud-earnings",
+    getDir:         _t => "confirming",
+    getReason:      _t => "Cloud and enterprise AI spend growth is the primary validation signal for the infrastructure buildout. A miss would cut conviction materially",
+    getSensitivity: _t => "High",
+  },
+  {
+    regex:          /semiconductor|\bchip|tsmc|asml|fab\b|wafer|foundry/,
+    kind:           "semi-earnings",
+    getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
+    getReason:      _t => "Order backlog and capex guidance show whether the supply cycle is inflecting, the clearest leading indicator for this theme's duration",
+    getSensitivity: _t => "High",
+  },
+  {
+    regex:          /\boil\b|opec|crude|brent|wti|energy supply/,
+    kind:           "opec",
     getDir:         _t => "risk",
-    getReason:      _t => "Supply-side production shifts create direct commodity price pressure that transmits into input costs and margin assumptions",
+    getReason:      _t => "Production policy shifts move crude prices directly, transmitting into input costs and margin assumptions across exposed sectors",
     getSensitivity: _t => "Medium",
   },
   {
-    regex:          /\bjpm\b|jpmorgan|bank earnings|major bank/,
-    label:          "Major Bank Earnings",
+    regex:          /\bjpm\b|jpmorgan|\bbank|lending|credit|loan|deposit/,
+    kind:           "bank-earnings",
     getDir:         _t => "confirming",
-    getReason:      _t => "Loan book quality and lending standard guidance reveals whether credit tightening is affecting the sectors this theme is exposed to",
+    getReason:      _t => "Loan-book quality and lending-standard guidance reveal whether credit tightening is reaching the sectors this theme is exposed to",
     getSensitivity: _t => "Medium",
   },
   {
     regex:          /china|pboc|yuan|rmb|prc\b/,
-    label:          "China Macro Data",
+    kind:           "china",
     getDir:         _t => "risk",
     getReason:      t => {
       const ind0 = (t.related_industries ?? [])[0] ?? "core sectors";
       return `Chinese demand weakness would remove the global demand floor supporting ${ind0} positioning`;
     },
-    getSensitivity: t => (t.related_industries ?? []).some(i => /commodity|material|energy|industrial/i.test(i)) ? "High" : "Low",
+    getSensitivity: t => (t.related_industries ?? []).some(i => /commodity|material|energy|industrial|metal|mining/i.test(i)) ? "High" : "Low",
   },
   {
-    regex:          /jobs|payroll|unemployment|labor market/,
-    label:          "Nonfarm Payrolls",
+    regex:          /jobs|payroll|unemployment|labor market|consumer|retail|spending/,
+    kind:           "jobs",
     getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
-    getReason:      _t => "Labor market resilience sustains consumer demand visibility. A beat validates the top-line revenue assumptions embedded in this theme",
+    getReason:      _t => "Labor-market resilience sustains consumer demand. A beat validates the top-line revenue assumptions embedded in this theme",
     getSensitivity: _t => "Medium",
   },
   {
-    regex:          /treasury|t-bill|yield curve|10.?year/,
-    label:          "Treasury Auction",
+    regex:          /\bt-bill|yield curve|10.?year|issuance|refunding|deficit/,
+    kind:           "treasury",
     getDir:         _t => "risk",
-    getReason:      _t => "Weak demand at auction steepens the long end, increasing discount rates for rate-sensitive holdings in this theme",
+    getReason:      _t => "Heavy supply at refunding steepens the long end, lifting discount rates for the rate-sensitive holdings in this theme",
     getSensitivity: _t => "Low",
   },
   {
-    regex:          /semiconductor|chip|tsmc|asml|fab/,
-    label:          "Semiconductor Earnings",
+    regex:          /\bgdp\b|growth|recession|soft landing|economic activity/,
+    kind:           "gdp",
     getDir:         t => t.momentum_direction === "bullish" ? "confirming" : "risk",
-    getReason:      _t => "Order backlog and capex guidance determines whether the supply cycle is inflecting. The clearest leading indicator for this theme's duration",
-    getSensitivity: _t => "High",
-  },
-  {
-    regex:          /\bmsft\b|microsoft|azure|cloud spending/,
-    label:          "Cloud Earnings (MSFT/AMZN)",
-    getDir:         _t => "confirming",
-    getReason:      _t => "Enterprise AI and cloud spend growth rate is the primary validation signal for the infrastructure buildout thesis. A miss would reduce conviction materially",
-    getSensitivity: _t => "High",
+    getReason:      _t => "Headline growth confirms or breaks the regime backdrop the theme's directional thesis is built on",
+    getSensitivity: _t => "Medium",
   },
 ];
 
-export function generateNextCatalysts(theme: ThemeIntelligence): ThemeCatalyst[] {
+export function generateNextCatalysts(theme: ThemeIntelligence, now: Date = new Date()): ThemeCatalyst[] {
+  const cal  = economicCalendar(now);
   const text = [
     ...(theme.related_macro_factors ?? []),
     ...(theme.related_industries    ?? []),
@@ -641,30 +794,96 @@ export function generateNextCatalysts(theme: ThemeIntelligence): ThemeCatalyst[]
   ].join(" ").toLowerCase();
 
   const matched: ThemeCatalyst[] = [];
+  const used    = new Set<CatalystKind>();
 
   for (const rule of CATALYST_RULES) {
-    if (rule.regex.test(text)) {
-      matched.push({
-        label:       rule.label,
-        direction:   rule.getDir(theme),
-        reason:      rule.getReason(theme),
-        sensitivity: rule.getSensitivity(theme),
-      });
-      if (matched.length >= 4) break;
-    }
-  }
-
-  // Always return at least one catalyst
-  if (matched.length === 0) {
+    if (used.has(rule.kind) || !rule.regex.test(text)) continue;
+    const ev = nextEventOfKind(cal, rule.kind);
+    if (!ev) continue;
+    used.add(rule.kind);
+    const daysAway = daysUntil(now, ev.date);
     matched.push({
-      label:       "Macro Data Release",
-      direction:   "risk",
-      reason:      "An unexpected macro regime shift would remove the structural basis for current positioning",
-      sensitivity: "Medium",
+      kind:        rule.kind,
+      label:       ev.label,
+      direction:   rule.getDir(theme),
+      reason:      rule.getReason(theme),
+      sensitivity: rule.getSensitivity(theme),
+      date:        ev.date,
+      dateLabel:   fmtMonthDay(ev.date),
+      daysAway,
+      imminent:    daysAway <= 7,
     });
   }
 
-  return matched;
+  // Chronological — the soonest catalyst is the most actionable.
+  matched.sort((a, b) => a.daysAway - b.daysAway);
+
+  // Always datable: fall back to the next rate decision when nothing matched.
+  if (matched.length === 0) {
+    const ev = nextEventOfKind(cal, "fomc") ?? cal[0];
+    if (ev) {
+      const daysAway = daysUntil(now, ev.date);
+      matched.push({
+        kind:        ev.kind,
+        label:       ev.label,
+        direction:   "risk",
+        reason:      "A macro regime shift would reset the structural basis for current positioning",
+        sensitivity: "Medium",
+        date:        ev.date,
+        dateLabel:   fmtMonthDay(ev.date),
+        daysAway,
+        imminent:    daysAway <= 7,
+      });
+    }
+  }
+
+  return matched.slice(0, 4);
+}
+
+// ── Market-wide Catalyst Radar ───────────────────────────────────────────────
+// The soonest scheduled catalysts across all visible themes, deduped by event,
+// ranked by proximity then by how many themes each one moves.
+
+export interface RadarCatalyst {
+  kind:       CatalystKind;
+  label:      string;
+  date:       Date;
+  dateLabel:  string;
+  daysAway:   number;
+  imminent:   boolean;
+  themeCount: number;       // how many visible themes this event moves
+  topTheme:   string | null; // raw theme name (caller cleans for display)
+}
+
+export function marketCatalystRadar(
+  themes: ThemeIntelligence[],
+  now:    Date = new Date(),
+  max     = 4,
+): RadarCatalyst[] {
+  const map = new Map<string, RadarCatalyst>();
+  for (const t of [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))) {
+    for (const c of generateNextCatalysts(t, now)) {
+      const key = `${c.kind}-${c.date.getTime()}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.themeCount += 1;
+      } else {
+        map.set(key, {
+          kind:       c.kind,
+          label:      c.label,
+          date:       c.date,
+          dateLabel:  c.dateLabel,
+          daysAway:   c.daysAway,
+          imminent:   c.imminent,
+          themeCount: 1,
+          topTheme:   t.name ?? null,
+        });
+      }
+    }
+  }
+  return Array.from(map.values())
+    .sort((a, b) => a.daysAway - b.daysAway || b.themeCount - a.themeCount)
+    .slice(0, max);
 }
 
 // ── Phase 8: Bull / Bear Cases ────────────────────────────────────────────────
@@ -1222,6 +1441,13 @@ function secEntryFor(text: string): SecEntry | null {
   const lc = text.toLowerCase();
   for (const e of SECURITY_LIBRARY) if (e.regex.test(lc)) return e;
   return null;
+}
+
+// Securities specific to a sector/industry label (not the theme driving it), so
+// two sectors sharing a lead theme do not display the same tickers.
+export function securitiesForSector(sector: string, max = 4): string[] {
+  const e = secEntryFor(sector);
+  return e ? e.tickers.slice(0, max) : [];
 }
 
 // Primary beneficiary tickers: prefer the theme's own related_assets, fall back

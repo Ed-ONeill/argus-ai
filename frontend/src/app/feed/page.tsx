@@ -129,21 +129,8 @@ export default function FeedPage() {
   );
 
   useEffect(() => {
-    console.log("[feed]", {
-      isPending,
-      isLoading,
-      isFetching,
-      hasError: !!error,
-      errorMsg:  error instanceof Error ? error.message : String(error ?? ""),
-      dataKeys:  data ? Object.keys(data).join(", ") : "undefined",
-      clusters:  data?.clusters?.length ?? "n/a",
-      allClusters: allClusters.length,
-      ranked:    rankedClusters.length,
-      visible:   visibleClusters.length,
-      params:    JSON.stringify(params),
-    });
-    if (error) console.error("[feed] ✗ query error:", error);
-  }, [data, error, isPending, isLoading, isFetching, allClusters.length, rankedClusters.length, visibleClusters.length, params]);
+    if (error) console.error("[feed] query error:", error);
+  }, [error]);
 
   const handleSave = useCallback((item: FeedItem) => toggleSave(item), [toggleSave]);
 

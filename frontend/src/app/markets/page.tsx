@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
 import {
   Zap, Network, BarChart2,
   X, ChevronRight, AlertTriangle,
@@ -26,6 +27,10 @@ import {
   generateIntelligenceBriefing,
   generateBullBearCases,
   generateNextCatalysts,
+  marketCatalystRadar,
+  isCatalystCalendarPlaceholder,
+  type CatalystKind,
+  type RadarCatalyst,
   generateWatchSignals,
   generateInvalidationSignals,
   computeThemeHealth,
@@ -33,6 +38,7 @@ import {
   themeBeneficiaries,
   bestExpressions,
   themeLosers,
+  securitiesForSector,
 } from "@/lib/themeIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
@@ -178,6 +184,20 @@ function cleanMacroLabel(raw: string): string {
   return MACRO_LABEL_MAP[raw] ?? raw;
 }
 
+// Convert raw SEC filing titles ("8-K — Other Events") into readable labels and
+// strip the em dash. Non-filing titles pass through unchanged.
+const FILING_FORM_RE = /\b(8-K|10-K|10-Q|S-1|S-3|6-K|20-F|13[DG]|424B\d?|DEF 14A|SC 13[DG])\b\s*[—–-]?\s*(.*)$/i;
+function cleanFilingTitle(raw: string): string {
+  const m = raw.match(FILING_FORM_RE);
+  if (!m) return raw;
+  const form    = m[1].toUpperCase();
+  const desc    = (m[2] ?? "").trim();
+  const company = raw.slice(0, m.index).replace(/[—–-]\s*$/, "").trim();
+  const lead    = company ? `${company} ` : "";
+  if (!desc || /^other events$/i.test(desc)) return `${lead}${form} filing`.trim();
+  return `${lead}${form}: ${desc}`.trim();
+}
+
 function cleanThemeName(raw: string): string {
   if (THEME_NAME_OVERRIDES[raw]) return THEME_NAME_OVERRIDES[raw];
   for (const c of THEME_CANON) if (c.regex.test(raw)) return c.name;
@@ -315,7 +335,7 @@ function themeRiskScore(t: ThemeIntelligence): number {
   return s;
 }
 
-function MarketSnapshot({ themes, sectorData, regime, brief }: {
+function MarketSnapshotBase({ themes, sectorData, regime, brief }: {
   themes:     ThemeIntelligence[];
   sectorData: SectorData | null;
   regime:     string;
@@ -366,21 +386,58 @@ function InternalStat({ label, pos, neg }: { label: string; pos: number; neg: nu
   );
 }
 
-function MarketInternals({ themes }: { themes: ThemeIntelligence[] }) {
-  if (themes.length === 0) return null;
-  const positions = computeSectorPositions(themes);
-  const adv = themes.filter(t => (t.momentum_delta ?? 0) > 0).length;
-  const dec = themes.filter(t => (t.momentum_delta ?? 0) < 0).length;
-  const hi  = themes.filter(t => t.momentum_label === "accelerating").length;
-  const lo  = themes.filter(t => t.momentum_label === "reversing").length;
-  const sp  = positions.filter(p => p.direction === "bullish").length;
-  const sn  = positions.filter(p => p.direction === "bearish").length;
+// Compact, clickable mover chip — a theme and its momentum delta.
+function MoverChip({ t, onClick }: { t: ThemeIntelligence; onClick: () => void }) {
+  const d   = t.momentum_delta ?? 0;
+  const up  = d > 0;
+  const clr = up ? "#10b981" : "#ef4444";
   return (
-    <div className="mb-3 rounded-lg border border-edge bg-surface flex items-center flex-wrap overflow-hidden">
-      <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/35 px-2.5 py-1 border-r border-edge/50 shrink-0">Internals</span>
-      <InternalStat label="Advancers / Decliners" pos={adv} neg={dec} />
-      <InternalStat label="New Highs / Lows" pos={hi} neg={lo} />
-      <InternalStat label="Sectors +/−" pos={sp} neg={sn} />
+    <button onClick={onClick}
+      className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-raised/60 transition-colors">
+      <span className="text-[9px]" style={{ color: clr }}>{up ? "▲" : "▼"}</span>
+      <span className="text-[10px] font-semibold text-ink-secondary max-w-[120px] truncate">{cleanThemeName(t.name)}</span>
+      <span className="text-[10px] font-black tabular-nums" style={{ color: clr }}>{up ? "+" : ""}{d}</span>
+    </button>
+  );
+}
+
+// Market Pulse — one dense band that merges the old Internals strip and the
+// "Today's Changes" card: breadth tallies plus the day's biggest theme movers,
+// each clickable into the drawer. Replaces two stacked sections with a glance.
+function MarketPulseStripBase({ themes, onThemeClick }: {
+  themes:       ThemeIntelligence[];
+  onThemeClick: (t: ThemeIntelligence) => void;
+}) {
+  const stats = useMemo(() => {
+    const positions = computeSectorPositions(themes);
+    const moved = [...themes]
+      .filter(t => Math.abs(t.momentum_delta ?? 0) >= 1)
+      .sort((a, b) => Math.abs(b.momentum_delta ?? 0) - Math.abs(a.momentum_delta ?? 0));
+    return {
+      adv: themes.filter(t => (t.momentum_delta ?? 0) > 0).length,
+      dec: themes.filter(t => (t.momentum_delta ?? 0) < 0).length,
+      hi:  themes.filter(t => t.momentum_label === "accelerating").length,
+      lo:  themes.filter(t => t.momentum_label === "reversing").length,
+      sp:  positions.filter(p => p.direction === "bullish").length,
+      sn:  positions.filter(p => p.direction === "bearish").length,
+      movers: moved.slice(0, 6),
+    };
+  }, [themes]);
+
+  if (themes.length === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-lg border border-edge bg-surface flex items-stretch flex-wrap overflow-hidden">
+      <span className="self-center text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/35 px-2.5 py-1.5 border-r border-edge/50 shrink-0">Pulse</span>
+      <InternalStat label="Adv / Dec"    pos={stats.adv} neg={stats.dec} />
+      <InternalStat label="Accel / Rev"  pos={stats.hi}  neg={stats.lo} />
+      <InternalStat label="Sectors +/−"  pos={stats.sp}  neg={stats.sn} />
+      {stats.movers.length > 0 && (
+        <div className="flex items-center gap-0.5 px-1.5 py-1 flex-1 min-w-0 overflow-x-auto border-l border-edge/50">
+          <span className="text-[7px] font-bold uppercase tracking-[0.1em] text-ink-muted/35 shrink-0 pr-0.5">Movers</span>
+          {stats.movers.map(t => <MoverChip key={t.id} t={t} onClick={() => onThemeClick(t)} />)}
+        </div>
+      )}
     </div>
   );
 }
@@ -411,7 +468,7 @@ function deriveWhy(brief: MarketBrief | null | undefined, top: ThemeIntelligence
   return `${cleanThemeName(top.name)} ${verb}${factor ? `, driven by ${cleanMacroLabel(factor)}` : ""}.`;
 }
 
-function DominantNarrative({ brief, themes }: {
+function DominantNarrativeBase({ brief, themes }: {
   brief:  MarketBrief | null | undefined;
   themes: ThemeIntelligence[];
 }) {
@@ -519,59 +576,6 @@ function DominantNarrative({ brief, themes }: {
   );
 }
 
-
-
-// ── Today's Changes ───────────────────────────────────────────────────────────
-
-function changeSignificance(d: number): string {
-  const a = Math.abs(d);
-  return a >= 15 ? "Major" : a >= 8 ? "Notable" : a >= 3 ? "Moderate" : "Minor";
-}
-
-function ChangeRow({ t, onClick }: { t: ThemeIntelligence; onClick: () => void }) {
-  const d  = t.momentum_delta ?? 0;
-  const up = d > 0;
-  const clr = up ? "#10b981" : "#ef4444";
-  return (
-    <button onClick={onClick}
-      className="w-full flex items-center gap-2 px-2.5 py-1 rounded hover:bg-raised/50 transition-colors text-left">
-      <span className="text-[10px] shrink-0" style={{ color: clr }}>{up ? "▲" : "▼"}</span>
-      <span className="text-[11px] font-semibold text-ink truncate flex-1">{cleanThemeName(t.name)}</span>
-      <span className="text-[6.5px] uppercase tracking-wide text-ink-muted/40 shrink-0 hidden sm:inline">{changeSignificance(d)}</span>
-      <span className="text-[11px] font-black tabular-nums shrink-0 w-9 text-right" style={{ color: clr }}>{up ? "+" : ""}{d}</span>
-    </button>
-  );
-}
-
-function WhatChangedToday({ themes, onThemeClick }: {
-  themes:       ThemeIntelligence[];
-  onThemeClick: (t: ThemeIntelligence) => void;
-}) {
-  const moved = useMemo(
-    () => [...themes].filter(t => Math.abs(t.momentum_delta ?? 0) >= 1)
-            .sort((a, b) => Math.abs(b.momentum_delta ?? 0) - Math.abs(a.momentum_delta ?? 0)),
-    [themes],
-  );
-  if (moved.length === 0) return null;
-  const up   = moved.filter(t => (t.momentum_delta ?? 0) > 0).slice(0, 5);
-  const down = moved.filter(t => (t.momentum_delta ?? 0) < 0).slice(0, 5);
-
-  return (
-    <div className="mb-4">
-      <SectionHeader label="Today's Changes" icon={<Zap size={11} className="text-accent shrink-0" />} sub="what actually moved" />
-      <div className="grid sm:grid-cols-2 gap-x-3 rounded-lg border border-edge bg-surface px-1.5 py-1.5">
-        <div className="space-y-px">
-          {up.map(t => <ChangeRow key={t.id} t={t} onClick={() => onThemeClick(t)} />)}
-          {up.length === 0 && <p className="text-[9px] text-ink-muted/40 italic px-2.5 py-1">No gainers today</p>}
-        </div>
-        <div className="space-y-px sm:border-l border-edge/50 sm:pl-2">
-          {down.map(t => <ChangeRow key={t.id} t={t} onClick={() => onThemeClick(t)} />)}
-          {down.length === 0 && <p className="text-[9px] text-ink-muted/40 italic px-2.5 py-1">No faders today</p>}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 
 // ── Section header ─────────────────────────────────────────────────────────────
@@ -768,7 +772,7 @@ function MarketSnapshotStrip({ marketData }: {
             {loading ? (
               <span className="text-[12px] font-bold text-ink-muted/30 tabular-nums">…</span>
             ) : offline ? (
-              <span className="text-[12px] font-bold text-ink-muted/25 tabular-nums">n/a</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-muted/30">Delayed</span>
             ) : (
               <>
                 <span className="text-[12px] font-bold text-ink tabular-nums leading-tight">
@@ -1355,31 +1359,40 @@ function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Next Catalysts */}
+              {/* Next Catalysts — dated, chronological */}
               {catalysts.length > 0 && (
                 <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">What Moves It Next</p>
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60 flex items-center justify-between">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Upcoming Catalysts</p>
+                    <p className="text-[8px] text-ink-muted/45">scheduled, soonest first</p>
                   </div>
                   <div className="divide-y divide-edge/50">
-                    {catalysts.map((cat, i) => (
-                      <div key={i} className="px-4 py-3 flex items-start gap-3">
-                        <span
-                          className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5"
-                          style={{
-                            color:       cat.direction === "confirming" ? "#10b981" : "#f59e0b",
-                            background:  cat.direction === "confirming" ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)",
-                          }}
-                        >
-                          {cat.direction === "confirming" ? "▲ confirming" : "⚑ risk"}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold text-ink mb-0.5">{cat.label}</p>
-                          <p className="text-[10.5px] text-ink-secondary leading-snug">{cat.reason}</p>
+                    {catalysts.map((cat, i) => {
+                      const accent = cat.imminent ? "#f59e0b" : cat.direction === "confirming" ? "#10b981" : "#a78bfa";
+                      return (
+                        <div key={i} className="px-4 py-3 flex items-start gap-3">
+                          {/* countdown + date — the institutional hook */}
+                          <div className="flex flex-col items-center w-11 shrink-0 mt-0.5">
+                            <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: accent }}>{countdownLabel(cat.daysAway)}</span>
+                            <span className="text-[8px] text-ink-muted/55 tabular-nums mt-0.5">{cat.dateLabel}</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className="text-[11px] font-semibold text-ink">{cat.label}</span>
+                              <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none"
+                                style={{ color: accent, background: `${accent}1a` }}>
+                                {cat.direction === "confirming" ? "▲ confirming" : "⚑ risk"}
+                              </span>
+                              {cat.imminent && (
+                                <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none text-amber-700 bg-amber-500/15">this week</span>
+                              )}
+                            </div>
+                            <p className="text-[10.5px] text-ink-secondary leading-snug">{cat.reason}</p>
+                          </div>
+                          <span className="text-[8px] text-ink-muted/40 shrink-0 mt-0.5">{cat.sensitivity}</span>
                         </div>
-                        <span className="text-[8px] text-ink-muted/40 shrink-0 mt-0.5">{cat.sensitivity}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1558,10 +1571,88 @@ function shortRisk(t: ThemeIntelligence): string {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), 32)).trim() + "…";
 }
 
-function ThemeCommandCenter({ themes, onThemeClick }: {
+// Short labels and glyphs for each scheduled-catalyst kind.
+const CATALYST_META: Record<CatalystKind, { short: string; glyph: string }> = {
+  "fomc":           { short: "FOMC",  glyph: "◆" },
+  "cpi":            { short: "CPI",   glyph: "▣" },
+  "pce":            { short: "PCE",   glyph: "▣" },
+  "jobs":           { short: "Jobs",  glyph: "▦" },
+  "gdp":            { short: "GDP",   glyph: "▤" },
+  "nvda-earnings":  { short: "NVDA",  glyph: "▲" },
+  "cloud-earnings": { short: "Cloud", glyph: "▲" },
+  "semi-earnings":  { short: "Semis", glyph: "▲" },
+  "bank-earnings":  { short: "Banks", glyph: "▲" },
+  "opec":           { short: "OPEC+", glyph: "◉" },
+  "treasury":       { short: "UST",   glyph: "◇" },
+  "china":          { short: "China", glyph: "◈" },
+};
+
+function countdownLabel(daysAway: number): string {
+  return daysAway <= 0 ? "today" : daysAway === 1 ? "1d" : `${daysAway}d`;
+}
+
+// Market-wide upcoming-catalyst strip: the soonest scheduled events across the
+// visible themes, with imminent (<=7d) events emphasized.
+function CatalystRadarStrip({ catalysts }: { catalysts: RadarCatalyst[] }) {
+  if (catalysts.length === 0) return null;
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+      <span className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 shrink-0 pr-0.5">Upcoming</span>
+      {isCatalystCalendarPlaceholder() && (
+        <span title="Dates are indicative placeholders until a live calendar source is connected"
+          className="text-[6.5px] font-semibold uppercase tracking-wide text-amber-500/55 shrink-0">est.</span>
+      )}
+      {catalysts.map(c => {
+        const meta = CATALYST_META[c.kind];
+        const clr  = c.imminent ? "#f59e0b" : "#818cf8";
+        return (
+          <span key={`${c.kind}-${c.date.getTime()}`}
+            className="shrink-0 flex items-center gap-1.5 rounded-md border px-2 py-1"
+            style={{ borderColor: `${clr}33`, background: `${clr}10` }}>
+            <span className="text-[10px] leading-none" style={{ color: clr }}>{meta.glyph}</span>
+            <span className="flex flex-col leading-none">
+              <span className="text-[9.5px] font-bold text-ink">{meta.short}</span>
+              <span className="text-[7px] text-ink-muted/55 tabular-nums mt-px">{c.dateLabel}{c.themeCount > 1 ? ` · ${c.themeCount} themes` : ""}</span>
+            </span>
+            <span className="text-[10px] font-black tabular-nums" style={{ color: clr }}>{countdownLabel(c.daysAway)}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// Per-theme next-catalyst chips — the soonest dated events that move this theme,
+// colored by whether they confirm or threaten the thesis.
+function ThemeCatalystRow({ theme }: { theme: ThemeIntelligence }) {
+  const cats = useMemo(() => generateNextCatalysts(theme).slice(0, 2), [theme]);
+  if (cats.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
+      <span className="text-[6.5px] font-bold uppercase tracking-wide text-indigo-400/55 shrink-0">Next</span>
+      {cats.map(c => {
+        const meta = CATALYST_META[c.kind];
+        const clr  = c.imminent ? "#f59e0b" : c.direction === "confirming" ? "#10b981" : "#a78bfa";
+        return (
+          <span key={c.kind} title={c.reason}
+            className="flex items-center gap-1 rounded px-1 py-px border"
+            style={{ borderColor: `${clr}2e`, background: `${clr}12` }}>
+            <span className="text-[8px]" style={{ color: clr }}>{c.direction === "confirming" ? "▲" : "⚑"}</span>
+            <span className="text-[8.5px] font-bold text-ink-secondary">{meta.short}</span>
+            <span className="text-[8.5px] font-black tabular-nums" style={{ color: clr }}>{countdownLabel(c.daysAway)}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ThemeCommandCenterBase({ themes, onThemeClick }: {
   themes:       ThemeIntelligence[];
   onThemeClick: (t: ThemeIntelligence) => void;
 }) {
+  const radar = useMemo(() => marketCatalystRadar(themes, new Date(), 5), [themes]);
+
   if (themes.length === 0) return (
     <div className="mb-4">
       <SectionHeader label="Theme Command Center" icon={<Zap size={11} className="text-accent shrink-0" />} />
@@ -1573,7 +1664,8 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
   return (
     <div className="mb-4">
       <SectionHeader label="Theme Command Center" icon={<Zap size={11} className="text-accent shrink-0" />}
-        sub="what's driving it" />
+        sub="conviction, exposure, and the next dated catalyst" />
+      <CatalystRadarStrip catalysts={radar} />
       <div className="grid sm:grid-cols-2 gap-1.5">
         {sorted.map(t => {
           const mm    = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
@@ -1607,7 +1699,7 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
                 <div className="flex items-center gap-1.5 mt-0.5 text-[8.5px]">
                   <span className="font-bold uppercase tracking-wide" style={{ color: mm.color }}>{mm.label}</span>
                   <span className="text-ink-muted/25">·</span>
-                  <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Catalyst</span> {themePrimaryDriver(t)}</span>
+                  <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Driver</span> {themePrimaryDriver(t)}</span>
                 </div>
                 {/* who wins / who loses — prominent tickers */}
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
@@ -1628,6 +1720,8 @@ function ThemeCommandCenter({ themes, onThemeClick }: {
                     </span>
                   )}
                 </div>
+                {/* next dated catalysts */}
+                <ThemeCatalystRow theme={t} />
                 {/* what changes the view */}
                 <div className="flex items-center gap-1 mt-px text-[8px] min-w-0">
                   <span className="text-amber-500/50 font-bold uppercase tracking-wide shrink-0">Watch</span>
@@ -1667,7 +1761,7 @@ function ChainArrow({ color }: { color: string }) {
 // Macro Driver → Theme → Sector → Securities. Built from structured fields
 // (related_macro_factors, name, related_industries, themeBeneficiaries) rather
 // than parsed prose, so every chain terminates in instruments.
-function ThemeTransmission({ themes, onNodeClick }: {
+function ThemeTransmissionBase({ themes, onNodeClick }: {
   themes:      ThemeIntelligence[];
   onNodeClick: (t: ThemeIntelligence) => void;
 }) {
@@ -1684,6 +1778,8 @@ function ThemeTransmission({ themes, onNodeClick }: {
       .slice(0, 5);
   }, [themes]);
 
+  const [open, setOpen] = useState(false);
+
   if (chains.length === 0) return null;
 
   const dirColor = (t: ThemeIntelligence) =>
@@ -1692,8 +1788,32 @@ function ThemeTransmission({ themes, onNodeClick }: {
 
   return (
     <div className="mb-4">
-      <SectionHeader label="Transmission Map" icon={<Network size={11} className="text-accent shrink-0" />}
-        sub="macro driver to security, cause to effect" />
+      {/* Secondary view — collapsed by default; the chains restate exposure the
+          Command Center already shows, so this is available on demand only. */}
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 mb-2 group">
+        <Network size={11} className="text-accent shrink-0" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">Transmission Map</span>
+        <span className="text-[9px] text-ink-muted">{chains.length} causal chains, macro driver to security</span>
+        <span className="h-px flex-1 bg-edge" />
+        <ChevronDown size={12} className={cn("text-ink-muted/45 transition-transform shrink-0", open ? "" : "-rotate-90")} />
+      </button>
+      {!open && (
+        <button onClick={() => setOpen(true)}
+          className="w-full flex items-center gap-1.5 flex-wrap rounded-lg border border-edge bg-surface px-3 py-2 hover:bg-raised/30 transition-colors">
+          {chains.map((c, ci) => (
+            <span key={ci} className="flex items-center gap-1 text-[9px]">
+              {ci > 0 && <span className="text-ink-muted/20 mr-1">·</span>}
+              <span className="font-semibold text-ink-secondary">{cleanThemeName(c.t.name)}</span>
+              <span className="text-ink-muted/35">→</span>
+              {c.tickers.slice(0, 2).map(tk => (
+                <span key={tk} className="font-bold tabular-nums text-emerald-700/90">{tk}</span>
+              ))}
+            </span>
+          ))}
+        </button>
+      )}
+      {open && (
       <div className="rounded-xl border border-edge bg-surface divide-y divide-edge/50">
         {chains.map((c, ci) => {
           const clr = dirColor(c.t);
@@ -1727,6 +1847,7 @@ function ThemeTransmission({ themes, onNodeClick }: {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
@@ -1787,7 +1908,9 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
     const trend = imp > wk ? "Improving" : wk > imp ? "Weakening" : "Stable";
     const trendColor = imp > wk ? "#10b981" : wk > imp ? "#ef4444" : "#94a3b8";
     const be = bestExpressions(list[0]);
-    const exposures: string[] = be?.tickers ? [...be.tickers] : [];
+    // Sector-specific securities first, so sectors sharing a lead theme differ.
+    const exposures: string[] = securitiesForSector(sector);
+    if (exposures.length === 0 && be?.tickers) exposures.push(...be.tickers);
     for (const t of list.slice(0, 3)) for (const a of (t.related_assets ?? [])) {
       if (a && !exposures.includes(a) && /^[A-Z.]{1,6}$/.test(a)) exposures.push(a);
     }
@@ -1815,55 +1938,6 @@ const DIR_META = {
 
 // ── SECTOR POSITIONING ────────────────────────────────────────────────────────
 
-function SectorPositioning({ themes }: { themes: ThemeIntelligence[] }) {
-  const positions = useMemo(() => computeSectorPositions(themes), [themes]);
-  if (positions.length === 0) return null;
-  const bull = positions.filter(p => p.direction === "bullish").length;
-
-  return (
-    <div className="mb-4">
-      <SectionHeader label="Sector Positioning" icon={<BarChart2 size={11} className="text-accent shrink-0" />}
-        sub={`${bull} bullish of ${positions.length} sectors`} />
-      <div className="grid sm:grid-cols-2 gap-1.5">
-        {positions.map((p, i) => {
-          const dm = DIR_META[p.direction];
-          return (
-            <div key={p.sector} className="rounded-lg border border-edge bg-surface px-3 py-2"
-              style={{ borderLeft: `2.5px solid ${dm.color}` }}>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[9px] font-black tabular-nums text-ink-muted/40 shrink-0 w-5">#{i + 1}</span>
-                <span className="text-[12px] font-bold text-ink truncate flex-1">{p.sector}</span>
-                <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
-                  style={{ color: dm.color, background: `${dm.color}15` }}>{dm.label}</span>
-                <span className="text-[14px] font-black tabular-nums shrink-0" style={{ color: confColor(p.conviction) }}>{convScore(p.conviction)}</span>
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap text-[8.5px] pl-7">
-                <span className="text-ink-muted/40">Driven By</span>
-                <span className="font-semibold text-ink-secondary">{p.drivers[0]}</span>
-                {p.drivers[1] && <><span className="text-ink-muted/20">·</span><span className="text-ink-muted/70">{p.drivers[1]}</span></>}
-              </div>
-              <div className="flex items-center gap-2 text-[8.5px] mt-px pl-7">
-                <span className="tabular-nums text-ink-muted/60"><span className="font-bold text-ink-secondary">{p.supportive} of {p.count}</span> supportive</span>
-                <span className="text-ink-muted/20">·</span>
-                <span className="font-semibold" style={{ color: p.trendColor }}>{p.trend}</span>
-                {p.exposures.length > 0 && (
-                  <span className="ml-auto flex items-center gap-1">
-                    {p.exposures.slice(0, 3).map(tk => (
-                      <span key={tk} className="text-[9px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-700/90 border border-emerald-500/20">{tk}</span>
-                    ))}
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── HIGHEST CONVICTION OPPORTUNITIES ──────────────────────────────────────────
-
 function OppBlock({ label, color, children }: { label: string; color?: string; children: React.ReactNode }) {
   return (
     <div className="mt-1.5">
@@ -1873,70 +1947,95 @@ function OppBlock({ label, color, children }: { label: string; color?: string; c
   );
 }
 
-function HighestConvictionOpportunities({ themes }: { themes: ThemeIntelligence[] }) {
-  const opps = useMemo(
-    () => computeSectorPositions(themes).filter(p => p.direction === "bullish").slice(0, 4),
-    [themes],
-  );
-  if (opps.length === 0) return null;
+// Sector Positioning — the single sector view. Every sector ranks here; tapping
+// a row expands the full trade case (why it matters, what breaks it, the best
+// expressions), so the old standalone "Opportunities" section folds in as
+// progressive disclosure rather than a duplicate listing.
+function SectorPositioningBase({ themes }: { themes: ThemeIntelligence[] }) {
+  const positions = useMemo(() => computeSectorPositions(themes), [themes]);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  if (positions.length === 0) return null;
+  const bull = positions.filter(p => p.direction === "bullish").length;
 
   return (
     <div className="mb-4">
-      <SectionHeader label="Highest Conviction Opportunities" icon={<Zap size={11} className="text-accent shrink-0" />}
-        sub="what can benefit" />
-      <div className="grid sm:grid-cols-2 gap-1.5">
-        {opps.map(p => {
-          const ct = confTrend(p.leadDelta);
+      <SectionHeader label="Sector Positioning" icon={<BarChart2 size={11} className="text-accent shrink-0" />}
+        sub={`${bull} bullish of ${positions.length} · expand for the trade`} />
+      <div className="grid sm:grid-cols-2 gap-1.5 items-start">
+        {positions.map((p, i) => {
+          const dm     = DIR_META[p.direction];
+          const isOpen = !!open[p.sector];
+          const ct     = confTrend(p.leadDelta);
           return (
-          <div key={p.sector} className="rounded-lg border border-edge bg-surface px-3 py-2.5" style={{ borderTop: "2px solid #10b981" }}>
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[13px] font-black uppercase tracking-wide text-ink truncate">{p.sector}</span>
-              <span className="flex items-baseline gap-1 shrink-0">
-                <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: "#10b981" }}>{convScore(p.conviction)}</span>
-                <span className="text-[7px] uppercase tracking-wide text-ink-muted/45">conviction</span>
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 mt-1 text-[8px]">
-              <span className="font-bold" style={{ color: ct.color }}>{ct.arrow} {ct.label}</span>
-              <span className="text-ink-muted/25">·</span>
-              <span className="text-ink-muted/60">{p.horizon}</span>
-              <span className="text-ink-muted/25">·</span>
-              <span className="text-ink-muted/60 tabular-nums">{p.supportive}/{p.count} themes</span>
-            </div>
-
-            <OppBlock label="Supporting Themes">
-              <div className="flex items-center gap-1 flex-wrap">
-                {p.drivers.map(d => <span key={d} className="text-[9px] font-semibold px-1.5 py-px rounded bg-raised border border-edge text-ink-secondary">{d}</span>)}
-              </div>
-            </OppBlock>
-
-            <OppBlock label="Why Investors Care" color="rgba(16,185,129,0.6)">
-              <ul className="space-y-0.5">
-                {p.whyBullets.map((b, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[9.5px] text-ink-secondary leading-snug">
-                    <span className="shrink-0 mt-[4px] w-1 h-1 rounded-full bg-emerald-500/60" />
-                    <span className="line-clamp-2">{b}</span>
-                  </li>
-                ))}
-              </ul>
-            </OppBlock>
-
-            <OppBlock label="What Could Break It" color="rgba(245,158,11,0.65)">
-              <p className="text-[9px] text-ink-muted/70 leading-snug line-clamp-2">{p.risk}</p>
-            </OppBlock>
-
-            {p.exposures.length > 0 && (
-              <OppBlock label="Best Expressions">
-                <div className="flex items-center gap-1 flex-wrap">
-                  {p.exposures.map(tk => (
-                    <span key={tk} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">{tk}</span>
-                  ))}
+            <div key={p.sector} className="rounded-lg border border-edge bg-surface"
+              style={{ borderLeft: `2.5px solid ${dm.color}` }}>
+              <button onClick={() => setOpen(o => ({ ...o, [p.sector]: !o[p.sector] }))}
+                className="w-full text-left px-3 py-2 hover:bg-raised/30 transition-colors">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[9px] font-black tabular-nums text-ink-muted/40 shrink-0 w-5">#{i + 1}</span>
+                  <span className="text-[12px] font-bold text-ink truncate flex-1">{p.sector}</span>
+                  <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+                    style={{ color: dm.color, background: `${dm.color}15` }}>{dm.label}</span>
+                  <span className="text-[14px] font-black tabular-nums shrink-0" style={{ color: confColor(p.conviction) }}>{convScore(p.conviction)}</span>
+                  <ChevronDown size={11} className={cn("text-ink-muted/35 transition-transform shrink-0", isOpen ? "" : "-rotate-90")} />
                 </div>
-                {p.expressWhy && <p className="text-[8.5px] text-ink-muted/60 leading-snug mt-1">{p.expressWhy}</p>}
-              </OppBlock>
-            )}
-          </div>
+                <div className="flex items-center gap-1.5 flex-wrap text-[8.5px] pl-7">
+                  <span className="text-ink-muted/40">Driven By</span>
+                  <span className="font-semibold text-ink-secondary">{p.drivers[0]}</span>
+                  {p.drivers[1] && <><span className="text-ink-muted/20">·</span><span className="text-ink-muted/70">{p.drivers[1]}</span></>}
+                </div>
+                <div className="flex items-center gap-2 text-[8.5px] mt-px pl-7">
+                  <span className="tabular-nums text-ink-muted/60"><span className="font-bold text-ink-secondary">{p.supportive} of {p.count}</span> supportive</span>
+                  <span className="text-ink-muted/20">·</span>
+                  <span className="font-semibold" style={{ color: p.trendColor }}>{p.trend}</span>
+                  {p.exposures.length > 0 && (
+                    <span className="ml-auto flex items-center gap-1">
+                      {p.exposures.slice(0, 3).map(tk => (
+                        <span key={tk} className="text-[9px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-700/90 border border-emerald-500/20">{tk}</span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="px-3 pb-2.5 pt-1 pl-10 border-t border-edge/50">
+                  <div className="flex items-center gap-2 mt-1 text-[8px]">
+                    <span className="font-bold" style={{ color: ct.color }}>{ct.arrow} {ct.label}</span>
+                    <span className="text-ink-muted/25">·</span>
+                    <span className="text-ink-muted/60">{p.horizon}</span>
+                    <span className="text-ink-muted/25">·</span>
+                    <span className="text-ink-muted/60 tabular-nums">{p.supportive}/{p.count} themes</span>
+                  </div>
+
+                  <OppBlock label="Why It Matters" color={p.direction === "bullish" ? "rgba(16,185,129,0.6)" : "rgba(148,163,184,0.7)"}>
+                    <ul className="space-y-0.5">
+                      {p.whyBullets.map((b, j) => (
+                        <li key={j} className="flex items-start gap-1.5 text-[9.5px] text-ink-secondary leading-snug">
+                          <span className="shrink-0 mt-[4px] w-1 h-1 rounded-full" style={{ background: dm.color, opacity: 0.6 }} />
+                          <span className="line-clamp-2">{b}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </OppBlock>
+
+                  <OppBlock label="What Could Break It" color="rgba(245,158,11,0.65)">
+                    <p className="text-[9px] text-ink-muted/70 leading-snug line-clamp-2">{p.risk}</p>
+                  </OppBlock>
+
+                  {p.exposures.length > 0 && (
+                    <OppBlock label="Best Expressions">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {p.exposures.map(tk => (
+                          <span key={tk} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">{tk}</span>
+                        ))}
+                      </div>
+                      {p.expressWhy && <p className="text-[8.5px] text-ink-muted/60 leading-snug mt-1">{p.expressWhy}</p>}
+                    </OppBlock>
+                  )}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -1958,7 +2057,7 @@ function EvidenceRow({ cluster, saved, onSave }: {
         style={{ color: "rgba(82,176,200,0.6)" }}>{p.category}</span>
       <div className="min-w-0 flex-1">
         <a href={p.url} target="_blank" rel="noopener noreferrer"
-          className="text-[11px] font-medium text-ink leading-snug line-clamp-2 hover:text-accent transition-colors">{p.title}</a>
+          className="text-[11px] font-medium text-ink leading-snug line-clamp-2 hover:text-accent transition-colors">{cleanFilingTitle(p.title)}</a>
         <p className="text-[8px] text-ink-muted/55 mt-px truncate">
           {p.source}{p.published ? ` · ${p.published}` : ""}{cluster.story_count > 1 ? ` · +${cluster.story_count - 1}` : ""}
         </p>
@@ -1978,7 +2077,7 @@ function freshness(items: StoryCluster[]): string {
   return items[0]?.primary.published ?? "";
 }
 
-function EvidenceValidation({ themes, clusters, savedIds, onSave }: {
+function EvidenceValidationBase({ themes, clusters, savedIds, onSave }: {
   themes:   ThemeIntelligence[];
   clusters: StoryCluster[];
   savedIds: string[];
@@ -2060,13 +2159,41 @@ function EvidenceValidation({ themes, clusters, savedIds, onSave }: {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// Memoized section components: when the drawer opens (drawerData state changes
+// on MarketsPage) these skip re-render entirely because their props (visible
+// themes + stable callbacks) are unchanged — no recompute of sector positions,
+// transmission chains, or beneficiary lookups.
+const MarketSnapshot                = memo(MarketSnapshotBase);
+const MarketPulseStrip              = memo(MarketPulseStripBase);
+const DominantNarrative             = memo(DominantNarrativeBase);
+const ThemeCommandCenter            = memo(ThemeCommandCenterBase);
+const ThemeTransmission             = memo(ThemeTransmissionBase);
+const SectorPositioning             = memo(SectorPositioningBase);
+const EvidenceValidation            = memo(EvidenceValidationBase);
+
+// Lightweight placeholder shown on first load so the page never flashes blank
+// while the (cache-warmed) feed response is in flight.
+function MarketsSkeleton() {
+  return (
+    <div className="animate-pulse space-y-3" aria-hidden>
+      <div className="h-16 rounded-xl bg-raised/50 border border-edge" />
+      <div className="h-9 rounded-lg bg-raised/40 border border-edge" />
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="h-28 rounded-xl bg-raised/40 border border-edge" />
+        <div className="h-28 rounded-xl bg-raised/40 border border-edge" />
+      </div>
+      <div className="h-40 rounded-xl bg-raised/30 border border-edge" />
+    </div>
+  );
+}
+
 export default function MarketsPage() {
   const [activeKey,  setActiveKey]  = useState<SnapshotKey | null>(null);
   const [drawerData, setDrawerData] = useState<DrawerData | null>(null);
   const clusterRef = useRef<HTMLDivElement>(null);
 
   const { data: marketData, meta: marketMeta, heartbeatStatus, marketOpen } = useMarketData();
-  const { data }                  = useFeed({ use_ai: true });
+  const { data, isLoading }       = useFeed({ use_ai: true });
   const { riskRegime, volRegime }                              = useMarketState();
   const { savedIds, toggleSave }                               = useSaved();
   const { followed, followedIds, isFollowed, toggle: toggleFollow, unfollow } = useFollowedThemes();
@@ -2090,7 +2217,8 @@ export default function MarketsPage() {
     [visible, sectorData, riskRegime, volRegime],
   );
 
-  function openDrawer(t: ThemeIntelligence) {
+  // Stable identity so memoized sections don't re-render when the drawer opens.
+  const openDrawer = useCallback((t: ThemeIntelligence) => {
     dismissAlert(t.id);
     const rel = relMap.get(t.id);
     setDrawerData({
@@ -2100,11 +2228,11 @@ export default function MarketsPage() {
       connected:  rel?.connected  ?? [],
       conflicts:  contradictions.filter(c => c.themeIds.includes(t.id)),
     });
-  }
+  }, [dismissAlert, relMap, contradictions]);
 
-  function handleFollowToggle(t: ThemeIntelligence) {
+  const handleFollowToggle = useCallback((t: ThemeIntelligence) => {
     toggleFollow(t, cleanThemeName(t.name));
-  }
+  }, [toggleFollow]);
 
   const watchlistAlerts = alerts.filter(a => followedIds.includes(a.themeId));
 
@@ -2150,10 +2278,13 @@ export default function MarketsPage() {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
 
+        {/* First-load skeleton — avoids a blank page before cache responds */}
+        {isLoading && visible.length === 0 && <MarketsSkeleton />}
+
         {/* ══ 1. MARKET STATE — what is happening ══════════════ */}
         <SectionHeader label="Market State" />
         <MarketSnapshot themes={visible} sectorData={sectorData} regime={derivedRegime} brief={data?.market_brief} />
-        <MarketInternals themes={visible} />
+        <MarketPulseStrip themes={visible} onThemeClick={openDrawer} />
 
         {/* Live market snapshot — 6 instruments */}
         <MarketSnapshotStrip marketData={marketData} />
@@ -2195,22 +2326,16 @@ export default function MarketsPage() {
         {/* ══ 2. DOMINANT NARRATIVE — why it is happening ══════ */}
         <DominantNarrative brief={data?.market_brief} themes={visible} />
 
-        {/* ══ 3. TODAY'S CHANGES — what actually moved ═════════ */}
-        <WhatChangedToday themes={visible} onThemeClick={openDrawer} />
-
-        {/* ══ 4. SECTOR POSITIONING — where it matters ═════════ */}
-        <SectorPositioning themes={visible} />
-
-        {/* ══ 5. THEME COMMAND CENTER — what's driving it ══════ */}
+        {/* ══ 3. THEME COMMAND CENTER — what's driving it + catalysts ══ */}
         <ThemeCommandCenter themes={visible} onThemeClick={openDrawer} />
 
-        {/* ══ 6. TRANSMISSION MAP — how it spreads ═════════════ */}
+        {/* ══ 4. SECTOR POSITIONING — where it matters + the trade ══ */}
+        <SectorPositioning themes={visible} />
+
+        {/* ══ 5. TRANSMISSION MAP — how it spreads (secondary, collapsed) ══ */}
         <ThemeTransmission themes={visible} onNodeClick={openDrawer} />
 
-        {/* ══ 7. HIGHEST CONVICTION OPPORTUNITIES — what to do ═ */}
-        <HighestConvictionOpportunities themes={visible} />
-
-        {/* ══ 7. EVIDENCE VALIDATION — why we believe it ═══════ */}
+        {/* ══ 6. EVIDENCE VALIDATION — why we believe it ═══════ */}
         <div ref={clusterRef} className="mb-4">
           <EvidenceValidation
             themes={visible}

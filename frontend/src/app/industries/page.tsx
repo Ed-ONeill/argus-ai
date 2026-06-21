@@ -123,18 +123,6 @@ export default function IndustriesPage() {
       ? (sortedActivations[0]?.industry ?? null)
       : (activeThemes[0]?.name ?? anyThemes[0]?.name ?? null));
 
-  // Debug: trace the exact API payload and all derived state — remove after confirmed working
-  console.log("[industries] payload:", {
-    themes:       allThemes.length,
-    activations:  activations.length,
-    sectors:      sectorData?.sectors?.length ?? 0,
-    industries:   sectorData?.industries?.length ?? 0,
-    is_stale:     feedData?.is_stale,
-    generated_at: feedData?.generated_at,
-  });
-  console.log("[industries] active activations:", activations.filter(a => a.score > 0).map(a => `${a.industry}:${a.score}`));
-  console.log("[industries] computed:", { hasSectorData, hasSectorScores, hasActivations, activeCount, totalStories, dominant });
-
   return (
     <div className="min-h-screen bg-canvas">
 

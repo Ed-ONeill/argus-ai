@@ -183,8 +183,6 @@ function StructuredBrief({ brief }: { brief: MarketBrief }) {
 // ── Simple fallback ────────────────────────────────────────────────────────────
 
 function SimpleTake({ text, isLoading }: { text: string | undefined; isLoading: boolean }) {
-  console.log("[TodaysTake] text:", JSON.stringify(text), "| isLoading:", isLoading);
-
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric",
   });

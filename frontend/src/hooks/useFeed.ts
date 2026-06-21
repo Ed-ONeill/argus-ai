@@ -11,16 +11,7 @@ export function useFeed(initialParams: FeedParams = {}) {
 
   const { data, isLoading, isPending, isFetching, error } = useQuery<FeedResponse>({
     queryKey: ["feed", params],
-    queryFn: async () => {
-      try {
-        const result = await fetchFeed(params);
-        console.log("[useFeed] ✓ items:", result?.items?.length ?? 0, "clusters:", result?.clusters?.length ?? 0);
-        return result;
-      } catch (err) {
-        console.error("[useFeed] ✗ fetch failed:", err);
-        throw err;
-      }
-    },
+    queryFn: () => fetchFeed(params),
     // Backend always returns instantly from cache; keep client-side data fresh
     // for 5 min and auto-poll every 10 min to pick up background refreshes.
     staleTime: 5 * 60 * 1000,
