@@ -28,8 +28,8 @@ export function FilterChips({
     <div
       className="sticky top-14 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 mb-5 pb-2.5 pt-2.5 backdrop-blur-md border-b"
       style={{
-        background: "rgba(3,7,16,0.94)",
-        borderBottomColor: "rgba(255,255,255,0.055)",
+        background: "rgba(10,15,28,0.92)",   // Markets body family
+        borderBottomColor: "rgba(255,255,255,0.06)",
       }}
     >
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
@@ -61,9 +61,9 @@ export function FilterChips({
                         color: "rgba(255,255,255,0.88)",
                       }
                     : {
-                        background: "rgba(255,255,255,0.035)",
-                        border: "1px solid rgba(255,255,255,0.07)",
-                        color: "rgba(255,255,255,0.50)",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        color: "rgba(255,255,255,0.64)",   // readable, not washed
                       }
               }
             >

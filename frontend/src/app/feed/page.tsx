@@ -198,7 +198,8 @@ export default function FeedPage() {
       )}
 
       {/* ── Atmospheric dark environment — unified intelligence system ─────── */}
-      <div className="relative" style={{ background: "#030710", minHeight: "calc(100vh - 3.5rem)" }}>
+      {/* Body aligned to the Markets workstation surface (#0A0F1C) for product consistency. */}
+      <div className="relative" style={{ background: "#0A0F1C", minHeight: "calc(100vh - 3.5rem)" }}>
 
         {/* Depth grid — institutional reference grid behind all layers */}
         <div aria-hidden className="absolute inset-0 pointer-events-none select-none"

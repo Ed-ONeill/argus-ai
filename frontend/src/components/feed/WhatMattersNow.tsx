@@ -13,29 +13,30 @@ interface WhatMattersNowProps {
   trendLabel?:      string;   // e.g. "Risk-on strengthening"
 }
 
-// Muted institutional equivalents for dark atmospheric context
-const MUTED_CAT: Record<string, string> = {
-  "#2563EB": "#3a68b8",
-  "#7C3AED": "#6040a0",
-  "#DC2626": "#8a3838",
-  "#0891B2": "#2878a0",
-  "#D97706": "#a06020",
+// Institutional dark-mode category colors — kept readable/strong (no longer
+// desaturated), aligned with the Markets workstation so signals actually pop.
+const CAT_DARK: Record<string, string> = {
+  "#2563EB": "#4f8cf0",   // markets blue
+  "#7C3AED": "#a07cf0",   // M&A purple
+  "#DC2626": "#f87171",   // red
+  "#0891B2": "#38bdf8",   // teal/cyan
+  "#D97706": "#fbbf24",   // amber
 };
 
 function mutedColor(brightHex: string): string {
-  return MUTED_CAT[brightHex] ?? "#4a5878";
+  return CAT_DARK[brightHex] ?? "#7e8db0";
 }
 
 function pressureBarColor(score: number, baseColor: string): string {
   if (score >= 78) return baseColor;
-  if (score >= 52) return "#a06830";
-  return "#3a4a6a";
+  if (score >= 52) return "#fbbf24";   // amber
+  return "#64748b";                    // slate
 }
 
 const DIRECTION_CONFIG = {
-  bullish: { label: "Risk-On",  color: "rgba(82,176,200,0.80)"  },
-  bearish: { label: "Risk-Off", color: "rgba(176,88,88,0.80)"   },
-  mixed:   { label: "Mixed",    color: "rgba(180,140,70,0.75)"  },
+  bullish: { label: "Risk-On",  color: "#34d399" },   // emerald
+  bearish: { label: "Risk-Off", color: "#f87171" },   // red
+  mixed:   { label: "Mixed",    color: "#fbbf24" },   // amber
 } as const;
 
 function buildThemeMap(
@@ -94,8 +95,8 @@ export function WhatMattersNow({ items, isLoading, themes, marketIntensity, tren
           style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }}
         />
         <span
-          className="text-[9.5px] shrink-0"
-          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.36)" }}
+          className="text-[9.5px] font-medium shrink-0"
+          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.55)" }}
         >
           {trendLabel ?? "Signal Pressure"}
         </span>
@@ -169,10 +170,10 @@ function PrimaryDriverCard({
       onClick={onClick}
       className="w-full text-left relative overflow-hidden"
       style={{
-        background:    "rgba(7,12,26,0.94)",
-        borderRadius:  "10px",
+        background:    "#111827",                          // Markets elevated panel
+        borderRadius:  "12px",
         borderTop:     "1px solid rgba(255,255,255,0.07)",
-        borderRight:   "1px solid rgba(255,255,255,0.05)",
+        borderRight:   "1px solid rgba(255,255,255,0.06)",
         borderBottom:  "1px solid rgba(255,255,255,0.07)",
       }}
     >
@@ -301,11 +302,13 @@ function WMNCard({
       onClick={onClick}
       className="snap-start flex-shrink-0 w-[210px] md:w-auto text-left relative overflow-hidden flex flex-col"
       style={{
-        background:    "rgba(6,10,22,0.92)",
-        borderRadius:  "8px",
-        borderTop:     "1px solid rgba(255,255,255,0.06)",
+        // Secondary tier — a dimmer panel than the #111827 primary banner so the
+        // four sub-cards clearly recede and don't read as duplicate primaries.
+        background:    "#0D1322",
+        borderRadius:  "10px",
+        borderTop:     "1px solid rgba(255,255,255,0.055)",
         borderRight:   "1px solid rgba(255,255,255,0.04)",
-        borderBottom:  "1px solid rgba(255,255,255,0.06)",
+        borderBottom:  "1px solid rgba(255,255,255,0.055)",
       }}
     >
       {/* Left vertical accent bar */}
@@ -365,10 +368,10 @@ function WMNCard({
 
         {/* Metadata row */}
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[10px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.34)" }}>
+          <span className="text-[10px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.52)" }}>
             {storyLabel}
-            <span className="mx-1 opacity-50">·</span>
-            <span style={{ color }}>{p.category}</span>
+            <span className="mx-1 opacity-40">·</span>
+            <span className="font-semibold" style={{ color }}>{p.category}</span>
           </span>
           {dirConfig && (
             <span
@@ -385,7 +388,7 @@ function WMNCard({
           <div className="flex items-center gap-1 mt-0.5 min-w-0">
             <span
               className="truncate"
-              style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.32)" }}
+              style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.48)" }}
               title={matchedTheme.name}
             >
               {matchedTheme.name}

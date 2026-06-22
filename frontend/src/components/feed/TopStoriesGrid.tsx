@@ -31,8 +31,8 @@ export function TopStoriesGrid({ stories, savedIds, onSave, isLoading }: TopStor
   return (
     <section className="mt-8 mb-4">
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[10px] font-semibold tracking-[0.08em] uppercase shrink-0"
-          style={{ color: "rgba(255,255,255,0.42)" }}>
+        <span className="text-[10px] font-bold tracking-[0.1em] uppercase shrink-0"
+          style={{ color: "rgba(255,255,255,0.6)" }}>
           Signal Picks
         </span>
         <span className="h-px flex-1"
@@ -88,7 +88,7 @@ function TopStoryCard({ label, item, index, isSaved, onSave }: TopStoryCardProps
       whileHover={{ y: -1, transition: { duration: 0.16, ease: "easeOut" } }}
       className="group relative rounded-xl p-3 cursor-default flex flex-col"
       style={{
-        background:   "rgba(7,12,26,0.92)",
+        background:   "#111827",   // Markets elevated panel
         borderTop:    "1px solid rgba(255,255,255,0.07)",
         borderRight:  "1px solid rgba(255,255,255,0.05)",
         borderBottom: "1px solid rgba(255,255,255,0.07)",

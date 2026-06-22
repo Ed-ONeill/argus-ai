@@ -41,7 +41,7 @@ function RankedBecause({ affinity }: { affinity: ClusterAffinity }) {
       <div className="mt-0.5 font-sans font-semibold">
         {state === "thesis"    && <>Ranked because: {affinity.reasons.map(r => `+ ${r}`).join("  ")}</>}
         {state === "secondary" && <>Secondary (downranked): {affinity.reasons.map(r => `+ ${r}`).join("  ")}</>}
-        {state === "none"      && <>Downranked — no preference overlap</>}
+        {state === "none"      && <>Downranked: no preference overlap</>}
       </div>
     </div>
   );
@@ -350,8 +350,9 @@ export function ClusterCard({
         isWatched && "ring-1 ring-accent/30",
       )}
       style={{
-        background:   tier === 1 ? "rgba(8,14,32,0.97)" : "rgba(7,12,28,0.95)",
-        borderTop:    "1px solid rgba(255,255,255,0.08)",
+        // Markets elevated-panel family (#111827); tier-2 a touch dimmer.
+        background:   tier === 1 ? "#111827" : "#0F1626",
+        borderTop:    "1px solid rgba(255,255,255,0.07)",
         borderRight:  "1px solid rgba(255,255,255,0.05)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
         borderLeft:   `${leftBorderW} solid ${leftAccent}`,
@@ -366,8 +367,8 @@ export function ClusterCard({
         {matchedTheme ? (
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span
-              className="text-[9.5px] font-medium truncate"
-              style={{ color: "rgba(82,176,200,0.80)", maxWidth: 200 }}
+              className="text-[9.5px] font-semibold truncate"
+              style={{ color: "#38bdf8", maxWidth: 200 }}
             >
               {matchedTheme.name}
             </span>
@@ -391,8 +392,8 @@ export function ClusterCard({
               </span>
             )}
             <span
-              className="text-[8px] ml-auto shrink-0"
-              style={{ color: "rgba(255,255,255,0.26)" }}
+              className="text-[8px] font-semibold ml-auto shrink-0"
+              style={{ color: "rgba(255,255,255,0.42)" }}
             >
               CV {Math.round(matchedTheme.confidence ?? 0)}
             </span>
@@ -448,10 +449,10 @@ export function ClusterCard({
           target="_blank"
           rel="noopener noreferrer"
           className={cn(
-            "block font-semibold leading-snug mb-2 hover:text-accent transition-colors",
+            "block font-bold leading-snug mb-2 hover:text-accent transition-colors tracking-[-0.01em]",
             tier === 1 ? "text-[15px]" : "text-[14px]",
           )}
-          style={{ color: "rgba(255,255,255,0.93)" }}
+          style={{ color: "rgba(255,255,255,0.96)" }}
         >
           {item.title}
           <ExternalLink
@@ -541,11 +542,11 @@ export function ClusterCard({
             <div className="flex items-center gap-1 pt-2"
               style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
 
-              <span className="text-[10px] flex-1 truncate"
-                style={{ color: "rgba(255,255,255,0.44)" }}>
+              <span className="text-[10px] flex-1 truncate font-medium"
+                style={{ color: "rgba(255,255,255,0.62)" }}>
                 {item.source}
                 {item.published && (
-                  <span className="ml-1" style={{ color: "rgba(255,255,255,0.26)" }}>
+                  <span className="ml-1 font-normal" style={{ color: "rgba(255,255,255,0.42)" }}>
                     · {item.published}
                   </span>
                 )}
