@@ -9,3 +9,8 @@ dist/
 build/
 .claude/
 *.tsbuildinfo
+
+# Thematic Intelligence Memory — runtime-accumulated state. Must never be baked
+# into the image (a committed snapshot would reset live memory on every deploy).
+# Persist it via a volume + THEME_MEMORY_DIR instead.
+data/theme_memory/
