@@ -107,8 +107,13 @@ const FILLER_SUBS: [RegExp, string][] = [
 /** Final defensive pass before any public-facing narrative string is rendered. */
 function sanitize(text: string): string {
   let s = text;
-  s = s.replace(/ .  /g, ", ");
-  s = s.replace(/. /g, "");
+  // NOTE: two regexes were removed here that used an UNESCAPED "." —
+  //   s.replace(/ .  /g, ", ")  and  s.replace(/. /g, "")
+  // In a regex "." matches ANY character, so `/. /g` matched every
+  // "<char><space>" and deleted both — eating the last letter of each word and
+  // the space, turning "Energy compression" into "Energcompression". That was
+  // the root cause of narrative paragraphs rendering as merged, mangled words.
+  // The legitimate whitespace cleanup is handled by the collapse + trim below.
   for (const label of THEME_LABEL_BLOCKLIST) {
     s = s.replace(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "this driver");
   }
