@@ -50,12 +50,15 @@ export function memorySentences(t: ThemeIntelligence, maxSectors = 1): string[] 
   const out: string[] = [];
 
   // "First detected 18 days ago and conviction has increased from 58 to 81."
+  // User-facing memory copy uses conviction_first — the persistent first-detection
+  // anchor — so it states the true full-history move, not the recent ~6-cycle
+  // window. (conviction_window_start stays on the type/store for internal use.)
   const d = m.first_seen_days_ago;
   const since = d >= 1 ? `${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"} ago`
               : d >= 0.04 ? `${Math.max(1, Math.round(d * 24))}h ago` : "today";
-  const a = m.conviction_window_start, b = m.conviction_current;
+  const a = m.conviction_first, b = m.conviction_current;
   if (Math.abs(b - a) >= 3) {
-    out.push(`First detected ${since}; conviction has ${b > a ? "increased" : "decreased"} from ${a} to ${b}.`);
+    out.push(`First detected ${since}; conviction has ${b > a ? "increased" : "decreased"} from ${a} to ${b} since.`);
   } else {
     out.push(`Tracked since ${since}; conviction has held near ${b} across ${m.sessions_observed} sessions.`);
   }
