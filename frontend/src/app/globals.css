@@ -1,12 +1,46 @@
+/* @import MUST precede all other rules per the CSS spec. When it sat after the
+   @tailwind directives the browser silently ignored it, so the Inter web font
+   never loaded and the UI fell back to system-ui (a major cause of the flat,
+   "washed out" look). Keep this first. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
-
 @layer base {
   :root {
     --nav-height: 56px;
+
+    /* Surface/text/border channels (R G B) consumed by the Tailwind tokens.
+       These are the ORIGINAL light values — every page except Markets uses them
+       unchanged, so nothing else shifts. */
+    --canvas:        245 246 248;   /* #F5F6F8 */
+    --surface:       255 255 255;   /* #FFFFFF */
+    --raised:        240 242 247;   /* #F0F2F7 */
+    --edge:          226 229 236;   /* #E2E5EC */
+    --edge-subtle:   238 240 245;   /* #EEF0F5 */
+    --edge-strong:   197 201 212;   /* #C5C9D4 */
+    --ink:            15  22  35;   /* #0F1623 */
+    --ink-secondary:  74  85 104;   /* #4A5568 */
+    --ink-muted:     150 160 176;   /* #96A0B0 */
+    --ink-faint:     194 203 216;   /* #C2CBD8 */
+  }
+
+  /* Markets workstation — deep navy-black institutional terminal surface
+     (Bloomberg / Koyfin / AlphaSense dark mode). Scoped: flips every bg-surface /
+     text-ink / border-edge inside the Markets page to dark, nothing else. */
+  .markets-dark {
+    --canvas:         10  15  28;   /* #0A0F1C  body */
+    --surface:        17  24  39;   /* #111827  elevated panel */
+    --raised:         30  38  56;   /* #1E2638  hover / lift */
+    --edge:           31  41  59;   /* hairline (~white 6% over panel) */
+    --edge-subtle:    24  32  46;
+    --edge-strong:    44  56  78;
+    --ink:           230 234 242;   /* #E6EAF2  primary text */
+    --ink-secondary: 174 182 197;   /* #AEB6C5 */
+    --ink-muted:     138 147 166;   /* #8A93A6 */
+    --ink-faint:      90  99 116;   /* #5A6374 */
   }
 
   html {

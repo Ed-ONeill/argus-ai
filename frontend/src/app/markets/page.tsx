@@ -163,10 +163,13 @@ function SnapCell({ label, value, color, sub }: {
   label: string; value: string; color?: string; sub?: string;
 }) {
   return (
-    <div className="min-w-0 px-3 py-1.5 border-r border-edge/60 last:border-r-0">
-      <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/45 mb-0.5 truncate">{label}</p>
-      <p className="text-[12px] font-bold leading-tight truncate" style={{ color: color ?? "rgba(255,255,255,0.9)" }}>{value}</p>
-      {sub && <p className="text-[7.5px] text-ink-muted/45 mt-px truncate">{sub}</p>}
+    <div className="min-w-0 px-3 py-2 border-r border-edge last:border-r-0">
+      <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/70 mb-1 truncate">{label}</p>
+      {/* Default to dark ink — this card is a white surface, so the previous
+          translucent-white default rendered invisibly (the "washed out" look). */}
+      <p className="text-[15px] font-black leading-none tracking-tight truncate tabular-nums"
+        style={{ color: color ?? "rgb(var(--ink))" }}>{value}</p>
+      {sub && <p className="text-[8px] font-semibold text-ink-muted/65 mt-1 truncate">{sub}</p>}
     </div>
   );
 }
@@ -211,8 +214,9 @@ function MarketSnapshotBase({ themes, sectorData, regime, brief }: {
   const accent     = regimeAccentColor(state);
 
   return (
-    <div className="mb-2 rounded-xl border border-edge bg-surface overflow-hidden" style={{ borderTop: `2px solid ${accent}` }}>
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-y divide-edge/60 sm:divide-y-0">
+    <div className="mb-3 rounded-xl border border-edge-strong bg-surface shadow-card overflow-hidden"
+      style={{ borderTop: `3px solid ${accent}` }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-y divide-edge sm:divide-y-0">
         <SnapCell label="Market State" value={state} color={accent} />
         <SnapCell label="Conviction" value={`${convScore(conviction)}`} color={confColor(conviction)} />
         <SnapCell label="Breadth" value={`${confirming}/${total}`} sub="sectors confirming" />
@@ -348,46 +352,47 @@ function DominantNarrativeBase({ brief, themes }: {
     : themes.length;
 
   return (
-    <div className="mb-4 rounded-xl border border-edge overflow-hidden bg-surface"
-      style={{ borderTop: `3px solid ${cColor}` }}>
-      {/* hero headline */}
-      <div className="px-4 pt-3 pb-3">
-        <p className="text-[8px] font-bold uppercase tracking-[0.22em] text-ink-muted/45 mb-1.5">Dominant Narrative</p>
-        <p className="text-[19px] sm:text-[21px] font-black text-ink leading-[1.12] tracking-tight">{whatHappened}</p>
+    <div className="mb-4 rounded-xl border border-edge-strong shadow-card overflow-hidden bg-surface"
+      style={{ borderTop: `4px solid ${cColor}` }}>
+      {/* hero headline — the focal point */}
+      <div className="px-5 pt-4 pb-4">
+        <p className="text-[8.5px] font-bold uppercase tracking-[0.24em] text-ink-muted/60 mb-2">Dominant Narrative</p>
+        <p className="text-[22px] sm:text-[26px] font-black text-ink leading-[1.1] tracking-tight break-words">{whatHappened}</p>
       </div>
 
-      {/* stats strip */}
-      <div className="grid grid-cols-4 divide-x divide-edge/60 border-y border-edge/60" style={{ background: "rgba(255,255,255,0.012)" }}>
-        <div className="px-3 py-1.5">
-          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Confidence</p>
-          <p className="text-[18px] font-black tabular-nums leading-none mt-0.5" style={{ color: cColor }}>{confidence}<span className="text-[10px] opacity-55">%</span></p>
+      {/* stats strip — dark-tinted band for rhythm + larger numbers */}
+      <div className="grid grid-cols-4 divide-x divide-edge border-y border-edge" style={{ background: "rgba(255,255,255,0.025)" }}>
+        <div className="px-3 py-2">
+          <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Confidence</p>
+          <p className="text-[20px] font-black tabular-nums leading-none mt-1" style={{ color: cColor }}>{confidence}<span className="text-[11px] opacity-60">%</span></p>
         </div>
-        <div className="px-3 py-1.5">
-          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Trend</p>
-          <p className="text-[12px] font-bold leading-none mt-1.5" style={{ color: trend.color }}>{trend.arrow} {trend.label}</p>
+        <div className="px-3 py-2">
+          <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Trend</p>
+          <p className="text-[13px] font-bold leading-none mt-2" style={{ color: trend.color }}>{trend.arrow} {trend.label}</p>
         </div>
-        <div className="px-3 py-1.5">
-          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Confirming</p>
-          <p className="text-[12px] font-bold text-ink leading-none mt-1.5 tabular-nums">{confirming} themes</p>
+        <div className="px-3 py-2">
+          <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Confirming</p>
+          <p className="text-[13px] font-bold text-ink leading-none mt-2 tabular-nums">{confirming} themes</p>
         </div>
-        <div className="px-3 py-1.5">
-          <p className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-ink-muted/40">Horizon</p>
-          <p className="text-[12px] font-bold text-ink-secondary leading-none mt-1.5">{horizon}</p>
+        <div className="px-3 py-2">
+          <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Horizon</p>
+          <p className="text-[13px] font-bold text-ink-secondary leading-none mt-2">{horizon}</p>
         </div>
       </div>
 
-      {/* why + what matters */}
-      <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-edge/60">
-        <div className="px-4 py-2.5">
-          <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1">Why It Happened</p>
-          <p className="text-[12px] text-ink-secondary leading-snug">{whyHappened}</p>
+      {/* why (explanation) vs market impact (evidence) — visually distinguished */}
+      <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-edge">
+        <div className="px-5 py-3">
+          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/55 mb-1.5">Why It Happened</p>
+          <p className="text-[12.5px] text-ink-secondary leading-relaxed break-words">{whyHappened}</p>
         </div>
-        <div className="px-4 py-2.5">
-          <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 mb-1">Market Impact</p>
-          <ul className="space-y-1">
+        <div className="px-5 py-3 bg-raised/50">
+          <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/55 mb-1.5">Market Impact</p>
+          <ul className="space-y-1.5">
             {implications.map((b, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-[11px] text-ink-secondary leading-snug">
-                <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: cColor }} />{b}
+              <li key={i} className="flex items-start gap-2 text-[11.5px] text-ink-secondary leading-snug break-words">
+                <span className="shrink-0 mt-[5px] w-1.5 h-1.5 rounded-full" style={{ background: cColor }} />
+                <span>{b}</span>
               </li>
             ))}
           </ul>
@@ -399,17 +404,17 @@ function DominantNarrativeBase({ brief, themes }: {
         <div className="px-4 py-2.5 border-t border-edge/60 flex flex-wrap items-center gap-x-4 gap-y-2">
           {benef.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-emerald-700/70">Primary Beneficiaries</span>
+              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-emerald-300/70">Primary Beneficiaries</span>
               {benef.map(tk => (
-                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-700 border border-emerald-500/25">{tk}</span>
+                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">{tk}</span>
               ))}
             </div>
           )}
           {losers && (
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-red-600/70">Most Exposed</span>
+              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-red-400/70">Most Exposed</span>
               {losers.tickers.map(tk => (
-                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-red-500/8 text-red-600/90 border border-red-500/20">{tk}</span>
+                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-red-500/8 text-red-400/90 border border-red-500/20">{tk}</span>
               ))}
             </div>
           )}
@@ -442,10 +447,13 @@ function SectionHeader({ label, icon, sub }: {
   label: string; icon?: React.ReactNode; sub?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 mb-2">
+    // Larger top margin creates clear breathing room / rhythm between sections.
+    <div className="flex items-center gap-2 mb-3 mt-6 first:mt-0">
+      {/* accent tick gives each section a stronger, scannable anchor */}
+      <span className="w-[3px] h-3.5 rounded-full bg-accent shrink-0" />
       {icon}
-      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">{label}</span>
-      {sub && <span className="text-[9px] text-ink-muted">{sub}</span>}
+      <span className="text-[11.5px] font-black uppercase tracking-[0.14em] text-ink">{label}</span>
+      {sub && <span className="text-[9px] font-medium text-ink-muted/80">{sub}</span>}
       <span className="h-px flex-1 bg-edge" />
     </div>
   );
@@ -472,7 +480,7 @@ function WatchlistPanel({
   return (
     <div
       className="mb-3 rounded-lg border overflow-hidden bg-surface"
-      style={{ borderColor: "var(--color-edge)", borderLeft: "3px solid #2563EB" }}
+      style={{ borderColor: "rgb(var(--edge))", borderLeft: "3px solid #2563EB" }}
     >
       {/* Header row */}
       <button
@@ -556,8 +564,8 @@ function WatchlistPanel({
                         <span className={cn(
                           "text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 leading-none",
                           alert.direction === "up"
-                            ? "text-emerald-700 bg-emerald-50 border border-emerald-200"
-                            : "text-red-600 bg-red-50 border border-red-200",
+                            ? "text-emerald-300 bg-emerald-50 border border-emerald-200"
+                            : "text-red-400 bg-red-50 border border-red-200",
                         )}>
                           {alert.direction === "up" ? "▲" : "▼"}&nbsp;
                           signal {alert.direction === "up" ? "strengthened" : "weakened"}
@@ -872,7 +880,7 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-bold text-ink truncate group-hover:text-accent transition-colors">{cleanThemeName(t.name)}</span>
                   <span className="text-[11px] font-black tabular-nums shrink-0"
-                    style={{ color: d > 0 ? "#10b981" : d < 0 ? "#ef4444" : "rgba(255,255,255,0.28)" }}>
+                    style={{ color: d > 0 ? "#34d399" : d < 0 ? "#f87171" : "rgb(var(--ink-muted) / 0.6)" }}>
                     {d > 0 ? "▲" : d < 0 ? "▼" : ""}{d > 0 ? "+" : ""}{d}
                   </span>
                   <span className="ml-auto text-[6.5px] font-bold uppercase tracking-wide px-1 py-px rounded shrink-0
@@ -888,17 +896,17 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
                   {benef.length > 0 && (
                     <span className="flex items-center gap-1">
-                      <span className="text-[6.5px] font-bold uppercase tracking-wide text-emerald-600/55">Wins</span>
+                      <span className="text-[6.5px] font-bold uppercase tracking-wide text-emerald-400/55">Wins</span>
                       {benef.map(tk => (
-                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">{tk}</span>
+                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{tk}</span>
                       ))}
                     </span>
                   )}
                   {losers && (
                     <span className="flex items-center gap-1">
-                      <span className="text-[6.5px] font-bold uppercase tracking-wide text-red-500/55">Loses</span>
+                      <span className="text-[6.5px] font-bold uppercase tracking-wide text-red-400/55">Loses</span>
                       {losers.tickers.map(tk => (
-                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-red-500/8 text-red-600/90 border border-red-500/15">{tk}</span>
+                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-red-500/8 text-red-400/90 border border-red-500/15">{tk}</span>
                       ))}
                     </span>
                   )}
@@ -990,7 +998,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
               <span className="font-semibold text-ink-secondary">{cleanThemeName(c.t.name)}</span>
               <span className="text-ink-muted/35">→</span>
               {c.tickers.slice(0, 2).map(tk => (
-                <span key={tk} className="font-bold tabular-nums text-emerald-700/90">{tk}</span>
+                <span key={tk} className="font-bold tabular-nums text-emerald-300/90">{tk}</span>
               ))}
             </span>
           ))}
@@ -1019,10 +1027,10 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
               <ChainArrow color={clr} />
               {/* Securities — the expression */}
               <div className="shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 py-1.5 flex flex-col justify-center">
-                <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-emerald-700/70 mb-0.5">Securities</p>
+                <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-emerald-300/70 mb-0.5">Securities</p>
                 <div className="flex items-center gap-1">
                   {c.tickers.map(tk => (
-                    <span key={tk} className="text-[11px] font-black tabular-nums text-emerald-700">{tk}</span>
+                    <span key={tk} className="text-[11px] font-black tabular-nums text-emerald-300">{tk}</span>
                   ))}
                 </div>
               </div>
@@ -1116,8 +1124,10 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
 }
 
 const DIR_META = {
-  bullish: { label: "Bullish", color: "#10b981" },
-  bearish: { label: "Bearish", color: "#ef4444" },
+  // Signal colors tuned for the dark workstation surface — bright enough to read
+  // on #0A0F1C without being neon. Green = bullish, red = bearish.
+  bullish: { label: "Bullish", color: "#34d399" },
+  bearish: { label: "Bearish", color: "#f87171" },
   neutral: { label: "Neutral", color: "#94a3b8" },
 } as const;
 
@@ -1128,7 +1138,7 @@ const DIR_META = {
 function OppBlock({ label, color, children }: { label: string; color?: string; children: React.ReactNode }) {
   return (
     <div className="mt-1.5">
-      <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] mb-0.5" style={{ color: color ?? "rgba(255,255,255,0.4)" }}>{label}</p>
+      <p className="text-[7px] font-bold uppercase tracking-[0.16em] mb-0.5" style={{ color: color ?? "rgb(var(--ink-muted))" }}>{label}</p>
       {children}
     </div>
   );
@@ -1155,30 +1165,30 @@ function SectorPositioningBase({ themes }: { themes: ThemeIntelligence[] }) {
           const ct     = confTrend(p.leadDelta);
           return (
             <div key={p.sector} className="rounded-lg border border-edge bg-surface"
-              style={{ borderLeft: `2.5px solid ${dm.color}` }}>
+              style={{ borderLeft: `3px solid ${dm.color}` }}>
               <button onClick={() => setOpen(o => ({ ...o, [p.sector]: !o[p.sector] }))}
-                className="w-full text-left px-3 py-2 hover:bg-raised/30 transition-colors">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[9px] font-black tabular-nums text-ink-muted/40 shrink-0 w-5">#{i + 1}</span>
-                  <span className="text-[12px] font-bold text-ink truncate flex-1">{p.sector}</span>
+                className="w-full text-left px-3 py-2.5 hover:bg-raised/40 transition-colors">
+                <div className="flex items-center gap-2.5 mb-1">
+                  <span className="text-[13px] font-black tabular-nums text-ink-muted/55 shrink-0 w-6 text-center">{i + 1}</span>
+                  <span className="text-[13.5px] font-black text-ink truncate flex-1 tracking-tight">{p.sector}</span>
                   <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
-                    style={{ color: dm.color, background: `${dm.color}15` }}>{dm.label}</span>
-                  <span className="text-[14px] font-black tabular-nums shrink-0" style={{ color: confColor(p.conviction) }}>{convScore(p.conviction)}</span>
-                  <ChevronDown size={11} className={cn("text-ink-muted/35 transition-transform shrink-0", isOpen ? "" : "-rotate-90")} />
+                    style={{ color: dm.color, background: `${dm.color}1a` }}>{dm.label}</span>
+                  <span className="text-[19px] font-black tabular-nums leading-none shrink-0" style={{ color: confColor(p.conviction) }}>{convScore(p.conviction)}</span>
+                  <ChevronDown size={11} className={cn("text-ink-muted/40 transition-transform shrink-0", isOpen ? "" : "-rotate-90")} />
                 </div>
-                <div className="flex items-center gap-1.5 flex-wrap text-[8.5px] pl-7">
-                  <span className="text-ink-muted/40">Driven By</span>
+                <div className="flex items-center gap-1.5 flex-wrap text-[9px] pl-[34px]">
+                  <span className="text-ink-muted/55 font-bold uppercase tracking-wide text-[7.5px]">Driven by</span>
                   <span className="font-semibold text-ink-secondary">{p.drivers[0]}</span>
-                  {p.drivers[1] && <><span className="text-ink-muted/20">·</span><span className="text-ink-muted/70">{p.drivers[1]}</span></>}
+                  {p.drivers[1] && <><span className="text-ink-muted/25">·</span><span className="text-ink-muted/70">{p.drivers[1]}</span></>}
                 </div>
-                <div className="flex items-center gap-2 text-[8.5px] mt-px pl-7">
-                  <span className="tabular-nums text-ink-muted/60"><span className="font-bold text-ink-secondary">{p.supportive} of {p.count}</span> supportive</span>
-                  <span className="text-ink-muted/20">·</span>
-                  <span className="font-semibold" style={{ color: p.trendColor }}>{p.trend}</span>
+                <div className="flex items-center gap-2 text-[9px] mt-0.5 pl-[34px]">
+                  <span className="tabular-nums text-ink-muted/65"><span className="font-bold text-ink-secondary">{p.supportive} of {p.count}</span> supportive</span>
+                  <span className="text-ink-muted/25">·</span>
+                  <span className="font-bold" style={{ color: p.trendColor }}>{p.trend}</span>
                   {p.exposures.length > 0 && (
                     <span className="ml-auto flex items-center gap-1">
                       {p.exposures.slice(0, 3).map(tk => (
-                        <span key={tk} className="text-[9px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-700/90 border border-emerald-500/20">{tk}</span>
+                        <span key={tk} className="text-[9px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">{tk}</span>
                       ))}
                     </span>
                   )}
@@ -1214,7 +1224,7 @@ function SectorPositioningBase({ themes }: { themes: ThemeIntelligence[] }) {
                     <OppBlock label="Best Expressions">
                       <div className="flex items-center gap-1 flex-wrap">
                         {p.exposures.map(tk => (
-                          <span key={tk} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">{tk}</span>
+                          <span key={tk} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{tk}</span>
                         ))}
                       </div>
                       {p.expressWhy && <p className="text-[8.5px] text-ink-muted/60 leading-snug mt-1">{p.expressWhy}</p>}
@@ -1251,7 +1261,7 @@ function EvidenceRow({ cluster, saved, onSave }: {
       </div>
       <button onClick={() => onSave(p)}
         className={cn("p-1 rounded shrink-0 transition-opacity", saved ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
-        style={{ color: saved ? "#52b0c8" : "rgba(255,255,255,0.4)" }}>
+        style={{ color: saved ? "#52b0c8" : "rgb(var(--ink-muted) / 0.55)" }}>
         {saved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
       </button>
     </div>
@@ -1436,7 +1446,7 @@ export default function MarketsPage() {
   }
 
   return (
-    <>
+    <div className="markets-dark min-h-screen" style={{ background: "rgb(var(--canvas))" }}>
       {/* Argus identity header — compact */}
       <div style={{ background: "rgba(6,10,22,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: "16px" }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
@@ -1551,6 +1561,6 @@ export default function MarketsPage() {
         isFollowed={drawerData ? isFollowed(drawerData.theme.id) : false}
         onToggleFollow={() => drawerData && handleFollowToggle(drawerData.theme)}
       />
-    </>
+    </div>
   );
 }

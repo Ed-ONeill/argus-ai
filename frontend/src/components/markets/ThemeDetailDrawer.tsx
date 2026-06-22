@@ -41,7 +41,7 @@ const EVOLUTION_CLS: Record<string, string> = {
   stabilizing:   "text-slate-400",
   peaking:       "text-amber-400",
   weakening:     "text-orange-400",
-  reversing:     "text-red-500",
+  reversing:     "text-red-400",
 };
 
 const LIFECYCLE_STAGES: ThemeLifecycleStage[] = [
@@ -279,14 +279,14 @@ export function ThemeDetailDrawer({
 
               {/* ── Best Expressions — name the securities first ── */}
               {bestExpr && (
-                <div className="rounded-lg border border-emerald-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-emerald-200/60 bg-emerald-50/40">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-700/80">Best Expressions</p>
+                <div className="rounded-lg border border-emerald-500/25 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-emerald-500/25 bg-emerald-500/12">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-300/80">Best Expressions</p>
                   </div>
                   <div className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {bestExpr.tickers.map(tk => (
-                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-emerald-500/12 text-emerald-700 border border-emerald-500/25">{tk}</span>
+                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">{tk}</span>
                       ))}
                     </div>
                     <p className="text-[11px] text-ink-secondary leading-snug mt-2">{bestExpr.why}</p>
@@ -296,15 +296,15 @@ export function ThemeDetailDrawer({
 
               {/* ── Most Exposed Losers ─────────────────────────── */}
               {exposedLosers && (
-                <div className="rounded-lg border border-red-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-red-200/60 bg-red-50/30 flex items-baseline gap-2">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-600/80">Most Exposed</p>
+                <div className="rounded-lg border border-red-500/25 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-red-500/25 bg-red-500/12 flex items-baseline gap-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-400/80">Most Exposed</p>
                     <span className="text-[10px] font-semibold text-ink-secondary">{exposedLosers.sector}</span>
                   </div>
                   <div className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {exposedLosers.tickers.map(tk => (
-                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-red-500/8 text-red-600/90 border border-red-500/20">{tk}</span>
+                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-red-500/8 text-red-400/90 border border-red-500/20">{tk}</span>
                       ))}
                     </div>
                     <p className="text-[11px] text-ink-secondary leading-snug mt-2">{exposedLosers.risk}</p>
@@ -324,8 +324,8 @@ export function ThemeDetailDrawer({
                     <div className="grid grid-cols-2">
 
                       {/* WINNERS */}
-                      <div className="p-3 border-b border-r border-edge bg-emerald-50/40">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-emerald-700/60 mb-2">
+                      <div className="p-3 border-b border-r border-edge bg-emerald-500/12">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-emerald-300/60 mb-2">
                           ↑ Winners
                         </p>
                         {benefits.length > 0 ? (
@@ -337,7 +337,7 @@ export function ThemeDetailDrawer({
                               </div>
                             ))}
                             {benefits.length > 4 && (
-                              <p className="text-[9.5px] text-emerald-600/60 pl-3.5">+{benefits.length - 4} more</p>
+                              <p className="text-[9.5px] text-emerald-400/60 pl-3.5">+{benefits.length - 4} more</p>
                             )}
                           </div>
                         ) : (
@@ -346,8 +346,8 @@ export function ThemeDetailDrawer({
                       </div>
 
                       {/* LOSERS */}
-                      <div className="p-3 border-b border-edge bg-red-50/30">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-600/60 mb-2">
+                      <div className="p-3 border-b border-edge bg-red-500/12">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-400/60 mb-2">
                           ↓ Losers
                         </p>
                         {pressures.length > 0 ? (
@@ -359,7 +359,7 @@ export function ThemeDetailDrawer({
                               </div>
                             ))}
                             {pressures.length > 4 && (
-                              <p className="text-[9.5px] text-red-500/60 pl-3.5">+{pressures.length - 4} more</p>
+                              <p className="text-[9.5px] text-red-400/60 pl-3.5">+{pressures.length - 4} more</p>
                             )}
                           </div>
                         ) : (
@@ -368,7 +368,7 @@ export function ThemeDetailDrawer({
                       </div>
 
                       {/* TIME HORIZON */}
-                      <div className="p-3 border-r border-edge bg-sky-50/20">
+                      <div className="p-3 border-r border-edge bg-sky-500/12">
                         <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-sky-600/60 mb-2">
                           Time Horizon
                         </p>
@@ -382,7 +382,7 @@ export function ThemeDetailDrawer({
                       </div>
 
                       {/* KEY RISK */}
-                      <div className="p-3 bg-amber-50/25">
+                      <div className="p-3 bg-amber-500/12">
                         <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-amber-600/60 mb-2">
                           Key Risk
                         </p>
@@ -415,12 +415,12 @@ export function ThemeDetailDrawer({
                 <div className="grid grid-cols-2">
                   <div className="px-3.5 py-3 border-r border-edge"
                        style={{ borderLeft: "2px solid rgba(16,185,129,0.35)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-600/60 mb-1.5">{"What's Working"}</p>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-400/60 mb-1.5">{"What's Working"}</p>
                     <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bull}</p>
                   </div>
                   <div className="px-3.5 py-3"
                        style={{ borderLeft: "2px solid rgba(239,68,68,0.30)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-500/60 mb-1.5">{"What's Breaking"}</p>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-400/60 mb-1.5">{"What's Breaking"}</p>
                     <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bear}</p>
                   </div>
                 </div>
@@ -470,7 +470,7 @@ export function ThemeDetailDrawer({
                   <div className="grid grid-cols-2">
                     {(benefits.length > 0 || neutral.length > 0) && (
                       <div className="p-3.5 border-r border-edge/50">
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-emerald-600/60 mb-2.5">
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-emerald-400/60 mb-2.5">
                           ↑ Benefits
                         </p>
                         <div className="space-y-1.5">
@@ -486,7 +486,7 @@ export function ThemeDetailDrawer({
                     )}
                     {pressures.length > 0 && (
                       <div className="p-3.5">
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-red-500/60 mb-2.5">
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-red-400/60 mb-2.5">
                           ↓ Pressures
                         </p>
                         <div className="space-y-1.5">
@@ -505,11 +505,11 @@ export function ThemeDetailDrawer({
 
               {/* Watch Signals */}
               {watchSignals.length > 0 && (
-                <div className="rounded-lg border border-amber-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
+                <div className="rounded-lg border border-amber-500/25 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">What Changes Our View</p>
                   </div>
-                  <div className="divide-y divide-amber-100/60">
+                  <div className="divide-y divide-amber-500/15">
                     {watchSignals.map((sig, i) => (
                       <div key={i} className="px-4 py-3">
                         <p className="text-[11px] font-semibold text-ink mb-0.5">{sig.variable}</p>
@@ -678,11 +678,11 @@ export function ThemeDetailDrawer({
 
               {/* Signal Conflicts */}
               {conflicts.length > 0 && (
-                <div className="rounded-lg border border-amber-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
+                <div className="rounded-lg border border-amber-500/25 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Signal Conflicts</p>
                   </div>
-                  <div className="divide-y divide-amber-100/60">
+                  <div className="divide-y divide-amber-500/15">
                     {conflicts.slice(0, 3).map(c => (
                       <div key={c.id} className="flex items-start gap-2.5 px-4 py-3">
                         <AlertTriangle size={12} className="text-amber-500/70 shrink-0 mt-0.5" />

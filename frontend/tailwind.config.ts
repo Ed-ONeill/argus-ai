@@ -24,21 +24,24 @@ const config: Config = {
           900: "#090F21",
         },
         // ── Backgrounds ────────────────────────────────────────
-        canvas:  "#F5F6F8",   // page background (slightly cooler)
-        surface: "#FFFFFF",   // card / panel surface
-        raised:  "#F0F2F7",   // hover / subtle lift
+        // Variable-driven so a scope (e.g. .markets-dark) can flip the whole
+        // surface to dark without touching component classes. Channels live in
+        // globals.css (:root = the original light values for every other page).
+        canvas:  "rgb(var(--canvas) / <alpha-value>)",   // page background
+        surface: "rgb(var(--surface) / <alpha-value>)",  // card / panel surface
+        raised:  "rgb(var(--raised) / <alpha-value>)",   // hover / subtle lift
         // ── Borders ────────────────────────────────────────────
         edge: {
-          DEFAULT: "#E2E5EC",
-          subtle:  "#EEF0F5",
-          strong:  "#C5C9D4",
+          DEFAULT: "rgb(var(--edge) / <alpha-value>)",
+          subtle:  "rgb(var(--edge-subtle) / <alpha-value>)",
+          strong:  "rgb(var(--edge-strong) / <alpha-value>)",
         },
         // ── Text ───────────────────────────────────────────────
         ink: {
-          DEFAULT:   "#0F1623",   // deeper primary text
-          secondary: "#4A5568",
-          muted:     "#96A0B0",
-          faint:     "#C2CBD8",
+          DEFAULT:   "rgb(var(--ink) / <alpha-value>)",
+          secondary: "rgb(var(--ink-secondary) / <alpha-value>)",
+          muted:     "rgb(var(--ink-muted) / <alpha-value>)",
+          faint:     "rgb(var(--ink-faint) / <alpha-value>)",
         },
         // ── Accent ─────────────────────────────────────────────
         accent: {

@@ -79,7 +79,11 @@ export function cleanThemeName(raw: string): string {
 }
 
 export function confColor(score: number): string {
-  return score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8";
+  // Conviction ramp tuned for the dark workstation surface — bright, legible
+  // signal colors on #0A0F1C (not neon). High = green, moderate = amber, low = slate.
+  return score >= 72 ? "#34d399"   // high conviction — emerald
+       : score >= 50 ? "#fbbf24"   // moderate — amber
+       :               "#94a3b8";  // low — slate
 }
 
 // Conviction is rounded to the nearest 5 so a 76 vs 74 never reads as real
