@@ -147,8 +147,8 @@ export function useListen(topic: string) {
         ? `?topic=${encodeURIComponent(normalizedTopic)}`
         : "";
 
-      const listenUrl    = `/api/listen/${topicParam}`;
-      const briefingsUrl = `/api/briefings/${topicParam}`;
+      const listenUrl    = `/api/listen${topicParam}`;
+      const briefingsUrl = `/api/briefings${topicParam}`;
 
       // Fetch both sources in parallel; treat each failure as an empty array.
       const [listenResult, briefingsResult] = await Promise.allSettled([
@@ -214,7 +214,7 @@ export function useListenRails() {
   const { data, isLoading } = useQuery<Episode[]>({
     queryKey: ["listen-rails"],
     queryFn: async () => {
-      const res = await fetch("/api/listen/?limit=100");
+      const res = await fetch("/api/listen?limit=100");
       if (!res.ok) return [];
       const raw: unknown = await res.json();
       return (Array.isArray(raw) ? (raw as Episode[]) : []).filter(e => !e.is_briefing);

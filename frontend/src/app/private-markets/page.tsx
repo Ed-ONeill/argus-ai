@@ -224,7 +224,7 @@ export default function PrivateMarketsPage() {
   const closedLayers = capitalFlow.layers.filter(l => l.status === "contracting"  || l.status === "blocked").length;
 
   return (
-    <div className="min-h-screen pb-24" style={{ background: "#050812" }}>
+    <div className="min-h-screen pb-24" style={{ background: "#030710" }}>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       <div className="border-b" style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)" }}>

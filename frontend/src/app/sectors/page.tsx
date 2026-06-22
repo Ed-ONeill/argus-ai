@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Layers, TrendingDown, TrendingUp, RefreshCw, ShieldAlert, Zap,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeAge } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
 import { SectorLeaderboard } from "@/components/sectors/SectorLeaderboard";
 import {
@@ -91,12 +91,6 @@ function generateNarrative(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatAge(seconds: number): string {
-  if (seconds < 60)   return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  return `${Math.floor(seconds / 3600)}h ago`;
-}
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -263,7 +257,7 @@ export default function SectorsPage() {
 
             {!isLoading && cacheAge > 0 && (
               <span className="ml-auto text-2xs text-ink-muted tabular-nums">
-                Updated {formatAge(cacheAge)}
+                Updated {formatRelativeAge(cacheAge)}
               </span>
             )}
           </div>

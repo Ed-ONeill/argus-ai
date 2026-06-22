@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
@@ -12,18 +13,39 @@ import { FilterChips } from "@/components/feed/FilterChips";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
 import { IntelligenceStrip } from "@/components/feed/IntelligenceStrip";
-import { MarketNarrativeNetwork } from "@/components/feed/MarketNarrativeNetwork";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
 import { TopNav } from "@/components/layout/TopNav";
-import { ThemeTerminal } from "@/components/themes/ThemeTerminal";
-import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from "@/lib/feedRanker";
+import { formatRelativeAge } from "@/lib/utils";
 import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
+
+// Heavy, code-split pieces kept out of the feed's First Load JS. The two theme
+// overlays only mount on user interaction; the narrative network is the single
+// largest chunk and already waits on async data, so a sized skeleton covers the
+// brief chunk load with no layout shift.
+const MarketNarrativeNetwork = dynamic(
+  () => import("@/components/feed/MarketNarrativeNetwork").then(m => m.MarketNarrativeNetwork),
+  {
+    ssr: false,
+    loading: () => (
+      <div aria-hidden className="w-full h-[360px] animate-pulse"
+        style={{ background: "rgba(255,255,255,0.02)" }} />
+    ),
+  },
+);
+const ThemeTerminal = dynamic(
+  () => import("@/components/themes/ThemeTerminal").then(m => m.ThemeTerminal),
+  { ssr: false },
+);
+const ThemeDrawer = dynamic(
+  () => import("@/components/themes/ThemeDrawer").then(m => m.ThemeDrawer),
+  { ssr: false },
+);
 
 function itemsToFallbackClusters(items: FeedItem[]): StoryCluster[] {
   return items.map(item => ({
@@ -34,12 +56,6 @@ function itemsToFallbackClusters(items: FeedItem[]): StoryCluster[] {
     theme_label:   item.category,
     story_count:   1,
   }));
-}
-
-function formatAge(seconds: number): string {
-  if (seconds < 60)   return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  return `${Math.floor(seconds / 3600)}h ago`;
 }
 
 // Hard ceiling on the curated feed — signal density over volume. The gate decides
@@ -347,7 +363,7 @@ export default function FeedPage() {
                   {" "}· {Object.keys(data.errors).length} source{Object.keys(data.errors).length > 1 ? "s" : ""} unavailable
                 </span>
               )}
-              {" "}· updated {formatAge(cacheAgeSeconds)}
+              {" "}· updated {formatRelativeAge(cacheAgeSeconds)}
               {data.is_stale && (
                 <span className="text-amber-500/60"> · refreshing…</span>
               )}

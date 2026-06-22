@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Globe2, RefreshCw, LayoutGrid } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeAge } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
 import { IndustryCard, IndustryCardSkeleton, type ThemeSignalFallback } from "@/components/industries/IndustryCard";
@@ -26,12 +26,6 @@ const REGIME_META: Record<string, { cls: string; label: string }> = {
   "Stagflationary":        { cls: "bg-amber-500/20  text-amber-300  border-amber-400/30",   label: "Stagflationary"     },
   "Neutral/Consolidating": { cls: "bg-slate-500/20  text-slate-300  border-slate-400/30",   label: "Neutral"            },
 };
-
-function formatAge(s: number): string {
-  if (s < 60)   return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
-}
 
 function activationToSignal(
   ia: IndustryActivation,
@@ -225,7 +219,7 @@ export default function IndustriesPage() {
                 <div className="w-px h-10 bg-white/10 hidden md:block" />
                 <div className="hidden md:block">
                   <p className="text-[13px] font-medium text-white/50 leading-none">
-                    {formatAge(cacheAge)}
+                    {formatRelativeAge(cacheAge)}
                   </p>
                   <p className="text-[9px] font-semibold text-white/25 uppercase tracking-[0.15em] mt-1">
                     Last Updated

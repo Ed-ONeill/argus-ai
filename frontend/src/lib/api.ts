@@ -13,8 +13,6 @@ async function get<T>(path: string, params?: Record<string, string | boolean>): 
     if (qstr) url += "?" + qstr;
   }
 
-  console.log("[api.get] →", url);
-
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text();
@@ -39,11 +37,11 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export async function fetchFeedFreshness(
   categories = "", sources = "", fresh_only = false,
 ): Promise<FeedFreshness> {
-  return get<FeedFreshness>("/feed/freshness/", { categories, sources, fresh_only });
+  return get<FeedFreshness>("/feed/freshness", { categories, sources, fresh_only });
 }
 
 export async function fetchFeed(params: FeedParams = {}): Promise<FeedResponse> {
-  return get<FeedResponse>("/feed/", {
+  return get<FeedResponse>("/feed", {
     categories:    params.categories    ?? "",
     sources:       params.sources       ?? "",
     fresh_only:    params.fresh_only    ?? false,
@@ -52,25 +50,25 @@ export async function fetchFeed(params: FeedParams = {}): Promise<FeedResponse> 
 }
 
 export async function fetchSources(): Promise<SourceInfo[]> {
-  return get<SourceInfo[]>("/feed/sources/");
+  return get<SourceInfo[]>("/feed/sources");
 }
 
 // ── Saved ────────────────────────────────────────────────────────────────────
 
 export async function fetchSaved(): Promise<FeedItem[]> {
-  return get<FeedItem[]>("/saved/");
+  return get<FeedItem[]>("/saved");
 }
 
 export async function fetchSavedIds(): Promise<string[]> {
-  return get<string[]>("/saved/ids/");
+  return get<string[]>("/saved/ids");
 }
 
 export async function saveItem(item: FeedItem): Promise<void> {
-  await post("/saved/", item);
+  await post("/saved", item);
 }
 
 export async function deleteItem(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/saved/${id}/`, { method: "DELETE" });
+  const res = await fetch(`${BASE}/saved/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
@@ -85,12 +83,12 @@ export interface AnalyzeResult {
 export async function analyzeItem(
   title: string, snippet: string, modelName = "",
 ): Promise<AnalyzeResult> {
-  return post<AnalyzeResult>("/analyze/", { title, snippet, model_name: modelName });
+  return post<AnalyzeResult>("/analyze", { title, snippet, model_name: modelName });
 }
 
 /** Lazy deep analysis — called only when the Analyze panel is opened. */
 export async function analyzeItemDeep(
   title: string, snippet: string,
 ): Promise<DeepAnalysis> {
-  return post<DeepAnalysis>("/analyze/deep/", { title, snippet });
+  return post<DeepAnalysis>("/analyze/deep", { title, snippet });
 }

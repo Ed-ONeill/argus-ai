@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
+import dynamic from "next/dynamic";
+import { useState, useMemo, useRef, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import {
   Zap, Network, BarChart2,
-  X, ChevronRight, AlertTriangle,
+  X, ChevronRight,
   Bookmark, BookmarkCheck, ChevronDown,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeAge, timeAgo } from "@/lib/utils";
 import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useMarketData } from "@/hooks/useMarketData";
@@ -17,23 +18,15 @@ import type { TickerData } from "@/hooks/useMarketData";
 import {
   computeThemeEvolutionState,
   THEME_EVOLUTION_META,
-  computeThemeLifecycleStage,
-  THEME_LIFECYCLE_META,
-  type ThemeLifecycleStage,
 } from "@/lib/themeEvolution";
 import {
   buildThemeRelationshipMap,
   detectContradictions,
-  generateIntelligenceBriefing,
-  generateBullBearCases,
   generateNextCatalysts,
   marketCatalystRadar,
   isCatalystCalendarPlaceholder,
   type CatalystKind,
   type RadarCatalyst,
-  generateWatchSignals,
-  generateInvalidationSignals,
-  computeThemeHealth,
   generateWhyItMattersNow,
   themeBeneficiaries,
   bestExpressions,
@@ -43,6 +36,23 @@ import {
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
 import { useThemeAlerts, type ThemeAlert } from "@/hooks/useThemeAlerts";
+import {
+  cleanThemeName,
+  cleanMacroLabel,
+  confColor,
+  convScore,
+  convBasis,
+  deriveKeyRisk,
+  countdownLabel,
+  type DrawerData,
+} from "./marketsShared";
+
+// Code-split: the drawer only mounts when a theme is opened, so it loads on
+// demand instead of shipping in the Markets First Load JS.
+const ThemeDetailDrawer = dynamic(
+  () => import("@/components/markets/ThemeDetailDrawer").then(m => m.ThemeDetailDrawer),
+  { ssr: false },
+);
 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -66,64 +76,6 @@ const SNAPSHOT_CONFIGS = [
   },
 ] as const;
 
-const MACRO_LABEL_MAP: Record<string, string> = {
-  "10Y Yield": "Treasury Yields", "TNX": "Treasury Yields",
-  "WTI Spot": "Oil Prices", "Brent Crude": "Oil Prices", "BZ=F": "Oil Prices",
-  "Credit Spreads": "Credit Conditions", "HY Spreads": "Credit Conditions",
-  "IG Spreads": "Credit Conditions",
-  "DXY": "Dollar Index", "USD Index": "Dollar Index",
-  "NFP": "Employment Data", "Non-Farm Payrolls": "Employment Data",
-  "CPI": "Inflation Data", "PCE": "Core Inflation",
-  "Fed Funds Rate": "Fed Policy", "EFFR": "Fed Policy",
-  "VIX": "Market Volatility", "GC=F": "Gold Prices",
-};
-
-const THEME_NAME_OVERRIDES: Record<string, string> = {
-  "Non-Bank Lending Ascendancy":  "Private Credit",
-  "Grid Bottleneck Trade":        "Power Infrastructure",
-  "Higher-for-Longer Repricing":  "Interest Rates",
-  "Silicon Sovereignty Capex":    "Semiconductor Capex",
-  "Deglobalization Capex Cycle":  "Reshoring & Capex",
-  "Fiscal Dominance Repricing":   "Fiscal Policy Impact",
-  "Defense Spending Ascendancy":  "Defense Spending",
-  "Credit Cycle Ascendancy":      "Credit Cycle",
-  "Energy Transition Capex":      "Energy Transition",
-};
-
-// Keyword canonicalization so theme names read like sell-side coverage labels
-// (Bloomberg / Goldman / JPM / MS) even when the backend emits a dramatized
-// auto-generated name. Ordered most-specific first; first match wins.
-const THEME_CANON: Array<{ regex: RegExp; name: string }> = [
-  { regex: /private credit|direct lending|non.?bank|private capital|alternative (asset|credit)|shadow bank/i, name: "Private Credit" },
-  { regex: /nuclear|\bsmr\b|uranium/i,                                          name: "Nuclear Power" },
-  { regex: /hyperscal/i,                                                        name: "Hyperscaler Capex" },
-  { regex: /data ?center|datacenter/i,                                          name: "Data Center Buildout" },
-  { regex: /ai (compute|infra|arms|capex)|accelerated comput|ai spend/i,        name: "AI Infrastructure" },
-  { regex: /semiconductor|silicon|chip (capex|cycle)|foundry|wafer/i,           name: "Semiconductor Capex" },
-  { regex: /utility (capex|super|cycle)|utilities? capex/i,                     name: "Utility Capex Cycle" },
-  { regex: /grid|transmission|power infra|electrical buildout/i,                name: "Power Infrastructure" },
-  { regex: /reshor|deglobal|nearshor|onshoring|supply.?chain capex/i,           name: "Reshoring & Capex" },
-  { regex: /higher.?for.?longer|rate repric|interest rate|hawkish/i,            name: "Interest Rates" },
-  { regex: /fiscal domin|fiscal repric|deficit|treasury supply/i,              name: "Fiscal Policy" },
-  { regex: /defense spend|defense ascend|rearmament|military buildup/i,         name: "Defense Spending" },
-  { regex: /credit cycle|credit stress|default cycle/i,                         name: "Credit Cycle" },
-  { regex: /energy transition|decarboniz|clean energy capex/i,                  name: "Energy Transition" },
-  { regex: /\bm&a\b|dealmaking|consolidation wave|takeover wave/i,              name: "M&A Cycle" },
-  { regex: /industrial metal|commodity supercycle|copper/i,                     name: "Industrial Metals" },
-  { regex: /china (reopen|stimulus|pmi|recov|reflat)/i,                         name: "China Reflation" },
-  { regex: /electrification|power demand/i,                                     name: "Electrification" },
-];
-
-const EVOLUTION_CLS: Record<string, string> = {
-  accelerating:  "text-emerald-500",
-  strengthening: "text-emerald-500",
-  broadening:    "text-sky-400",
-  stabilizing:   "text-slate-400",
-  peaking:       "text-amber-400",
-  weakening:     "text-orange-400",
-  reversing:     "text-red-500",
-};
-
 const EVOLUTION_COLOR: Record<string, string> = {
   accelerating:  "#10b981",
   strengthening: "#10b981",
@@ -134,28 +86,7 @@ const EVOLUTION_COLOR: Record<string, string> = {
   reversing:     "#ef4444",
 };
 
-const SNAP_STRIP_KEYS = [
-  { key: "SPY",     label: "S&P 500" },
-  { key: "QQQ",     label: "Nasdaq"  },
-  { key: "TNX",     label: "10Y UST" },
-  { key: "BZ=F",    label: "Oil"     },
-  { key: "BTC-USD", label: "Bitcoin" },
-  { key: "VIX",     label: "VIX"     },
-] as const;
-
-const LIFECYCLE_STAGES: ThemeLifecycleStage[] = [
-  "emerging", "building", "dominant", "maturing", "retiring",
-];
-
 type SnapshotKey = typeof SNAPSHOT_CONFIGS[number]["key"];
-
-type DrawerData = {
-  theme:      ThemeIntelligence;
-  upstream:   string[];
-  downstream: string[];
-  connected:  { id: string; name: string; linkType: string; strength: string }[];
-  conflicts:  { id: string; description: string; type: string; severity: string; themeIds: string[] }[];
-};
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -169,19 +100,8 @@ function formatChange(ticker: TickerData): string {
 }
 
 
-function formatAge(seconds: number | undefined): string {
-  if (seconds === undefined || seconds < 0) return "";
-  if (seconds < 60)   return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  return `${Math.floor(seconds / 3600)}h`;
-}
-
 function isUp(t: TickerData): boolean {
   return t.key === "TNX" ? t.change > 0 : t.changePercent > 0;
-}
-
-function cleanMacroLabel(raw: string): string {
-  return MACRO_LABEL_MAP[raw] ?? raw;
 }
 
 // Convert raw SEC filing titles ("8-K — Other Events") into readable labels and
@@ -198,87 +118,12 @@ function cleanFilingTitle(raw: string): string {
   return `${lead}${form}: ${desc}`.trim();
 }
 
-function cleanThemeName(raw: string): string {
-  if (THEME_NAME_OVERRIDES[raw]) return THEME_NAME_OVERRIDES[raw];
-  for (const c of THEME_CANON) if (c.regex.test(raw)) return c.name;
-  // Fallback: strip dramatizing buzzwords the generator likes to append.
-  return raw
-    .replace(/\b(Ascendancy|Repricing|Renaissance|Supercycle|Arms Race|Takeover|Bonanza|Boom|Mania|Revolution)\b/gi, "")
-    .replace(/\bSovereign(?:ty)?\b/gi, "")
-    .replace(/\bDominance\b/gi, "")
-    .replace(/\bTrade\b\s*$/i, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+&\s*$/, "")
-    .trim() || raw;
-}
-
 function regimeAccentColor(regime: string): string {
   const l = regime.toLowerCase();
   if (l.includes("risk-on") || l.includes("goldilocks") || l.includes("expansion")) return "#10b981";
   if (l.includes("risk-off") || l.includes("stagflat") || l.includes("recession"))  return "#f87171";
   if (l.includes("reflat") || l.includes("inflation")) return "#fbbf24";
   return "#818cf8";
-}
-
-function confColor(score: number): string {
-  return score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#94a3b8";
-}
-
-// Conviction is rounded to the nearest 5 so a 76 vs 74 never reads as real
-// precision, and is always shown alongside the evidence that produced it.
-function convScore(n: number): number {
-  return Math.round((n ?? 0) / 5) * 5;
-}
-function convBasis(t: ThemeIntelligence): string {
-  const ev = t.evidence_count ?? 0;
-  const cy = t.persistence_cycles ?? 0;
-  const parts: string[] = [];
-  if (ev > 0) parts.push(`${ev} source${ev !== 1 ? "s" : ""}`);
-  if (cy > 0) parts.push(`${cy} cycle${cy !== 1 ? "s" : ""}`);
-  return parts.join(" · ");
-}
-
-function fmtSnapPrice(key: string, price: number): string {
-  if (key === "TNX")     return price.toFixed(3) + "%";
-  if (key === "BTC-USD") return "$" + price.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  if (key === "BZ=F")    return "$" + price.toFixed(2);
-  if (key === "VIX")     return price.toFixed(2);
-  return price.toFixed(2);
-}
-
-function borderColorForTheme(t: ThemeIntelligence, evState: string): string {
-  if (t.momentum_direction === "bullish") return "#10b981";
-  if (t.momentum_direction === "bearish") return "#ef4444";
-  if (evState === "accelerating" || evState === "strengthening" || evState === "broadening") return "#10b981";
-  if (evState === "reversing"    || evState === "weakening") return "#ef4444";
-  return "#f59e0b";
-}
-
-function deriveTimeHorizon(t: ThemeIntelligence): string {
-  const { momentum_label, persistence_cycles, signal_quality, persistence_days } = t;
-  if (momentum_label === "reversing")  return "Late cycle";
-  if (momentum_label === "cooling")    return "1 to 3 months";
-  if (momentum_label === "emerging")   return "Near term";
-  if (persistence_cycles >= 6)         return "Structural";
-  if (persistence_cycles >= 4)         return "6 to 12 months";
-  if (momentum_label === "accelerating" && signal_quality === "confirmed") return "3 to 6 months";
-  if (momentum_label === "strengthening") return "2 to 4 months";
-  if (persistence_days  >= 60)         return "3 to 6 months";
-  if (persistence_days  >= 30)         return "1 to 3 months";
-  return "1 to 3 months";
-}
-
-function deriveKeyRisk(t: ThemeIntelligence): string {
-  const { signal_quality, volatility_score, competition_penalty,
-          momentum_label, cross_category_confirmed, confidence, second_order_effects } = t;
-  if (signal_quality === "speculative")    return "The thesis is not yet corroborated across independent sources.";
-  if (volatility_score >= 70)             return "A crowded trade leaves it vulnerable to a sharp unwind.";
-  if (competition_penalty >= 30)          return "Consensus positioning leaves limited upside from current levels.";
-  if (momentum_label === "reversing")     return "Momentum is already rolling over and the entry looks late.";
-  if (!cross_category_confirmed && confidence < 60)
-    return "The signal sits in a single asset class and needs cross-asset confirmation.";
-  if (second_order_effects.length > 0)   return second_order_effects[0];
-  return "A policy or macro inflection would invalidate the thesis.";
 }
 
 // Time-horizon bucket — analyst register, no "momentum fading" filler.
@@ -362,11 +207,11 @@ function MarketSnapshotBase({ themes, sectorData, regime, brief }: {
         <SnapCell label="Market State" value={state} color={accent} />
         <SnapCell label="Conviction" value={`${convScore(conviction)}`} color={confColor(conviction)} />
         <SnapCell label="Breadth" value={`${confirming}/${total}`} sub="sectors confirming" />
-        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "n/a"} />
-        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "n/a"} color="#10b981"
+        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "—"} />
+        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "—"} color="#10b981"
           sub={fastest ? `${(fastest.momentum_delta ?? 0) >= 0 ? "+" : ""}${fastest.momentum_delta ?? 0} mom` : undefined} />
-        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "n/a"} color="#ef4444" />
-        <SnapCell label="Largest Opportunity" value={opp ? opp.sector : "n/a"} color="#10b981"
+        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "—"} color="#ef4444" />
+        <SnapCell label="Largest Opportunity" value={opp ? opp.sector : "—"} color="#10b981"
           sub={opp ? `${opp.conviction}% conviction` : undefined} />
       </div>
     </div>
@@ -484,7 +329,7 @@ function DominantNarrativeBase({ brief, themes }: {
   const losers     = top ? themeLosers(top, 3) : null;
   const drivers    = themes.slice(0, 5);
   const trend      = confTrend(top?.momentum_delta ?? 0);
-  const horizon    = top ? timeBucket(top) : "n/a";
+  const horizon    = top ? timeBucket(top) : "—";
   const confirming = top
     ? themes.filter(t => t.momentum_direction === top.momentum_direction).length
     : themes.length;
@@ -746,51 +591,6 @@ function WatchlistPanel({
 
 // ── Market Snapshot Strip ─────────────────────────────────────────────────────
 
-function MarketSnapshotStrip({ marketData }: {
-  marketData: Record<string, TickerData | null> | undefined;
-}) {
-  const loading = marketData === undefined;
-  return (
-    <div className="flex items-stretch rounded-lg border border-edge bg-surface overflow-x-auto scrollbar-hide mb-3">
-      {SNAP_STRIP_KEYS.map((cfg, i) => {
-        const ticker  = marketData?.[cfg.key];
-        const offline = ticker === null;
-        const up      = ticker ? isUp(ticker) : false;
-        const chgClr  = up ? "#16a34a" : "#dc2626";
-
-        return (
-          <div
-            key={cfg.key}
-            className={cn(
-              "flex flex-col items-center justify-center px-3 py-2 min-w-[72px] flex-1 gap-0.5",
-              i > 0 && "border-l border-edge",
-            )}
-          >
-            <span className="text-[8px] font-semibold uppercase tracking-wider text-ink-muted whitespace-nowrap">
-              {cfg.label}
-            </span>
-            {loading ? (
-              <span className="text-[12px] font-bold text-ink-muted/30 tabular-nums">…</span>
-            ) : offline ? (
-              <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-muted/30">Delayed</span>
-            ) : (
-              <>
-                <span className="text-[12px] font-bold text-ink tabular-nums leading-tight">
-                  {fmtSnapPrice(cfg.key, ticker!.price)}
-                </span>
-                <span className="text-[9.5px] font-semibold tabular-nums leading-tight" style={{ color: chgClr }}>
-                  {formatChange(ticker!)}
-                </span>
-              </>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-
 // ── Market Intel Bar ──────────────────────────────────────────────────────────
 // Dark strip: regime label + clickable asset prices + live status
 
@@ -861,7 +661,7 @@ function MarketIntelBar({
                 {loading ? (
                   <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.15)" }}>…</span>
                 ) : offline ? (
-                  <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.12)" }}>n/a</span>
+                  <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.12)" }}>—</span>
                 ) : (
                   <span
                     className="text-[10px] font-bold tabular-nums"
@@ -885,7 +685,7 @@ function MarketIntelBar({
           )} />
           {cacheAge !== undefined && (
             <span style={{ fontSize: "7.5px", color: "rgba(255,255,255,0.20)" }}>
-              {marketOpen ? "Live" : "Delayed"} · {formatAge(cacheAge)}
+              {marketOpen ? "Live" : "Delayed"} · {formatRelativeAge(cacheAge, { suffix: false })}
             </span>
           )}
         </div>
@@ -906,640 +706,6 @@ function MarketIntelBar({
     </div>
   );
 }
-
-
-// ── Lifecycle Journey (used in drawer) ────────────────────────────────────────
-
-function LifecycleJourney({ stage }: { stage: ThemeLifecycleStage }) {
-  const currentIdx = LIFECYCLE_STAGES.indexOf(stage);
-  return (
-    <div className="flex items-center w-full">
-      {LIFECYCLE_STAGES.map((s, i) => {
-        const isCurrent = i === currentIdx;
-        const isPast    = i < currentIdx;
-        const sMeta     = THEME_LIFECYCLE_META[s];
-        return (
-          <div key={s} className={cn("flex items-center", i < LIFECYCLE_STAGES.length - 1 ? "flex-1" : "shrink-0")}>
-            <div
-              className="w-[6px] h-[6px] rounded-full shrink-0"
-              style={{
-                background: isCurrent ? sMeta.color : isPast ? `${sMeta.color}40` : "transparent",
-                border: `${isCurrent ? 2 : 1}px solid ${isCurrent ? sMeta.color : isPast ? `${sMeta.color}50` : "rgba(148,163,184,0.15)"}`,
-                transform: isCurrent ? "scale(1.35)" : "none",
-              }}
-            />
-            {i < LIFECYCLE_STAGES.length - 1 && (
-              <div className="flex-1 h-px mx-1"
-                style={{ background: i < currentIdx ? `${THEME_LIFECYCLE_META[s].color}25` : "rgba(148,163,184,0.08)" }} />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-
-// ── Theme Detail Drawer ───────────────────────────────────────────────────────
-
-// Recent confidence trajectory, reconstructed from current level + momentum delta.
-function confSeries(score: number, delta: number, n = 7): number[] {
-  const arr: number[] = [];
-  for (let i = 0; i < n; i++) arr.push(Math.max(2, Math.min(100, score - delta * (n - 1 - i) * 0.5)));
-  return arr;
-}
-
-function Sparkline({ data, color, width = 56, height = 16 }: { data: number[]; color: string; width?: number; height?: number }) {
-  if (data.length < 2) return null;
-  const max = Math.max(...data), min = Math.min(...data), span = Math.max(1, max - min);
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * (width - 2) + 1;
-    const y = height - 1 - ((v - min) / span) * (height - 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  return (
-    <svg width={width} height={height} className="shrink-0" aria-hidden>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.25" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function positioningTakeaway(t: ThemeIntelligence, benefits: string[]): string {
-  // Short header pointer that names the securities; the full transmission
-  // mechanism and best expressions live in the drawer body below.
-  const tk = themeBeneficiaries(t, 3);
-  if (tk.length > 0) {
-    if (t.momentum_direction === "bearish") return `Most exposed to the downside: ${tk.join(", ")}.`;
-    return `Most direct exposure runs through ${tk.join(", ")}.`;
-  }
-  const sector = benefits[0] ?? (t.related_industries ?? [])[0];
-  if (!sector) return "Exposure concentrates in the highest-conviction names across the theme.";
-  if (t.momentum_direction === "bearish") return `${sector} carries the most downside if the theme plays out.`;
-  if (t.momentum_label === "reversing" || t.momentum_label === "cooling")
-    return `${sector} tends to fade first as the theme rolls over.`;
-  return `${sector} is the most direct way to express the theme.`;
-}
-
-function ThemeDetailDrawer({
-  data, onClose, isFollowed, onToggleFollow,
-}: {
-  data:           DrawerData | null;
-  onClose:        () => void;
-  isFollowed:     boolean;
-  onToggleFollow: () => void;
-}) {
-  // Lock body scroll while open
-  useEffect(() => {
-    if (data) document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, [data]);
-
-  if (!data) return null;
-  const { theme: t, upstream, downstream, connected, conflicts } = data;
-  const publicName = cleanThemeName(t.name);
-  const evState    = computeThemeEvolutionState(t);
-  const evMeta     = THEME_EVOLUTION_META[evState];
-  const evCls      = EVOLUTION_CLS[evState] ?? "text-slate-400";
-  const lcStage    = computeThemeLifecycleStage(t);
-  const score      = t.confidence ?? 0;
-  const cColor     = confColor(score);
-
-  const benefits:  string[] = [];
-  const pressures: string[] = [];
-  const neutral:   string[] = [];
-  for (const ind of (t.related_industries ?? [])) {
-    const w = (t.relationship_weights ?? {})[ind];
-    if (w?.direction === "positive")      benefits.push(ind);
-    else if (w?.direction === "negative") pressures.push(ind);
-    else                                  neutral.push(ind);
-  }
-
-  const bColor  = borderColorForTheme(t, evState);
-  const health  = computeThemeHealth(t);
-  const bbCases = generateBullBearCases(t);
-  const catalysts      = generateNextCatalysts(t);
-  const watchSignals   = generateWatchSignals(t);
-  const invalidations  = generateInvalidationSignals(t);
-  const briefingSents  = generateIntelligenceBriefing(t);
-  const bestExpr       = bestExpressions(t);
-  const exposedLosers  = themeLosers(t);
-
-  return (
-    <AnimatePresence>
-      {data && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="bd"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 bg-black/40 z-40"
-            onClick={onClose}
-          />
-          {/* Drawer */}
-          <motion.div
-            key="drawer"
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 h-full w-full sm:w-[420px] bg-surface z-50
-                       overflow-y-auto shadow-drawer border-l border-edge"
-            style={{ borderTop: `3px solid ${bColor}` }}
-          >
-            {/* Header */}
-            <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-edge px-5 py-4 z-10">
-              <div className="flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                    <span className={cn("text-[10px] font-semibold uppercase tracking-wider", evCls)}>
-                      {evMeta.icon} {evMeta.label}
-                    </span>
-                    <span
-                      className="text-[8.5px] font-bold px-1.5 py-0.5 rounded leading-none"
-                      style={{ color: health.color, background: `${health.color}14` }}
-                    >
-                      {health.label}
-                    </span>
-                    {t.evidence_count > 0 && (
-                      <span className="text-[9px] text-ink-muted/35">{t.evidence_count} signals</span>
-                    )}
-                  </div>
-                  <h2 className="text-[22px] font-bold text-ink leading-tight tracking-tight">{publicName}</h2>
-                  {/* Confidence + recent trajectory sparkline */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[9px] tabular-nums font-semibold" style={{ color: cColor }}>
-                      {convScore(score)} conviction
-                    </span>
-                    {convBasis(t) && <span className="text-[8px] text-ink-muted/50 tabular-nums">{convBasis(t)}</span>}
-                    <Sparkline data={confSeries(score, t.momentum_delta ?? 0)} color={cColor} />
-                    <span className="text-[8px] font-bold tabular-nums" style={{ color: (t.momentum_delta ?? 0) >= 0 ? "#10b981" : "#ef4444" }}>
-                      {(t.momentum_delta ?? 0) >= 0 ? "+" : ""}{t.momentum_delta ?? 0}
-                    </span>
-                  </div>
-                  {/* Positioning takeaway — analyst note */}
-                  <p className="text-[10px] text-ink-secondary leading-snug mt-2 pl-2 border-l-2 italic" style={{ borderColor: bColor }}>
-                    {positioningTakeaway(t, benefits)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                  {/* Follow / Following toggle */}
-                  <button
-                    onClick={onToggleFollow}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold",
-                      "border transition-all duration-150",
-                      isFollowed
-                        ? "bg-accent text-white border-accent hover:bg-accent/90"
-                        : "bg-surface text-ink-secondary border-edge hover:border-accent hover:text-accent",
-                    )}
-                  >
-                    {isFollowed
-                      ? <><BookmarkCheck size={11} /> Following</>
-                      : <><Bookmark size={11} /> Follow</>
-                    }
-                  </button>
-                  {/* Close */}
-                  <button
-                    onClick={onClose}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-raised
-                               text-ink-muted hover:text-ink transition-colors"
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="px-5 py-5 space-y-4">
-
-              {/* ── Best Expressions — name the securities first ── */}
-              {bestExpr && (
-                <div className="rounded-lg border border-emerald-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-emerald-200/60 bg-emerald-50/40">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-700/80">Best Expressions</p>
-                  </div>
-                  <div className="px-4 py-3">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {bestExpr.tickers.map(tk => (
-                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-emerald-500/12 text-emerald-700 border border-emerald-500/25">{tk}</span>
-                      ))}
-                    </div>
-                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">{bestExpr.why}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Most Exposed Losers ─────────────────────────── */}
-              {exposedLosers && (
-                <div className="rounded-lg border border-red-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-red-200/60 bg-red-50/30 flex items-baseline gap-2">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-600/80">Most Exposed</p>
-                    <span className="text-[10px] font-semibold text-ink-secondary">{exposedLosers.sector}</span>
-                  </div>
-                  <div className="px-4 py-3">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {exposedLosers.tickers.map(tk => (
-                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-red-500/8 text-red-600/90 border border-red-500/20">{tk}</span>
-                      ))}
-                    </div>
-                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">{exposedLosers.risk}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Trade Implications ─────────────────────────── */}
-              {(() => {
-                const timeHorizon = deriveTimeHorizon(t);
-                const keyRisk     = deriveKeyRisk(t);
-                return (
-                  <div className="rounded-lg border border-edge overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Trade Implications</p>
-                    </div>
-                    <div className="grid grid-cols-2">
-
-                      {/* WINNERS */}
-                      <div className="p-3 border-b border-r border-edge bg-emerald-50/40">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-emerald-700/60 mb-2">
-                          ↑ Winners
-                        </p>
-                        {benefits.length > 0 ? (
-                          <div className="space-y-1">
-                            {benefits.slice(0, 4).map(ind => (
-                              <div key={ind} className="flex items-center gap-1.5">
-                                <span className="w-[5px] h-[5px] rounded-full shrink-0 bg-emerald-500" />
-                                <span className="text-[11.5px] font-medium text-ink leading-snug">{ind}</span>
-                              </div>
-                            ))}
-                            {benefits.length > 4 && (
-                              <p className="text-[9.5px] text-emerald-600/60 pl-3.5">+{benefits.length - 4} more</p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-[11px] text-ink-muted italic">n/a</p>
-                        )}
-                      </div>
-
-                      {/* LOSERS */}
-                      <div className="p-3 border-b border-edge bg-red-50/30">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-600/60 mb-2">
-                          ↓ Losers
-                        </p>
-                        {pressures.length > 0 ? (
-                          <div className="space-y-1">
-                            {pressures.slice(0, 4).map(ind => (
-                              <div key={ind} className="flex items-center gap-1.5">
-                                <span className="w-[5px] h-[5px] rounded-full shrink-0 bg-red-500" />
-                                <span className="text-[11.5px] font-medium text-ink leading-snug">{ind}</span>
-                              </div>
-                            ))}
-                            {pressures.length > 4 && (
-                              <p className="text-[9.5px] text-red-500/60 pl-3.5">+{pressures.length - 4} more</p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-[11px] text-ink-muted italic">n/a</p>
-                        )}
-                      </div>
-
-                      {/* TIME HORIZON */}
-                      <div className="p-3 border-r border-edge bg-sky-50/20">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-sky-600/60 mb-2">
-                          Time Horizon
-                        </p>
-                        <p className="text-[12px] font-semibold text-ink leading-snug">{timeHorizon}</p>
-                        {t.persistence_cycles > 0 && (
-                          <p className="text-[9.5px] text-ink-muted mt-1">
-                            {t.persistence_cycles} cycle{t.persistence_cycles !== 1 ? "s" : ""} persistent
-                            {t.persistence_days > 0 && ` · ${t.persistence_days}d`}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* KEY RISK */}
-                      <div className="p-3 bg-amber-50/25">
-                        <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-amber-600/60 mb-2">
-                          Key Risk
-                        </p>
-                        <p className="text-[11.5px] font-medium text-ink leading-snug">{keyRisk}</p>
-                        {t.volatility_score > 0 && (
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <span className="text-[8.5px] text-ink-muted">Volatility</span>
-                            <div className="w-12 h-[2px] rounded-full bg-edge overflow-hidden">
-                              <div className="h-full rounded-full"
-                                style={{
-                                  width: `${t.volatility_score}%`,
-                                  background: t.volatility_score >= 70 ? "#ef4444" : t.volatility_score >= 40 ? "#f59e0b" : "#94a3b8",
-                                }} />
-                            </div>
-                            <span className="text-[8.5px] tabular-nums text-ink-muted">{t.volatility_score}</span>
-                          </div>
-                        )}
-                      </div>
-
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Bull / Bear Cases */}
-              <div className="rounded-lg border border-edge overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">{"What's Working / What's Breaking"}</p>
-                </div>
-                <div className="grid grid-cols-2">
-                  <div className="px-3.5 py-3 border-r border-edge"
-                       style={{ borderLeft: "2px solid rgba(16,185,129,0.35)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-600/60 mb-1.5">{"What's Working"}</p>
-                    <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bull}</p>
-                  </div>
-                  <div className="px-3.5 py-3"
-                       style={{ borderLeft: "2px solid rgba(239,68,68,0.30)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-500/60 mb-1.5">{"What's Breaking"}</p>
-                    <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bear}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Why It Matters */}
-              {(briefingSents.length > 0 || upstream.length > 0) && (
-                <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Transmission Mechanism</p>
-                  </div>
-                  <div className="px-4 py-4 space-y-3">
-                    {briefingSents.length > 0 && (
-                      <div className="space-y-2">
-                        {briefingSents.map((sent, si) => (
-                          <p key={si}
-                            className="text-[13px] text-ink-secondary leading-[1.65]"
-                            style={si === 0 ? { borderLeft: `2px solid ${bColor}40`, paddingLeft: "1rem" } : { paddingLeft: "1rem" }}
-                          >
-                            {sent}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                    {upstream.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 items-center pt-2 border-t border-edge/40">
-                        <span className="text-[8.5px] text-ink-muted/50 uppercase tracking-wider font-semibold">
-                          Driven by
-                        </span>
-                        {upstream.map(u => (
-                          <span key={u} className="text-[10.5px] text-ink-secondary px-2 py-0.5 rounded bg-raised border border-edge">
-                            {cleanMacroLabel(u)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Sector Exposure */}
-              {(neutral.length > 0 || benefits.length > 4 || pressures.length > 4) && (
-                <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Sector Exposure</p>
-                  </div>
-                  <div className="grid grid-cols-2">
-                    {(benefits.length > 0 || neutral.length > 0) && (
-                      <div className="p-3.5 border-r border-edge/50">
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-emerald-600/60 mb-2.5">
-                          ↑ Benefits
-                        </p>
-                        <div className="space-y-1.5">
-                          {[...benefits, ...neutral].slice(0, 7).map(ind => (
-                            <div key={ind} className="flex items-center gap-2">
-                              <span className="w-1 h-1 rounded-full shrink-0"
-                                style={{ background: benefits.includes(ind) ? "#10b981" : "#94a3b8" }} />
-                              <span className="text-[12px] text-ink-secondary">{ind}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {pressures.length > 0 && (
-                      <div className="p-3.5">
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-red-500/60 mb-2.5">
-                          ↓ Pressures
-                        </p>
-                        <div className="space-y-1.5">
-                          {pressures.slice(0, 7).map(ind => (
-                            <div key={ind} className="flex items-center gap-2">
-                              <span className="w-1 h-1 rounded-full shrink-0 bg-red-400" />
-                              <span className="text-[12px] text-ink-secondary">{ind}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Watch Signals */}
-              {watchSignals.length > 0 && (
-                <div className="rounded-lg border border-amber-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">What Changes Our View</p>
-                  </div>
-                  <div className="divide-y divide-amber-100/60">
-                    {watchSignals.map((sig, i) => (
-                      <div key={i} className="px-4 py-3">
-                        <p className="text-[11px] font-semibold text-ink mb-0.5">{sig.variable}</p>
-                        <p className="text-[11px] text-ink-secondary leading-snug">{sig.condition}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Next Catalysts — dated, chronological */}
-              {catalysts.length > 0 && (
-                <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60 flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Upcoming Catalysts</p>
-                    <p className="text-[8px] text-ink-muted/45">scheduled, soonest first</p>
-                  </div>
-                  <div className="divide-y divide-edge/50">
-                    {catalysts.map((cat, i) => {
-                      const accent = cat.imminent ? "#f59e0b" : cat.direction === "confirming" ? "#10b981" : "#a78bfa";
-                      return (
-                        <div key={i} className="px-4 py-3 flex items-start gap-3">
-                          {/* countdown + date — the institutional hook */}
-                          <div className="flex flex-col items-center w-11 shrink-0 mt-0.5">
-                            <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: accent }}>{countdownLabel(cat.daysAway)}</span>
-                            <span className="text-[8px] text-ink-muted/55 tabular-nums mt-0.5">{cat.dateLabel}</span>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                              <span className="text-[11px] font-semibold text-ink">{cat.label}</span>
-                              <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none"
-                                style={{ color: accent, background: `${accent}1a` }}>
-                                {cat.direction === "confirming" ? "▲ confirming" : "⚑ risk"}
-                              </span>
-                              {cat.imminent && (
-                                <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none text-amber-700 bg-amber-500/15">this week</span>
-                              )}
-                            </div>
-                            <p className="text-[10.5px] text-ink-secondary leading-snug">{cat.reason}</p>
-                          </div>
-                          <span className="text-[8px] text-ink-muted/40 shrink-0 mt-0.5">{cat.sensitivity}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Related Themes */}
-              {connected.length > 0 && (
-                <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Related Themes</p>
-                  </div>
-                  <div className="p-4 flex flex-wrap gap-2">
-                    {connected.map(c => {
-                      const lc = c.linkType === "shared-story" ? "#38bdf8" :
-                                 c.linkType === "shared-asset" ? "#a78bfa" : "#94a3b8";
-                      const linkLabel = c.linkType === "shared-story" ? "shared narrative"
-                                      : c.linkType === "shared-asset" ? "shared exposure"
-                                      : "sector overlap";
-                      return (
-                        <span key={c.id} className="text-[11px] px-2.5 py-1.5 rounded-lg font-medium"
-                          style={{ color: lc, background: `${lc}12`, border: `1px solid ${lc}28` }}>
-                          {cleanThemeName(c.name)}
-                          <span className="ml-1.5 text-[8.5px] font-normal" style={{ opacity: 0.55 }}>
-                            {linkLabel}
-                          </span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* How It Works */}
-              {(upstream.length > 0 || downstream.length > 0) && (
-                <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">How It Works</p>
-                  </div>
-                  <div className="flex items-stretch gap-0">
-                    {/* Drivers */}
-                    <div className="flex-1 bg-raised px-3 py-3">
-                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Root Cause</p>
-                      <div className="space-y-1">
-                        {upstream.slice(0, 3).map(u => (
-                          <p key={u} className="text-[11.5px] text-ink-secondary font-medium">{cleanMacroLabel(u)}</p>
-                        ))}
-                        {upstream.length > 3 && (
-                          <p className="text-[10px] text-ink-muted/40">+{upstream.length - 3} more</p>
-                        )}
-                      </div>
-                    </div>
-                    {/* Arrow */}
-                    <div className="flex items-center justify-center px-2 bg-surface border-x border-edge shrink-0">
-                      <span className="text-[13px] text-ink-muted/25 select-none">→</span>
-                    </div>
-                    {/* Theme */}
-                    <div className="flex-1 bg-surface px-3 py-3" style={{ borderBottom: `2px solid ${bColor}40` }}>
-                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Theme</p>
-                      <p className="text-[12px] font-bold text-ink">{publicName}</p>
-                    </div>
-                    {/* Arrow */}
-                    <div className="flex items-center justify-center px-2 bg-surface border-x border-edge shrink-0">
-                      <span className="text-[13px] text-ink-muted/25 select-none">→</span>
-                    </div>
-                    {/* Impact */}
-                    <div className="flex-1 bg-raised px-3 py-3">
-                      <p className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/35 mb-2">Impact</p>
-                      <div className="space-y-1">
-                        {downstream.slice(0, 3).map(d => (
-                          <p key={d} className="text-[11.5px] text-ink-secondary line-clamp-1">{d}</p>
-                        ))}
-                        {downstream.length > 3 && (
-                          <p className="text-[10px] text-ink-muted/40">+{downstream.length - 3} more</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Lifecycle */}
-              <div className="rounded-lg border border-edge overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Lifecycle</p>
-                    <span className="text-[9px] font-semibold" style={{ color: THEME_LIFECYCLE_META[lcStage].color }}>
-                      · {THEME_LIFECYCLE_META[lcStage].label}
-                    </span>
-                  </div>
-                </div>
-                <div className="px-4 py-4">
-                  <LifecycleJourney stage={lcStage} />
-                  <div className="flex justify-between mt-2">
-                    {LIFECYCLE_STAGES.map(s => (
-                      <span key={s} className="text-[8px]"
-                        style={{
-                          color: s === lcStage ? THEME_LIFECYCLE_META[s].color : "rgba(148,163,184,0.28)",
-                          fontWeight: s === lcStage ? 700 : 400,
-                        }}>
-                        {THEME_LIFECYCLE_META[s].label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Invalidation Signals */}
-              {invalidations.length > 0 && (
-                <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Thesis Invalidation</p>
-                  </div>
-                  <div className="divide-y divide-edge/50">
-                    {invalidations.map((inv, i) => (
-                      <div key={i} className="px-4 py-3">
-                        <p className="text-[11px] font-semibold text-ink mb-1">{inv.condition}</p>
-                        <p className="text-[10.5px] text-ink-secondary leading-snug">{inv.impact}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Signal Conflicts */}
-              {conflicts.length > 0 && (
-                <div className="rounded-lg border border-amber-200/60 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-200/60 bg-amber-50/40">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Signal Conflicts</p>
-                  </div>
-                  <div className="divide-y divide-amber-100/60">
-                    {conflicts.slice(0, 3).map(c => (
-                      <div key={c.id} className="flex items-start gap-2.5 px-4 py-3">
-                        <AlertTriangle size={12} className="text-amber-500/70 shrink-0 mt-0.5" />
-                        <p className="text-[12px] text-ink-secondary leading-relaxed">{c.description}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-}
-
 
 
 // ── THEME COMMAND CENTER ──────────────────────────────────────────────────────
@@ -1586,10 +752,6 @@ const CATALYST_META: Record<CatalystKind, { short: string; glyph: string }> = {
   "treasury":       { short: "UST",   glyph: "◇" },
   "china":          { short: "China", glyph: "◈" },
 };
-
-function countdownLabel(daysAway: number): string {
-  return daysAway <= 0 ? "today" : daysAway === 1 ? "1d" : `${daysAway}d`;
-}
 
 // Market-wide upcoming-catalyst strip: the soonest scheduled events across the
 // visible themes, with imminent (<=7d) events emphasized.
@@ -2269,7 +1431,7 @@ export default function MarketsPage() {
                 heartbeatStatus === "stale" ? "bg-amber-400" : "bg-red-500",
               )} />
               <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.22)" }}>
-                {formatAge(Math.floor((Date.now() - new Date(marketMeta.fetchedAt).getTime()) / 1000))} ago
+                {timeAgo(marketMeta.fetchedAt)}
               </span>
             </div>
           )}
@@ -2281,15 +1443,16 @@ export default function MarketsPage() {
         {/* First-load skeleton — avoids a blank page before cache responds */}
         {isLoading && visible.length === 0 && <MarketsSkeleton />}
 
-        {/* ══ 1. MARKET STATE — what is happening ══════════════ */}
+        {/* ══ 1. MARKET STATE — at-a-glance dashboard ══════════ */}
         <SectionHeader label="Market State" />
         <MarketSnapshot themes={visible} sectorData={sectorData} regime={derivedRegime} brief={data?.market_brief} />
-        <MarketPulseStrip themes={visible} onThemeClick={openDrawer} />
 
-        {/* Live market snapshot — 6 instruments */}
-        <MarketSnapshotStrip marketData={marketData} />
+        {/* ══ 2. DOMINANT NARRATIVE — the plain-language read, kept directly
+            under the snapshot so the market view is graspable in one screen ══ */}
+        <DominantNarrative brief={data?.market_brief} themes={visible} />
 
-        {/* Market Intel Bar — regime + filter */}
+        {/* Live prices + regime — single strip (the standalone price tape
+            duplicated these instruments and was removed) */}
         <MarketIntelBar
           regime={derivedRegime}
           brief={data?.market_brief ?? undefined}
@@ -2323,8 +1486,8 @@ export default function MarketsPage() {
           )}
         </AnimatePresence>
 
-        {/* ══ 2. DOMINANT NARRATIVE — why it is happening ══════ */}
-        <DominantNarrative brief={data?.market_brief} themes={visible} />
+        {/* Market internals + movers — secondary detail, below the headline read */}
+        <MarketPulseStrip themes={visible} onThemeClick={openDrawer} />
 
         {/* ══ 3. THEME COMMAND CENTER — what's driving it + catalysts ══ */}
         <ThemeCommandCenter themes={visible} onThemeClick={openDrawer} />

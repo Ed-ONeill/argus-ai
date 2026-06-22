@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb, Target } from "lucide-react";
@@ -11,9 +12,16 @@ import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEM
 import { explainMAActivity, extractAcquirerProfiles, enrichSponsorProfiles } from "@/lib/themeIntelligence";
 import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
-import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
+import { timeAgo } from "@/lib/utils";
 import type { ThemeIntelligence } from "@/lib/types";
+
+// Code-split the theme drawer — it only mounts when a theme is selected, so it
+// stays out of the M&A page's First Load JS.
+const ThemeDrawer = dynamic(
+  () => import("@/components/themes/ThemeDrawer").then(m => m.ThemeDrawer),
+  { ssr: false },
+);
 
 // ── Deal type config ──────────────────────────────────────────────────────────
 
@@ -38,16 +46,10 @@ function DealTypeBadge({ type }: { type: DealType }) {
   );
 }
 
+// Relative stamp for a deal; if the source value is not a parseable date (it may
+// already be a pre-formatted relative string) fall back to showing it as-is.
 function formatRelativeTime(published: string): string {
-  try {
-    const ms  = Date.now() - new Date(published).getTime();
-    const h   = Math.floor(ms / 3_600_000);
-    if (h < 1)  return `${Math.floor(ms / 60_000)}m ago`;
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
-  } catch {
-    return published;
-  }
+  return timeAgo(published) || published;
 }
 
 function DealCard({ deal, index }: { deal: MADeal; index: number }) {
@@ -213,7 +215,7 @@ export default function MAPage() {
 
   return (
     <>
-    <div className="min-h-screen pb-24" style={{ background: "#050812" }}>
+    <div className="min-h-screen pb-24" style={{ background: "#030710" }}>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       <div className="border-b" style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)" }}>
@@ -337,6 +339,16 @@ export default function MAPage() {
                 <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>
                   Deals appear when PE Hub, PE Wire, or financial sources report activity.
                 </p>
+              </div>
+            )}
+
+            {/* First-load skeleton — keeps the column from reading blank */}
+            {isLoading && deals.length === 0 && (
+              <div className="space-y-3" aria-hidden>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="rounded-xl border animate-pulse"
+                    style={{ height: 86, background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.06)" }} />
+                ))}
               </div>
             )}
 

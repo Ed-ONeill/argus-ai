@@ -10,7 +10,14 @@ export function useFeed(initialParams: FeedParams = {}) {
   const queryClient = useQueryClient();
 
   const { data, isLoading, isPending, isFetching, error } = useQuery<FeedResponse>({
-    queryKey: ["feed", params],
+    // Key only on the fields the backend request actually varies on. Cosmetic
+    // flags (e.g. use_ai, which fetchFeed never sends) and the transient
+    // force_refresh must not fragment the cache into duplicate identical fetches.
+    queryKey: ["feed", {
+      categories: params.categories ?? "",
+      sources:    params.sources    ?? "",
+      fresh_only: params.fresh_only ?? false,
+    }],
     queryFn: () => fetchFeed(params),
     // Backend always returns instantly from cache; keep client-side data fresh
     // for 5 min and auto-poll every 10 min to pick up background refreshes.

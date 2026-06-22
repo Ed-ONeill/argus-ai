@@ -2,7 +2,7 @@
 
 import { ExternalLink, Play, Bookmark, BookmarkCheck, Clock } from "lucide-react";
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { cn, timeAgo } from "@/lib/utils";
 import { TOPIC_COLOR } from "./TopicFilterBar";
 import type { Episode, ThemeIntelligence } from "@/lib/types";
 
@@ -21,14 +21,7 @@ export function formatDuration(s: number): string {
 }
 
 export function formatPublished(iso: string): string {
-  const d    = new Date(iso);
-  const now  = new Date();
-  const diffH = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60));
-  if (diffH < 1)  return "Just now";
-  if (diffH < 24) return `${diffH}h ago`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7)  return `${diffD}d ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return timeAgo(iso);
 }
 
 // ── Artwork fallback ──────────────────────────────────────────────────────────

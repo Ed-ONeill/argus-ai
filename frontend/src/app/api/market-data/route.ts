@@ -85,14 +85,16 @@ interface CrumbCache {
   expiresAt: number;
 }
 
-let _crumbCache: CrumbCache | null = null;
+const CRUMB_TTL_MS           = 20 * 60 * 1000;
+const CRUMB_REFRESH_AHEAD_MS = 3 * 60 * 1000;   // refresh in background this long before expiry
 
-async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
+let _crumbCache: CrumbCache | null = null;
+let _crumbInflight: Promise<{ crumb: string; cookies: string }> | null = null;
+
+// Acquire a fresh crumb (consent cookies → getcrumb). Never throws — returns an
+// empty crumb on failure so callers proceed (Yahoo may then 401 and fall back).
+async function acquireCrumb(): Promise<{ crumb: string; cookies: string }> {
   const now = Date.now();
-  if (_crumbCache && now < _crumbCache.expiresAt) {
-    console.log(`[market-data] crumb: cache hit crumb=${_crumbCache.crumb.slice(0, 8)}... expires_in=${Math.round((_crumbCache.expiresAt - now) / 1000)}s`);
-    return { crumb: _crumbCache.crumb, cookies: _crumbCache.cookies };
-  }
 
   // Step 1: Visit Yahoo Finance to receive session cookies (A1, A3, etc.).
   // NOTE: fc.yahoo.com (old GDPR consent endpoint) is now defunct — returns 404.
@@ -138,7 +140,7 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
       if (crumbRes.ok) {
         const crumb = body.trim();
         if (crumb && crumb.length < 60 && !crumb.startsWith("<") && !crumb.includes("{")) {
-          _crumbCache = { crumb, cookies, expiresAt: now + 20 * 60 * 1000 };
+          _crumbCache = { crumb, cookies, expiresAt: now + CRUMB_TTL_MS };
           console.log(`[market-data] crumb: acquired from ${host} crumb=${crumb.slice(0, 8)}... cookies_present=${!!cookies}`);
           return { crumb, cookies };
         }
@@ -154,6 +156,31 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
   console.warn("[market-data] crumb: could not acquire — proceeding without auth (expect 401s)");
   return { crumb: "", cookies };
 }
+
+// Crumb accessor. (1) Cache hit returns instantly. (2) Refresh-ahead: when the
+// cached crumb is close to expiry, a background refresh is kicked off while the
+// still-valid crumb is returned, so no user request ever blocks on the ~1.3s
+// acquisition. (3) In-flight dedup: concurrent cold callers share one
+// acquisition instead of each stampeding Yahoo.
+function getYahooCrumb(): Promise<{ crumb: string; cookies: string }> {
+  const now = Date.now();
+  if (_crumbCache && now < _crumbCache.expiresAt) {
+    if (!_crumbInflight && _crumbCache.expiresAt - now < CRUMB_REFRESH_AHEAD_MS) {
+      _crumbInflight = acquireCrumb().finally(() => { _crumbInflight = null; });
+      _crumbInflight.catch(() => {});   // background; current cache stays valid
+      console.log("[market-data] crumb: refresh-ahead kicked off in background");
+    }
+    return Promise.resolve({ crumb: _crumbCache.crumb, cookies: _crumbCache.cookies });
+  }
+  if (!_crumbInflight) {
+    _crumbInflight = acquireCrumb().finally(() => { _crumbInflight = null; });
+  }
+  return _crumbInflight;
+}
+
+// Pre-warm at module load so the crumb is ready before the first client request
+// on a persistent runtime (the container boots before traffic arrives).
+getYahooCrumb().catch(() => {});
 
 // ── Yahoo Finance v8/chart (fallback) ─────────────────────────────────────────
 
@@ -393,24 +420,29 @@ async function fetchTicker(
     return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
   }
 
-  // TNX: US Treasury XML → Stooq → Yahoo fallback
+  // TNX: US Treasury XML → Yahoo → Stooq (last resort).
+  // Stooq is no longer tried first: it returns HTTP 404 for these symbols from
+  // cloud IPs, so a Stooq-first order added a guaranteed wasted round-trip
+  // before every Yahoo call. It is kept only as a fallback if Yahoo also fails.
   if (key === "TNX") {
     try { return await fetchTNXFromTreasury(); }
     catch (err) { console.warn(`[market-data] provider=treasury symbol=TNX status=failed —`, String(err)); }
-    try { return await fetchFromStooq(key, label); }
-    catch (err) { console.warn(`[market-data] provider=stooq symbol=TNX status=failed —`, String(err)); }
-    console.log(`[market-data] provider=yahoo symbol=TNX status=fallback`);
-    return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
+    try { return await fetchTickerFromYahoo(key, symbol, label, crumb, cookies); }
+    catch (err) { console.warn(`[market-data] provider=yahoo symbol=TNX status=failed —`, String(err)); }
+    console.log(`[market-data] provider=stooq symbol=TNX status=last_resort`);
+    return fetchFromStooq(key, label);
   }
 
-  // Equities / commodities / indices: Stooq → Yahoo fallback
-  if (STOOQ_SYMBOLS[key]) {
-    try { return await fetchFromStooq(key, label); }
-    catch (err) { console.warn(`[market-data] provider=stooq symbol=${key} status=failed —`, String(err)); }
-    console.log(`[market-data] provider=yahoo symbol=${key} status=fallback`);
+  // Equities / commodities / indices: Yahoo primary → Stooq last-resort fallback.
+  try {
+    return await fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
+  } catch (err) {
+    if (STOOQ_SYMBOLS[key]) {
+      console.warn(`[market-data] provider=yahoo symbol=${key} status=failed, trying stooq —`, String(err));
+      return fetchFromStooq(key, label);
+    }
+    throw err;
   }
-
-  return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
 }
 
 // ── Cached ticker fetch — stale fallback on total provider failure ────────────

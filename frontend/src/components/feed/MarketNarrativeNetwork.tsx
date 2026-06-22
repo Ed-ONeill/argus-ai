@@ -14,6 +14,7 @@ import { useMarketRhythm } from "@/hooks/useMarketRhythm";
 import { useParticipantDynamics } from "@/hooks/useParticipantDynamics";
 import type { GraphNode, GraphEdge, PropagationChain } from "@/lib/types";
 import { textPreferenceScore, type UserPrefs } from "@/lib/feedRanker";
+import { timeAgo } from "@/lib/utils";
 
 // ── Canvas constants ───────────────────────────────────────────────────────────
 // W/H define the SVG coordinate space. PAD_X is generous atmospheric dead-space
@@ -297,12 +298,7 @@ function trunc(s: string, max: number): string {
 }
 
 function formatAge(iso: string): string {
-  try {
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (s < 60) return "just now";
-    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-    return `${Math.floor(s / 3600)}h ago`;
-  } catch { return "—"; }
+  return timeAgo(iso) || "—";
 }
 
 function regimeColor(label: string): string {

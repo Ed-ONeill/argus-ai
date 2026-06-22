@@ -6,6 +6,48 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// ── Relative time ─────────────────────────────────────────────────────────────
+// One implementation for the whole product, so timestamps read identically on
+// every page and can never render "NaN" / "NaNd ago". Invalid or missing input
+// yields "" so a caller can simply omit the stamp.
+
+/** Relative "time ago" from elapsed SECONDS. Pass `{ suffix: false }` for a
+ *  compact form ("5m", "3h", "now") used inside tight tiles. */
+export function formatRelativeAge(
+  seconds: number | null | undefined,
+  opts: { suffix?: boolean } = {},
+): string {
+  const { suffix = true } = opts;
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "";
+  const ago = suffix ? " ago" : "";
+  if (seconds < 60)     return suffix ? "just now" : "now";
+  if (seconds < 3600)   return `${Math.floor(seconds / 60)}m${ago}`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h${ago}`;
+  if (seconds < 604_800) return `${Math.floor(seconds / 86_400)}d${ago}`;
+  return `${Math.floor(seconds / 604_800)}w${ago}`;
+}
+
+/** Seconds elapsed since a timestamp (ISO string, epoch ms, or Date). Returns
+ *  null when missing or unparseable. A numeric input is treated as epoch ms. */
+export function secondsSince(input: string | number | Date | null | undefined): number | null {
+  if (input == null || input === "") return null;
+  const ms =
+    input instanceof Date ? input.getTime() :
+    typeof input === "number" ? input :
+    Date.parse(input);
+  if (!Number.isFinite(ms)) return null;
+  const s = (Date.now() - ms) / 1000;
+  return Number.isFinite(s) ? s : null;
+}
+
+/** Relative "time ago" directly from a timestamp (ISO / epoch ms / Date). */
+export function timeAgo(
+  input: string | number | Date | null | undefined,
+  opts?: { suffix?: boolean },
+): string {
+  return formatRelativeAge(secondsSince(input), opts);
+}
+
 // ── Category colour map ───────────────────────────────────────────────────────
 
 const CAT_HEX: Record<string, string> = {

@@ -6,8 +6,9 @@ import type { FeedResponse } from "@/lib/types";
 
 export function useSectors() {
   const { data, isLoading, isFetching, error } = useQuery<FeedResponse>({
-    // Same key as useFeed() with no params — shares the homepage cache entry.
-    queryKey:        ["feed", {}],
+    // Must match useFeed's normalized key exactly so this shares the homepage
+    // feed cache entry instead of triggering a second identical fetch.
+    queryKey:        ["feed", { categories: "", sources: "", fresh_only: false }],
     queryFn:         () => fetchFeed({}),
     staleTime:       5 * 60 * 1000,
     refetchInterval: 10 * 60 * 1000,
