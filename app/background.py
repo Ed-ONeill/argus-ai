@@ -263,20 +263,31 @@ def run_pipeline(
     # graph_alignment_score (0–30) is used in the final composite feed sort
     # and in Today's Take candidate selection so the brief aligns with the graph.
     try:
-        _graph_kw: set[str] = set()
+        # Memory-weighted graph alignment: each theme's keywords are weighted by
+        # how persistent / confirmed the theme is across sessions, so a story that
+        # confirms a long-running theme scores higher than one attached only to a
+        # brand-new, single-cycle theme. influence_weight() is an in-memory dict
+        # lookup (no I/O), so this stays off the page-load path and is cheap.
+        from app.theme_memory import influence_weight as _theme_weight
+        _graph_kw_weight: dict[str, float] = {}
         for _t in theme_intelligence:
+            try:
+                _tw = _theme_weight(_t.id)
+            except Exception:
+                _tw = 1.0
             for _w in _t.name.lower().split():
                 if len(_w) > 3:
-                    _graph_kw.add(_w)
+                    _graph_kw_weight[_w] = max(_graph_kw_weight.get(_w, 0.0), _tw)
         _regime_str = sector_data.derived_regime or ""
         for _w in _regime_str.lower().split():
             if len(_w) > 3:
-                _graph_kw.add(_w)
+                _graph_kw_weight.setdefault(_w, 1.0)
+        _graph_kw = set(_graph_kw_weight)   # kept for the audit block below
 
         for _item in items:
             _tl = (_item.title + " " + _item.snippet).lower()
-            _hits = sum(1 for _kw in _graph_kw if _kw in _tl)
-            _item.graph_alignment_score = round(min(30.0, _hits * 5.0), 1)
+            _score = sum(_wt for _kw, _wt in _graph_kw_weight.items() if _kw in _tl)
+            _item.graph_alignment_score = round(min(30.0, _score * 5.0), 1)
 
         # Final composite re-sort: institutional_score (40%) + graph_alignment (20%) + signal_score (40%)
         from datetime import timezone as _tz2
@@ -426,6 +437,19 @@ def run_pipeline(
         "[bg] AUDIT categories=%s  age=%s  wmn=%s",
         _cat_cnts, _age_hist, _wmn_labels,
     )
+
+    # ── Thematic Intelligence Memory ───────────────────────────────────────────
+    # Fold this cycle's themes into persistent memory so Argus remembers how each
+    # theme evolves (new/recurring/strengthening/weakening/stale, confirm vs
+    # contradict, persistent pattern vs one-off, historical sector/ticker links).
+    # Runs here on the background thread — never on a page-load path. Wrapped so a
+    # memory failure can never break the feed pipeline.
+    try:
+        from app.theme_memory import update_theme_memory
+        _mem_n = update_theme_memory(theme_intelligence, clusters)
+        log.info("[bg] theme_memory updated: %d themes", _mem_n)
+    except Exception:
+        log.exception("[bg] theme_memory update FAILED — continuing (feed unaffected)")
 
     return ProcessedFeed(
         items=items,

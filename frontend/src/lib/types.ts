@@ -196,6 +196,47 @@ export interface ThemeIntelligence {
   causal_narrative:         string;
   breadth_score:            number;
   persistence_days:         number;
+  // Phase 2 (Memory-Aware Intelligence): persistent cross-session theme memory,
+  // attached server-side from app/theme_memory.py. Null until the theme has been
+  // observed across cycles. Every field traces to stored observations/evidence.
+  memory?:                  ThemeMemory | null;
+}
+
+/** Cross-session theme memory summary (from the backend theme_memory store).
+ *  Deterministic — never LLM-invented; each figure traces to stored evidence. */
+export interface ThemeMemory {
+  theme_id:                 string;
+  name:                     string;
+  status:                   "new" | "strengthening" | "weakening" | "recurring" | "active" | "stale";
+  sessions_in_status:       number;   // e.g. "Strengthening for 8 sessions"
+  sessions_observed:        number;
+  first_seen:               string;
+  first_seen_days_ago:      number;
+  last_seen:                string;
+  last_seen_hours_ago:      number;
+  confirmations_today:      number;   // confirming stories this cycle
+  contradictions_today:     number;
+  confirming_total:         number;
+  contradicting_total:      number;
+  conviction_current:       number;
+  conviction_first:         number;
+  conviction_prev:          number;
+  conviction_window_start:  number;   // conviction ~6 sessions ago ("58 -> 81")
+  conviction_change:        number;
+  conviction_trend:         "rising" | "falling" | "stable";
+  conviction_peak:          number;
+  conviction_trough:        number;
+  momentum:                 string;
+  lifecycle:                string;
+  historical_tickers:       string[]; // "linked to NVDA, CEG, VST"
+  historical_sectors:       string[];
+  sector_sessions:          Record<string, number>;
+  ticker_sessions:          Record<string, number>;
+  is_new:                   boolean;
+  is_one_off:               boolean;
+  is_persistent_pattern:    boolean;
+  is_stale:                 boolean;
+  evidence_confirms_prior:  boolean;
 }
 
 // ── Narrative Network graph ───────────────────────────────────────────────────

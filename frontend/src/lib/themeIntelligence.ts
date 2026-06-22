@@ -7,6 +7,100 @@
 
 import type { ThemeIntelligence, SectorData } from "./types";
 
+// ── Phase 2: Memory-Aware Intelligence ────────────────────────────────────────
+// Consume the persistent cross-session theme memory (theme.memory, attached
+// server-side from app/theme_memory.py) so conclusions reflect how a theme has
+// evolved across sessions — not just today's snapshot. Every helper no-ops
+// gracefully when memory is absent (cold start), so behaviour is unchanged until
+// memory accumulates, and every emitted figure traces to a stored observation.
+
+const _MEM_STRONG_PERSIST = 6;   // sessions before a theme counts as established
+
+/**
+ * Weight a theme's influence by how persistent / confirmed it is across
+ * sessions. Persistent, confirmed themes carry MORE weight; brand-new / one-off
+ * themes are discounted until confirmation accumulates; stale/contradicted
+ * themes are penalised. Returns ~0.5–1.35 (1.0 = neutral / no memory yet).
+ * Used by Sector Positioning scoring and (mirrored on the backend) feed ranking.
+ */
+export function themePersistenceWeight(t: ThemeIntelligence): number {
+  const m = t.memory;
+  if (!m) return 1.0;
+  let w = 1.0;
+  if (m.is_persistent_pattern)                    w += 0.25;
+  else if (m.sessions_observed >= _MEM_STRONG_PERSIST) w += 0.12;
+  if (m.is_new)                                   w -= 0.30;   // reduced until confirmed
+  else if (m.is_one_off)                          w -= 0.18;
+  if (m.status === "strengthening")               w += 0.10;
+  else if (m.status === "weakening")              w -= 0.08;
+  else if (m.status === "stale")                  w -= 0.35;
+  if (m.contradicting_total > m.confirming_total) w -= 0.12;
+  return Math.max(0.5, Math.min(1.35, w));
+}
+
+/**
+ * Memory-grounded sentences for drawers / narrative copy. Returns [] when there
+ * is no memory yet, so callers fall back to their existing copy. Every sentence
+ * is a stored fact (status streaks, first-seen, conviction trajectory, per-sector
+ * confirmation counts, today's confirmations/contradictions). No invented history.
+ */
+export function memorySentences(t: ThemeIntelligence, maxSectors = 1): string[] {
+  const m = t.memory;
+  if (!m || m.sessions_observed < 2) return [];
+  const out: string[] = [];
+
+  // "First detected 18 days ago and conviction has increased from 58 to 81."
+  const d = m.first_seen_days_ago;
+  const since = d >= 1 ? `${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"} ago`
+              : d >= 0.04 ? `${Math.max(1, Math.round(d * 24))}h ago` : "today";
+  const a = m.conviction_window_start, b = m.conviction_current;
+  if (Math.abs(b - a) >= 3) {
+    out.push(`First detected ${since}; conviction has ${b > a ? "increased" : "decreased"} from ${a} to ${b}.`);
+  } else {
+    out.push(`Tracked since ${since}; conviction has held near ${b} across ${m.sessions_observed} sessions.`);
+  }
+
+  // "Power Infrastructure has strengthened for 8 consecutive sessions."
+  if (m.status === "strengthening" && m.sessions_in_status >= 2) {
+    out.push(`Strengthening for ${m.sessions_in_status} consecutive sessions.`);
+  } else if (m.status === "weakening" && m.sessions_in_status >= 2) {
+    out.push(`Weakening for ${m.sessions_in_status} consecutive sessions.`);
+  } else if (m.status === "recurring") {
+    out.push(`A recurring theme, observed across ${m.sessions_observed} sessions.`);
+  } else if (m.status === "stale") {
+    out.push(`Dormant — last confirmed ${Math.round(m.last_seen_hours_ago)}h ago.`);
+  }
+
+  // "Semiconductors have confirmed this theme in 6 of 9 sessions."
+  const sectors = Object.entries(m.sector_sessions ?? {}).sort((x, y) => y[1] - x[1]);
+  for (const [sector, cnt] of sectors.slice(0, maxSectors)) {
+    if (cnt >= 2 && m.sessions_observed >= 3) {
+      out.push(`${sector} has confirmed this theme in ${cnt} of ${m.sessions_observed} sessions.`);
+    }
+  }
+
+  // "Contradicted by 2 stories today." / "3 new confirmations today."
+  if (m.contradictions_today >= 1) {
+    out.push(`Contradicted by ${m.contradictions_today} ${m.contradictions_today === 1 ? "story" : "stories"} today${m.confirmations_today > 0 ? `, confirmed by ${m.confirmations_today}` : ""}.`);
+  } else if (m.confirmations_today >= 2) {
+    out.push(`${m.confirmations_today} new confirmations today.`);
+  }
+
+  return out;
+}
+
+/** A short cross-session status clause for inline use, or null when no memory. */
+export function memoryStatusClause(t: ThemeIntelligence): string | null {
+  const m = t.memory;
+  if (!m || m.sessions_observed < 2) return null;
+  if (m.status === "strengthening" && m.sessions_in_status >= 2) return `strengthening for ${m.sessions_in_status} sessions`;
+  if (m.status === "weakening" && m.sessions_in_status >= 2)     return `weakening for ${m.sessions_in_status} sessions`;
+  if (m.status === "stale")          return `dormant ${Math.round(m.last_seen_hours_ago)}h`;
+  if (m.is_persistent_pattern)       return `persistent across ${m.sessions_observed} sessions`;
+  if (m.is_new)                      return "newly detected";
+  return null;
+}
+
 // ── 1. Theme Relationship Engine ──────────────────────────────────────────────
 
 export interface ConnectedTheme {
@@ -1452,8 +1546,25 @@ export function securitiesForSector(sector: string, max = 4): string[] {
 
 // Primary beneficiary tickers: prefer the theme's own related_assets, fall back
 // to the library keyed off non-negative industries and the theme name.
+// Memory-aware: tickers that have recurred across the most sessions are surfaced
+// first (the historically-confirmed beneficiaries), then current exposure fills in.
 export function themeBeneficiaries(theme: ThemeIntelligence, max = 4): string[] {
-  const out: string[] = (theme.related_assets ?? []).filter(a => TICKER_RE.test(a));
+  const out: string[] = [];
+
+  // Lead with historically-confirmed beneficiaries (seen across ≥2 sessions),
+  // ordered by how persistently they have been linked to this theme.
+  const ts = theme.memory?.ticker_sessions;
+  if (ts) {
+    for (const [tk, cnt] of Object.entries(ts).sort((a, b) => b[1] - a[1])) {
+      if (cnt >= 2 && TICKER_RE.test(tk) && !out.includes(tk)) out.push(tk);
+      if (out.length >= max) break;
+    }
+  }
+
+  for (const a of (theme.related_assets ?? [])) {
+    if (TICKER_RE.test(a) && !out.includes(a)) out.push(a);
+    if (out.length >= max) break;
+  }
   if (out.length < 2) {
     const posInds = (theme.related_industries ?? []).filter(
       i => (theme.relationship_weights ?? {})[i]?.direction !== "negative",
@@ -1558,6 +1669,11 @@ export function generateWhyItMattersNow(theme: ThemeIntelligence): string[] {
   const mech = explainMechanism(theme);
   if (mech) bullets.unshift(mech);
 
+  // Memory: a cross-session grounding bullet ("strengthening for N sessions",
+  // "conviction 58 → 81") so the read is not purely reactive to today's stories.
+  const memLead = memorySentences(theme, 0)[0];
+  if (memLead) bullets.unshift(memLead);
+
   return bullets;
 }
 
@@ -1637,6 +1753,12 @@ export function generateIntelligenceBriefing(theme: ThemeIntelligence): string[]
   } else {
     sentences.push(`The setup is still early. What decides it is whether breadth expands from here or the move stays confined to its first sector.`);
   }
+
+  // Memory: insert the cross-session "what changed / what held" grounding right
+  // after the opening state sentence, so the briefing compares today against the
+  // theme's own history instead of reading each cycle as an independent event.
+  const mem = memorySentences(theme, 1);
+  if (mem.length > 0) sentences.splice(1, 0, ...mem);
 
   return sentences;
 }

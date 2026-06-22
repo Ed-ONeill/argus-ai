@@ -93,7 +93,11 @@ export function convBasis(t: ThemeIntelligence): string {
   const cy = t.persistence_cycles ?? 0;
   const parts: string[] = [];
   if (ev > 0) parts.push(`${ev} source${ev !== 1 ? "s" : ""}`);
-  if (cy > 0) parts.push(`${cy} cycle${cy !== 1 ? "s" : ""}`);
+  // Prefer the persistent cross-session count from memory when available (more
+  // meaningful than in-process cycles); fall back to cycles before memory exists.
+  const sessions = t.memory?.sessions_observed ?? 0;
+  if (sessions >= 2)  parts.push(`${sessions} sessions`);
+  else if (cy > 0)    parts.push(`${cy} cycle${cy !== 1 ? "s" : ""}`);
   return parts.join(" · ");
 }
 

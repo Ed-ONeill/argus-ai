@@ -237,6 +237,11 @@ class ThemeIntelligenceSchema(BaseModel):
     causal_narrative:         str             = ""
     breadth_score:            int             = 0
     persistence_days:         float           = 0.0
+    # Thematic Intelligence Memory — UI-ready facts from persistent theme memory
+    # (status, sessions-in-state, first-seen, confirmations, conviction trend,
+    # historical sector/ticker links). Additive + optional; None until the theme
+    # has memory. Frontend may ignore it until the memory UI is built.
+    memory:                   dict | None     = None
 
 
 class IndustryActivationSchema(BaseModel):
@@ -371,6 +376,15 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             derived_regime  = getattr(sd, "derived_regime", ""),
         )
 
+    def _theme_mem_summary(theme_id: str) -> dict | None:
+        """Safely attach persistent-memory facts; never break the feed if memory
+        is unavailable for any reason."""
+        try:
+            from app.theme_memory import summarize_theme
+            return summarize_theme(theme_id)
+        except Exception:
+            return None
+
     raw_themes = getattr(entry, "theme_intelligence", []) or []
     theme_schemas = [
         ThemeIntelligenceSchema(
@@ -404,6 +418,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             causal_narrative         = getattr(t, "causal_narrative",         ""),
             breadth_score            = getattr(t, "breadth_score",            0),
             persistence_days         = getattr(t, "persistence_days",         0.0),
+            memory                   = _theme_mem_summary(t.id),
         )
         for t in raw_themes
     ]

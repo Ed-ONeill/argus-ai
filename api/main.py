@@ -86,6 +86,22 @@ except Exception as _exc:
         _exc,
     )
 
+# Thematic Intelligence Memory router — wrapped so a startup import error is
+# logged clearly rather than silently killing the deploy.
+try:
+    from api.routes import memory as _memory_mod
+    app.include_router(
+        _memory_mod.router,
+        prefix="/api/memory",
+        tags=["memory"],
+    )
+    log.info("[main] memory router registered at /api/memory")
+except Exception as _exc:
+    log.exception(
+        "[main] FAILED to register memory router — /api/memory/* will be unavailable: %r",
+        _exc,
+    )
+
 
 @app.get("/api/health")
 def health() -> dict:

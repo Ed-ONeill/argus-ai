@@ -571,9 +571,28 @@ def generate_market_brief(
         f"{n}. {(i.summary or i.title)[:120]}"
         for n, i in enumerate(candidates, 1)
     ]
+
+    # Memory grounding: give the model the VERIFIED cross-session record of what
+    # has strengthened / weakened / gone stale, with conviction trajectories, so
+    # narrative_shift explains genuine change vs prior consensus instead of being
+    # reactive to one day's headlines. These are stored facts — the instruction is
+    # explicit that the model must NOT invent history beyond them.
+    try:
+        from app.theme_memory import brief_memory_context
+        _mem_ctx = brief_memory_context()
+    except Exception:
+        _mem_ctx = ""
+
+    user_blocks = ["Top market headlines today:\n" + "\n".join(lines)]
+    if _mem_ctx:
+        user_blocks.append(
+            "Verified theme memory (how themes have evolved across prior sessions — "
+            "use ONLY these facts to describe what changed/strengthened/weakened, "
+            "do not invent any other prior history):\n" + _mem_ctx
+        )
     messages = [
         Message.system(_BRIEF_SYSTEM),
-        Message.user("Top market headlines today:\n" + "\n".join(lines)),
+        Message.user("\n\n".join(user_blocks)),
     ]
     log.info(
         "[brief] calling LLM  backend=%s  model=%s  candidates=%d",

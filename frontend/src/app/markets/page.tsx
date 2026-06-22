@@ -32,6 +32,8 @@ import {
   bestExpressions,
   themeLosers,
   securitiesForSector,
+  themePersistenceWeight,
+  memorySentences,
 } from "@/lib/themeIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
@@ -195,8 +197,15 @@ function MarketSnapshotBase({ themes, sectorData, regime, brief }: {
   const conviction = brief?.confidence
     ?? Math.round(themes.reduce((s, t) => s + (t.confidence ?? 0), 0) / themes.length);
   const dominant   = themes[0];
-  const fastest    = [...themes].sort((a, b) => (b.momentum_delta ?? 0) - (a.momentum_delta ?? 0))[0];
-  const risk       = [...themes].sort((a, b) => themeRiskScore(b) - themeRiskScore(a))[0];
+  // Memory-aware "fastest": weight today's momentum by cross-session persistence
+  // so a sustained strengthening theme outranks a one-off single-cycle spike.
+  const fastest    = [...themes].sort((a, b) =>
+    (b.momentum_delta ?? 0) * themePersistenceWeight(b) - (a.momentum_delta ?? 0) * themePersistenceWeight(a))[0];
+  // Memory-aware "largest risk": a theme weakening across multiple sessions is a
+  // bigger risk than one that merely dipped today.
+  const memRisk    = (t: ThemeIntelligence) =>
+    themeRiskScore(t) + (t.memory?.status === "weakening" ? (t.memory.sessions_in_status ?? 0) * 4 : 0);
+  const risk       = [...themes].sort((a, b) => memRisk(b) - memRisk(a))[0];
   const opp        = positions.find(p => p.direction === "bullish") ?? positions[0];
   const state      = regime || brief?.market_regime || "Neutral";
   const accent     = regimeAccentColor(state);
@@ -310,7 +319,11 @@ function deriveWhy(brief: MarketBrief | null | undefined, top: ThemeIntelligence
   if (!top) return brief?.narrative_shift ?? "";
   const verb   = _MOMENTUM_VERB[top.momentum_label] ?? "remained in focus";
   const factor = (top.related_macro_factors ?? [])[0];
-  return `${cleanThemeName(top.name)} ${verb}${factor ? `, driven by ${cleanMacroLabel(factor)}` : ""}.`;
+  const base   = `${cleanThemeName(top.name)} ${verb}${factor ? `, driven by ${cleanMacroLabel(factor)}` : ""}.`;
+  // Memory: compare today against the theme's own history — what changed (or held)
+  // and whether conviction is rising/falling — so the narrative is not reactive.
+  const memLine = memorySentences(top, 0)[0];
+  return memLine ? `${base} ${memLine}` : base;
 }
 
 function DominantNarrativeBase({ brief, themes }: {
@@ -731,6 +744,14 @@ function themePrimaryDriver(t: ThemeIntelligence): string {
 }
 
 function shortRisk(t: ThemeIntelligence): string {
+  // Memory-aware: a cross-session weakening/stale signal is the live risk to flag,
+  // ahead of the generic structural risk, so the watch line is not purely reactive.
+  const m = t.memory;
+  if (m && m.status === "weakening" && (m.sessions_in_status ?? 0) >= 2) {
+    return `Weakening ${m.sessions_in_status} sessions — conviction ${m.conviction_window_start}→${m.conviction_current}`;
+  }
+  if (m && m.status === "stale") return `Dormant — last confirmed ${Math.round(m.last_seen_hours_ago)}h ago`;
+  if (m && m.contradictions_today >= 2) return `Contradicted by ${m.contradictions_today} stories today`;
   const r = deriveKeyRisk(t).replace(/\.$/, "").trim();
   if (r.length <= 50) return r;
   const cut = r.slice(0, 48);
@@ -1057,7 +1078,11 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
     list.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
     let score = 0, wsum = 0;
     for (const t of list) {
-      const w = (t.relationship_weights?.[sector]?.weight ?? 0.5) * (t.confidence ?? 0);
+      // Memory weighting: a theme persistent/confirmed across sessions carries
+      // more weight than a one-day spike; brand-new themes are discounted until
+      // confirmation accumulates (themePersistenceWeight returns 1.0 with no memory).
+      const w = (t.relationship_weights?.[sector]?.weight ?? 0.5) * (t.confidence ?? 0)
+              * themePersistenceWeight(t);
       score += sectorThemeSign(t, sector) * w; wsum += w;
     }
     const net = wsum ? score / wsum : 0;
