@@ -35,7 +35,7 @@ const MarketTransmission = dynamic(
     loading: () => (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5 space-y-2.5" aria-hidden>
         {[0, 1, 2].map(i => (
-          <div key={i} className="h-[72px] rounded-xl animate-pulse"
+          <div key={i} className="h-[90px] rounded-xl animate-pulse"
             style={{ background: "#111827", border: "1px solid rgba(255,255,255,0.05)" }} />
         ))}
       </div>

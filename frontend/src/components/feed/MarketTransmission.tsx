@@ -89,15 +89,19 @@ function buildChains(themes: ThemeIntelligence[]): Chain[] {
 
 // ── Sub-components ──────────────────────────────────────────────────────────────
 
+// Connector between chain links. Self-centers so it sits beside the values
+// regardless of the (taller) theme step.
 function Arrow() {
-  return <span className="shrink-0 text-[15px] font-light leading-none" style={{ color: "rgba(255,255,255,0.22)" }}>→</span>;
+  return <span className="shrink-0 self-center text-[16px] font-light leading-none" style={{ color: "rgba(255,255,255,0.26)" }}>→</span>;
 }
 
-function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
+// One labelled link in the Driver → Theme → Sector → Expressions chain.
+function ChainStep({ label, labelColor, children }: { label: string; labelColor?: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-end">
-      <span className="text-[19px] font-black tabular-nums leading-none" style={{ color: color ?? "rgba(255,255,255,0.92)" }}>{value}</span>
-      <span className="text-[8px] font-bold uppercase tracking-[0.13em] mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
+    <div className="min-w-0 flex flex-col justify-center">
+      <span className="text-[8px] font-bold uppercase tracking-[0.18em] mb-1"
+        style={{ color: labelColor ?? "rgba(255,255,255,0.38)" }}>{label}</span>
+      {children}
     </div>
   );
 }
@@ -106,7 +110,8 @@ function TransmissionCard({ chain, rank, onSelect }: { chain: Chain; rank: numbe
   const { theme, driver, sector, tickers, conviction, momentum, confirmations, direction } = chain;
   const accent     = DIR_COLOR[direction];
   const convC      = confColor(conviction);
-  const momColor   = momentum > 0 ? "#34d399" : momentum < 0 ? "#f87171" : "rgba(255,255,255,0.45)";
+  const momColor   = momentum > 0 ? "#34d399" : momentum < 0 ? "#f87171" : "rgba(255,255,255,0.5)";
+  const momArrow   = momentum > 0 ? "▲" : momentum < 0 ? "▼" : "→";
   const clusterId  = (theme.contributing_cluster_ids ?? [])[0];
 
   return (
@@ -115,48 +120,82 @@ function TransmissionCard({ chain, rank, onSelect }: { chain: Chain; rank: numbe
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: rank * 0.05, ease: [0.22, 0, 0.36, 1] }}
+      whileHover={{ y: -1, transition: { duration: 0.15 } }}
       onClick={() => clusterId && onSelect?.(clusterId)}
-      className="group w-full text-left rounded-xl overflow-hidden flex items-stretch transition-colors"
-      style={{ background: "#111827", border: "1px solid rgba(255,255,255,0.06)" }}
+      className="group w-full text-left rounded-xl overflow-hidden flex items-stretch cursor-pointer
+                 border border-white/[0.07] bg-[#111827] transition-colors duration-150
+                 hover:bg-[#151d30] hover:border-white/[0.14]"
     >
       {/* direction accent rail */}
-      <div className="w-[3px] shrink-0" style={{ background: accent }} />
+      <div className="w-[3px] shrink-0 transition-all group-hover:w-[4px]" style={{ background: accent }} />
 
-      {/* the chain: Driver → Theme → Sector → Companies */}
-      <div className="flex-1 min-w-0 px-4 py-3.5">
-        {/* headline: theme name, the most important element */}
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <span className="text-[15px] sm:text-[16px] font-black tracking-tight leading-none break-words"
-            style={{ color: "rgba(255,255,255,0.96)" }}>
-            {cleanThemeName(theme.name)}
+      {/* the explicit chain: DRIVER → THEME → SECTOR → EXPRESSIONS */}
+      <div className="flex-1 min-w-0 px-5 py-4">
+        <div className="flex items-stretch gap-3.5 sm:gap-5 flex-wrap">
+
+          <ChainStep label="Driver">
+            <span className="text-[12.5px] sm:text-[13px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.62)" }}>{driver}</span>
+          </ChainStep>
+
+          <Arrow />
+
+          <ChainStep label="Theme" labelColor={accent}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[21px] sm:text-[24px] font-black tracking-[-0.01em] leading-[1.04] break-words"
+                style={{ color: "rgba(255,255,255,0.98)" }}>
+                {cleanThemeName(theme.name)}
+              </span>
+              <span className="text-[8px] font-bold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded leading-none shrink-0"
+                style={{ color: accent, background: `${accent}1e` }}>
+                {direction === "bullish" ? "Risk-On" : direction === "bearish" ? "Risk-Off" : "Mixed"}
+              </span>
+            </div>
+          </ChainStep>
+
+          <Arrow />
+
+          <ChainStep label="Sector">
+            <span className="text-[12.5px] sm:text-[13px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.8)" }}>{sector}</span>
+          </ChainStep>
+
+          <Arrow />
+
+          <ChainStep label="Expressions">
+            <span className="text-[13px] sm:text-[13.5px] font-bold tabular-nums tracking-tight leading-tight whitespace-nowrap"
+              style={{ color: accent }}>
+              {tickers.join("  •  ")}
+            </span>
+          </ChainStep>
+        </div>
+      </div>
+
+      {/* metrics rail — conviction dominant, momentum strong, confirms secondary */}
+      <div className="shrink-0 flex items-center gap-5 sm:gap-6 px-5 sm:px-6 py-4 border-l"
+        style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.018)" }}>
+        {/* Conviction — the single most prominent number on the card */}
+        <div className="flex flex-col items-end">
+          <span className="text-[34px] sm:text-[40px] font-black tabular-nums leading-[0.9]" style={{ color: convC }}>
+            {convScore(conviction)}
           </span>
-          <span className="text-[8px] font-bold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded leading-none shrink-0"
-            style={{ color: accent, background: `${accent}1e` }}>
-            {direction === "bullish" ? "Risk-On" : direction === "bearish" ? "Risk-Off" : "Mixed"}
-          </span>
+          <span className="text-[8px] font-bold uppercase tracking-[0.18em] mt-1" style={{ color: "rgba(255,255,255,0.42)" }}>Conviction</span>
         </div>
 
-        {/* the transmission chain */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>{driver}</span>
-          <Arrow />
-          <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>{sector}</span>
-          <Arrow />
-          <span className="flex items-center gap-1">
-            {tickers.map(tk => (
-              <span key={tk} className="text-[10.5px] font-bold tabular-nums px-1.5 py-0.5 rounded"
-                style={{ color: accent, background: `${accent}14`, border: `1px solid ${accent}30` }}>{tk}</span>
-            ))}
+        {/* Momentum — strengthened with arrow + tinted pill */}
+        <div className="flex flex-col items-end">
+          <span className="text-[15px] sm:text-[16px] font-black tabular-nums leading-none px-2 py-1 rounded-md"
+            style={{ color: momColor, background: `${momColor}1f` }}>
+            {momArrow} {momentum > 0 ? "+" : ""}{Math.round(momentum)}
+          </span>
+          <span className="text-[8px] font-bold uppercase tracking-[0.18em] mt-1" style={{ color: "rgba(255,255,255,0.42)" }}>Momentum</span>
+          <span className="text-[8.5px] font-medium tabular-nums mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+            {confirmations} {confirmations === 1 ? "confirmation" : "confirmations"}
           </span>
         </div>
       </div>
 
-      {/* metrics rail */}
-      <div className="shrink-0 flex items-center gap-5 px-5 py-3.5 border-l"
-        style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.015)" }}>
-        <Metric label="Conviction" value={`${convScore(conviction)}`} color={convC} />
-        <Metric label="Momentum" value={`${momentum > 0 ? "+" : ""}${Math.round(momentum)}`} color={momColor} />
-        <Metric label="Confirms" value={`${confirmations}`} />
+      {/* clickable affordance */}
+      <div className="shrink-0 flex items-center pr-3 pl-0.5">
+        <span className="text-[17px] leading-none text-white/25 transition-all group-hover:text-white/55 group-hover:translate-x-0.5">›</span>
       </div>
     </motion.button>
   );
@@ -166,7 +205,7 @@ function TransmissionSkeleton() {
   return (
     <div className="space-y-2.5" aria-hidden>
       {[0, 1, 2].map(i => (
-        <div key={i} className="h-[72px] rounded-xl animate-pulse"
+        <div key={i} className="h-[90px] rounded-xl animate-pulse"
           style={{ background: "#111827", border: "1px solid rgba(255,255,255,0.05)" }} />
       ))}
     </div>
