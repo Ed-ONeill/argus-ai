@@ -24,17 +24,21 @@ import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from 
 import { formatRelativeAge } from "@/lib/utils";
 import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
 
-// Heavy, code-split pieces kept out of the feed's First Load JS. The two theme
-// overlays only mount on user interaction; the narrative network is the single
-// largest chunk and already waits on async data, so a sized skeleton covers the
-// brief chunk load with no layout shift.
-const MarketNarrativeNetwork = dynamic(
-  () => import("@/components/feed/MarketNarrativeNetwork").then(m => m.MarketNarrativeNetwork),
+// Heavy / non-critical pieces kept out of the feed's First Load JS. The two
+// theme overlays only mount on user interaction; the transmission hero is small
+// and the feed is fully client-rendered (data from react-query), so a lazy chunk
+// costs nothing while keeping First Load lean.
+const MarketTransmission = dynamic(
+  () => import("@/components/feed/MarketTransmission").then(m => m.MarketTransmission),
   {
     ssr: false,
     loading: () => (
-      <div aria-hidden className="w-full h-[360px] animate-pulse"
-        style={{ background: "rgba(255,255,255,0.02)" }} />
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5 space-y-2.5" aria-hidden>
+        {[0, 1, 2].map(i => (
+          <div key={i} className="h-[72px] rounded-xl animate-pulse"
+            style={{ background: "#111827", border: "1px solid rgba(255,255,255,0.05)" }} />
+        ))}
+      </div>
     ),
   },
 );
@@ -251,8 +255,20 @@ export default function FeedPage() {
           onLoad={() => refresh(false)}
         />
 
-        {/* ── Market Narrative Network — full-bleed hero ───────────────────── */}
-        <MarketNarrativeNetwork prefs={prefs} />
+        {/* ── Today's Transmission — Feed hero ──────────────────────────────
+            Driver → Theme → Sector → Companies. Replaces the old narrative
+            network graph: answers "what is driving markets right now" instantly,
+            in a fraction of the space, no interpretation required. */}
+        <MarketTransmission
+          themes={personalizedThemes}
+          brief={data?.market_brief}
+          regime={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
+          isLoading={isLoading}
+          onSelect={(clusterId) => {
+            const el = document.querySelector(`[data-cluster-id="${clusterId}"]`);
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        />
 
         {/* Atmospheric continuity — field pressure color bleeds into intelligence feed */}
         <div aria-hidden className="w-full h-7 pointer-events-none"
