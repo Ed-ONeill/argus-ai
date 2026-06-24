@@ -33,11 +33,9 @@ const MarketTransmission = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5 space-y-2.5" aria-hidden>
-        {[0, 1, 2].map(i => (
-          <div key={i} className="h-[90px] rounded-xl animate-pulse"
-            style={{ background: "#111827", border: "1px solid rgba(255,255,255,0.05)" }} />
-        ))}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5" aria-hidden>
+        <div className="w-full h-[232px] rounded-xl animate-pulse"
+          style={{ background: "#0d1322", border: "1px solid rgba(255,255,255,0.05)" }} />
       </div>
     ),
   },
@@ -255,19 +253,16 @@ export default function FeedPage() {
           onLoad={() => refresh(false)}
         />
 
-        {/* ── Today's Transmission — Feed hero ──────────────────────────────
-            Driver → Theme → Sector → Companies. Replaces the old narrative
-            network graph: answers "what is driving markets right now" instantly,
-            in a fraction of the space, no interpretation required. */}
+        {/* ── Market Transmission — Feed hero ───────────────────────────────
+            Live, structured lane graph: Macro Drivers → Themes → Sectors →
+            Companies, with weighted direction-colored flow. Clicking a node
+            opens the theme intelligence drawer. */}
         <MarketTransmission
           themes={personalizedThemes}
           brief={data?.market_brief}
           regime={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
           isLoading={isLoading}
-          onSelect={(clusterId) => {
-            const el = document.querySelector(`[data-cluster-id="${clusterId}"]`);
-            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-          }}
+          onSelectTheme={(t) => setSelectedTheme(t)}
         />
 
         {/* Atmospheric continuity — field pressure color bleeds into intelligence feed */}

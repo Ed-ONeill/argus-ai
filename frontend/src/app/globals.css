@@ -89,3 +89,18 @@
     border-radius: inherit;
   }
 }
+
+/* ── Transmission graph (Feed hero) — restrained "alive" motion ───────────────
+   Flowing dashes = market pressure moving downstream through the lanes; gentle
+   node breathing; a live-status pulse. No physics, no glow, no chaos. */
+@keyframes tg-flow      { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -34; } }
+@keyframes tg-breathe   { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+@keyframes tg-live      { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.82); } }
+
+.tg-flow-line { animation: tg-flow 1.3s linear infinite; }
+.tg-breathe   { animation: tg-breathe 3.4s ease-in-out infinite; }
+.tg-live-dot  { animation: tg-live 2.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tg-flow-line, .tg-breathe, .tg-live-dot { animation: none !important; }
+}
