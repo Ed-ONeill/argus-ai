@@ -36,7 +36,7 @@ import {
 } from "@/lib/sectorIntelligence";
 import type { IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
-import { computeThemeImpactScore, getThemeBeneficiaries, getThemeHeadwinds } from "@/lib/themeImpact";
+import { getThemeBeneficiaries, getThemeHeadwinds } from "@/lib/themeImpact";
 import {
   getInfluentialEntities,
   filterVCFundingClusters,
@@ -50,7 +50,7 @@ import {
   type IndustryAcquirer,
   type IndustrySponsor,
 } from "@/lib/industryIntelligence";
-import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
+import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { IndustryArtwork, industryIcon } from "@/components/industries/industryIdentity";
@@ -389,6 +389,109 @@ function LeadershipSection({ leadership, color }: { leadership: LeadershipDynami
   );
 }
 
+// ── Industry market tape ──────────────────────────────────────────────────────
+// A Bloomberg-style scrolling tape of the industry's key tickers. NOTE: the data
+// layer is macro-only (no per-equity quotes), so this shows NO prices — the
+// arrow is a real THEMATIC exposure read (beneficiary ▲ / headwind ▾ of the
+// industry's active themes), never a fabricated price move.
+
+function IndustryTape({ tickers, benefit, headwind }: {
+  tickers: string[]; benefit: Set<string>; headwind: Set<string>;
+}) {
+  if (tickers.length === 0) return null;
+  const Row = ({ keyPrefix }: { keyPrefix: string }) => (
+    <>
+      {tickers.map(tk => {
+        const up = benefit.has(tk.toUpperCase());
+        const dn = headwind.has(tk.toUpperCase());
+        const color = up ? "#34d399" : dn ? "#f87171" : "rgba(255,255,255,0.5)";
+        return (
+          <span key={`${keyPrefix}-${tk}`} className="inline-flex items-center gap-1.5 px-3.5 shrink-0">
+            <span className="text-[11px] font-bold font-mono tracking-tight text-white/80">{tk}</span>
+            <span className="text-[9px] leading-none" style={{ color }}>{up ? "▲" : dn ? "▾" : "·"}</span>
+          </span>
+        );
+      })}
+    </>
+  );
+  return (
+    <div className="tg-tape-wrap relative overflow-hidden border-y border-white/[0.07]"
+      style={{ maskImage: "linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)" }}>
+      <div className="flex items-center py-2 whitespace-nowrap tg-tape" style={{ width: "max-content" }}>
+        <div className="flex items-center"><Row keyPrefix="a" /></div>
+        <div className="flex items-center" aria-hidden><Row keyPrefix="b" /></div>
+      </div>
+    </div>
+  );
+}
+
+// ── Active theme card (clean, scannable — primary content column) ──────────────
+
+function ActiveThemeCard({ theme, color, onOpen }: {
+  theme: ThemeIntelligence; color: string; onOpen: () => void;
+}) {
+  const evState = computeThemeEvolutionState(theme);
+  const evMeta  = THEME_EVOLUTION_META[evState];
+  const benef   = getThemeBeneficiaries(theme).slice(0, 4);
+  const narrative = (theme.second_order_effects?.[0] || theme.description || getEvolutionNarrative(theme.name, evState) || "").trim();
+  const convColor = theme.confidence >= 70 ? "#10b981" : theme.confidence >= 45 ? "#f59e0b" : "#94a3b8";
+  const strengthCls =
+    theme.signal_strength === "strong" ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
+    theme.signal_strength === "medium" ? "text-amber-600  bg-amber-50  border-amber-200"   :
+                                         "text-ink-muted  bg-raised    border-edge";
+  return (
+    <button type="button" onClick={onOpen}
+      className="group text-left bg-surface rounded-xl border border-edge p-4 transition-all hover:border-edge-strong hover:shadow-card-hover w-full">
+      {/* Name */}
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <h4 className="text-[15px] font-black text-ink leading-tight tracking-tight group-hover:text-accent transition-colors">
+          {cleanThemeName(theme.name)}
+        </h4>
+        <span className="shrink-0 text-[20px] font-black tabular-nums leading-none" style={{ color: convColor }}>
+          {theme.confidence}
+        </span>
+      </div>
+      {/* State chips */}
+      <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+        <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border"
+          style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}>
+          {evMeta.label}
+        </span>
+        {theme.confidence_label && (
+          <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border" style={{ color, background: `${color}12`, borderColor: `${color}28` }}>
+            {theme.confidence_label}
+          </span>
+        )}
+        <span className={cn("text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border", strengthCls)}>
+          {theme.signal_strength}
+        </span>
+      </div>
+      {/* Beneficiaries */}
+      {benef.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+          <span className="text-[8px] font-bold uppercase tracking-[0.14em] text-ink-muted/55">Beneficiaries</span>
+          {benef.map(a => (
+            <span key={a} className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded leading-none" style={{ color, background: `${color}12` }}>{a}</span>
+          ))}
+        </div>
+      )}
+      {/* Narrative */}
+      {narrative && (
+        <p className="text-[11.5px] text-ink-secondary leading-relaxed mb-2.5 line-clamp-2">{narrative}</p>
+      )}
+      {/* Footer: conviction + sources */}
+      <div className="flex items-center gap-2 pt-2 border-t border-edge/50">
+        <span className="text-[9.5px] font-bold tabular-nums" style={{ color: convColor }}>
+          {theme.momentum_delta > 0 ? "+" : ""}{theme.momentum_delta || theme.confidence} conviction
+        </span>
+        <span className="text-ink-muted/30">·</span>
+        <span className="text-[9.5px] font-medium text-ink-muted tabular-nums">{theme.evidence_count || theme.contributing_story_count || 0} sources</span>
+        <ArrowUpRight size={11} className="ml-auto text-ink-muted/25 group-hover:text-accent transition-colors" />
+      </div>
+    </button>
+  );
+}
+
 // ── Industry Transmission Map ─────────────────────────────────────────────────
 // Reinforces that an industry does not exist in isolation: each row is a
 // Macro Driver → Theme → {this industry} → Companies chain, built from the
@@ -424,7 +527,7 @@ function IndustryTransmissionMap({ industry, themes }: { industry: IndustryConfi
       {children}
     </div>
   );
-  const Arrow = () => <span className="self-center text-[13px] font-light text-ink-muted/35 px-1 shrink-0">→</span>;
+  const Arrow = () => <span className="self-center text-[15px] font-semibold px-1 shrink-0" style={{ color: `${c}66` }}>→</span>;
   return (
     <div className="bg-surface rounded-xl border border-edge p-5">
       <div className="flex items-center gap-2 mb-3">
@@ -435,14 +538,16 @@ function IndustryTransmissionMap({ industry, themes }: { industry: IndustryConfi
       </div>
       <div className="divide-y divide-edge/55">
         {rows.map((r, i) => (
-          <div key={i} className="grid items-stretch py-2.5"
-            style={{ gridTemplateColumns: "minmax(96px,150px) auto minmax(120px,1fr) auto 92px auto minmax(120px,auto)" }}>
+          <div key={i} className="grid items-center py-3"
+            style={{ gridTemplateColumns: "minmax(92px,140px) auto minmax(150px,1fr) auto 92px auto minmax(120px,auto)" }}>
             <Step role="Driver">
-              <span className="text-[11.5px] font-semibold text-ink-secondary leading-tight line-clamp-2">{r.driver}</span>
+              <span className="text-[11px] font-semibold text-ink-muted leading-tight line-clamp-2">{r.driver}</span>
             </Step>
             <Arrow />
             <Step role="Theme">
-              <span className="text-[13px] font-black text-ink leading-tight line-clamp-2" style={{ textWrap: "balance" } as React.CSSProperties}>{r.theme}</span>
+              {/* Theme is the dominant element — largest type, industry accent */}
+              <span className="text-[16px] sm:text-[17px] font-black leading-[1.1] line-clamp-2 tracking-tight"
+                style={{ color: industry.color, textWrap: "balance" } as React.CSSProperties}>{r.theme}</span>
             </Step>
             <Arrow />
             <Step role="Lands on">
@@ -539,6 +644,14 @@ export default function IndustryDetailPage() {
     : industry.macroDrivers.slice(0, 6);
 
   const activeThemes    = getThemesForIndustry(industry.name, feedData?.theme_intelligence ?? []).slice(0, 3);
+  // Thematic exposure sets (real signal: beneficiary / headwind of active themes),
+  // shared by the market tape and the Thematic Exposure module.
+  const tapeBenefit  = new Set<string>();
+  const tapeHeadwind = new Set<string>();
+  for (const t of activeThemes) {
+    getThemeBeneficiaries(t).forEach(a => tapeBenefit.add(a.toUpperCase()));
+    getThemeHeadwinds(t).forEach(a => { if (!tapeBenefit.has(a.toUpperCase())) tapeHeadwind.add(a.toUpperCase()); });
+  }
   const liveDevelopments = getLiveDevelopments(industry.slug, sectorIntel, indSignals, topClusters, regime);
   const leadership      = getLeadershipDynamics(industry.slug, sectorIntel, indSignals, regime);
   const positioning     = getPositioningNarrative(industry.slug, sectorIntel, regime);
@@ -615,8 +728,8 @@ export default function IndustryDetailPage() {
         <IndustryArtwork
           slug={industry.slug}
           color="#ffffff"
-          className="pointer-events-none absolute top-0 right-0 h-full w-[46%] hidden sm:block"
-          style={{ opacity: 0.05, maskImage: "linear-gradient(90deg, transparent, #000 65%)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 65%)" }}
+          className="pointer-events-none absolute top-0 right-0 h-full w-[48%] hidden sm:block"
+          style={{ opacity: 0.09, maskImage: "linear-gradient(90deg, transparent, #000 60%)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 60%)" }}
         />
 
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 py-9 sm:py-11">
@@ -812,6 +925,9 @@ export default function IndustryDetailPage() {
             </a>
           )}
         </div>
+
+        {/* Live market tape — key tickers with thematic exposure (no quotes) */}
+        <IndustryTape tickers={industry.keyAssets.slice(0, 14)} benefit={tapeBenefit} headwind={tapeHeadwind} />
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
@@ -937,6 +1053,28 @@ export default function IndustryDetailPage() {
             )}
           </div>
         </motion.div>
+
+        {/* ── Active Themes — core Argus intelligence, primary column ────── */}
+        {activeThemes.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.11, duration: 0.25, ease: "easeOut" }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <Network size={11} className="shrink-0" style={{ color: industry.color }} />
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">Active Themes</span>
+              <span className="text-[9px] font-medium text-ink-muted/70">driving {industry.name}</span>
+              <span className="h-px flex-1 bg-edge" />
+              <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] text-ink-muted/50 tabular-nums">{activeThemes.length} active</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activeThemes.map((t: ThemeIntelligence) => (
+                <ActiveThemeCard key={t.id} theme={t} color={industry.color} onOpen={() => setDrawerTheme(t)} />
+              ))}
+            </div>
+          </motion.section>
+        )}
 
         {/* ── Live Developments ─────────────────────────────────────────── */}
         {liveDevelopments.length > 0 && (
@@ -1105,145 +1243,6 @@ export default function IndustryDetailPage() {
                   <DriverChip key={d} label={d} color={industry.color} />
                 ))}
               </div>
-            </motion.section>
-
-            {/* Active Intelligence Themes */}
-            <motion.section
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.19, duration: 0.25, ease: "easeOut" }}
-              className="bg-surface rounded-xl border border-edge p-4"
-            >
-              <SectionHeader icon={Network}>Active Themes</SectionHeader>
-              {activeThemes.length > 0 ? (
-                <div className="space-y-4">
-                  {activeThemes.map((t: ThemeIntelligence) => {
-                    const barColor =
-                      t.signal_strength === "strong" ? "#10b981" :
-                      t.signal_strength === "medium" ? "#f59e0b" : "#94a3b8";
-                    const strengthCls =
-                      t.signal_strength === "strong" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                      t.signal_strength === "medium" ? "bg-amber-500/10  text-amber-400  border-amber-500/20"   :
-                                                       "bg-edge          text-ink-muted  border-edge";
-                    const rel       = (t.relationship_weights ?? {})[industry.name];
-                    const relWeight = rel ? Math.round(rel.weight * 100) : null;
-                    const relDir    = rel?.direction ?? null;
-                    const relType   = rel?.type ?? null;
-                    const evState     = computeThemeEvolutionState(t);
-                    const evMeta     = THEME_EVOLUTION_META[evState];
-                    const lcStage    = computeThemeLifecycleStage(t);
-                    const lcMeta     = THEME_LIFECYCLE_META[lcStage];
-                    const impactScore = computeThemeImpactScore(t, industry.name);
-                    const impactColor = impactScore > 0 ? "#10b981" : impactScore < 0 ? "#ef4444" : "#94a3b8";
-
-                    return (
-                      <div key={t.id} className="space-y-1.5 pb-4 last:pb-0 last:border-0 border-b border-edge/40">
-                        {/* Name + evolution + lifecycle + strength + impact */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[11px] font-semibold text-ink leading-tight flex-1 min-w-0">
-                            {t.name}
-                          </span>
-                          {impactScore !== 0 && (
-                            <span
-                              className="text-[9px] font-bold font-mono tabular-nums px-1 py-px rounded shrink-0"
-                              style={{ background: `${impactColor}14`, color: impactColor }}
-                            >
-                              {impactScore > 0 ? "+" : ""}{impactScore}
-                            </span>
-                          )}
-                          <span
-                            className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0"
-                            style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}
-                          >
-                            {evMeta.icon} {evMeta.label}
-                          </span>
-                          <span
-                            className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0"
-                            style={{ color: lcMeta.color, background: lcMeta.bg, borderColor: lcMeta.border }}
-                          >
-                            {lcMeta.label}
-                          </span>
-                          <span className={cn(
-                            "text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border shrink-0",
-                            strengthCls,
-                          )}>
-                            {t.signal_strength}
-                          </span>
-                        </div>
-
-                        {/* Evolution narrative */}
-                        <p className="text-[9.5px] text-ink-muted italic leading-snug -mt-0.5">
-                          {getEvolutionNarrative(t.name, evState)}
-                        </p>
-
-                        {/* Confidence bar + impact */}
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 h-[2px] rounded-full bg-raised overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${t.confidence}%`, background: barColor }}
-                            />
-                          </div>
-                          <span className="text-[9px] tabular-nums text-ink-muted shrink-0">
-                            {t.confidence_label || `${t.confidence}%`}
-                          </span>
-                          {relWeight !== null && (
-                            <span
-                              className="text-[9px] font-bold tabular-nums shrink-0"
-                              style={{
-                                color: relDir === "positive" ? "#10b981" :
-                                       relDir === "negative" ? "#ef4444" : "#94a3b8",
-                              }}
-                            >
-                              {relDir === "positive" ? "↑" : relDir === "negative" ? "↓" : "→"}
-                              {relWeight}%
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Relationship type + evidence + assets */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {relType && (
-                            <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded border border-edge text-ink-muted/70 bg-raised shrink-0">
-                              {relType.replace(/_/g, " ")}
-                            </span>
-                          )}
-                          {t.related_assets.slice(0, 4).map(a => (
-                            <span
-                              key={a}
-                              className="text-[8.5px] font-bold font-mono px-[5px] py-[2px] rounded leading-none shrink-0"
-                              style={{ color: industry.color, background: `${industry.color}14` }}
-                            >
-                              {a}
-                            </span>
-                          ))}
-                          {t.evidence_count > 0 && (
-                            <span className="text-[8.5px] text-ink-muted/60 ml-auto shrink-0 tabular-nums">
-                              {t.evidence_count} src
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Second-order effect + persistence */}
-                        {t.second_order_effects[0] && (
-                          <p className="text-[10px] text-ink-muted leading-snug">
-                            → {t.second_order_effects[0]}
-                          </p>
-                        )}
-                        {(t.persistence_cycles ?? 0) > 1 && (
-                          <p className="text-[9px] text-ink-muted/50">
-                            Persistent · {t.persistence_cycles} cycle{t.persistence_cycles !== 1 ? "s" : ""}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[11px] text-ink-muted/60 italic text-center py-3">
-                  {feedData ? "No theme matches for this industry" : "Theme graph warming up…"}
-                </p>
-              )}
             </motion.section>
 
             {/* Thematic Exposure — beneficiaries & headwinds from active themes */}

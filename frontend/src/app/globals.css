@@ -102,6 +102,12 @@
 .tg-live-dot  { animation: tg-live 2.2s ease-in-out infinite; }
 .tg-band      { background-size: 200% 100%; animation: tg-band 2.6s linear infinite; }
 
+/* Industry market tape — slow, smooth Bloomberg-style horizontal scroll. The
+   track holds two identical copies; translating -50% gives a seamless loop. */
+@keyframes tg-tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.tg-tape { animation: tg-tape 38s linear infinite; }
+.tg-tape-wrap:hover .tg-tape { animation-play-state: paused; }
+
 @media (prefers-reduced-motion: reduce) {
-  .tg-breathe, .tg-live-dot, .tg-band { animation: none !important; }
+  .tg-breathe, .tg-live-dot, .tg-band, .tg-tape { animation: none !important; }
 }
