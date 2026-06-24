@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { industryIcon } from "./industryIdentity";
 import type { IndustryConfig } from "@/lib/industryConfig";
 import type { SectorIntelligence, IndustrySignal } from "@/lib/types";
 
@@ -63,6 +64,7 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
 
   const sc    = SENTIMENT[sentiment] ?? SENTIMENT.neutral;
   const SIcon = sc.Icon;
+  const IndIcon = industryIcon(industry.slug);
 
   const scoreColor =
     effectiveScore >= 70 ? "#10b981" :
@@ -87,11 +89,17 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
         {/* Colored top stripe */}
         <div className="h-[3.5px] w-full" style={{ background: industry.color }} />
 
-        <div className="p-4">
-          {/* Header: name + arrow */}
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div className="min-w-0">
-              <h3 className="text-[13.5px] font-bold text-ink leading-tight">
+        <div className="p-3.5">
+          {/* Header: industry icon + name + arrow */}
+          <div className="flex items-start gap-2.5 mb-2.5">
+            <span
+              className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg border"
+              style={{ background: `${industry.color}12`, borderColor: `${industry.color}26`, color: industry.color }}
+            >
+              <IndIcon size={15} strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-[13.5px] font-bold text-ink leading-tight truncate">
                 {industry.name}
               </h3>
               <p className="text-[10px] text-ink-muted mt-0.5 leading-tight line-clamp-1">
@@ -105,7 +113,7 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
           </div>
 
           {/* Sentiment badge + score */}
-          <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
             <span className={cn(
               "inline-flex items-center gap-[5px]",
               "text-[9px] font-bold uppercase tracking-widest",
@@ -124,7 +132,7 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
           </div>
 
           {/* Score bar */}
-          <div className="h-[2.5px] rounded-full bg-raised overflow-hidden mb-3">
+          <div className="h-[2.5px] rounded-full bg-raised overflow-hidden mb-2.5">
             <motion.div
               className="h-full rounded-full"
               style={{ background: scoreColor }}

@@ -53,6 +53,10 @@ import {
 import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META, computeThemeLifecycleStage, THEME_LIFECYCLE_META } from "@/lib/themeEvolution";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
+import { IndustryArtwork, industryIcon } from "@/components/industries/industryIdentity";
+import { themeBeneficiaries } from "@/lib/themeIntelligence";
+import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
+import type { IndustryConfig } from "@/lib/industryConfig";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -385,6 +389,82 @@ function LeadershipSection({ leadership, color }: { leadership: LeadershipDynami
   );
 }
 
+// ── Industry Transmission Map ─────────────────────────────────────────────────
+// Reinforces that an industry does not exist in isolation: each row is a
+// Macro Driver → Theme → {this industry} → Companies chain, built from the
+// industry's live themes (structural fallback from config when the feed is thin).
+
+interface TransmissionRow { driver: string; theme: string; tickers: string[] }
+
+function buildTransmissionRows(industry: IndustryConfig, themes: ThemeIntelligence[]): TransmissionRow[] {
+  const keyset = new Set(industry.keyAssets.map(a => a.toUpperCase()));
+  const rows = themes.slice(0, 3).map(t => {
+    const driver = cleanMacroLabel((t.related_macro_factors ?? [])[0] ?? industry.macroDrivers[0] ?? "Macro backdrop");
+    const benef  = themeBeneficiaries(t, 6);
+    const inInd  = benef.filter(tk => keyset.has(tk.toUpperCase()));
+    const tickers = (inInd.length > 0 ? inInd : benef).slice(0, 4);
+    return { driver, theme: cleanThemeName(t.name), tickers: tickers.length ? tickers : industry.keyAssets.slice(0, 4) };
+  });
+  if (rows.length > 0) return rows;
+  // Structural fallback so every industry shows its transmission.
+  return industry.macroDrivers.slice(0, 2).map((d, i) => ({
+    driver: cleanMacroLabel(d),
+    theme: `${industry.name} ${i === 0 ? "structural demand" : "capital cycle"}`,
+    tickers: industry.keyAssets.slice(i * 4, i * 4 + 4),
+  }));
+}
+
+function IndustryTransmissionMap({ industry, themes }: { industry: IndustryConfig; themes: ThemeIntelligence[] }) {
+  const rows = buildTransmissionRows(industry, themes);
+  if (rows.length === 0) return null;
+  const c = industry.color;
+  const Step = ({ children, role }: { children: React.ReactNode; role: string }) => (
+    <div className="min-w-0">
+      <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-ink-muted/55 mb-1">{role}</p>
+      {children}
+    </div>
+  );
+  const Arrow = () => <span className="self-center text-[13px] font-light text-ink-muted/35 px-1 shrink-0">→</span>;
+  return (
+    <div className="bg-surface rounded-xl border border-edge p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <Network size={11} className="shrink-0" style={{ color: c }} />
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">Industry Transmission Map</span>
+        <span className="h-px flex-1 bg-edge" />
+        <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] text-ink-muted/50">driver → theme → {industry.shortName} → expressions</span>
+      </div>
+      <div className="divide-y divide-edge/55">
+        {rows.map((r, i) => (
+          <div key={i} className="grid items-stretch py-2.5"
+            style={{ gridTemplateColumns: "minmax(96px,150px) auto minmax(120px,1fr) auto 92px auto minmax(120px,auto)" }}>
+            <Step role="Driver">
+              <span className="text-[11.5px] font-semibold text-ink-secondary leading-tight line-clamp-2">{r.driver}</span>
+            </Step>
+            <Arrow />
+            <Step role="Theme">
+              <span className="text-[13px] font-black text-ink leading-tight line-clamp-2" style={{ textWrap: "balance" } as React.CSSProperties}>{r.theme}</span>
+            </Step>
+            <Arrow />
+            <Step role="Lands on">
+              <span className="inline-flex items-center text-[11px] font-bold leading-tight px-1.5 py-0.5 rounded"
+                style={{ color: c, background: `${c}12`, border: `1px solid ${c}26` }}>{industry.shortName}</span>
+            </Step>
+            <Arrow />
+            <Step role="Expressions">
+              <span className="inline-flex flex-wrap items-center gap-1">
+                {r.tickers.map(tk => (
+                  <span key={tk} className="text-[10px] font-bold font-mono leading-none px-1.5 py-0.5 rounded"
+                    style={{ color: c, background: `${c}10` }}>{tk}</span>
+                ))}
+              </span>
+            </Step>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
 function DetailSkeleton({ color: _color }: { color: string }) {
@@ -530,7 +610,16 @@ export default function IndustryDetailPage() {
           }}
         />
 
-        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
+        {/* Industry identity artwork — faint monochrome schematic, recognisable
+            before a word is read. Right-anchored, masked into the gradient. */}
+        <IndustryArtwork
+          slug={industry.slug}
+          color="#ffffff"
+          className="pointer-events-none absolute top-0 right-0 h-full w-[46%] hidden sm:block"
+          style={{ opacity: 0.05, maskImage: "linear-gradient(90deg, transparent, #000 65%)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 65%)" }}
+        />
+
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 py-9 sm:py-11">
 
           {/* Back + breadcrumb */}
           <Link
@@ -587,15 +676,28 @@ export default function IndustryDetailPage() {
             )}
           </div>
 
-          {/* Industry name */}
-          <motion.h1
+          {/* Industry name + identity icon */}
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
-            className="text-[32px] sm:text-[40px] font-black text-white tracking-tight leading-none mb-2"
+            className="flex items-center gap-3.5 mb-2"
           >
-            {industry.name}
-          </motion.h1>
+            {(() => {
+              const HeroIcon = industryIcon(industry.slug);
+              return (
+                <span
+                  className="shrink-0 inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-xl border"
+                  style={{ background: `${industry.color}1f`, borderColor: `${industry.color}44`, color: "#fff" }}
+                >
+                  <HeroIcon size={22} strokeWidth={1.6} />
+                </span>
+              );
+            })()}
+            <h1 className="text-[30px] sm:text-[38px] font-black text-white tracking-tight leading-none">
+              {industry.name}
+            </h1>
+          </motion.div>
           <p className="text-sm text-white/45 mb-4 leading-relaxed">
             {industry.description}
           </p>
@@ -713,7 +815,7 @@ export default function IndustryDetailPage() {
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-4">
 
         {/* ── What Matters ──────────────────────────────────────────────── */}
         {thesis && (
@@ -760,6 +862,82 @@ export default function IndustryDetailPage() {
           </motion.section>
         )}
 
+        {/* ── Industry Transmission Map ─────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.09, duration: 0.25, ease: "easeOut" }}
+        >
+          <IndustryTransmissionMap industry={industry} themes={activeThemes} />
+        </motion.div>
+
+        {/* ── Strategic Intelligence — premium analysis surfaced high ───── */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.25, ease: "easeOut" }}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+        >
+          {/* Positioning */}
+          <div className="bg-surface rounded-xl border border-edge p-5" style={{ borderTopColor: industry.color, borderTopWidth: "2px" }}>
+            <SectionHeader icon={TrendingUp}>Positioning</SectionHeader>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+              <div>
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-emerald-500/80 mb-1">Bull Case</p>
+                <p className="text-[11px] text-ink-secondary leading-relaxed">{positioning.bull}</p>
+              </div>
+              <div>
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-red-500/80 mb-1">Bear Case</p>
+                <p className="text-[11px] text-ink-secondary leading-relaxed">{positioning.bear}</p>
+              </div>
+              <div className="col-span-2 pt-1 border-t border-edge/60">
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1" style={{ color: `${industry.color}aa` }}>Watch For</p>
+                <p className="text-[10.5px] text-ink-muted leading-relaxed">{positioning.watchFor}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Factors */}
+          <div className="bg-surface rounded-xl border border-edge p-5">
+            <SectionHeader icon={ShieldAlert}>Risk Factors</SectionHeader>
+            {(rkA || rkB) ? (
+              <ul className="space-y-2.5">
+                {[rkA, rkB].filter(Boolean).map((line, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <AlertTriangle size={10} className="text-amber-500/70 mt-[2px] shrink-0" />
+                    <p className="text-[11px] text-ink-secondary leading-relaxed">{line}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-ink-muted leading-relaxed">No acute sector-specific risk flags in the current regime window.</p>
+            )}
+          </div>
+
+          {/* Geopolitical Exposure */}
+          <div className="bg-surface rounded-xl border border-edge p-5">
+            <SectionHeader icon={Globe}>Geopolitical Exposure</SectionHeader>
+            <p className="text-[11.5px] text-ink-secondary leading-relaxed">{industry.geopoliticalExposure}</p>
+          </div>
+
+          {/* Cross-Asset Effects */}
+          <div className="bg-surface rounded-xl border border-edge p-5">
+            <SectionHeader icon={Target}>Cross-Asset Effects</SectionHeader>
+            {(cxA || cxB) ? (
+              <ul className="space-y-2.5">
+                {[cxA, cxB].filter(Boolean).map((line, i) => (
+                  <li key={i} className="flex items-start gap-2.5">
+                    <span className="w-1 h-1 rounded-full mt-[6px] shrink-0" style={{ background: industry.color }} />
+                    <p className="text-[12px] text-ink-secondary leading-relaxed">{line}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-ink-muted leading-relaxed">Cross-asset spillover is muted in the current regime.</p>
+            )}
+          </div>
+        </motion.div>
+
         {/* ── Live Developments ─────────────────────────────────────────── */}
         {liveDevelopments.length > 0 && (
           <motion.section
@@ -783,10 +961,10 @@ export default function IndustryDetailPage() {
         )}
 
         {/* ── Main 2-col grid ───────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
           {/* Left column (2/3) */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4">
 
             {/* Leadership / Laggards */}
             {(leadership.leaders.length > 0 || leadership.laggards.length > 0) && (
@@ -889,32 +1067,13 @@ export default function IndustryDetailPage() {
               )}
             </motion.section>
 
-            {/* Cross-Asset Effects */}
-            {(cxA || cxB) && (
-              <motion.section
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.24, duration: 0.25, ease: "easeOut" }}
-                className="bg-surface rounded-xl border border-edge p-5"
-              >
-                <SectionHeader icon={Target}>Cross-Asset Effects</SectionHeader>
-                <ul className="space-y-3">
-                  {[cxA, cxB].filter(Boolean).map((line, i) => (
-                    <li key={i} className="flex items-start gap-2.5">
-                      <span
-                        className="w-1 h-1 rounded-full mt-[6px] shrink-0"
-                        style={{ background: industry.color }}
-                      />
-                      <p className="text-[12px] text-ink-secondary leading-relaxed">{line}</p>
-                    </li>
-                  ))}
-                </ul>
-              </motion.section>
-            )}
+            {/* Cross-Asset Effects, Positioning, Risk Factors, and Geopolitical
+                Exposure now live in the Strategic Intelligence band near the top
+                of the page (surfaced higher per the institutional reorder). */}
           </div>
 
           {/* Right column (1/3) */}
-          <div className="space-y-5">
+          <div className="space-y-4">
 
             {/* Sub-industry signals */}
             {indSignals.length > 0 && (
@@ -1254,78 +1413,6 @@ export default function IndustryDetailPage() {
                 </div>
               </motion.section>
             )}
-
-            {/* Positioning */}
-            <motion.section
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.25, ease: "easeOut" }}
-              className="bg-surface rounded-xl border border-edge p-4"
-            >
-              <SectionHeader icon={TrendingUp}>Positioning</SectionHeader>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-emerald-500/80 mb-1.5">
-                    Bull Case
-                  </p>
-                  <p className="text-[11px] text-ink-secondary leading-relaxed">
-                    {positioning.bull}
-                  </p>
-                </div>
-                <div className="h-px bg-edge/60" />
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-red-500/80 mb-1.5">
-                    Bear Case
-                  </p>
-                  <p className="text-[11px] text-ink-secondary leading-relaxed">
-                    {positioning.bear}
-                  </p>
-                </div>
-                <div className="h-px bg-edge/60" />
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.13em] mb-1.5"
-                    style={{ color: `${industry.color}aa` }}>
-                    Watch For
-                  </p>
-                  <p className="text-[10.5px] text-ink-muted leading-relaxed">
-                    {positioning.watchFor}
-                  </p>
-                </div>
-              </div>
-            </motion.section>
-
-            {/* Risk Factors */}
-            {(rkA || rkB) && (
-              <motion.section
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.23, duration: 0.25, ease: "easeOut" }}
-                className="bg-surface rounded-xl border border-edge p-4"
-              >
-                <SectionHeader icon={ShieldAlert}>Risk Factors</SectionHeader>
-                <ul className="space-y-3">
-                  {[rkA, rkB].filter(Boolean).map((line, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <AlertTriangle size={10} className="text-amber-500/70 mt-[2px] shrink-0" />
-                      <p className="text-[11px] text-ink-secondary leading-relaxed">{line}</p>
-                    </li>
-                  ))}
-                </ul>
-              </motion.section>
-            )}
-
-            {/* Geopolitical Exposure */}
-            <motion.section
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.26, duration: 0.25, ease: "easeOut" }}
-              className="bg-surface rounded-xl border border-edge p-4"
-            >
-              <SectionHeader icon={Globe}>Geopolitical Exposure</SectionHeader>
-              <p className="text-[11.5px] text-ink-secondary leading-relaxed">
-                {industry.geopoliticalExposure}
-              </p>
-            </motion.section>
 
             {/* Related Listening */}
             <motion.section
