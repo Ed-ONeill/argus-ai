@@ -34,8 +34,8 @@ const MarketTransmission = dynamic(
     ssr: false,
     loading: () => (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5" aria-hidden>
-        <div className="w-full h-[232px] rounded-xl animate-pulse"
-          style={{ background: "#0d1322", border: "1px solid rgba(255,255,255,0.05)" }} />
+        <div className="w-full h-[306px] rounded-xl animate-pulse"
+          style={{ background: "#0e1424", border: "1px solid rgba(255,255,255,0.06)" }} />
       </div>
     ),
   },
