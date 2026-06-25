@@ -9,13 +9,13 @@ import { useMAIntelligence, type MADeal, type DealType } from "@/hooks/useMAInte
 import { useMarketState } from "@/hooks/useMarketState";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useFeed } from "@/hooks/useFeed";
-import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
-import { explainMAActivity, extractAcquirerProfiles, enrichSponsorProfiles } from "@/lib/themeIntelligence";
+import { computeThemeEvolutionState, getEvolutionNarrative, filterMAThemes } from "@/lib/themeEvolution";
+import { explainMAActivity } from "@/lib/themeIntelligence";
 import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { timeAgo, cn } from "@/lib/utils";
-import { enrichDeal, rankAdvisors, rankIndustries, largestDeals, type DealContext } from "@/lib/maIntelligence";
+import { enrichDeal, buildLeagueTables, largestDeals, type DealContext } from "@/lib/maIntelligence";
 import type { ThemeIntelligence } from "@/lib/types";
 
 // Code-split the theme drawer — it only mounts when a theme is selected, so it
@@ -187,6 +187,16 @@ function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: Deal
           </p>
         )}
 
+        {/* Probability of completion — inferred estimate, always visible */}
+        <div className="flex items-center gap-2 mt-2.5">
+          <span className="text-[8px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: "rgba(255,255,255,0.34)" }}>Completion</span>
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+            <div className="h-1 rounded-full" style={{ width: `${intel.completion.pct}%`, background: intel.completion.color }} />
+          </div>
+          <span className="text-[11px] font-black tabular-nums shrink-0" style={{ color: intel.completion.color }}>{intel.completion.pct}%</span>
+          <span className="text-[8.5px] font-semibold uppercase tracking-wide shrink-0" style={{ color: `${intel.completion.color}c0` }}>{intel.completion.label}</span>
+        </div>
+
         {/* Footer: rationale + signal chips + time + expand */}
         <div className="flex items-center gap-2 mt-2.5 flex-wrap">
           <span className="text-[10px] font-semibold" style={{ color: "rgba(167,139,250,0.72)" }}>{intel.rationale}</span>
@@ -208,18 +218,42 @@ function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: Deal
       {/* Expanded research note */}
       {open && (
         <div className="px-3.5 pb-3.5 pt-3 border-t space-y-3.5" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          {/* Deal timeline */}
-          <div className="flex items-center gap-1">
-            {intel.timeline.map((s, i) => (
-              <div key={s.stage} className="flex items-center gap-1 min-w-0" style={{ flex: i < intel.timeline.length - 1 ? "1 1 0%" : "0 0 auto" }}>
-                <div className="flex flex-col items-center gap-1 shrink-0">
-                  <span className="w-2 h-2 rounded-full" style={{ background: s.current ? intel.statusColor : s.done ? "rgba(82,176,200,0.6)" : "rgba(255,255,255,0.14)" }} />
-                  <span className="text-[7.5px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: s.current ? intel.statusColor : s.done ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.26)" }}>{s.stage}</span>
+          {/* 8-stage transaction lifecycle (scroll-safe on narrow widths) */}
+          <div className="overflow-x-auto scrollbar-hide -mx-0.5 px-0.5">
+            <div className="flex items-center gap-1 min-w-[560px]">
+              {intel.timeline.map((s, i) => (
+                <div key={s.stage} className="flex items-center gap-1 min-w-0" style={{ flex: i < intel.timeline.length - 1 ? "1 1 0%" : "0 0 auto" }}>
+                  <div className="flex flex-col items-center gap-1 shrink-0">
+                    <span className="w-2 h-2 rounded-full" style={{ background: s.current ? intel.statusColor : s.done ? "rgba(82,176,200,0.6)" : "rgba(255,255,255,0.14)" }} />
+                    <span className="text-[7.5px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: s.current ? intel.statusColor : s.done ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.26)" }}>{s.stage}</span>
+                  </div>
+                  {i < intel.timeline.length - 1 && <div className="flex-1 h-px mb-3.5" style={{ background: s.done ? "rgba(82,176,200,0.4)" : "rgba(255,255,255,0.08)" }} />}
                 </div>
-                {i < intel.timeline.length - 1 && <div className="flex-1 h-px mb-3.5" style={{ background: s.done ? "rgba(82,176,200,0.4)" : "rgba(255,255,255,0.08)" }} />}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+
+          {/* Theme intelligence tags */}
+          {intel.themeTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {intel.themeTags.map(t => (
+                <span key={t} className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(167,139,250,0.1)", color: "#c4b5fd", border: "1px solid rgba(167,139,250,0.2)" }}>{t}</span>
+              ))}
+            </div>
+          )}
+
+          {/* Transaction economics — only the metrics actually disclosed */}
+          {intel.economics.length > 0 && (
+            <div className="rounded-lg border grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0"
+              style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)", borderTopColor: "rgba(255,255,255,0.07)" }}>
+              {intel.economics.map(e => (
+                <div key={e.label} className="px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+                  <p className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.34)" }}>{e.label}</p>
+                  <p className="text-[13px] font-black tabular-nums mt-0.5" style={{ color: "rgba(255,255,255,0.9)" }}>{e.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Bullet intelligence */}
           <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3">
@@ -227,6 +261,52 @@ function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: Deal
             <IntelBlock label="Why Now"><BulletList items={intel.whyNowBullets} dot="rgba(82,176,200,0.6)" /></IntelBlock>
             <IntelBlock label="Market Implications"><BulletList items={intel.implicationBullets} dot="rgba(52,211,153,0.6)" /></IntelBlock>
             <IntelBlock label="What's Next"><BulletList items={intel.whatNextBullets} dot="rgba(251,191,36,0.6)" /></IntelBlock>
+          </div>
+
+          {/* Conditional specialized sections — different per deal */}
+          {intel.dynamicSections.length > 0 && (
+            <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3 pt-0.5 border-t" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+              {intel.dynamicSections.map(s => (
+                <IntelBlock key={s.label} label={s.label}><BulletList items={s.bullets} dot="rgba(255,255,255,0.4)" /></IntelBlock>
+              ))}
+            </div>
+          )}
+
+          {/* Capital Transmission — how capital moves because of the deal */}
+          <div className="rounded-lg border p-3 pt-2.5" style={{ borderColor: "rgba(82,176,200,0.18)", background: "rgba(82,176,200,0.04)" }}>
+            <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] mb-2" style={{ color: "rgba(82,176,200,0.7)" }}>Capital Transmission</p>
+            {/* re-rating chain */}
+            <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+              {intel.capitalTransmission.chain.map((step, i) => (
+                <span key={i} className="flex items-center gap-1.5">
+                  {i > 0 && <span className="text-[10px]" style={{ color: "rgba(82,176,200,0.45)" }}>→</span>}
+                  <span className="text-[10.5px] font-medium leading-tight" style={{ color: "rgba(255,255,255,0.66)" }}>{step}</span>
+                </span>
+              ))}
+            </div>
+            {/* beneficiaries / casualties */}
+            <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-2.5">
+              {intel.capitalTransmission.beneficiaries.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: "rgba(52,211,153,0.7)" }}>Beneficiaries</span>
+                  {intel.capitalTransmission.beneficiaries.map(t => <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(52,211,153,0.12)", color: "#34d399" }}>{t}</span>)}
+                </div>
+              )}
+              {intel.capitalTransmission.casualties.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: "rgba(248,113,113,0.7)" }}>Casualties</span>
+                  {intel.capitalTransmission.casualties.map(t => <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>{t}</span>)}
+                </div>
+              )}
+            </div>
+            {/* effects */}
+            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1">
+              {intel.capitalTransmission.effects.map(e => (
+                <p key={e.label} className="text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  <span className="font-bold" style={{ color: "rgba(255,255,255,0.72)" }}>{e.label}:</span> {e.text}
+                </p>
+              ))}
+            </div>
           </div>
 
           {/* Financing / competing bidders / read-through / advisors */}
@@ -241,22 +321,40 @@ function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: Deal
                 <div className="flex flex-wrap gap-1">{intel.competingBidders.map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24" }}>{p}</span>)}</div>
               </IntelBlock>
             )}
-            {intel.readThrough.length > 0 && (
+            {intel.readThroughGroups.length > 0 ? (
+              <IntelBlock label="Potential Read-Through">
+                <div className="space-y-1.5">
+                  {intel.readThroughGroups.map(g => {
+                    const rc = g.role === "Beneficiaries" ? "#34d399" : g.role === "Competitors" ? "#f87171" : g.role === "Suppliers" ? "#52b0c8" : "#a78bfa";
+                    return (
+                      <div key={g.role} className="flex items-start gap-1.5 flex-wrap">
+                        <span className="text-[8px] font-bold uppercase tracking-wide shrink-0 mt-0.5" style={{ color: `${rc}b0` }}>{g.role}</span>
+                        {g.tickers.map(p => <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: `${rc}1a`, color: rc, border: `1px solid ${rc}2e` }}>{p}</span>)}
+                      </div>
+                    );
+                  })}
+                </div>
+              </IntelBlock>
+            ) : intel.readThrough.length > 0 && (
               <IntelBlock label="Potential Read-Through">
                 <div className="flex flex-wrap gap-1">{intel.readThrough.map(p => <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)", border: "1px solid rgba(82,176,200,0.16)" }}>{p}</span>)}</div>
               </IntelBlock>
             )}
-            {hasAdvisors && (
+            {(hasAdvisors || a.financing.length > 0) && (
               <IntelBlock label="Advisor Intelligence">
                 {hasSidedAdvisors ? (
                   <div className="space-y-1">
                     <AdvisorRow label="Buy-side" names={[...a.buyFinancial, ...a.buyLegal]} />
                     <AdvisorRow label="Sell-side" names={[...a.sellFinancial, ...a.sellLegal]} />
+                    <AdvisorRow label="Financing" names={a.financing} />
+                    <AdvisorRow label="Fairness" names={a.fairness} />
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <AdvisorRow label="Financial" names={intel.advisors.banks} />
+                    <AdvisorRow label="Financial" names={intel.advisors.banks.filter(b => !a.financing.includes(b) && !a.fairness.includes(b))} />
                     <AdvisorRow label="Legal" names={intel.advisors.legal} />
+                    <AdvisorRow label="Financing" names={a.financing} />
+                    <AdvisorRow label="Fairness" names={a.fairness} />
                   </div>
                 )}
               </IntelBlock>
@@ -293,12 +391,59 @@ function BreakdownRow({ label, count, total, color }: { label: string; count: nu
   );
 }
 
+// ── Sidebar dashboard helpers ──────────────────────────────────────────────────
+
+function SbCard({ title, icon, sub, children }: { title: string; icon?: React.ReactNode; sub?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border p-5" style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
+      <div className="flex items-center gap-2 mb-3.5">
+        {icon}
+        <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em" }}>{title}</h3>
+        {sub && <span className="text-[9px] ml-auto" style={{ color: "rgba(255,255,255,0.26)" }}>{sub}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// League row: rank · name · (metrics). Metrics is freeform on the right.
+function LeagueRow({ rank, name, sub, primary, secondary, accent }: {
+  rank: number; name: string; sub?: string; primary?: string | null; secondary?: string | null; accent: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[9px] font-mono font-bold tabular-nums w-3 text-right shrink-0" style={{ color: "rgba(255,255,255,0.28)" }}>{rank}</span>
+      <div className="min-w-0 flex-1">
+        <span className="text-[11.5px] font-medium leading-tight truncate block" style={{ color: "rgba(255,255,255,0.78)" }}>{name}</span>
+        {sub && <span className="text-[8.5px] leading-tight truncate block" style={{ color: "rgba(255,255,255,0.34)" }}>{sub}</span>}
+      </div>
+      {primary && <span className="text-[10.5px] font-mono font-bold tabular-nums shrink-0" style={{ color: accent }}>{primary}</span>}
+      {secondary && <span className="text-[9px] font-mono tabular-nums shrink-0 w-5 text-right" style={{ color: "rgba(255,255,255,0.4)" }}>{secondary}</span>}
+    </div>
+  );
+}
+
+// Narrative lifecycle state → label + color (from theme evolution).
+function narrativeState(t: ThemeIntelligence): { label: string; color: string } {
+  const ev = computeThemeEvolutionState(t);
+  if ((t.competition_penalty ?? 0) >= 0.25) return { label: "Crowded", color: "#fb923c" };
+  switch (ev) {
+    case "accelerating":
+    case "strengthening": return { label: "Strengthening", color: "#34d399" };
+    case "broadening":    return { label: "Emerging",      color: "#52b0c8" };
+    case "weakening":     return { label: "Weakening",     color: "#fbbf24" };
+    case "reversing":     return { label: "Breaking",      color: "#f87171" };
+    case "peaking":       return { label: "Crowded",       color: "#fb923c" };
+    default:              return { label: "Stable",        color: "#94a3b8" };
+  }
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MAPage() {
   const [selectedTheme, setSelectedTheme] = useState<ThemeIntelligence | null>(null);
 
-  const { deals, breakdown, sponsors, totalDealCount, isLoading, isError } = useMAIntelligence();
+  const { deals, breakdown, totalDealCount, isLoading, isError } = useMAIntelligence();
   const { riskRegime, volRegime } = useMarketState();
   const { data: feedData }  = useFeed();
   const { data: marketData } = useMarketData();
@@ -346,17 +491,11 @@ export default function MAPage() {
     };
   }, [capitalFlow, feedData, riskRegime]);
 
-  // League-table aggregates (advisors detected in deal text; industries + capital).
-  const advisorTable   = useMemo(() => rankAdvisors(deals), [deals]);
-  const industryTable  = useMemo(() => rankIndustries(deals), [deals]);
+  // Live IB dashboard league tables (single pass over the deal set).
+  const league         = useMemo(() => buildLeagueTables(deals), [deals]);
   const biggestDeals   = useMemo(() => largestDeals(deals), [deals]);
   const pendingReviews = useMemo(() => deals.filter(d => enrichDeal(d, dealCtx).status === "Regulatory Review").slice(0, 4), [deals, dealCtx]);
   const pendingVotes   = useMemo(() => deals.filter(d => enrichDeal(d, dealCtx).status === "Shareholder Vote").slice(0, 4), [deals, dealCtx]);
-
-  const acquirerProfiles = useMemo(
-    () => extractAcquirerProfiles(deals.map(d => ({ entities: d.entities, sector: d.sector, dealType: d.dealType }))),
-    [deals],
-  );
 
   const dealClusters = useMemo(
     () => clusterDealsByTheme(
@@ -364,11 +503,6 @@ export default function MAPage() {
       maThemes,
     ),
     [deals, maThemes],
-  );
-
-  const enrichedSponsors = useMemo(
-    () => enrichSponsorProfiles(sponsors, deals.map(d => ({ peFirm: d.peFirm, sector: d.sector }))),
-    [sponsors, deals],
   );
 
   const regimeColor =
@@ -567,150 +701,111 @@ export default function MAPage() {
               </div>
             </div>
 
-            {/* Top Financial Advisors — league table from detected advisors */}
-            {advisorTable.length > 0 && (
-              <div className="rounded-xl border p-5"
-                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <Landmark size={12} style={{ color: "rgba(82,176,200,0.5)" }} />
-                  <h3 className="text-xs font-semibold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
-                    Top Advisors
-                  </h3>
-                  <span className="text-[9px] ml-auto" style={{ color: "rgba(255,255,255,0.24)" }}>active deals</span>
-                </div>
+            {/* Financial Advisor League Table */}
+            {league.financialAdvisors.length > 0 && (
+              <SbCard title="Financial Advisors" icon={<Landmark size={12} style={{ color: "rgba(82,176,200,0.6)" }} />} sub="deals · value">
                 <div className="space-y-2">
-                  {advisorTable.map(a => (
-                    <div key={a.name} className="flex items-center gap-2">
-                      <span className="w-1 h-1 rounded-full shrink-0" style={{ background: a.legal ? "#fbbf24" : "#52b0c8" }} />
-                      <span className="text-[11.5px] font-medium flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.74)" }}>{a.name}</span>
-                      <span className="text-[8px] uppercase tracking-wide shrink-0" style={{ color: "rgba(255,255,255,0.26)" }}>{a.legal ? "Legal" : "Financial"}</span>
-                      <span className="text-[10.5px] font-mono font-bold tabular-nums shrink-0 w-5 text-right" style={{ color: a.legal ? "#fbbf24" : "#52b0c8" }}>{a.deals}</span>
-                    </div>
+                  {league.financialAdvisors.map((a, i) => (
+                    <LeagueRow key={a.name} rank={i + 1} name={a.name} accent="#52b0c8"
+                      sub={a.avgSize ? `avg ${a.avgSize}` : undefined}
+                      primary={a.capital ?? undefined} secondary={String(a.deals)} />
                   ))}
                 </div>
-              </div>
+              </SbCard>
             )}
 
-            {/* Sponsor Intelligence — enriched with sector breakdown */}
-            {enrichedSponsors.length > 0 && (
-              <div className="rounded-xl border p-5"
-                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <Building2 size={12} style={{ color: "rgba(167,139,250,0.50)" }} />
-                  <h3 className="text-xs font-semibold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
-                    Sponsor Intelligence
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  {enrichedSponsors.map(s => (
-                    <div key={s.firm}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.72)" }}>{s.firm}</span>
-                        <span className="text-[10px] font-mono font-bold" style={{ color: "#a78bfa" }}>
-                          {s.deals} deal{s.deals > 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      {s.sectors.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {s.sectors.map((sec, i) => (
-                            <span
-                              key={sec}
-                              className="text-[9px] px-1.5 py-px rounded"
-                              style={{
-                                background: i === 0 ? "rgba(167,139,250,0.12)" : "rgba(255,255,255,0.04)",
-                                color:      i === 0 ? "#c4b5fd"                : "rgba(255,255,255,0.34)",
-                                border:     `1px solid ${i === 0 ? "rgba(167,139,250,0.20)" : "rgba(255,255,255,0.06)"}`,
-                              }}
-                            >
-                              {i === 0 && "● "}{sec}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+            {/* PE Leaderboard */}
+            {league.sponsors.length > 0 && (
+              <SbCard title="PE Leaderboard" icon={<Building2 size={12} style={{ color: "rgba(167,139,250,0.55)" }} />} sub="capital deployed">
+                <div className="space-y-2">
+                  {league.sponsors.map((s, i) => (
+                    <LeagueRow key={s.firm} rank={i + 1} name={s.firm} accent="#a78bfa"
+                      sub={[s.topSector, s.avgSize && `avg ${s.avgSize}`].filter(Boolean).join(" · ") || undefined}
+                      primary={s.capital ?? undefined} secondary={String(s.deals)} />
                   ))}
                 </div>
-              </div>
+              </SbCard>
             )}
 
-            {/* Acquirer Intelligence — strategic deal entity activity */}
-            {acquirerProfiles.length > 0 && (
-              <div className="rounded-xl border p-5"
-                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <Target size={12} style={{ color: "rgba(82,176,200,0.50)" }} />
-                  <h3 className="text-xs font-semibold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
-                    Strategic Entities
-                  </h3>
+            {/* Most Active Acquirers */}
+            {league.acquirers.length > 0 && (
+              <SbCard title="Most Active Acquirers" icon={<Target size={12} style={{ color: "rgba(82,176,200,0.55)" }} />} sub="strategic">
+                <div className="space-y-2">
+                  {league.acquirers.map((a, i) => (
+                    <LeagueRow key={a.name} rank={i + 1} name={a.name} accent="#52b0c8"
+                      sub={a.sectors.join(" · ") || undefined} secondary={String(a.deals)} />
+                  ))}
                 </div>
-                <p className="text-[9.5px] mb-3 leading-snug" style={{ color: "rgba(255,255,255,0.24)" }}>
-                  Most active entities in strategic &amp; merger deals this window.
-                </p>
+              </SbCard>
+            )}
+
+            {/* Most Active Targets */}
+            {league.targets.length > 0 && (
+              <SbCard title="Most Active Targets" icon={<Target size={12} style={{ color: "rgba(251,146,60,0.55)" }} />}>
+                <div className="space-y-2">
+                  {league.targets.map((t, i) => (
+                    <LeagueRow key={t.name} rank={i + 1} name={t.name} accent="#fb923c" sub={t.sector} secondary={String(t.deals)} />
+                  ))}
+                </div>
+              </SbCard>
+            )}
+
+            {/* Top Legal Advisors */}
+            {league.legalAdvisors.length > 0 && (
+              <SbCard title="Top Legal Advisors" icon={<Landmark size={12} style={{ color: "rgba(251,191,36,0.55)" }} />}>
+                <div className="space-y-2">
+                  {league.legalAdvisors.map((l, i) => (
+                    <LeagueRow key={l.name} rank={i + 1} name={l.name} accent="#fbbf24" secondary={String(l.deals)} />
+                  ))}
+                </div>
+              </SbCard>
+            )}
+
+            {/* Sector Heat Map */}
+            {league.sectorHeat.length > 0 && (
+              <SbCard title="Sector Heat Map" sub="deals · capital · x-border">
                 <div className="space-y-2.5">
-                  {acquirerProfiles.map(p => (
-                    <div key={p.name} className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <span className="text-[11px] font-bold font-mono" style={{ color: "#52b0c8" }}>
-                          {p.name}
-                        </span>
-                        {p.sectors.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {p.sectors.map(sec => (
-                              <span
-                                key={sec}
-                                className="text-[8px] px-1 py-px rounded"
-                                style={{ background: "rgba(82,176,200,0.08)", color: "rgba(82,176,200,0.60)", border: "1px solid rgba(82,176,200,0.12)" }}
-                              >
-                                {sec}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-[10px] font-mono shrink-0 mt-0.5" style={{ color: "rgba(255,255,255,0.30)" }}>
-                        ×{p.dealCount}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Most Active Industries — deal count + disclosed capital deployed */}
-            {industryTable.length > 0 && (
-              <div className="rounded-xl border p-5"
-                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
-                    Most Active Industries
-                  </h3>
-                  <span className="text-[9px] ml-auto" style={{ color: "rgba(255,255,255,0.24)" }}>deals · capital</span>
-                </div>
-                <div className="space-y-2.5">
-                  {industryTable.map(ind => {
-                    const pct = totalDealCount > 0 ? Math.round((ind.deals / totalDealCount) * 100) : 0;
+                  {league.sectorHeat.map(s => {
+                    const heat = Math.min(100, s.deals * 18);
                     return (
-                      <div key={ind.sector}>
+                      <div key={s.sector}>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[11.5px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.62)" }}>{ind.sector}</span>
-                          {ind.capital && <span className="text-[10px] font-mono font-bold tabular-nums shrink-0" style={{ color: "rgba(82,176,200,0.85)" }}>{ind.capital}</span>}
-                          <span className="text-[10px] font-mono tabular-nums w-5 text-right shrink-0" style={{ color: "rgba(255,255,255,0.44)" }}>{ind.deals}</span>
+                          <span className="text-[11.5px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.66)" }}>{s.sector}</span>
+                          {s.capital && <span className="text-[10px] font-mono font-bold tabular-nums shrink-0" style={{ color: "rgba(82,176,200,0.85)" }}>{s.capital}</span>}
+                          <span className="text-[10px] font-mono tabular-nums w-5 text-right shrink-0" style={{ color: "rgba(255,255,255,0.44)" }}>{s.deals}</span>
                         </div>
-                        <div className="h-1 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
-                          <div className="h-1 rounded-full" style={{ width: `${pct}%`, background: "#52b0c8" }} />
+                        <div className="h-1.5 rounded-full overflow-hidden flex" style={{ background: "rgba(255,255,255,0.05)" }}>
+                          <div className="h-full" style={{ width: `${heat}%`, background: "linear-gradient(90deg, #52b0c8, #a78bfa)" }} />
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[8.5px]" style={{ color: "rgba(255,255,255,0.32)" }}>
+                          {s.avgSize && <span>avg {s.avgSize}</span>}
+                          {s.crossBorderPct > 0 && <span>· {s.crossBorderPct}% x-border</span>}
+                          <span className="ml-auto" style={{ color: s.pipeline >= 60 ? "#34d399" : s.pipeline >= 30 ? "#fbbf24" : "rgba(255,255,255,0.32)" }}>
+                            {s.pipeline >= 60 ? "▲ active pipeline" : s.pipeline >= 30 ? "→ steady" : "▾ maturing"}
+                          </span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-                <p className="text-[8.5px] mt-3 leading-snug" style={{ color: "rgba(255,255,255,0.2)" }}>
-                  Capital = sum of disclosed deal values; deals without a stated value are counted but excluded from capital.
-                </p>
-              </div>
+              </SbCard>
+            )}
+
+            {/* Capital Flow — where capital is transmitting */}
+            {league.capitalFlow && (
+              <SbCard title="Capital Flow" icon={<Network size={12} style={{ color: "rgba(82,176,200,0.6)" }} />} sub={league.capitalFlow.label}>
+                <div className="space-y-0">
+                  {league.capitalFlow.chain.map((step, i) => (
+                    <div key={i}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: i === 0 ? "#a78bfa" : "rgba(82,176,200,0.6)" }} />
+                        <span className="text-[11px] leading-tight" style={{ color: i === 0 ? "rgba(255,255,255,0.78)" : "rgba(255,255,255,0.58)" }}>{step}</span>
+                      </div>
+                      {i < league.capitalFlow!.chain.length - 1 && <div className="ml-[2.5px] w-px h-3" style={{ background: "rgba(82,176,200,0.3)" }} />}
+                    </div>
+                  ))}
+                </div>
+              </SbCard>
             )}
 
             {/* Regulatory & Votes Watch — pending gating events */}
@@ -742,42 +837,33 @@ export default function MAPage() {
               </div>
             )}
 
-            {/* M&A Narrative Themes */}
+            {/* Narrative Tracker — deal-theme momentum states */}
             {maThemes.length > 0 && (
-              <div className="rounded-xl border p-5"
-                style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <Network size={12} style={{ color: "rgba(255,255,255,0.36)" }} />
-                  <h3 className="text-xs font-semibold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
-                    Narrative Themes
-                  </h3>
-                </div>
+              <SbCard title="Narrative Tracker" icon={<Lightbulb size={12} style={{ color: "rgba(255,255,255,0.36)" }} />} sub="momentum by theme">
                 <div className="space-y-3">
                   {maThemes.map(t => {
+                    const st      = narrativeState(t);
                     const evState = computeThemeEvolutionState(t);
-                    const evMeta  = THEME_EVOLUTION_META[evState];
                     return (
                       <div key={t.id} className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border"
-                            style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}>
-                            {evMeta.icon} {evMeta.label}
-                          </span>
-                          <span className="text-xs font-medium flex-1 truncate"
-                            style={{ color: "rgba(255,255,255,0.72)" }}>
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: st.color }} />
+                          <span className="text-xs font-medium flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.74)" }}>
                             {t.name}
                           </span>
+                          <span className="text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+                            style={{ color: st.color, background: `${st.color}1a`, letterSpacing: "0.04em" }}>
+                            {st.label}
+                          </span>
                         </div>
-                        <p className="text-[10px] italic leading-snug"
-                          style={{ color: "rgba(255,255,255,0.34)" }}>
+                        <p className="text-[10px] italic leading-snug pl-3.5" style={{ color: "rgba(255,255,255,0.32)" }}>
                           {getEvolutionNarrative(t.name, evState)}
                         </p>
                       </div>
                     );
                   })}
                 </div>
-              </div>
+              </SbCard>
             )}
 
             {/* Context note */}
