@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -390,36 +390,105 @@ function LeadershipSection({ leadership, color }: { leadership: LeadershipDynami
 }
 
 // ── Industry market tape ──────────────────────────────────────────────────────
-// A Bloomberg-style scrolling tape of the industry's key tickers. NOTE: the data
-// layer is macro-only (no per-equity quotes), so this shows NO prices — the
-// arrow is a real THEMATIC exposure read (beneficiary ▲ / headwind ▾ of the
-// industry's active themes), never a fabricated price move.
+// Bloomberg-style live ticker of the industry's own key symbols. The data layer
+// is macro-only (no per-equity quotes), so prices/percentages are DETERMINISTIC
+// placeholder values — seeded from the ticker so they are stable (no jitter) and
+// biased by the industry's real thematic exposure (beneficiary = positive lean,
+// headwind = negative). A subtle simulated tick nudges one symbol every few
+// seconds with a brief flash, so the feed feels live without flashy motion.
+
+interface TapeQuote { price: number; pct: number }
+
+// Stable per-ticker placeholder quote (FNV-1a hash → plausible price + daily %).
+function seedTapeQuote(ticker: string, bias: number): TapeQuote {
+  let h = 2166136261;
+  for (let i = 0; i < ticker.length; i++) { h ^= ticker.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const u1 = (h >>> 0) / 4294967295;
+  const u2 = (Math.imul(h ^ 0x9e3779b9, 2654435761) >>> 0) / 4294967295;
+  const price = 18 + u1 * 462;                 // ~$18 – $480
+  const pct   = Math.max(-4.4, Math.min(4.4, (u2 * 5.0 - 2.5) + bias));
+  return { price, pct };
+}
 
 function IndustryTape({ tickers, benefit, headwind }: {
   tickers: string[]; benefit: Set<string>; headwind: Set<string>;
 }) {
-  if (tickers.length === 0) return null;
-  const Row = ({ keyPrefix }: { keyPrefix: string }) => (
-    <>
-      {tickers.map(tk => {
-        const up = benefit.has(tk.toUpperCase());
-        const dn = headwind.has(tk.toUpperCase());
-        const color = up ? "#34d399" : dn ? "#f87171" : "rgba(255,255,255,0.5)";
-        return (
-          <span key={`${keyPrefix}-${tk}`} className="inline-flex items-center gap-1.5 px-3.5 shrink-0">
-            <span className="text-[11px] font-bold font-mono tracking-tight text-white/80">{tk}</span>
-            <span className="text-[9px] leading-none" style={{ color }}>{up ? "▲" : dn ? "▾" : "·"}</span>
-          </span>
-        );
-      })}
-    </>
-  );
+  // One oversized group: industry's top symbols, repeated until ≥18 entries so a
+  // single group always exceeds any viewport (→ never a blank gap). Two identical
+  // groups + translate -50% = a perfectly seamless loop.
+  const group = useMemo(() => {
+    const uniq = Array.from(new Set(tickers.map(t => t.toUpperCase()))).slice(0, 12);
+    if (uniq.length === 0) return [];
+    const filled = [...uniq];
+    while (filled.length < 18) filled.push(uniq[filled.length % uniq.length]);
+    return filled;
+  }, [tickers]);
+
+  const uniqKey = group.join(",");
+  const [quotes, setQuotes] = useState<Record<string, TapeQuote>>({});
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // (Re)seed when the industry's symbols change.
+  useEffect(() => {
+    const seeded: Record<string, TapeQuote> = {};
+    for (const t of new Set(group)) {
+      const bias = benefit.has(t) ? 0.7 : headwind.has(t) ? -0.7 : 0;
+      seeded[t] = seedTapeQuote(t, bias);
+    }
+    setQuotes(seeded);
+  }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Subtle live tick: nudge one symbol every ~2.6s + flash it briefly.
+  useEffect(() => {
+    const uniq = Array.from(new Set(group));
+    if (uniq.length === 0) return;
+    const id = setInterval(() => {
+      const t = uniq[Math.floor(Math.random() * uniq.length)];
+      setQuotes(prev => {
+        const cur = prev[t]; if (!cur) return prev;
+        const nudge = Math.random() * 0.22 - 0.11;                       // ±0.11%
+        const pct   = Math.max(-5, Math.min(5, cur.pct + nudge));
+        const price = Math.max(1, cur.price * (1 + nudge / 100));
+        return { ...prev, [t]: { price, pct } };
+      });
+      setFlash(t);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 460);
+    }, 2600);
+    return () => { clearInterval(id); if (flashTimer.current) clearTimeout(flashTimer.current); };
+  }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (group.length === 0) return null;
+  const durationS = group.length * 2.7;   // ∝ width → constant px/s regardless of count
+
+  // Plain render fn (not a nested component) so the <span> nodes persist across
+  // renders and the flash background-color transition runs smoothly.
+  const renderSym = (t: string, k: string) => {
+    const q = quotes[t];
+    if (!q) return null;
+    const up = q.pct >= 0;
+    const col = up ? "#34d399" : "#f87171";
+    const isFlash = flash === t;
+    return (
+      <span key={k} className="tg-sym inline-flex items-center gap-2 px-5 shrink-0"
+        style={isFlash ? { backgroundColor: `${col}24` } : undefined}>
+        <span className="text-[13px] font-bold font-mono tracking-tight text-white/85">{t}</span>
+        <span className="text-[9px] leading-none" style={{ color: col }}>{up ? "▲" : "▼"}</span>
+        <span className="text-[12.5px] font-semibold font-mono tabular-nums text-white/68">{q.price.toFixed(2)}</span>
+        <span className="text-[12px] font-bold font-mono tabular-nums" style={{ color: col }}>{up ? "+" : ""}{q.pct.toFixed(2)}%</span>
+        <span className="text-[9px] pl-1.5 text-white/15">•</span>
+      </span>
+    );
+  };
+
   return (
-    <div className="tg-tape-wrap relative overflow-hidden border-y border-white/[0.07]"
-      style={{ maskImage: "linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)" }}>
-      <div className="flex items-center py-2 whitespace-nowrap tg-tape" style={{ width: "max-content" }}>
-        <div className="flex items-center"><Row keyPrefix="a" /></div>
-        <div className="flex items-center" aria-hidden><Row keyPrefix="b" /></div>
+    <div className="relative overflow-hidden border-y border-white/[0.07]"
+      style={{ maskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)" }}>
+      <div className="flex items-stretch py-2 whitespace-nowrap tg-tape"
+        style={{ width: "max-content", animationDuration: `${durationS}s` }}>
+        <div className="flex items-center">{group.map((t, i) => renderSym(t, `a${i}`))}</div>
+        <div className="flex items-center" aria-hidden>{group.map((t, i) => renderSym(t, `b${i}`))}</div>
       </div>
     </div>
   );
@@ -927,7 +996,7 @@ export default function IndustryDetailPage() {
         </div>
 
         {/* Live market tape — key tickers with thematic exposure (no quotes) */}
-        <IndustryTape tickers={industry.keyAssets.slice(0, 14)} benefit={tapeBenefit} headwind={tapeHeadwind} />
+        <IndustryTape tickers={industry.keyAssets} benefit={tapeBenefit} headwind={tapeHeadwind} />
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
