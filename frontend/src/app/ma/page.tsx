@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb, Target, Landmark } from "lucide-react";
@@ -14,7 +15,7 @@ import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { timeAgo, cn } from "@/lib/utils";
-import { enrichDeal, rankAdvisors, rankIndustries, type DealContext } from "@/lib/maIntelligence";
+import { enrichDeal, rankAdvisors, rankIndustries, largestDeals, type DealContext } from "@/lib/maIntelligence";
 import type { ThemeIntelligence } from "@/lib/types";
 
 // Code-split the theme drawer — it only mounts when a theme is selected, so it
@@ -33,6 +34,22 @@ const DEAL_TYPE_META: Record<DealType, { label: string; color: string; bg: strin
   rumored:   { label: "Rumored",    color: "#fbbf24", bg: "rgba(251,191,36,0.12)"  },
   withdrawn: { label: "Withdrawn",  color: "#f87171", bg: "rgba(248,113,113,0.12)" },
   spac:      { label: "SPAC",       color: "#fb923c", bg: "rgba(251,146,60,0.12)"  },
+};
+
+// Importance treatment per size class.
+const SIZE_META: Record<string, { color: string }> = {
+  mega:    { color: "#fbbf24" },
+  large:   { color: "#52b0c8" },
+  medium:  { color: "#94a3b8" },
+  small:   { color: "#64748b" },
+  unknown: { color: "#a78bfa" },
+};
+
+// Deal sector → Argus industry page (cross-linking). Omitted sectors are unlinked.
+const SECTOR_TO_INDUSTRY: Record<string, string> = {
+  "Technology": "software", "Healthcare": "healthcare", "Energy": "energy",
+  "Financials": "financials", "Industrials": "industrials", "Consumer": "consumer",
+  "Real Estate": "real-estate", "Media & Telecom": "media-telecom",
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -73,77 +90,114 @@ function IntelBlock({ label, children }: { label: string; children: React.ReactN
   );
 }
 
+// Labeled cell for the scannable parties/metadata row.
+function LabeledCell({ label, value, color, link }: { label: string; value: string; color?: string; link?: string }) {
+  const body = <span className="text-[11.5px] font-bold leading-none truncate block" style={{ color: color ?? "rgba(255,255,255,0.84)" }}>{value}</span>;
+  return (
+    <div className="min-w-0">
+      <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: "rgba(255,255,255,0.3)" }}>{label}</p>
+      {link ? <Link href={link} className="hover:opacity-80 transition-opacity">{body}</Link> : body}
+    </div>
+  );
+}
+
+function BulletList({ items, dot }: { items: string[]; dot: string }) {
+  return (
+    <ul className="space-y-1">
+      {items.map((b, i) => (
+        <li key={i} className="flex items-start gap-1.5 text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>
+          <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: dot }} />{b}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AdvisorRow({ label, names }: { label: string; names: string[] }) {
+  if (names.length === 0) return null;
+  return (
+    <div className="flex items-start gap-1.5 flex-wrap">
+      <span className="text-[8.5px] font-bold uppercase tracking-wide shrink-0 mt-1" style={{ color: "rgba(255,255,255,0.34)" }}>{label}</span>
+      {names.map(n => <span key={n} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.68)" }}>{n}</span>)}
+    </div>
+  );
+}
+
 function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: DealContext }) {
   const [open, setOpen] = useState(false);
   const intel = useMemo(() => enrichDeal(deal, ctx), [deal, ctx]);
+  const a = intel.advisorSides;
   const hasAdvisors = intel.advisors.banks.length > 0 || intel.advisors.legal.length > 0;
+  const hasSidedAdvisors = a.buyFinancial.length + a.sellFinancial.length + a.buyLegal.length + a.sellLegal.length > 0;
+  const sizeColor = SIZE_META[intel.sizeClass]?.color ?? "#a78bfa";
+  const industrySlug = SECTOR_TO_INDUSTRY[deal.sector];
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index, 12) * 0.03, duration: 0.22 }}
+      transition={{ delay: Math.min(index, 14) * 0.025, duration: 0.22 }}
       className="group rounded-xl border transition-colors duration-200 hover:border-white/10"
-      style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}
+      style={{
+        background: intel.featured ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.022)",
+        borderColor: intel.featured ? `${sizeColor}33` : "rgba(255,255,255,0.06)",
+        borderLeft: intel.featured ? `2.5px solid ${sizeColor}` : "1px solid rgba(255,255,255,0.06)",
+      }}
     >
       <div className="p-3.5">
-        {/* Intelligence header — type · status · txn · value */}
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        {/* Header — importance · type · status · txn · value */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide leading-none"
+            style={{ color: sizeColor, background: `${sizeColor}18`, border: `1px solid ${sizeColor}33` }}>{intel.sizeLabel}</span>
           <DealTypeBadge type={deal.dealType} />
           <MetaChip label={intel.status} color={intel.statusColor} />
           <MetaChip label={intel.txnType} />
-          {intel.financing && <MetaChip label={intel.financing} color="#52b0c8" />}
           {deal.peFirm && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none"
               style={{ background: "rgba(167,139,250,0.08)", color: "#c4b5fd", border: "1px solid rgba(167,139,250,0.15)" }}>
               <Building2 size={9} />{deal.peFirm}
             </span>
           )}
-          {intel.crossBorder && <MetaChip label="Cross-border" />}
-          <span className="text-[10px] ml-auto" style={{ color: "rgba(255,255,255,0.26)" }}>{deal.sector}</span>
-          {intel.dealValue && (
-            <span className="text-[13px] font-black tabular-nums tracking-tight" style={{ color: "rgba(255,255,255,0.92)" }}>
-              {intel.dealValue}
-            </span>
-          )}
+          {industrySlug
+            ? <Link href={`/industries/${industrySlug}`} className="text-[10px] ml-auto hover:text-white/60 transition-colors" style={{ color: "rgba(255,255,255,0.34)" }}>{deal.sector} ↗</Link>
+            : <span className="text-[10px] ml-auto" style={{ color: "rgba(255,255,255,0.26)" }}>{deal.sector}</span>}
         </div>
 
         {/* Headline (links to source) */}
         <a href={deal.url} target="_blank" rel="noopener noreferrer"
           className="block text-sm font-medium leading-snug hover:text-white/95 transition-colors"
-          style={{ color: "rgba(255,255,255,0.84)" }}>
+          style={{ color: "rgba(255,255,255,0.85)" }}>
           {deal.title}
           <ExternalLink size={11} className="inline-block ml-1.5 -translate-y-px opacity-0 group-hover:opacity-40 transition-opacity" />
         </a>
 
-        {/* Buyer → Target */}
-        {(intel.buyer || intel.target) && (
-          <div className="flex items-center gap-1.5 mt-1.5 text-[11px]">
-            <span className="font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>{intel.buyer ?? "—"}</span>
-            <span style={{ color: "rgba(255,255,255,0.28)" }}>→</span>
-            <span className="font-semibold" style={{ color: deal.dealType === "withdrawn" ? "rgba(248,113,113,0.7)" : "rgba(82,176,200,0.85)" }}>{intel.target ?? "—"}</span>
-          </div>
-        )}
+        {/* Scannable parties / metadata row */}
+        <div className="flex items-stretch gap-3 mt-2.5 flex-wrap">
+          {intel.buyer && <LabeledCell label="Buyer" value={intel.buyer} />}
+          {intel.target && <LabeledCell label="Target" value={intel.target} color={deal.dealType === "withdrawn" ? "rgba(248,113,113,0.8)" : "rgba(82,176,200,0.9)"} />}
+          {intel.dealValue && <LabeledCell label="Value" value={intel.dealValue} color="rgba(255,255,255,0.95)" />}
+          {intel.financing && <LabeledCell label="Consideration" value={intel.financing} />}
+          {intel.premium && <LabeledCell label="Premium" value={intel.premium} color="#34d399" />}
+          {intel.country && <LabeledCell label="Geography" value={intel.crossBorder ? `${intel.country} · X-border` : intel.country} />}
+        </div>
 
         {deal.whyItMatters && (
-          <p className="text-xs mt-1.5 leading-relaxed line-clamp-2" style={{ color: "rgba(255,255,255,0.42)" }}>
+          <p className="text-xs mt-2.5 leading-relaxed line-clamp-2" style={{ color: "rgba(255,255,255,0.42)" }}>
             {deal.whyItMatters}
           </p>
         )}
 
-        {/* Footer: rationale + advisors hint + time + expand */}
-        <div className="flex items-center gap-2.5 mt-2.5">
-          <span className="text-[10px] font-semibold" style={{ color: "rgba(167,139,250,0.7)" }}>{intel.rationale}</span>
-          {hasAdvisors && (
-            <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-              · {intel.advisors.banks.length + intel.advisors.legal.length} advisor{intel.advisors.banks.length + intel.advisors.legal.length > 1 ? "s" : ""}
-            </span>
-          )}
+        {/* Footer: rationale + signal chips + time + expand */}
+        <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+          <span className="text-[10px] font-semibold" style={{ color: "rgba(167,139,250,0.72)" }}>{intel.rationale}</span>
+          {intel.synergies && <span className="text-[9px] px-1.5 py-px rounded" style={{ background: "rgba(52,211,153,0.1)", color: "#34d399" }}>{intel.synergies}</span>}
+          {hasAdvisors && <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.3)" }}>· {intel.advisors.banks.length + intel.advisors.legal.length} advisors</span>}
+          {intel.competingBidders.length > 0 && <span className="text-[9px] px-1.5 py-px rounded" style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24" }}>{intel.competingBidders.length} rival bidder{intel.competingBidders.length > 1 ? "s" : ""}</span>}
           <div className="flex items-center gap-1 ml-auto shrink-0" style={{ color: "rgba(255,255,255,0.28)" }}>
             <Clock size={10} /><span className="text-[10px]">{formatRelativeTime(deal.published)}</span>
           </div>
           <button onClick={() => setOpen(o => !o)}
-            className="flex items-center gap-1 text-[10px] font-semibold transition-colors hover:text-white/70"
+            className="flex items-center gap-1 text-[10px] font-semibold transition-colors hover:text-white/70 shrink-0"
             style={{ color: "rgba(255,255,255,0.42)" }}>
             {open ? "Less" : "Intelligence"}
             <ChevronRight size={11} className={cn("transition-transform", open && "rotate-90")} />
@@ -151,55 +205,63 @@ function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: Deal
         </div>
       </div>
 
-      {/* Expanded intelligence object */}
+      {/* Expanded research note */}
       {open && (
-        <div className="px-3.5 pb-3.5 pt-1 border-t grid sm:grid-cols-2 gap-x-5 gap-y-3"
-          style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          <IntelBlock label="Deal Thesis">
-            <ul className="space-y-1">
-              {intel.thesis.map((b, i) => (
-                <li key={i} className="flex items-start gap-1.5 text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>
-                  <span className="shrink-0 mt-[5px] w-1 h-1 rounded-full" style={{ background: "rgba(167,139,250,0.6)" }} />{b}
-                </li>
-              ))}
-            </ul>
-          </IntelBlock>
-          <IntelBlock label="Market Implications">
-            <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>{intel.implications}</p>
-          </IntelBlock>
-          <IntelBlock label="Why Now">
-            <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>{intel.whyNow}</p>
-          </IntelBlock>
-          <IntelBlock label="What's Next">
-            <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>{intel.whatNext}</p>
-          </IntelBlock>
-          {intel.readThrough.length > 0 && (
-            <IntelBlock label="Potential Read-Through">
-              <div className="flex flex-wrap gap-1">
-                {intel.readThrough.map(p => (
-                  <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)", border: "1px solid rgba(82,176,200,0.16)" }}>{p}</span>
-                ))}
+        <div className="px-3.5 pb-3.5 pt-3 border-t space-y-3.5" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          {/* Deal timeline */}
+          <div className="flex items-center gap-1">
+            {intel.timeline.map((s, i) => (
+              <div key={s.stage} className="flex items-center gap-1 min-w-0" style={{ flex: i < intel.timeline.length - 1 ? "1 1 0%" : "0 0 auto" }}>
+                <div className="flex flex-col items-center gap-1 shrink-0">
+                  <span className="w-2 h-2 rounded-full" style={{ background: s.current ? intel.statusColor : s.done ? "rgba(82,176,200,0.6)" : "rgba(255,255,255,0.14)" }} />
+                  <span className="text-[7.5px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: s.current ? intel.statusColor : s.done ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.26)" }}>{s.stage}</span>
+                </div>
+                {i < intel.timeline.length - 1 && <div className="flex-1 h-px mb-3.5" style={{ background: s.done ? "rgba(82,176,200,0.4)" : "rgba(255,255,255,0.08)" }} />}
               </div>
-            </IntelBlock>
-          )}
-          {hasAdvisors && (
-            <IntelBlock label="Advisor Intelligence">
-              <div className="space-y-1">
-                {intel.advisors.banks.length > 0 && (
-                  <div className="flex items-start gap-1.5 flex-wrap">
-                    <span className="text-[9px] font-bold uppercase tracking-wide shrink-0 mt-0.5" style={{ color: "rgba(255,255,255,0.34)" }}>Financial</span>
-                    {intel.advisors.banks.map(b => <span key={b} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.66)" }}>{b}</span>)}
+            ))}
+          </div>
+
+          {/* Bullet intelligence */}
+          <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3">
+            <IntelBlock label="Strategic Rationale"><BulletList items={intel.rationaleBullets} dot="rgba(167,139,250,0.6)" /></IntelBlock>
+            <IntelBlock label="Why Now"><BulletList items={intel.whyNowBullets} dot="rgba(82,176,200,0.6)" /></IntelBlock>
+            <IntelBlock label="Market Implications"><BulletList items={intel.implicationBullets} dot="rgba(52,211,153,0.6)" /></IntelBlock>
+            <IntelBlock label="What's Next"><BulletList items={intel.whatNextBullets} dot="rgba(251,191,36,0.6)" /></IntelBlock>
+          </div>
+
+          {/* Financing / competing bidders / read-through / advisors */}
+          <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3">
+            {intel.financingDetail.length > 0 && (
+              <IntelBlock label="Financing">
+                <div className="flex flex-wrap gap-1">{intel.financingDetail.map(f => <span key={f} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)" }}>{f}</span>)}</div>
+              </IntelBlock>
+            )}
+            {intel.competingBidders.length > 0 && (
+              <IntelBlock label="Other Interested Parties">
+                <div className="flex flex-wrap gap-1">{intel.competingBidders.map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24" }}>{p}</span>)}</div>
+              </IntelBlock>
+            )}
+            {intel.readThrough.length > 0 && (
+              <IntelBlock label="Potential Read-Through">
+                <div className="flex flex-wrap gap-1">{intel.readThrough.map(p => <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)", border: "1px solid rgba(82,176,200,0.16)" }}>{p}</span>)}</div>
+              </IntelBlock>
+            )}
+            {hasAdvisors && (
+              <IntelBlock label="Advisor Intelligence">
+                {hasSidedAdvisors ? (
+                  <div className="space-y-1">
+                    <AdvisorRow label="Buy-side" names={[...a.buyFinancial, ...a.buyLegal]} />
+                    <AdvisorRow label="Sell-side" names={[...a.sellFinancial, ...a.sellLegal]} />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <AdvisorRow label="Financial" names={intel.advisors.banks} />
+                    <AdvisorRow label="Legal" names={intel.advisors.legal} />
                   </div>
                 )}
-                {intel.advisors.legal.length > 0 && (
-                  <div className="flex items-start gap-1.5 flex-wrap">
-                    <span className="text-[9px] font-bold uppercase tracking-wide shrink-0 mt-0.5" style={{ color: "rgba(255,255,255,0.34)" }}>Legal</span>
-                    {intel.advisors.legal.map(l => <span key={l} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.66)" }}>{l}</span>)}
-                  </div>
-                )}
-              </div>
-            </IntelBlock>
-          )}
+              </IntelBlock>
+            )}
+          </div>
         </div>
       )}
     </motion.div>
@@ -280,12 +342,16 @@ export default function MAPage() {
     return {
       creditOpen: creditLayer ? (creditLayer.status === "accelerating" || creditLayer.status === "expanding") : undefined,
       regime: feedData?.sector_data?.derived_regime ?? undefined,
+      riskRegime,
     };
-  }, [capitalFlow, feedData]);
+  }, [capitalFlow, feedData, riskRegime]);
 
   // League-table aggregates (advisors detected in deal text; industries + capital).
   const advisorTable   = useMemo(() => rankAdvisors(deals), [deals]);
   const industryTable  = useMemo(() => rankIndustries(deals), [deals]);
+  const biggestDeals   = useMemo(() => largestDeals(deals), [deals]);
+  const pendingReviews = useMemo(() => deals.filter(d => enrichDeal(d, dealCtx).status === "Regulatory Review").slice(0, 4), [deals, dealCtx]);
+  const pendingVotes   = useMemo(() => deals.filter(d => enrichDeal(d, dealCtx).status === "Shareholder Vote").slice(0, 4), [deals, dealCtx]);
 
   const acquirerProfiles = useMemo(
     () => extractAcquirerProfiles(deals.map(d => ({ entities: d.entities, sector: d.sector, dealType: d.dealType }))),
@@ -463,6 +529,24 @@ export default function MAPage() {
           {/* ── Sidebar ────────────────────────────────────────────────── */}
           <div className="space-y-5">
 
+            {/* Largest Deals Today — by disclosed value */}
+            {biggestDeals.length > 0 && (
+              <div className="rounded-xl border p-5" style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
+                <div className="flex items-center gap-2 mb-3.5">
+                  <TrendingUp size={12} style={{ color: "rgba(251,191,36,0.6)" }} />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>Largest Deals</h3>
+                </div>
+                <div className="space-y-2.5">
+                  {biggestDeals.map(({ deal, value }) => (
+                    <a key={deal.id} href={deal.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 group">
+                      <span className="text-[11px] font-mono font-bold tabular-nums shrink-0 w-12" style={{ color: "#fbbf24" }}>{value}</span>
+                      <span className="text-[11px] leading-tight line-clamp-1 flex-1 min-w-0 group-hover:text-white/85 transition-colors" style={{ color: "rgba(255,255,255,0.6)" }}>{deal.title}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Deal type breakdown */}
             <div className="rounded-xl border p-5"
               style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
@@ -626,6 +710,35 @@ export default function MAPage() {
                 <p className="text-[8.5px] mt-3 leading-snug" style={{ color: "rgba(255,255,255,0.2)" }}>
                   Capital = sum of disclosed deal values; deals without a stated value are counted but excluded from capital.
                 </p>
+              </div>
+            )}
+
+            {/* Regulatory & Votes Watch — pending gating events */}
+            {(pendingReviews.length > 0 || pendingVotes.length > 0) && (
+              <div className="rounded-xl border p-5" style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
+                <h3 className="text-xs font-semibold uppercase tracking-widest mb-3.5" style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>
+                  Pending Decisions
+                </h3>
+                {pendingReviews.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: "rgba(251,146,60,0.7)" }}>Regulatory Review</p>
+                    <div className="space-y-1.5">
+                      {pendingReviews.map(d => (
+                        <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer" className="block text-[11px] leading-tight line-clamp-1 hover:text-white/80 transition-colors" style={{ color: "rgba(255,255,255,0.55)" }}>{d.title}</a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {pendingVotes.length > 0 && (
+                  <div>
+                    <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: "rgba(167,139,250,0.7)" }}>Shareholder Vote</p>
+                    <div className="space-y-1.5">
+                      {pendingVotes.map(d => (
+                        <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer" className="block text-[11px] leading-tight line-clamp-1 hover:text-white/80 transition-colors" style={{ color: "rgba(255,255,255,0.55)" }}>{d.title}</a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

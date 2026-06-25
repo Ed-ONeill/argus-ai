@@ -32,22 +32,34 @@ export interface DealIntel {
   target:      string | null;
   financing:   string | null;     // "Cash" | "Cash + Stock" | "LBO" | … | null
   crossBorder: boolean;
-  advisors:    DealAdvisors;
-  // ── Derived analysis (always institutional, never empty filler) ────────────
-  status:      string;            // "Rumored" | "Negotiating" | "Signed" | …
+  advisors:    DealAdvisors;     // detected names (no side asserted unless clear)
+  advisorSides: { buyFinancial: string[]; sellFinancial: string[]; buyLegal: string[]; sellLegal: string[] };
+  premium:     string | null;    // "32% premium" if stated
+  synergies:   string | null;    // "$2B cost synergies" if stated
+  country:     string | null;    // detected geography
+  competingBidders: string[];    // other named bidders if the text flags a contest
+  financingDetail:  string[];    // "Bridge Loan", "Private Credit", "Bond Offering" if stated
+  // ── Importance ─────────────────────────────────────────────────────────────
+  sizeClass:   "mega" | "large" | "medium" | "small" | "unknown";
+  sizeLabel:   string;           // "Mega Deal" | "Large" | … | "Rumor" | "Breaking"
+  featured:    boolean;          // visually elevated (mega/large or breaking)
+  // ── Derived analysis (institutional, every bullet tied to this deal) ───────
+  status:      string;
   statusColor: string;
-  txnType:     string;            // "Strategic" | "Sponsor Buyout" | "Take Private" | …
-  rationale:   string;            // strategic rationale label
-  whyNow:      string;            // one-sentence timing read
-  whatNext:    string;            // one-sentence forward read
-  thesis:      string[];          // ≤3 institutional bullets
-  implications:string;            // who benefits / who's pressured
-  readThrough: string[];          // potential read-through peers
+  txnType:     string;
+  rationale:   string;           // headline rationale label
+  rationaleBullets:   string[];  // specific drivers
+  whyNowBullets:      string[];  // specific timing factors
+  implicationBullets: string[];  // who benefits / pressured
+  whatNextBullets:    string[];  // forward path
+  readThrough: string[];
+  timeline:    { stage: string; done: boolean; current: boolean }[];
 }
 
 export interface DealContext {
   creditOpen?: boolean;   // financing markets open (from capital-flow credit layer)
-  regime?:     string;    // derived market regime
+  regime?:     string;    // derived market regime ("risk-on" etc. lives on riskRegime)
+  riskRegime?: "risk-on" | "neutral" | "risk-off";
 }
 
 // ── Known-name dictionaries (only matched, never asserted beyond a match) ──────
@@ -222,56 +234,156 @@ function deriveRationale(deal: MADeal, text: string): string {
   return "Scale & consolidation";
 }
 
-function deriveWhyNow(deal: MADeal, txnType: string, rationale: string, ctx: DealContext): string {
-  if (rationale === "Activist pressure") return "Management is acting under activist pressure to surface value before a proxy contest.";
-  if (rationale === "Distressed acquisition") return "Balance-sheet stress is forcing asset sales below replacement cost.";
-  if (rationale === "AI infrastructure expansion") return "Compute scarcity is pulling forward consolidation of infrastructure and capacity.";
-  if (txnType === "Sponsor Buyout" || txnType === "Take Private" || txnType === "LBO") {
-    return ctx.creditOpen
-      ? "Compressed financing spreads have reopened the leveraged buyout window."
-      : "Sponsors are deploying equity-heavy structures while debt markets stay selective.";
-  }
-  if (txnType === "Asset Sale" || rationale === "Portfolio simplification") {
-    return "Sellers are monetizing non-core assets to fund higher-return priorities.";
-  }
-  if (rationale === "Industry consolidation" || rationale === "Scale & consolidation") {
-    return "Scale economics are outweighing standalone growth as the cycle matures.";
-  }
-  return "Strategic timing reflects a narrowing valuation gap between buyer and target.";
+// ── Additional fact extractors (present-or-omit) ──────────────────────────────
+
+const COUNTRIES: [string, RegExp][] = [
+  ["Germany", /\bgerman(?:y)?\b/i], ["France", /\bfrench|france\b/i], ["UK", /\b(?:uk|british|britain|england)\b/i],
+  ["Japan", /\bjapan(?:ese)?\b/i], ["China", /\bchin(?:a|ese)\b/i], ["India", /\bindian?\b/i],
+  ["Canada", /\bcanad(?:a|ian)\b/i], ["Switzerland", /\bswiss|switzerland\b/i], ["Netherlands", /\bdutch|netherlands\b/i],
+  ["Nordics", /\bnordic|sweden|swedish|finland|norway|danish\b/i], ["Australia", /\baustralian?\b/i],
+  ["Brazil", /\bbrazil(?:ian)?\b/i], ["Saudi Arabia", /\bsaudi\b/i], ["UAE", /\bemirati|\buae\b|abu\s+dhabi\b/i],
+  ["South Korea", /\bkorean?\b/i],
+];
+
+function extractPremium(text: string): string | null {
+  const m = text.match(/(\d{1,3})\s?%\s+premium|premium\s+of\s+(\d{1,3})\s?%/i);
+  if (m) return `${m[1] || m[2]}% premium`;
+  return null;
+}
+function extractSynergies(text: string): string | null {
+  const m = text.match(/([$€£])\s?(\d[\d.,]*)\s?(billion|million|bn|mn|[bm])\b[^.]{0,28}?synerg/i);
+  if (m) { const u = m[3].toLowerCase().startsWith("b") ? "B" : "M"; return `${m[1]}${m[2]}${u} synergies`; }
+  if (/cost\s+synerg|run-?rate\s+synerg/i.test(text)) return "Cost synergies cited";
+  return null;
+}
+function extractCountry(text: string): string | null {
+  for (const [name, re] of COUNTRIES) if (re.test(text)) return name;
+  return null;
+}
+function extractFinancingDetail(text: string): string[] {
+  const out: string[] = [];
+  if (/bridge\s+loan/i.test(text)) out.push("Bridge Loan");
+  if (/private\s+credit|direct\s+lend/i.test(text)) out.push("Private Credit");
+  if (/bond\s+(?:offering|sale)|note\s+offering|high[-\s]?yield/i.test(text)) out.push("Bond Offering");
+  if (/syndicat/i.test(text)) out.push("Syndication");
+  if (/term\s+loan/i.test(text)) out.push("Term Loan");
+  return out;
+}
+// Other named bidders, only when the text signals a contest.
+function extractCompetingBidders(text: string, buyer: string | null): string[] {
+  if (!/competing\s+bid|rival\s+(?:bid|offer|suitor)|counter\s?bid|counter\s?offer|also\s+(?:bid|interested)|bidding\s+war|other\s+suitors?/i.test(text)) return [];
+  const names = firstMatch(text, [
+    ["Apollo", /apollo/i], ["KKR", /\bkkr\b/i], ["Blackstone", /blackstone/i], ["Brookfield", /brookfield/i],
+    ["Thoma Bravo", /thoma\s+bravo/i], ["Carlyle", /carlyle/i], ["Bain Capital", /bain\s+capital/i],
+    ["Advent", /advent/i], ["TPG", /\btpg\b/i], ["Silver Lake", /silver\s+lake/i], ["Vista", /vista\s+equity/i],
+  ]);
+  const buyerUp = (buyer ?? "").toUpperCase();
+  return names.filter(n => !buyerUp.includes(n.toUpperCase())).slice(0, 4);
 }
 
-function deriveWhatNext(deal: MADeal, status: string, peers: string[]): string {
-  if (status === "Regulatory Review") return "Antitrust review is the gating risk; expect a remedy or divestiture package as a condition.";
-  if (status === "Rumored" || status === "Negotiating") return "Watch for a definitive agreement or a competing bid before terms firm up.";
-  if (status === "Shareholder Vote") return "Approval looks likely; a sweetened bid is the main wildcard into the vote.";
-  if (peers.length >= 2) return `Remaining independents — ${peers.slice(0, 2).join(", ")} — face heightened consolidation pressure.`;
-  return "Sector peers should be screened for follow-on activity as the deal sets a valuation marker.";
+// Advisor side detection: only assert a side when the text makes it explicit
+// ("advising the buyer", "{name}, sell-side adviser"); otherwise leave unsided.
+function splitAdvisorSides(text: string, banks: string[], legal: string[]): DealIntel["advisorSides"] {
+  const sides: DealIntel["advisorSides"] = { buyFinancial: [], sellFinancial: [], buyLegal: [], sellLegal: [] };
+  const sideOf = (name: string): "buy" | "sell" | null => {
+    const esc = name.replace(/[.*+?^${}()|[\]\\&]/g, "\\$&");
+    const win = new RegExp(`(.{0,40}${esc}.{0,40})`, "i");
+    const m = text.match(win);
+    const seg = m ? m[1].toLowerCase() : "";
+    if (/buy[-\s]?side|advising\s+(?:the\s+)?(?:buyer|acquirer)|buyer'?s\s+advis|advised?\s+(?:the\s+)?(?:buyer|acquirer)/.test(seg)) return "buy";
+    if (/sell[-\s]?side|advising\s+(?:the\s+)?(?:seller|target)|seller'?s\s+advis|target'?s\s+advis|advised?\s+(?:the\s+)?(?:seller|target)/.test(seg)) return "sell";
+    return null;
+  };
+  for (const b of banks) { const s = sideOf(b); if (s === "buy") sides.buyFinancial.push(b); else if (s === "sell") sides.sellFinancial.push(b); }
+  for (const l of legal) { const s = sideOf(l); if (s === "buy") sides.buyLegal.push(l); else if (s === "sell") sides.sellLegal.push(l); }
+  return sides;
 }
 
-function deriveThesis(deal: MADeal, txnType: string, financing: string | null, rationale: string, ctx: DealContext): string[] {
-  const bullets: string[] = [];
-  if (txnType === "Sponsor Buyout" || txnType === "Take Private") {
-    bullets.push(ctx.creditOpen ? "Buyer is betting financing markets have reopened." : "Buyer is structuring around still-tight credit.");
-  } else if (txnType === "Asset Sale" || txnType === "Spin-off") {
-    bullets.push("Seller is monetizing non-core assets to sharpen capital allocation.");
-  } else {
-    bullets.push("Buyer is consolidating share ahead of the next cycle.");
+// ── Importance ────────────────────────────────────────────────────────────────
+
+function valueToUsdB(v: string | null): number | null {
+  if (!v || v === "Undisclosed") return null;
+  const m = v.match(/[$€£¥]([\d.,]+)([TBM])/);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return m[2] === "T" ? n * 1000 : m[2] === "B" ? n : n / 1000;
+}
+
+function classifySize(deal: MADeal, usdB: number | null): { sizeClass: DealIntel["sizeClass"]; sizeLabel: string; featured: boolean } {
+  if (usdB != null) {
+    if (usdB >= 20) return { sizeClass: "mega",   sizeLabel: "Mega Deal", featured: true };
+    if (usdB >= 5)  return { sizeClass: "large",  sizeLabel: "Large",     featured: true };
+    if (usdB >= 1)  return { sizeClass: "medium", sizeLabel: "Medium",    featured: false };
+    return            { sizeClass: "small",  sizeLabel: "Small",     featured: false };
   }
-  bullets.push(
-    rationale === "Industry consolidation" || rationale === "Scale & consolidation"
-      ? "Sector consolidation remains below prior-cycle peaks, leaving runway."
-      : `${rationale} is the strategic driver, not opportunistic multiple arbitrage.`,
-  );
-  if (financing) bullets.push(`${financing} structure signals the buyer's read on cost of capital.`);
-  else if (deal.peFirm) bullets.push(`${deal.peFirm} is deploying dry powder into a motivated seller.`);
-  return bullets.slice(0, 3);
+  if (deal.dealType === "rumored") return { sizeClass: "unknown", sizeLabel: "Rumor", featured: false };
+  if (deal.signalScore >= 80)      return { sizeClass: "unknown", sizeLabel: "High Conviction", featured: true };
+  return { sizeClass: "unknown", sizeLabel: "Undisclosed", featured: false };
 }
 
-function deriveImplications(buyer: string | null, deal: MADeal, peers: string[]): string {
+// ── Bullet generators — every bullet is gated on a real attribute of THIS deal ──
+
+function rationaleBullets(deal: MADeal, text: string, country: string | null, synergies: string | null, txnType: string): string[] {
+  const b: string[] = [];
+  if (/data\s+cent|hyperscal|gpu|ai\s+infra|compute\s+capacity/i.test(text)) b.push("Expands AI / data-center infrastructure footprint");
+  if (deal.dealType === "merger" || /consolidat|combination|merges?\s+with/i.test(text)) b.push("Removes a direct competitor and consolidates share");
+  if (/vertical|supply\s+chain|upstream|downstream/i.test(text)) b.push("Vertically integrates the supply chain");
+  if (country) b.push(`Adds ${country} market access`);
+  if (/pricing\s+power|capacity|scarce|bottleneck/i.test(text)) b.push("Strengthens pricing power through capacity control");
+  if (synergies) b.push("Targets disclosed cost synergies");
+  if (txnType === "Sponsor Buyout" || txnType === "Take Private") b.push("Sponsor underwriting an operational value-creation plan");
+  if (/non[-\s]?core|divest|portfolio|streamline/i.test(text)) b.push("Sharpens the seller's portfolio toward core assets");
+  if (b.length === 0) b.push(`Consolidates the buyer's ${deal.sector} position`);
+  return b.slice(0, 4);
+}
+
+function whyNowBullets(text: string, rationale: string, txnType: string, ctx: DealContext): string[] {
+  const b: string[] = [];
+  if (ctx.creditOpen && (txnType === "Sponsor Buyout" || txnType === "Take Private")) b.push("Leveraged financing markets have reopened");
+  if (ctx.riskRegime === "risk-on") b.push("Risk-on regime is supporting deal underwriting");
+  if (/data\s+cent|hyperscal|ai\s+infra|gpu/i.test(text)) b.push("AI infrastructure demand is pulling forward capacity");
+  if (rationale === "Industry consolidation" || rationale === "Scale & consolidation") b.push("Sector consolidation is accelerating");
+  if (rationale === "Distressed acquisition") b.push("Seller balance-sheet stress is forcing action");
+  if (rationale === "Activist pressure") b.push("Activist pressure is forcing a strategic response");
+  if (/rate\s+cut|easing|lower\s+(?:rates|borrowing)/i.test(text)) b.push("Easing rates are lowering the cost of capital");
+  if (b.length === 0) b.push("A narrowing valuation gap has opened a deal window");
+  return b.slice(0, 4);
+}
+
+function implicationBullets(buyer: string | null, deal: MADeal, peers: string[], txnType: string, crossBorder: boolean): string[] {
+  const b: string[] = [];
   const who = buyer ?? "The acquirer";
-  const peerStr = peers.slice(0, 2).join(" and ");
-  if (!peerStr) return `${who} strengthens its ${deal.sector} position; competitors should be screened for a defensive response.`;
-  return `${who} strengthens its ${deal.sector} position, increasing competitive pressure on ${peerStr}.`;
+  if (peers.length > 0) b.push(`Read-through pressure on ${peers.slice(0, 3).join(", ")}`);
+  if (txnType === "Merger" || /consolidat/i.test(deal.title)) b.push("Sets a fresh valuation marker for the subsector");
+  b.push(`Strengthens ${who}'s position in ${deal.sector}`);
+  if (txnType === "Sponsor Buyout") b.push("Signals private-capital appetite returning to the sector");
+  if (crossBorder) b.push("May draw cross-border regulatory / national-security scrutiny");
+  return b.slice(0, 4);
+}
+
+function whatNextBullets(status: string, deal: MADeal, peers: string[], hasFinancing: boolean): string[] {
+  const b: string[] = [];
+  if (status === "Rumored" || status === "Negotiating") b.push("Definitive agreement or a competing bid before terms firm up");
+  if (hasFinancing || deal.dealType === "sponsor") b.push("Financing completion / syndication");
+  if (status !== "Completed" && status !== "Withdrawn") b.push("Regulatory / antitrust review");
+  if (status === "Signed" || status === "Regulatory Review") b.push("Shareholder vote ahead of close");
+  if (peers.length >= 2) b.push(`Follow-on pressure on ${peers.slice(0, 2).join(", ")}`);
+  if (b.length === 0) b.push("Screen peers for follow-on activity");
+  return b.slice(0, 4);
+}
+
+// Stage pipeline → highlight the current stage from the derived status.
+function buildTimeline(status: string): DealIntel["timeline"] {
+  const stages = ["Announced", "Board Approval", "Regulatory Review", "Shareholder Vote", "Expected Close"];
+  const idx =
+    status === "Rumored" || status === "Negotiating" ? 0 :
+    status === "Signed"            ? 1 :
+    status === "Regulatory Review" ? 2 :
+    status === "Shareholder Vote"  ? 3 :
+    status === "Closing"           ? 4 :
+    status === "Completed"         ? 5 : 0;
+  return stages.map((stage, i) => ({ stage, done: i < idx, current: i === idx }));
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────────
@@ -282,27 +394,48 @@ export function enrichDeal(deal: MADeal, ctx: DealContext = {}): DealIntel {
   const { buyer, target } = extractParties(deal);
   const dealValue   = extractValue(text);
   const financing   = extractFinancing(text);
-  const crossBorder = /\b(european|german|french|british|uk|japan(?:ese)?|chin(?:a|ese)|indian|canadian|korean|swiss|dutch|nordic|australian|brazil(?:ian)?|saudi|emirati)\b/i.test(text);
-  const advisors: DealAdvisors = { banks: firstMatch(text, ADVISOR_BANKS), legal: firstMatch(text, LAW_FIRMS) };
+  const country     = extractCountry(text);
+  const crossBorder = /cross[-\s]?border/i.test(text) || country !== null;
+  const premium     = extractPremium(text);
+  const synergies   = extractSynergies(text);
+  const financingDetail = extractFinancingDetail(text);
+  const banks  = firstMatch(text, ADVISOR_BANKS);
+  const legal  = firstMatch(text, LAW_FIRMS);
+  const advisors: DealAdvisors = { banks, legal };
+  const advisorSides = splitAdvisorSides(text, banks, legal);
+  const competingBidders = extractCompetingBidders(text, buyer);
 
   const status    = deriveStatus(deal, text);
   const txnType   = deriveTxnType(deal, text);
   const rationale = deriveRationale(deal, text);
+  const usdB      = valueToUsdB(dealValue);
+  const { sizeClass, sizeLabel, featured } = classifySize(deal, usdB);
 
   const peerPool  = SECTOR_PEERS[deal.sector] ?? [];
   const exclude   = new Set([buyer, target, ...deal.entities].filter(Boolean).map(s => (s as string).toUpperCase()));
   const readThrough = peerPool.filter(p => !exclude.has(p.toUpperCase())).slice(0, 5);
 
   return {
-    dealValue, buyer, target, financing, crossBorder, advisors,
-    status, statusColor: STATUS_COLORS[status] ?? "#52b0c8",
-    txnType, rationale,
-    whyNow:  deriveWhyNow(deal, txnType, rationale, ctx),
-    whatNext: deriveWhatNext(deal, status, readThrough),
-    thesis:  deriveThesis(deal, txnType, financing, rationale, ctx),
-    implications: deriveImplications(buyer, deal, readThrough),
+    dealValue, buyer, target, financing, crossBorder, advisors, advisorSides,
+    premium, synergies, country, competingBidders, financingDetail,
+    sizeClass, sizeLabel, featured,
+    status, statusColor: STATUS_COLORS[status] ?? "#52b0c8", txnType, rationale,
+    rationaleBullets:   rationaleBullets(deal, text, country, synergies, txnType),
+    whyNowBullets:      whyNowBullets(text, rationale, txnType, ctx),
+    implicationBullets: implicationBullets(buyer, deal, readThrough, txnType, crossBorder),
+    whatNextBullets:    whatNextBullets(status, deal, readThrough, financing != null || financingDetail.length > 0),
     readThrough,
+    timeline: buildTimeline(status),
   };
+}
+
+/** Largest deals (by extracted, disclosed value) for the sidebar. */
+export function largestDeals(deals: MADeal[]): { deal: MADeal; value: string; usdB: number }[] {
+  return deals
+    .map(d => { const v = extractValue(`${d.title} ${d.summary}`); const u = valueToUsdB(v); return v && u != null ? { deal: d, value: v, usdB: u } : null; })
+    .filter((x): x is { deal: MADeal; value: string; usdB: number } => x !== null)
+    .sort((a, b) => b.usdB - a.usdB)
+    .slice(0, 5);
 }
 
 // ── Aggregates for sidebar intelligence ─────────────────────────────────────────
