@@ -410,6 +410,21 @@ function seedTapeQuote(ticker: string, bias: number): TapeQuote {
   return { price, pct };
 }
 
+// Stable, monochrome 1-day sparkline path (points seeded from the ticker), shown
+// after every few symbols for a Bloomberg-style intraday glance. No color.
+function seedSparkline(ticker: string, w = 30, h = 11, n = 14): string {
+  let h0 = 0x811c9dc5;
+  for (let i = 0; i < ticker.length; i++) { h0 ^= ticker.charCodeAt(i); h0 = Math.imul(h0, 0x01000193); }
+  const pts: number[] = [];
+  for (let i = 0; i < n; i++) {
+    h0 = Math.imul(h0 ^ (h0 >>> 15), 0x2c1b3c6d);
+    h0 = Math.imul(h0 ^ (h0 >>> 13), 0x297a2d39);
+    pts.push((h0 >>> 0) / 4294967295);
+  }
+  const max = Math.max(...pts), min = Math.min(...pts), span = Math.max(1e-6, max - min);
+  return pts.map((p, i) => `${((i / (n - 1)) * w).toFixed(1)},${(h - 1 - ((p - min) / span) * (h - 2)).toFixed(1)}`).join(" ");
+}
+
 function IndustryTape({ tickers, benefit, headwind }: {
   tickers: string[]; benefit: Set<string>; headwind: Set<string>;
 }) {
@@ -454,30 +469,45 @@ function IndustryTape({ tickers, benefit, headwind }: {
       });
       setFlash(t);
       if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlash(null), 460);
+      flashTimer.current = setTimeout(() => setFlash(null), 200);   // ~150–250ms flash
     }, 2600);
     return () => { clearInterval(id); if (flashTimer.current) clearTimeout(flashTimer.current); };
+  }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stable sparkline path per symbol (one per unique ticker).
+  const sparks = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const t of new Set(group)) m[t] = seedSparkline(t);
+    return m;
   }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (group.length === 0) return null;
   const durationS = group.length * 2.7;   // ∝ width → constant px/s regardless of count
 
   // Plain render fn (not a nested component) so the <span> nodes persist across
-  // renders and the flash background-color transition runs smoothly.
-  const renderSym = (t: string, k: string) => {
+  // renders and the flash background-color transition runs smoothly. Number
+  // fields have a fixed min-width so a digit-count change on a tick never
+  // reflows the track — keeping the scroll perfectly constant.
+  const renderSym = (t: string, k: string, i: number) => {
     const q = quotes[t];
     if (!q) return null;
     const up = q.pct >= 0;
     const col = up ? "#34d399" : "#f87171";
     const isFlash = flash === t;
+    const showSpark = i % 5 === 4;
     return (
-      <span key={k} className="tg-sym inline-flex items-center gap-2 px-5 shrink-0"
-        style={isFlash ? { backgroundColor: `${col}24` } : undefined}>
-        <span className="text-[13px] font-bold font-mono tracking-tight text-white/85">{t}</span>
-        <span className="text-[9px] leading-none" style={{ color: col }}>{up ? "▲" : "▼"}</span>
-        <span className="text-[12.5px] font-semibold font-mono tabular-nums text-white/68">{q.price.toFixed(2)}</span>
-        <span className="text-[12px] font-bold font-mono tabular-nums" style={{ color: col }}>{up ? "+" : ""}{q.pct.toFixed(2)}%</span>
-        <span className="text-[9px] pl-1.5 text-white/15">•</span>
+      <span key={k} className="tg-sym inline-flex items-baseline gap-2.5 px-[26px] shrink-0"
+        style={isFlash ? { backgroundColor: `${col}20` } : undefined}>
+        <span className="text-[13px] font-bold font-mono tracking-tight" style={{ color: "rgba(255,255,255,0.92)" }}>{t}</span>
+        <span className="text-[8.5px]" style={{ color: col }}>{up ? "▲" : "▼"}</span>
+        <span className="text-[13px] font-semibold font-mono tabular-nums inline-block text-right" style={{ color: "rgba(255,255,255,0.78)", minWidth: 48 }}>{q.price.toFixed(2)}</span>
+        <span className="text-[12.5px] font-bold font-mono tabular-nums inline-block text-right" style={{ color: col, minWidth: 52 }}>{up ? "+" : ""}{q.pct.toFixed(2)}%</span>
+        {showSpark && (
+          <svg width={30} height={11} viewBox="0 0 30 11" className="self-center" aria-hidden style={{ opacity: 0.42 }}>
+            <polyline points={sparks[t]} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" />
+          </svg>
+        )}
+        <span className="text-[8px] pl-1 self-center" style={{ color: "rgba(255,255,255,0.16)" }}>•</span>
       </span>
     );
   };
@@ -487,8 +517,8 @@ function IndustryTape({ tickers, benefit, headwind }: {
       style={{ maskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)" }}>
       <div className="flex items-stretch py-2 whitespace-nowrap tg-tape"
         style={{ width: "max-content", animationDuration: `${durationS}s` }}>
-        <div className="flex items-center">{group.map((t, i) => renderSym(t, `a${i}`))}</div>
-        <div className="flex items-center" aria-hidden>{group.map((t, i) => renderSym(t, `b${i}`))}</div>
+        <div className="flex items-center">{group.map((t, i) => renderSym(t, `a${i}`, i))}</div>
+        <div className="flex items-center" aria-hidden>{group.map((t, i) => renderSym(t, `b${i}`, i))}</div>
       </div>
     </div>
   );

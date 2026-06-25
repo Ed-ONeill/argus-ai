@@ -115,7 +115,7 @@
   animation-timing-function: linear;
   animation-iteration-count: infinite;
 }
-.tg-sym { transition: background-color 440ms ease; border-radius: 4px; }
+.tg-sym { transition: background-color 180ms ease-out; border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   .tg-breathe, .tg-live-dot, .tg-band, .tg-tape { animation: none !important; }
