@@ -15,7 +15,7 @@ import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { timeAgo, cn } from "@/lib/utils";
-import { enrichDeal, buildLeagueTables, largestDeals, type DealContext } from "@/lib/maIntelligence";
+import { enrichDeal, buildLeagueTables, buildMarketRegime, largestDeals, type DealContext } from "@/lib/maIntelligence";
 import type { ThemeIntelligence } from "@/lib/types";
 
 // Code-split the theme drawer — it only mounts when a theme is selected, so it
@@ -86,6 +86,28 @@ function IntelBlock({ label, children }: { label: string; children: React.ReactN
     <div>
       <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: "rgba(255,255,255,0.34)" }}>{label}</p>
       {children}
+    </div>
+  );
+}
+
+// Lettered section header inside the expanded research note (A · Argus Assessment …).
+function SecHead({ letter, title, color = "rgba(255,255,255,0.5)", right }: { letter: string; title: string; color?: string; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 mb-2.5">
+      <span className="flex items-center justify-center w-4 h-4 rounded text-[8px] font-black shrink-0" style={{ color, background: `${color === "rgba(255,255,255,0.5)" ? "rgba(255,255,255,0.08)" : `${color}1f`}` }}>{letter}</span>
+      <span className="text-[9.5px] font-bold uppercase tracking-[0.15em]" style={{ color }}>{title}</span>
+      {right && <span className="ml-auto">{right}</span>}
+    </div>
+  );
+}
+
+// Inline labelled set of ticker chips; self-hides when empty.
+function TickerSet({ label, tickers, color }: { label: string; tickers: string[]; color: string }) {
+  if (tickers.length === 0) return null;
+  return (
+    <div className="flex items-start gap-1.5 flex-wrap">
+      <span className="text-[8px] font-bold uppercase tracking-wide shrink-0 mt-0.5" style={{ color: `${color}c0` }}>{label}</span>
+      {tickers.map(t => <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: `${color}1a`, color, border: `1px solid ${color}2e` }}>{t}</span>)}
     </div>
   );
 }
@@ -216,152 +238,204 @@ function DealCard({ deal, index, ctx }: { deal: MADeal; index: number; ctx: Deal
       </div>
 
       {/* Expanded research note */}
-      {open && (
-        <div className="px-3.5 pb-3.5 pt-3 border-t space-y-3.5" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          {/* 8-stage transaction lifecycle (scroll-safe on narrow widths) */}
-          <div className="overflow-x-auto scrollbar-hide -mx-0.5 px-0.5">
-            <div className="flex items-center gap-1 min-w-[560px]">
-              {intel.timeline.map((s, i) => (
-                <div key={s.stage} className="flex items-center gap-1 min-w-0" style={{ flex: i < intel.timeline.length - 1 ? "1 1 0%" : "0 0 auto" }}>
-                  <div className="flex flex-col items-center gap-1 shrink-0">
-                    <span className="w-2 h-2 rounded-full" style={{ background: s.current ? intel.statusColor : s.done ? "rgba(82,176,200,0.6)" : "rgba(255,255,255,0.14)" }} />
-                    <span className="text-[7.5px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: s.current ? intel.statusColor : s.done ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.26)" }}>{s.stage}</span>
+      {open && (() => {
+        const ct = intel.capitalTransmission;
+        const mi = intel.marketImpact;
+        const hasImpactTickers = mi.winners.length + mi.losers.length + mi.followOn.length > 0;
+        const flowSteps = [
+          { label: "Acquirer",       items: [ct.flow.acquirer], color: "#a78bfa", mono: false },
+          { label: "Sector",         items: [ct.flow.sector],   color: "#52b0c8", mono: false },
+          ...(ct.flow.beneficiaries.length ? [{ label: "Beneficiaries",  items: ct.flow.beneficiaries, color: "#34d399", mono: true }]  : []),
+          ...(ct.flow.pressured.length     ? [{ label: "Pressured Peers", items: ct.flow.pressured,     color: "#f87171", mono: true }]  : []),
+          ...(ct.flow.themes.length        ? [{ label: "Themes",         items: ct.flow.themes,        color: "#c4b5fd", mono: false }] : []),
+        ];
+        return (
+        <div className="px-3.5 pb-3.5 pt-3 border-t space-y-4" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+
+          {/* A · ARGUS ASSESSMENT — the research-note headline read */}
+          <div className="rounded-lg border p-3 pt-2.5" style={{ borderColor: "rgba(167,139,250,0.22)", background: "rgba(167,139,250,0.05)" }}>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="text-[8.5px] font-black uppercase tracking-[0.18em]" style={{ color: "rgba(196,181,253,0.95)" }}>Argus Assessment</span>
+              <span className="text-[7px] px-1 py-px rounded uppercase tracking-wide font-bold" style={{ color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.06)" }}>interpretation</span>
+            </div>
+            <p className="text-[12px] leading-relaxed" style={{ color: "rgba(255,255,255,0.8)" }}>{intel.argusAssessment}</p>
+            {intel.themeTags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {intel.themeTags.map(t => (
+                  <span key={t} className="text-[9px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(167,139,250,0.12)", color: "#c4b5fd", border: "1px solid rgba(167,139,250,0.22)" }}>{t}</span>
+                ))}
+              </div>
+            )}
+            <div className="grid sm:grid-cols-2 gap-x-5 gap-y-2.5 mt-3 pt-2.5 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+              <IntelBlock label="Strategic Rationale"><BulletList items={intel.rationaleBullets} dot="rgba(167,139,250,0.6)" /></IntelBlock>
+              <IntelBlock label="Why Now"><BulletList items={intel.whyNowBullets} dot="rgba(82,176,200,0.6)" /></IntelBlock>
+            </div>
+          </div>
+
+          {/* B · DEAL STATUS — probability, drivers, lifecycle, path ahead */}
+          <div>
+            <SecHead letter="B" title="Deal Status" right={<span className="text-[11px] font-black tabular-nums" style={{ color: intel.completion.color }}>{intel.completion.pct}% · {intel.completion.label}</span>} />
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden mb-2" style={{ background: "rgba(255,255,255,0.07)" }}>
+              <div className="h-1.5 rounded-full" style={{ width: `${intel.completion.pct}%`, background: intel.completion.color }} />
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {intel.completion.drivers.map(d => (
+                <span key={d} className="text-[9.5px] px-1.5 py-0.5 rounded font-medium" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.58)", border: "1px solid rgba(255,255,255,0.08)" }}>{d}</span>
+              ))}
+            </div>
+            {/* 8-stage transaction lifecycle (scroll-safe on narrow widths) */}
+            <div className="overflow-x-auto scrollbar-hide -mx-0.5 px-0.5 mb-2.5">
+              <div className="flex items-center gap-1 min-w-[560px]">
+                {intel.timeline.map((s, i) => (
+                  <div key={s.stage} className="flex items-center gap-1 min-w-0" style={{ flex: i < intel.timeline.length - 1 ? "1 1 0%" : "0 0 auto" }}>
+                    <div className="flex flex-col items-center gap-1 shrink-0">
+                      <span className="w-2 h-2 rounded-full" style={{ background: s.current ? intel.statusColor : s.done ? "rgba(82,176,200,0.6)" : "rgba(255,255,255,0.14)" }} />
+                      <span className="text-[7.5px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: s.current ? intel.statusColor : s.done ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.26)" }}>{s.stage}</span>
+                    </div>
+                    {i < intel.timeline.length - 1 && <div className="flex-1 h-px mb-3.5" style={{ background: s.done ? "rgba(82,176,200,0.4)" : "rgba(255,255,255,0.08)" }} />}
                   </div>
-                  {i < intel.timeline.length - 1 && <div className="flex-1 h-px mb-3.5" style={{ background: s.done ? "rgba(82,176,200,0.4)" : "rgba(255,255,255,0.08)" }} />}
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+            <IntelBlock label="What to Watch"><BulletList items={intel.whatNextBullets} dot="rgba(251,191,36,0.6)" /></IntelBlock>
+          </div>
+
+          {/* C · MARKET IMPACT — winners / losers / re-rating / follow-on */}
+          <div>
+            <SecHead letter="C" title="Market Impact" color="rgba(52,211,153,0.8)" />
+            <div className="grid sm:grid-cols-2 gap-x-5 gap-y-2.5">
+              <div className="space-y-1.5">
+                {hasImpactTickers ? (
+                  <>
+                    <TickerSet label="Winners" tickers={mi.winners} color="#34d399" />
+                    <TickerSet label="Pressured" tickers={mi.losers} color="#f87171" />
+                    <TickerSet label="Follow-on" tickers={mi.followOn} color="#fbbf24" />
+                  </>
+                ) : (
+                  <BulletList items={intel.implicationBullets} dot="rgba(52,211,153,0.6)" />
+                )}
+              </div>
+              <IntelBlock label="Re-rating Impact">
+                <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>{mi.rerating}</p>
+              </IntelBlock>
             </div>
           </div>
 
-          {/* Theme intelligence tags */}
-          {intel.themeTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {intel.themeTags.map(t => (
-                <span key={t} className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(167,139,250,0.1)", color: "#c4b5fd", border: "1px solid rgba(167,139,250,0.2)" }}>{t}</span>
-              ))}
+          {/* D · TRANSACTION DETAILS — economics, financing, advisors (facts) */}
+          {(intel.economics.length > 0 || intel.financingDetail.length > 0 || intel.competingBidders.length > 0 || hasAdvisors || a.financing.length > 0 || intel.readThroughGroups.length > 0 || intel.readThrough.length > 0 || intel.dynamicSections.length > 0) && (
+          <div>
+            <SecHead letter="D" title="Transaction Details" color="rgba(82,176,200,0.8)" />
+            {intel.economics.length > 0 && (
+              <div className="rounded-lg border grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 mb-3"
+                style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}>
+                {intel.economics.map(e => (
+                  <div key={e.label} className="px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.34)" }}>{e.label}</p>
+                    <p className="text-[13px] font-black tabular-nums mt-0.5" style={{ color: "rgba(255,255,255,0.9)" }}>{e.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3">
+              {intel.financingDetail.length > 0 && (
+                <IntelBlock label="Financing">
+                  <div className="flex flex-wrap gap-1">{intel.financingDetail.map(f => <span key={f} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)" }}>{f}</span>)}</div>
+                </IntelBlock>
+              )}
+              {intel.competingBidders.length > 0 && (
+                <IntelBlock label="Other Interested Parties">
+                  <div className="flex flex-wrap gap-1">{intel.competingBidders.map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24" }}>{p}</span>)}</div>
+                </IntelBlock>
+              )}
+              {(hasAdvisors || a.financing.length > 0) && (
+                <IntelBlock label="Advisor Intelligence">
+                  {hasSidedAdvisors ? (
+                    <div className="space-y-1">
+                      <AdvisorRow label="Buy-side" names={[...a.buyFinancial, ...a.buyLegal]} />
+                      <AdvisorRow label="Sell-side" names={[...a.sellFinancial, ...a.sellLegal]} />
+                      <AdvisorRow label="Financing" names={a.financing} />
+                      <AdvisorRow label="Fairness" names={a.fairness} />
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <AdvisorRow label="Financial" names={intel.advisors.banks.filter(b => !a.financing.includes(b) && !a.fairness.includes(b))} />
+                      <AdvisorRow label="Legal" names={intel.advisors.legal} />
+                      <AdvisorRow label="Financing" names={a.financing} />
+                      <AdvisorRow label="Fairness" names={a.fairness} />
+                    </div>
+                  )}
+                </IntelBlock>
+              )}
+              {intel.readThroughGroups.length > 0 ? (
+                <IntelBlock label="Potential Read-Through">
+                  <div className="space-y-1.5">
+                    {intel.readThroughGroups.map(g => {
+                      const rc = g.role === "Beneficiaries" ? "#34d399" : g.role === "Competitors" ? "#f87171" : g.role === "Suppliers" ? "#52b0c8" : "#a78bfa";
+                      return <TickerSet key={g.role} label={g.role} tickers={g.tickers} color={rc} />;
+                    })}
+                  </div>
+                </IntelBlock>
+              ) : intel.readThrough.length > 0 && (
+                <IntelBlock label="Potential Read-Through">
+                  <div className="flex flex-wrap gap-1">{intel.readThrough.map(p => <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)", border: "1px solid rgba(82,176,200,0.16)" }}>{p}</span>)}</div>
+                </IntelBlock>
+              )}
             </div>
+            {/* Conditional specialized sections — different per deal */}
+            {intel.dynamicSections.length > 0 && (
+              <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3 mt-3 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+                {intel.dynamicSections.map(s => (
+                  <IntelBlock key={s.label} label={s.label}><BulletList items={s.bullets} dot="rgba(255,255,255,0.4)" /></IntelBlock>
+                ))}
+              </div>
+            )}
+          </div>
           )}
 
-          {/* Transaction economics — only the metrics actually disclosed */}
-          {intel.economics.length > 0 && (
-            <div className="rounded-lg border grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0"
-              style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)", borderTopColor: "rgba(255,255,255,0.07)" }}>
-              {intel.economics.map(e => (
-                <div key={e.label} className="px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-                  <p className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.34)" }}>{e.label}</p>
-                  <p className="text-[13px] font-black tabular-nums mt-0.5" style={{ color: "rgba(255,255,255,0.9)" }}>{e.value}</p>
+          {/* E · CAPITAL TRANSMISSION — how capital moves, as a compact flow */}
+          <div className="rounded-lg border p-3 pt-2.5" style={{ borderColor: "rgba(82,176,200,0.2)", background: "rgba(82,176,200,0.045)" }}>
+            <p className="text-[8.5px] font-black uppercase tracking-[0.16em] mb-2.5" style={{ color: "rgba(82,176,200,0.8)" }}>E · Capital Transmission</p>
+            {/* Flow: ACQUIRER → SECTOR → BENEFICIARIES → PRESSURED → THEMES */}
+            <div className="mb-3">
+              {flowSteps.map((step, i) => (
+                <div key={step.label} className="flex items-start gap-2.5">
+                  <div className="flex flex-col items-center shrink-0 pt-1">
+                    <span className="w-2 h-2 rounded-full" style={{ background: step.color }} />
+                    {i < flowSteps.length - 1 && <span className="w-px flex-1 min-h-[16px]" style={{ background: "linear-gradient(to bottom, rgba(82,176,200,0.4), rgba(255,255,255,0.08))" }} />}
+                  </div>
+                  <div className={cn("min-w-0", i < flowSteps.length - 1 && "pb-1.5")}>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(255,255,255,0.38)" }}>{step.label}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {step.items.map(it => (
+                        <span key={it} className={cn("text-[10.5px] px-1.5 py-0.5 rounded font-medium leading-none", step.mono && "font-mono")}
+                          style={{ background: `${step.color}18`, color: step.color, border: `1px solid ${step.color}33` }}>{it}</span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-          )}
-
-          {/* Bullet intelligence */}
-          <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3">
-            <IntelBlock label="Strategic Rationale"><BulletList items={intel.rationaleBullets} dot="rgba(167,139,250,0.6)" /></IntelBlock>
-            <IntelBlock label="Why Now"><BulletList items={intel.whyNowBullets} dot="rgba(82,176,200,0.6)" /></IntelBlock>
-            <IntelBlock label="Market Implications"><BulletList items={intel.implicationBullets} dot="rgba(52,211,153,0.6)" /></IntelBlock>
-            <IntelBlock label="What's Next"><BulletList items={intel.whatNextBullets} dot="rgba(251,191,36,0.6)" /></IntelBlock>
-          </div>
-
-          {/* Conditional specialized sections — different per deal */}
-          {intel.dynamicSections.length > 0 && (
-            <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3 pt-0.5 border-t" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-              {intel.dynamicSections.map(s => (
-                <IntelBlock key={s.label} label={s.label}><BulletList items={s.bullets} dot="rgba(255,255,255,0.4)" /></IntelBlock>
-              ))}
-            </div>
-          )}
-
-          {/* Capital Transmission — how capital moves because of the deal */}
-          <div className="rounded-lg border p-3 pt-2.5" style={{ borderColor: "rgba(82,176,200,0.18)", background: "rgba(82,176,200,0.04)" }}>
-            <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] mb-2" style={{ color: "rgba(82,176,200,0.7)" }}>Capital Transmission</p>
-            {/* re-rating chain */}
-            <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
-              {intel.capitalTransmission.chain.map((step, i) => (
+            {/* Re-rating sequence (worded) */}
+            <div className="flex items-center gap-1.5 flex-wrap mb-2.5 pt-2.5 border-t" style={{ borderColor: "rgba(82,176,200,0.14)" }}>
+              {ct.chain.map((step, i) => (
                 <span key={i} className="flex items-center gap-1.5">
                   {i > 0 && <span className="text-[10px]" style={{ color: "rgba(82,176,200,0.45)" }}>→</span>}
-                  <span className="text-[10.5px] font-medium leading-tight" style={{ color: "rgba(255,255,255,0.66)" }}>{step}</span>
+                  <span className="text-[10.5px] font-medium leading-tight" style={{ color: "rgba(255,255,255,0.62)" }}>{step}</span>
                 </span>
               ))}
             </div>
-            {/* beneficiaries / casualties */}
-            <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-2.5">
-              {intel.capitalTransmission.beneficiaries.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: "rgba(52,211,153,0.7)" }}>Beneficiaries</span>
-                  {intel.capitalTransmission.beneficiaries.map(t => <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(52,211,153,0.12)", color: "#34d399" }}>{t}</span>)}
-                </div>
-              )}
-              {intel.capitalTransmission.casualties.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: "rgba(248,113,113,0.7)" }}>Casualties</span>
-                  {intel.capitalTransmission.casualties.map(t => <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>{t}</span>)}
-                </div>
-              )}
-            </div>
-            {/* effects */}
+            {/* Second-order effects */}
             <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1">
-              {intel.capitalTransmission.effects.map(e => (
+              {ct.effects.map(e => (
                 <p key={e.label} className="text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>
                   <span className="font-bold" style={{ color: "rgba(255,255,255,0.72)" }}>{e.label}:</span> {e.text}
                 </p>
               ))}
             </div>
           </div>
-
-          {/* Financing / competing bidders / read-through / advisors */}
-          <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3">
-            {intel.financingDetail.length > 0 && (
-              <IntelBlock label="Financing">
-                <div className="flex flex-wrap gap-1">{intel.financingDetail.map(f => <span key={f} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)" }}>{f}</span>)}</div>
-              </IntelBlock>
-            )}
-            {intel.competingBidders.length > 0 && (
-              <IntelBlock label="Other Interested Parties">
-                <div className="flex flex-wrap gap-1">{intel.competingBidders.map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24" }}>{p}</span>)}</div>
-              </IntelBlock>
-            )}
-            {intel.readThroughGroups.length > 0 ? (
-              <IntelBlock label="Potential Read-Through">
-                <div className="space-y-1.5">
-                  {intel.readThroughGroups.map(g => {
-                    const rc = g.role === "Beneficiaries" ? "#34d399" : g.role === "Competitors" ? "#f87171" : g.role === "Suppliers" ? "#52b0c8" : "#a78bfa";
-                    return (
-                      <div key={g.role} className="flex items-start gap-1.5 flex-wrap">
-                        <span className="text-[8px] font-bold uppercase tracking-wide shrink-0 mt-0.5" style={{ color: `${rc}b0` }}>{g.role}</span>
-                        {g.tickers.map(p => <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: `${rc}1a`, color: rc, border: `1px solid ${rc}2e` }}>{p}</span>)}
-                      </div>
-                    );
-                  })}
-                </div>
-              </IntelBlock>
-            ) : intel.readThrough.length > 0 && (
-              <IntelBlock label="Potential Read-Through">
-                <div className="flex flex-wrap gap-1">{intel.readThrough.map(p => <span key={p} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.1)", color: "rgba(82,176,200,0.8)", border: "1px solid rgba(82,176,200,0.16)" }}>{p}</span>)}</div>
-              </IntelBlock>
-            )}
-            {(hasAdvisors || a.financing.length > 0) && (
-              <IntelBlock label="Advisor Intelligence">
-                {hasSidedAdvisors ? (
-                  <div className="space-y-1">
-                    <AdvisorRow label="Buy-side" names={[...a.buyFinancial, ...a.buyLegal]} />
-                    <AdvisorRow label="Sell-side" names={[...a.sellFinancial, ...a.sellLegal]} />
-                    <AdvisorRow label="Financing" names={a.financing} />
-                    <AdvisorRow label="Fairness" names={a.fairness} />
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <AdvisorRow label="Financial" names={intel.advisors.banks.filter(b => !a.financing.includes(b) && !a.fairness.includes(b))} />
-                    <AdvisorRow label="Legal" names={intel.advisors.legal} />
-                    <AdvisorRow label="Financing" names={a.financing} />
-                    <AdvisorRow label="Fairness" names={a.fairness} />
-                  </div>
-                )}
-              </IntelBlock>
-            )}
-          </div>
         </div>
-      )}
+        );
+      })()}
     </motion.div>
   );
 }
@@ -387,6 +461,34 @@ function BreakdownRow({ label, count, total, color }: { label: string; count: nu
         <div className="h-1 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
       <span className="text-xs w-6 text-right font-mono" style={{ color: "rgba(255,255,255,0.44)" }}>{count}</span>
+    </div>
+  );
+}
+
+// M&A market regime — what the deal tape is signaling, above the deal list.
+function MarketRegimeStrip({ metrics }: { metrics: import("@/lib/maIntelligence").RegimeMetric[] }) {
+  if (metrics.length === 0) return null;
+  return (
+    <div className="rounded-xl border mb-6 p-4 sm:p-5" style={{ background: "rgba(255,255,255,0.022)", borderColor: "rgba(255,255,255,0.07)" }}>
+      <div className="flex items-center gap-2 mb-3.5">
+        <Network size={12} style={{ color: "rgba(82,176,200,0.6)" }} />
+        <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.42)", letterSpacing: "0.1em" }}>M&amp;A Market Regime</h2>
+        <span className="text-[9px] ml-auto" style={{ color: "rgba(255,255,255,0.26)" }}>what the deal tape is signaling</span>
+      </div>
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-4">
+        {metrics.map(m => (
+          <div key={m.label}>
+            <div className="flex items-baseline justify-between gap-1 mb-1.5">
+              <span className="text-[9px] font-semibold uppercase tracking-wide leading-tight" style={{ color: "rgba(255,255,255,0.46)" }}>{m.label}</span>
+              <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: m.color }}>{m.display}</span>
+            </div>
+            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+              <div className="h-1 rounded-full" style={{ width: `${Math.max(3, m.pct)}%`, background: m.color }} />
+            </div>
+            <span className="block text-[8px] mt-1 leading-tight" style={{ color: "rgba(255,255,255,0.3)" }}>{m.hint}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -493,6 +595,7 @@ export default function MAPage() {
 
   // Live IB dashboard league tables (single pass over the deal set).
   const league         = useMemo(() => buildLeagueTables(deals), [deals]);
+  const regime         = useMemo(() => buildMarketRegime(deals, dealCtx), [deals, dealCtx]);
   const biggestDeals   = useMemo(() => largestDeals(deals), [deals]);
   const pendingReviews = useMemo(() => deals.filter(d => enrichDeal(d, dealCtx).status === "Regulatory Review").slice(0, 4), [deals, dealCtx]);
   const pendingVotes   = useMemo(() => deals.filter(d => enrichDeal(d, dealCtx).status === "Shareholder Vote").slice(0, 4), [deals, dealCtx]);
@@ -568,6 +671,9 @@ export default function MAPage() {
             Unable to load M&A intelligence — feed data unavailable.
           </div>
         )}
+
+        {/* M&A market regime — read the tape before any single deal */}
+        {!isLoading && deals.length > 0 && <MarketRegimeStrip metrics={regime} />}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 

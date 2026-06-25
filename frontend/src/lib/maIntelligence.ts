@@ -45,6 +45,15 @@ export interface DealIntel {
   sizeClass:   "mega" | "large" | "medium" | "small" | "unknown";
   sizeLabel:   string;           // "Mega Deal" | "Large" | … | "Rumor" | "Breaking"
   featured:    boolean;          // visually elevated (mega/large or breaking)
+  // ── Argus interpretation — the research-note headline read (2–3 sentences) ──
+  argusAssessment: string;       // deal-specific: why it matters / signal / watch next
+  // ── Market impact (winners / losers / re-rating / follow-on) ────────────────
+  marketImpact: {
+    winners:  string[];          // beneficiary tickers
+    losers:   string[];          // pressured peer tickers
+    rerating: string;            // one derived re-rating sentence
+    followOn: string[];          // names that screen as follow-on targets
+  };
   // ── Derived analysis (institutional, every bullet tied to this deal) ───────
   status:      string;
   statusColor: string;
@@ -61,13 +70,14 @@ export interface DealIntel {
   readThroughGroups:  { role: string; tickers: string[] }[]; // categorized
   timeline:    { stage: string; done: boolean; current: boolean }[];   // 8-stage lifecycle
   // ── Probability of completion (inferred estimate, not a quoted figure) ───────
-  completion:  { pct: number; label: string; color: string };
+  completion:  { pct: number; label: string; color: string; drivers: string[] };
   // ── Capital transmission — how capital moves because of the deal ─────────────
   capitalTransmission: {
     chain:         string[];                       // ordered transmission sequence
     beneficiaries: string[];                       // likely beneficiaries (tickers)
     casualties:    string[];                       // likely casualties (tickers)
     effects:       { label: string; text: string }[]; // supply chain / pricing / valuation / rotation / cross-sector
+    flow:          { acquirer: string; sector: string; beneficiaries: string[]; pressured: string[]; themes: string[] }; // compact ACQUIRER→SECTOR→BENEFICIARIES→PRESSURED→THEMES
   };
 }
 
@@ -154,6 +164,16 @@ function firstMatch(text: string, table: [string, RegExp][]): string[] {
   for (const [name, re] of table) if (re.test(text) && !out.includes(name)) out.push(name);
   return out;
 }
+
+// Stable per-deal seed (FNV-1a) → deterministic phrasing variety. Same deal always
+// renders the same wording; different deals diverge.
+function dealSeed(deal: MADeal): number {
+  const s = deal.id || deal.title;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+function pick<T>(arr: T[], seed: number): T { return arr[(seed >>> 0) % arr.length]; }
 
 // Deal value: "$42B", "€7.4 billion", "$1.2bn", or "Undisclosed".
 function extractValue(text: string): string | null {
@@ -473,16 +493,18 @@ function rationaleBullets(deal: MADeal, text: string, country: string | null, sy
   return b.slice(0, 4);
 }
 
-function whyNowBullets(text: string, rationale: string, txnType: string, ctx: DealContext): string[] {
+function whyNowBullets(text: string, rationale: string, txnType: string, ctx: DealContext, seed: number): string[] {
   const b: string[] = [];
   if (ctx.creditOpen && (txnType === "Sponsor Buyout" || txnType === "Take Private")) b.push("Leveraged financing markets have reopened");
   if (ctx.riskRegime === "risk-on") b.push("Risk-on regime is supporting deal underwriting");
-  if (/data\s+cent|hyperscal|ai\s+infra|gpu/i.test(text)) b.push("AI infrastructure demand is pulling forward capacity");
-  if (rationale === "Industry consolidation" || rationale === "Scale & consolidation") b.push("Sector consolidation is accelerating");
+  if (/data\s+cent|hyperscal|ai\s+infra|gpu/i.test(text)) b.push("AI-infrastructure demand is pulling capacity forward");
+  if (rationale === "Industry consolidation" || rationale === "Scale & consolidation")
+    b.push(pick(["Scale economics now favor the largest operators", "The window to combine before rates normalize is narrowing", "Sub-scale operators are harder to fund independently"], seed));
   if (rationale === "Distressed acquisition") b.push("Seller balance-sheet stress is forcing action");
   if (rationale === "Activist pressure") b.push("Activist pressure is forcing a strategic response");
   if (/rate\s+cut|easing|lower\s+(?:rates|borrowing)/i.test(text)) b.push("Easing rates are lowering the cost of capital");
-  if (b.length === 0) b.push("A narrowing valuation gap has opened a deal window");
+  if (b.length === 0)
+    b.push(pick(["A narrowing valuation gap has opened a deal window", "Depressed entry multiples make the math work now", "Strategic urgency is outweighing a still-cautious tape"], seed >>> 4));
   return b.slice(0, 4);
 }
 
@@ -534,36 +556,43 @@ function buildTimeline(status: string, text: string): DealIntel["timeline"] {
 // certainty and structure. Presented as an estimate, never a quoted figure.
 function computeCompletion(deal: MADeal, text: string, status: string, txnType: string, financing: string | null,
   sizeClass: DealIntel["sizeClass"], crossBorder: boolean, competingBidders: string[]): DealIntel["completion"] {
-  if (status === "Completed") return { pct: 100, label: "Closed", color: "#10b981" };
-  if (deal.dealType === "withdrawn") return { pct: 4, label: "Terminated", color: "#f87171" };
+  if (status === "Completed") return { pct: 100, label: "Closed", color: "#10b981", drivers: ["Transaction completed"] };
+  if (deal.dealType === "withdrawn") return { pct: 4, label: "Terminated", color: "#f87171", drivers: ["Deal withdrawn or terminated"] };
 
-  // Base by lifecycle stage.
+  // Base by lifecycle stage — and the headline reason for that base.
   let pct = ({
     "Closing": 96, "Shareholder Vote": 90, "Signed": 84, "Regulatory Review": 76,
     "Announced": 80, "Negotiating": 54, "Rumored": 30,
   } as Record<string, number>)[status] ?? 60;
 
+  const drivers: string[] = [({
+    "Closing": "Expected to close imminently", "Shareholder Vote": "Awaiting shareholder vote",
+    "Signed": "Definitive agreement signed", "Regulatory Review": "In regulatory review",
+    "Announced": "Announced transaction", "Negotiating": "In negotiation — no definitive agreement",
+    "Rumored": "Rumored / no definitive agreement yet",
+  } as Record<string, string>)[status] ?? "Announced transaction"];
+
   // Regulatory complexity.
   const sameSectorMerger = txnType === "Merger" || /consolidat|combination|merges?\s+with/i.test(text);
-  if (sameSectorMerger && (sizeClass === "mega" || sizeClass === "large")) pct -= 12;
-  if (crossBorder) pct -= 6;
-  if (txnType === "Hostile Bid") pct -= 14;
-  if (/\bcfius\b|national\s+security|state\s+aid/i.test(text)) pct -= 8;
+  if (sameSectorMerger && (sizeClass === "mega" || sizeClass === "large")) { pct -= 12; drivers.push("Antitrust risk elevated (horizontal overlap)"); }
+  if (crossBorder) { pct -= 6; drivers.push("Cross-border review required"); }
+  if (txnType === "Hostile Bid") { pct -= 14; drivers.push("Unsolicited / hostile structure"); }
+  if (/\bcfius\b|national\s+security|state\s+aid/i.test(text)) { pct -= 8; drivers.push("National-security (CFIUS) review"); }
 
   // Financing certainty / structure.
-  if (financing === "Cash") pct += 5;
-  if (/committed\s+financing|fully\s+financed|financing\s+secured/i.test(text)) pct += 5;
-  if ((txnType === "Sponsor Buyout" || txnType === "Take Private") && !/committed\s+financing|fully\s+financed/i.test(text)) pct -= 7;
+  if (financing === "Cash") { pct += 5; drivers.push("All-cash consideration"); }
+  if (/committed\s+financing|fully\s+financed|financing\s+secured/i.test(text)) { pct += 5; drivers.push("Financing committed"); }
+  if ((txnType === "Sponsor Buyout" || txnType === "Take Private") && !/committed\s+financing|fully\s+financed/i.test(text)) { pct -= 7; drivers.push("Financing not yet confirmed"); }
 
   // Process risk to THIS buyer.
-  if (competingBidders.length > 0) pct -= 6;
+  if (competingBidders.length > 0) { pct -= 6; drivers.push("Competing bid in the process"); }
 
   pct = Math.max(8, Math.min(99, Math.round(pct)));
   const [label, color] =
     pct >= 85 ? ["High", "#34d399"] :
     pct >= 65 ? ["Likely", "#52b0c8"] :
     pct >= 45 ? ["Contested", "#fbbf24"] : ["Speculative", "#f87171"];
-  return { pct, label, color };
+  return { pct, label, color, drivers: drivers.slice(0, 4) };
 }
 
 // ── Capital transmission — how capital moves because of the deal ───────────────
@@ -588,7 +617,7 @@ const CROSS_SECTOR: Record<string, string> = {
 
 function buildCapitalTransmission(deal: MADeal, text: string, tags: string[], txnType: string,
   roles: SectorRoles | undefined, premium: string | null, dealValue: string | null,
-  keep: (a: string[]) => string[]): DealIntel["capitalTransmission"] {
+  buyer: string | null, seed: number, keep: (a: string[]) => string[]): DealIntel["capitalTransmission"] {
   const chain =
     TRANSMISSION_CHAINS[tags.find(t => TRANSMISSION_CHAINS[t]) ?? ""] ??
     [`${deal.sector} consolidation sets a valuation marker`, "Scale leaders re-rate higher", "Sub-scale peers become acquisition targets", `Capital rotates toward ${deal.sector} consolidators`];
@@ -603,12 +632,111 @@ function buildCapitalTransmission(deal: MADeal, text: string, tags: string[], tx
   if (casualties.length) effects.push({ label: "Competitive Landscape", text: `Rivals (${casualties.join(", ")}) face a scaled competitor and may pursue their own deals` });
   if (dealValue && dealValue !== "Undisclosed") effects.push({ label: "Valuation", text: `Transaction multiple${premium ? ` (${premium.replace(/\s*premium/i, "")} premium)` : ""} re-rates comparable ${deal.sector} names` });
   effects.push({ label: "Capital Rotation", text: txnType === "Sponsor Buyout" || txnType === "Take Private"
-    ? "Validates private-market marks; rotation into remaining take-private candidates"
-    : `Rotation toward consolidation winners in ${deal.sector}` });
+    ? pick(["Validates private-market marks; remaining take-private candidates re-rate", "Flows tilt toward names screening as the next sponsor target", "Public discounts to private marks compress across the group"], seed >>> 5)
+    : pick([`Positioning concentrates in the ${deal.sector} scale winners`, `Flows favor the consolidators over the consolidated in ${deal.sector}`, `Index weight shifts toward the surviving ${deal.sector} platforms`], seed >>> 5) });
   const xs = CROSS_SECTOR[deal.sector];
   if (xs) effects.push({ label: "Cross-Sector", text: `Read-through into ${xs}` });
 
-  return { chain, beneficiaries, casualties, effects: effects.slice(0, 5) };
+  const flow = {
+    acquirer: buyer ?? deal.peFirm ?? "Acquirer",
+    sector: deal.sector,
+    beneficiaries: beneficiaries.slice(0, 3),
+    pressured: casualties.slice(0, 3),
+    themes: tags.slice(0, 3),
+  };
+
+  return { chain, beneficiaries, casualties, effects: effects.slice(0, 5), flow };
+}
+
+// ── Argus Assessment — the research-note headline read ─────────────────────────
+// Three deal-specific sentences (why it matters / market signal / what to watch),
+// each seed-picked from attribute-gated pools so no two cards read alike. Purely
+// derived interpretation — labelled as such in the UI. Avoids the generic register
+// ("consolidation is accelerating", "capital rotates toward", "strengthens position").
+function buildArgusAssessment(deal: MADeal, p: {
+  buyer: string | null; target: string | null; dealValue: string | null;
+  txnType: string; rationale: string; status: string; sector: string;
+  themeTags: string[]; completion: DealIntel["completion"]; crossBorder: boolean;
+  sizeClass: DealIntel["sizeClass"]; competingBidders: string[]; premium: string | null;
+}): string {
+  const seed   = dealSeed(deal);
+  const actor  = p.buyer ?? deal.peFirm ?? "The acquirer";
+  const tgt    = p.target ?? `a ${p.sector.toLowerCase()} asset`;
+  const val    = p.dealValue && p.dealValue !== "Undisclosed" ? p.dealValue : null;
+  const lead   = p.themeTags[0] ?? null;
+  const sectorL = p.sector.toLowerCase();
+
+  // 1 — why it matters
+  let s1: string[];
+  if (p.txnType === "Take Private" || p.txnType === "Sponsor Buyout" || deal.peFirm) {
+    s1 = [
+      `${actor} is moving ${tgt} ${p.txnType === "Take Private" ? "off the public market" : "into private hands"}${val ? ` in a ${val} transaction` : ""}, a wager that ${sectorL} value is easier to build away from quarterly scrutiny.`,
+      `${val ? `${val} of ` : ""}private capital is being committed to ${tgt}, a reminder of how much dry powder is still hunting ${sectorL} assets.`,
+    ];
+  } else if (p.txnType === "Merger") {
+    s1 = [
+      `Folding ${actor} and ${tgt} together${val ? ` at a ${val} valuation` : ""} takes a direct competitor out of the ${sectorL} field.`,
+      `${actor} and ${tgt} are combining${val ? ` in a ${val} tie-up` : ""}, reshaping the ${sectorL} competitive map in one move.`,
+    ];
+  } else if (p.sizeClass === "mega" || p.sizeClass === "large") {
+    s1 = [
+      `${actor}'s ${val ? `${val} ` : ""}pursuit of ${tgt} ranks among the larger ${sectorL} transactions of the cycle, not a bolt-on.`,
+      `At ${val ?? "this scale"}, ${actor}'s bid for ${tgt} is a franchise-level ${sectorL} commitment.`,
+    ];
+  } else if (p.status === "Rumored") {
+    s1 = [
+      `Reports that ${actor} is circling ${tgt} are unconfirmed, but the strategic logic is concrete enough to move ${sectorL} peers.`,
+      `${actor}'s rumored interest in ${tgt} is early-stage, yet it flags where ${sectorL} acquirers are looking.`,
+    ];
+  } else {
+    s1 = [
+      `${actor} is acquiring ${tgt}${val ? ` for ${val}` : ""}, a ${p.rationale.toLowerCase()} move in ${sectorL}.`,
+      `${actor}'s purchase of ${tgt}${val ? ` at ${val}` : ""} is built around ${p.rationale.toLowerCase()}.`,
+    ];
+  }
+
+  // 2 — what signal it sends
+  const sig: Record<string, string[]> = {
+    "AI Infrastructure":         [`The read-through: owners of compute, power and data-center capacity can increasingly name their price.`, `It is another data point that anything adjacent to AI compute is bought for control, not yield.`],
+    "Cloud Security":            [`It tells the market that platform vendors mean to absorb point solutions before AI rewrites the security stack.`, `The signal is security budgets consolidating onto fewer platforms.`],
+    "Semiconductor Sovereignty": [`It underlines that supply-chain control now outranks unit cost in silicon.`, `The message: capital is chasing domestic chip supply over the cheapest supply.`],
+    "Defense Consolidation":     [`It reads as positioning for a multi-year defense spending cycle.`, `The signal: backlog and program access are worth paying up for.`],
+    "Energy Transition":         [`It marks continued repricing of grid, storage and clean-generation assets.`, `The read-through is that electrification infrastructure is being locked up early.`],
+    "Healthcare Consolidation":  [`It points to large-cap buyers refilling pipelines through the balance sheet rather than the lab.`, `The signal: pipeline access is beating organic R&D timelines.`],
+    "Energy Infrastructure":     [`It says energy-security assets are being secured ahead of the next price cycle.`, `The read is that midstream and LNG control carries a strategic premium.`],
+  };
+  let s2: string[];
+  if (lead && sig[lead]) s2 = sig[lead];
+  else if (p.competingBidders.length) s2 = [`A contested process says the asset is scarce — ${p.competingBidders[0]} is circling the same target.`, `Rival interest points to genuine scarcity rather than opportunism.`];
+  else if (p.crossBorder) s2 = [`Reaching across borders for this asset suggests the strategic gap could not be filled at home.`, `A cross-border structure signals willingness to take review risk to reach the target.`];
+  else s2 = [`It signals ${sectorL} buyers are willing to act while financing and valuations align.`, `The takeaway: strategic buyers view the current ${sectorL} entry point as attractive.`];
+
+  // 3 — what to watch next
+  let s3: string[];
+  if (p.status === "Regulatory Review") s3 = [`Watch the antitrust calendar — a remedy package is the swing factor on whether it closes.`, `The next tell is regulators' posture; a forced divestiture would reshape the economics.`];
+  else if (p.status === "Rumored" || p.status === "Negotiating") s3 = [`Watch for a definitive agreement or a counter-bid before terms firm up.`, `What matters next is whether talks convert to a signed deal or draw a rival.`];
+  else if (p.competingBidders.length) s3 = [`Watch whether ${p.competingBidders[0]} returns with a topping offer.`, `The open question is whether a higher bid forces the price up.`];
+  else if (p.completion.pct >= 85) s3 = [`With approvals and financing largely in hand, attention turns to integration and the read-through for sector rivals.`, `Close looks routine; the next move is in the peers it puts in play.`];
+  else s3 = [`Watch the path to a shareholder vote and how comparable names trade once terms are public.`, `The next signal is in how the peer group re-rates against the print.`];
+
+  const out = `${pick(s1, seed)} ${pick(s2, seed >>> 3)} ${pick(s3, seed >>> 6)}`;
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
+// Market impact — winners / losers / re-rating / follow-on targets, from sector
+// roles. Tickers framed as potential read-through, not claimed involvement.
+function buildMarketImpact(deal: MADeal, roles: SectorRoles | undefined, keep: (a: string[]) => string[],
+  beneficiaries: string[], casualties: string[], premium: string | null, dealValue: string | null, seed: number): DealIntel["marketImpact"] {
+  const followOn = roles
+    ? [...keep(roles.secondOrder), ...keep(roles.competitors).slice(2)].filter((v, i, a) => a.indexOf(v) === i).slice(0, 3)
+    : [];
+  const marker = premium ? `${premium.replace(/\s*premium/i, "")} premium` : (dealValue && dealValue !== "Undisclosed" ? `${dealValue} price` : "terms");
+  const rerating = pick([
+    `Comparable ${deal.sector} names re-rate against the deal's ${marker}.`,
+    `The print resets the valuation floor for listed ${deal.sector} peers.`,
+    `Public ${deal.sector} multiples mark to this transaction.`,
+  ], seed >>> 9);
+  return { winners: beneficiaries.slice(0, 3), losers: casualties.slice(0, 3), rerating, followOn };
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────────
@@ -657,16 +785,23 @@ export function enrichDeal(deal: MADeal, ctx: DealContext = {}): DealIntel {
   const dynamicSections = buildDynamicSections(deal, text, {
     status, txnType, crossBorder, country, financing, financingDetail, competingBidders, synergies, sizeClass, ctx,
   });
+  const seed = dealSeed(deal);
   const completion = computeCompletion(deal, text, status, txnType, financing, sizeClass, crossBorder, competingBidders);
-  const capitalTransmission = buildCapitalTransmission(deal, text, themeTags, txnType, roles, premium, dealValue, keep);
+  const capitalTransmission = buildCapitalTransmission(deal, text, themeTags, txnType, roles, premium, dealValue, buyer, seed, keep);
+  const marketImpact = buildMarketImpact(deal, roles, keep, capitalTransmission.beneficiaries, capitalTransmission.casualties, premium, dealValue, seed);
+  const argusAssessment = buildArgusAssessment(deal, {
+    buyer, target, dealValue, txnType, rationale, status, sector: deal.sector,
+    themeTags, completion, crossBorder, sizeClass, competingBidders, premium,
+  });
 
   return {
     dealValue, buyer, target, financing, crossBorder, advisors, advisorSides,
     premium, synergies, country, competingBidders, financingDetail, economics, themeTags,
     sizeClass, sizeLabel, featured,
+    argusAssessment, marketImpact,
     status, statusColor: STATUS_COLORS[status] ?? "#52b0c8", txnType, rationale,
     rationaleBullets:   rationaleBullets(deal, text, country, synergies, txnType),
-    whyNowBullets:      whyNowBullets(text, rationale, txnType, ctx),
+    whyNowBullets:      whyNowBullets(text, rationale, txnType, ctx, seed),
     implicationBullets: implicationBullets(buyer, deal, roles, keep, txnType),
     whatNextBullets:    whatNextBullets(status, deal, readThrough, financing != null || financingDetail.length > 0),
     dynamicSections,
@@ -674,6 +809,37 @@ export function enrichDeal(deal: MADeal, ctx: DealContext = {}): DealIntel {
     timeline: buildTimeline(status, text),
     completion, capitalTransmission,
   };
+}
+
+// ── M&A market regime — what the deal tape is signaling, before any single deal ──
+
+export interface RegimeMetric { label: string; display: string; pct: number; color: string; hint: string }
+
+/** Six compact indicators summarising the current deal set. One pass; average
+ *  completion is the mean of the per-deal inferred estimates. */
+export function buildMarketRegime(deals: MADeal[], ctx: DealContext = {}): RegimeMetric[] {
+  if (deals.length === 0) return [];
+  let strat = 0, spon = 0, rumor = 0, xborder = 0, mega = 0, compSum = 0;
+  for (const d of deals) {
+    const intel = enrichDeal(d, ctx);
+    if (d.dealType === "sponsor" || d.peFirm) spon++;
+    else if (d.dealType !== "withdrawn" && d.dealType !== "rumored") strat++;
+    if (d.dealType === "rumored" || intel.status === "Rumored") rumor++;
+    if (intel.crossBorder) xborder++;
+    if (intel.sizeClass === "mega" || intel.sizeClass === "large") mega++;
+    compSum += intel.completion.pct;
+  }
+  const n = deals.length;
+  const pctOf = (x: number) => Math.round((x / n) * 100);
+  const avg = Math.round(compSum / n);
+  return [
+    { label: "Strategic Buyers", display: `${strat}`,          pct: pctOf(strat),   color: "#52b0c8", hint: "corporate acquirers" },
+    { label: "Sponsor Activity", display: `${spon}`,           pct: pctOf(spon),    color: "#a78bfa", hint: "PE buyouts & take-privates" },
+    { label: "Rumor Flow",       display: `${rumor}`,          pct: pctOf(rumor),   color: "#fbbf24", hint: "unconfirmed / exploring" },
+    { label: "Cross-Border",     display: `${pctOf(xborder)}%`, pct: pctOf(xborder), color: "#fb923c", hint: "share with foreign angle" },
+    { label: "Mega / Large",     display: `${mega}`,           pct: pctOf(mega),    color: "#34d399", hint: "≥ $5B disclosed" },
+    { label: "Avg. Completion",  display: `${avg}%`,           pct: avg,            color: avg >= 70 ? "#34d399" : avg >= 50 ? "#fbbf24" : "#f87171", hint: "mean inferred probability" },
+  ];
 }
 
 /** Largest deals (by extracted, disclosed value) for the sidebar. */
