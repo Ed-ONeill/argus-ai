@@ -7,12 +7,10 @@ import { useSaved } from "@/hooks/useSaved";
 import { useFeedFreshness } from "@/hooks/useFeedFreshness";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { useMarketState } from "@/hooks/useMarketState";
-import { MorningBriefing } from "@/components/feed/MorningBriefing";
 import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
 import { ClusterStream } from "@/components/feed/ClusterStream";
 import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
-import { IntelligenceStrip } from "@/components/feed/IntelligenceStrip";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
@@ -24,17 +22,16 @@ import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from 
 import { formatRelativeAge } from "@/lib/utils";
 import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
 
-// Heavy / non-critical pieces kept out of the feed's First Load JS. The two
-// theme overlays only mount on user interaction; the transmission hero is small
-// and the feed is fully client-rendered (data from react-query), so a lazy chunk
-// costs nothing while keeping First Load lean.
-const MarketTransmission = dynamic(
-  () => import("@/components/feed/MarketTransmission").then(m => m.MarketTransmission),
+// Heavy / non-critical pieces kept out of the feed's First Load JS. The Argus
+// Market Map (the hero) carries the interactive graph engine, so it is lazily
+// chunked and only mounts client-side; the feed is fully client-rendered.
+const ArgusMarketMap = dynamic(
+  () => import("@/components/feed/ArgusMarketMap").then(m => m.ArgusMarketMap),
   {
     ssr: false,
     loading: () => (
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5" aria-hidden>
-        <div className="w-full h-[306px] rounded-xl animate-pulse"
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-5" aria-hidden>
+        <div className="w-full h-[480px] rounded-xl animate-pulse"
           style={{ background: "#0e1424", border: "1px solid rgba(255,255,255,0.06)" }} />
       </div>
     ),
@@ -253,17 +250,29 @@ export default function FeedPage() {
           onLoad={() => refresh(false)}
         />
 
-        {/* ── Market Transmission — Feed hero ───────────────────────────────
-            Live, structured lane graph: Macro Drivers → Themes → Sectors →
-            Companies, with weighted direction-colored flow. Clicking a node
-            opens the theme intelligence drawer. */}
-        <MarketTransmission
+        {/* ── Argus Market Map — Feed hero ──────────────────────────────────
+            Interactive capital-transmission map (Macro Driver → Theme → Sector →
+            Assets) on the reusable graph engine, plus Today's Market Story desk
+            note. Hover traces a transmission path; click pins + re-centres. */}
+        <ArgusMarketMap
           themes={personalizedThemes}
-          brief={data?.market_brief}
-          regime={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
+          snapshot={{
+            riskRegime: ms.riskRegime,
+            volRegime: ms.volRegime,
+            regimeLabel: ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined,
+          }}
           isLoading={isLoading}
-          onSelectTheme={(t) => setSelectedTheme(t)}
         />
+
+        {/* ── What Matters Now — the map, decoded (explanation layer) ──────── */}
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+          <WhatMattersNow
+            items={personalizedWmn}
+            isLoading={isLoading}
+            themes={personalizedThemes}
+            marketIntensity={ms.atmosphereIntensity}
+          />
+        </div>
 
         {/* Atmospheric continuity — field pressure color bleeds into intelligence feed */}
         <div aria-hidden className="w-full h-7 pointer-events-none"
@@ -276,28 +285,8 @@ export default function FeedPage() {
             } 0%, transparent 100%)`,
           }} />
 
-        {/* ── Intelligence feed ────────────────────────────────────────────── */}
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-14 relative">
-
-          {/* ── Morning Briefing — intelligence anchor ────────────────── */}
-          <MorningBriefing
-            brief={data?.market_brief}
-            isLoading={isLoading}
-          />
-
-          {/* ── Narrative pressure themes ──────────────────────────────── */}
-          <WhatMattersNow
-            items={personalizedWmn}
-            isLoading={isLoading}
-            themes={personalizedThemes}
-            marketIntensity={ms.atmosphereIntensity}
-            trendLabel={ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined}
-          />
-
-          {/* ── Intelligence strip — leaderboard + change feed ─────────── */}
-          {!isLoading && themes.length > 0 && (
-            <IntelligenceStrip themes={themes} prefs={prefs} />
-          )}
+        {/* ── Live Market Stream ───────────────────────────────────────────── */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-1 pb-14 relative">
 
           {/* ── Category filter strip ──────────────────────────────────── */}
           <FilterChips

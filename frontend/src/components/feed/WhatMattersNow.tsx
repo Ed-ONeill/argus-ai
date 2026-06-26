@@ -3,453 +3,194 @@
 import { motion } from "framer-motion";
 import { catColor } from "@/lib/utils";
 import { classifyImpact } from "@/lib/types";
+import { transmissionPath, themeWatch } from "@/lib/themeTransmission";
+import { cleanThemeName } from "@/app/markets/marketsShared";
 import type { WhatMattersNowItem, ThemeIntelligence } from "@/lib/types";
+
+/**
+ * WhatMattersNow — the explanation layer for the Argus Market Map.
+ *
+ * Each card decodes one live signal into a scannable transmission read:
+ * theme · conviction · market impact · driver→sector path · affected tickers ·
+ * why it matters · what to watch. Reuses the map's transmission derivations so
+ * the two sections speak the same language. Concise, dense, non-repetitive.
+ */
 
 interface WhatMattersNowProps {
   items:            WhatMattersNowItem[];
   isLoading:        boolean;
   themes?:          ThemeIntelligence[];
-  marketIntensity?: number;   // 0-1 from useMarketState.atmosphereIntensity
-  trendLabel?:      string;   // e.g. "Risk-on strengthening"
+  marketIntensity?: number;
 }
 
-// Institutional dark-mode category colors — kept readable/strong (no longer
-// desaturated), aligned with the Markets workstation so signals actually pop.
 const CAT_DARK: Record<string, string> = {
-  "#2563EB": "#4f8cf0",   // markets blue
-  "#7C3AED": "#a07cf0",   // M&A purple
-  "#DC2626": "#f87171",   // red
-  "#0891B2": "#38bdf8",   // teal/cyan
-  "#D97706": "#fbbf24",   // amber
+  "#2563EB": "#4f8cf0", "#7C3AED": "#a07cf0", "#DC2626": "#f87171",
+  "#0891B2": "#38bdf8", "#D97706": "#fbbf24",
 };
+const mutedColor = (hex: string): string => CAT_DARK[hex] ?? "#7e8db0";
+const pressureColor = (score: number, base: string): string => score >= 78 ? base : score >= 52 ? "#fbbf24" : "#64748b";
 
-function mutedColor(brightHex: string): string {
-  return CAT_DARK[brightHex] ?? "#7e8db0";
-}
-
-function pressureBarColor(score: number, baseColor: string): string {
-  if (score >= 78) return baseColor;
-  if (score >= 52) return "#fbbf24";   // amber
-  return "#64748b";                    // slate
-}
-
-const DIRECTION_CONFIG = {
-  bullish: { label: "Risk-On",  color: "#34d399" },   // emerald
-  bearish: { label: "Risk-Off", color: "#f87171" },   // red
-  mixed:   { label: "Mixed",    color: "#fbbf24" },   // amber
+const DIR = {
+  bullish: { label: "Risk-On",  color: "#34d399" },
+  bearish: { label: "Risk-Off", color: "#f87171" },
+  mixed:   { label: "Mixed",    color: "#fbbf24" },
 } as const;
+type Dir = keyof typeof DIR;
 
-function buildThemeMap(
-  items:  WhatMattersNowItem[],
-  themes: ThemeIntelligence[],
-): Record<string, ThemeIntelligence> {
+function buildThemeMap(items: WhatMattersNowItem[], themes: ThemeIntelligence[]): Record<string, ThemeIntelligence> {
   const map: Record<string, ThemeIntelligence> = {};
   if (!themes.length) return map;
   for (const item of items) {
-    const id = item.cluster.id;
     const matched = themes
-      .filter(t => t.contributing_cluster_ids.includes(id))
+      .filter(t => t.contributing_cluster_ids.includes(item.cluster.id))
       .sort((a, b) => b.confidence - a.confidence);
-    if (matched.length > 0) map[id] = matched[0];
+    if (matched.length) map[item.cluster.id] = matched[0];
   }
   return map;
 }
 
-export function WhatMattersNow({ items, isLoading, themes, marketIntensity, trendLabel }: WhatMattersNowProps) {
+function directionOf(item: WhatMattersNowItem, theme?: ThemeIntelligence): Dir {
+  if (theme) return theme.momentum_direction === "bullish" ? "bullish" : theme.momentum_direction === "bearish" ? "bearish" : "mixed";
+  const s = classifyImpact(item.cluster.primary.impact ?? "");
+  return s === "bullish" ? "bullish" : s === "bearish" ? "bearish" : "mixed";
+}
+
+export function WhatMattersNow({ items, isLoading, themes, marketIntensity }: WhatMattersNowProps) {
   if (isLoading) return <WhatMattersNowSkeleton />;
   if (!items.length) return null;
 
-  const themeMap = buildThemeMap(items, themes ?? []);
-  // Pulse faster when markets are active (3.0s neutral → ~2.2s at high intensity)
-  const pulseDur = marketIntensity
-    ? Math.max(2.2, 3.0 - (marketIntensity - 0.38) * 1.4)
-    : 3.0;
+  const top = items.slice(0, 6);
+  const themeMap = buildThemeMap(top, themes ?? []);
+  const pulseDur = marketIntensity ? Math.max(2.2, 3.0 - (marketIntensity - 0.38) * 1.4) : 3.0;
 
-  function scrollToCluster(clusterId: string) {
-    const el = document.querySelector(`[data-cluster-id="${clusterId}"]`);
+  const scrollToCluster = (id: string) => {
+    const el = document.querySelector(`[data-cluster-id="${id}"]`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
-  const [primary, ...rest] = items;
+  };
 
   return (
-    <section className="mb-14">
-      {/* Section header */}
-      <div className="flex items-center gap-3 mb-4">
+    <section className="mb-9">
+      <div className="flex items-center gap-3 mb-3">
         <div className="flex items-center gap-2 shrink-0">
-          <motion.span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ background: "rgba(180,140,70,0.72)" }}
-            animate={{ opacity: [1, 0.35, 1] }}
-            transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }}
-          />
-          <span
-            className="text-[11px] font-semibold uppercase"
-            style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}
-          >
-            What Matters Now
-          </span>
+          <motion.span className="w-2 h-2 rounded-full shrink-0" style={{ background: "rgba(180,140,70,0.72)" }}
+            animate={{ opacity: [1, 0.35, 1] }} transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }} />
+          <span className="text-[11px] font-semibold uppercase" style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}>What Matters Now</span>
         </div>
-        <div
-          className="flex-1 h-px"
-          style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }}
-        />
-        <span
-          className="text-[9.5px] font-medium shrink-0"
-          style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.55)" }}
-        >
-          {trendLabel ?? "Signal Pressure"}
-        </span>
+        <span className="text-[9px] font-medium hidden sm:inline" style={{ color: "rgba(255,255,255,0.36)" }}>the map, decoded</span>
+        <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }} />
+        <span className="text-[9.5px] font-medium shrink-0" style={{ letterSpacing: "0.08em", color: "rgba(255,255,255,0.5)" }}>Signal Pressure</span>
       </div>
 
-      {/* Mobile: horizontal scroll */}
-      <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden">
-        {items.map((item, idx) => (
-          <WMNCard
-            key={item.cluster.id}
-            item={item}
-            index={idx}
-            matchedTheme={themeMap[item.cluster.id]}
-            onClick={() => scrollToCluster(item.cluster.id)}
-          />
-        ))}
+      {/* Mobile: horizontal scroll; desktop: dense grid */}
+      <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory md:hidden -mx-1 px-1">
+        {top.map((item, i) => <SignalCard key={item.cluster.id} item={item} index={i} theme={themeMap[item.cluster.id]} onClick={() => scrollToCluster(item.cluster.id)} mobile />)}
       </div>
-
-      {/* Desktop: primary driver + 4-card grid */}
-      <div className="hidden md:flex md:flex-col gap-3.5">
-        {primary && (
-          <PrimaryDriverCard
-            item={primary}
-            matchedTheme={themeMap[primary.cluster.id]}
-            onClick={() => scrollToCluster(primary.cluster.id)}
-          />
-        )}
-        {rest.length > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {rest.map((item, idx) => (
-              <WMNCard
-                key={item.cluster.id}
-                item={item}
-                index={idx + 1}
-                matchedTheme={themeMap[item.cluster.id]}
-                onClick={() => scrollToCluster(item.cluster.id)}
-              />
-            ))}
-          </div>
-        )}
+      <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 gap-2.5">
+        {top.map((item, i) => <SignalCard key={item.cluster.id} item={item} index={i} theme={themeMap[item.cluster.id]} onClick={() => scrollToCluster(item.cluster.id)} />)}
       </div>
     </section>
   );
 }
 
+function SignalCard({ item, index, theme, onClick, mobile }: { item: WhatMattersNowItem; index: number; theme?: ThemeIntelligence; onClick: () => void; mobile?: boolean }) {
+  const p = item.cluster.primary;
+  const color = mutedColor(catColor(p.category));
+  const signal = Math.round(p.signal_score ?? 0);
+  const barColor = pressureColor(signal, color);
+  const dir = directionOf(item, theme);
+  const dc = DIR[dir];
+  const conviction = Math.round(theme?.confidence ?? signal);
 
-// ── Primary driver banner (desktop rank-1) ────────────────────────────────────
-
-function PrimaryDriverCard({
-  item, onClick, matchedTheme,
-}: { item: WhatMattersNowItem; onClick: () => void; matchedTheme?: ThemeIntelligence }) {
-  const { cluster, thesis, wmn_label } = item;
-  const p              = cluster.primary;
-  const color          = mutedColor(catColor(p.category));
-  const score          = Math.round(p.signal_score ?? 0);
-  const barColor       = pressureBarColor(score, color);
-  const sentiment      = classifyImpact(p.impact ?? "");
-  const dirConfig      = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
-  // Prefer corroboration evidence (confirming sources) over a single cluster's count.
-  const storyLabel     = (item.source_count ?? 0) >= 2
-    ? `${item.source_count} sources confirming`
-    : cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
-  const accentOpacity  = 0.30 + (score / 100) * 0.60;
+  const name = theme ? cleanThemeName(theme.name) : item.wmn_label;
+  const path = theme ? transmissionPath(theme) : { driver: p.category, sector: null, tickers: [] };
+  const why = item.thesis || theme?.causal_narrative || "";
+  const watch = theme ? themeWatch(theme) : null;
 
   return (
     <motion.button
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.22, 0, 0.36, 1] }}
-      whileHover={{ y: -1, transition: { duration: 0.18 } }}
+      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index, 6) * 0.05, duration: 0.3, ease: [0.22, 0, 0.36, 1] }}
+      whileHover={{ y: -1, transition: { duration: 0.16 } }}
       onClick={onClick}
-      className="w-full text-left relative overflow-hidden"
-      style={{
-        background:    "#111827",                          // Markets elevated panel
-        borderRadius:  "12px",
-        borderTop:     "1px solid rgba(255,255,255,0.07)",
-        borderRight:   "1px solid rgba(255,255,255,0.06)",
-        borderBottom:  "1px solid rgba(255,255,255,0.07)",
-      }}
+      className={`relative overflow-hidden text-left flex flex-col rounded-[10px] snap-start ${mobile ? "w-[250px] flex-shrink-0" : ""}`}
+      style={{ background: "#0d1322", borderTop: "1px solid rgba(255,255,255,0.06)", borderRight: "1px solid rgba(255,255,255,0.045)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
     >
-      {/* Left ambient glow from category color */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{ background: `radial-gradient(ellipse at left center, ${color}18 0%, transparent 62%)` }}
-      />
+      <span className="absolute left-0 top-0 bottom-0 w-[2.5px]" style={{ background: dc.color, opacity: 0.28 + (signal / 100) * 0.5 }} />
+      <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at left top, ${dc.color}0e 0%, transparent 58%)` }} />
 
-      {/* Left vertical accent bar — breathing for high-pressure signals */}
-      {score >= 80 ? (
-        <motion.div
-          animate={{ opacity: [accentOpacity, Math.min(accentOpacity + 0.22, 1), accentOpacity] }}
-          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute left-0 top-0 bottom-0 w-[3px]"
-          style={{ background: color }}
-        />
-      ) : (
-        <div
-          className="absolute left-0 top-0 bottom-0 w-[3px]"
-          style={{ background: color, opacity: accentOpacity }}
-        />
-      )}
+      <div className="relative pl-4 pr-3.5 pt-3 pb-3 flex flex-col gap-2">
+        {/* theme + conviction */}
+        <div className="flex items-start gap-2">
+          <span className="text-[13.5px] font-bold leading-snug line-clamp-2 flex-1 min-w-0" style={{ color: "rgba(255,255,255,0.9)" }}>{name}</span>
+          <span className="shrink-0 flex flex-col items-end leading-none">
+            <span className="text-[16px] font-black tabular-nums" style={{ color: pressureColor(conviction, color) }}>{conviction}</span>
+            <span className="text-[7px] font-bold uppercase tracking-wider mt-0.5" style={{ color: "rgba(255,255,255,0.34)" }}>Conviction</span>
+          </span>
+        </div>
 
-      {/* Content */}
-      <div className="pl-5 pr-4 pt-4 pb-4 flex flex-col gap-2">
-
-        {/* Top row */}
+        {/* market impact + signal pressure */}
         <div className="flex items-center gap-2">
-          <span
-            className="text-[8.5px] font-bold uppercase shrink-0"
-            style={{ letterSpacing: "0.14em", color }}
-          >
-            {p.category}
-          </span>
-          {dirConfig && (
-            <span className="text-[9.5px] font-semibold shrink-0" style={{ color: dirConfig.color }}>
-              {dirConfig.label}
-            </span>
-          )}
-          <span className="ml-auto text-[10px] shrink-0" style={{ color: "rgba(255,255,255,0.34)" }}>
-            {storyLabel}
-          </span>
+          <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0" style={{ color: dc.color, background: `${dc.color}1a` }}>{dc.label}</span>
+          <div className="flex-1 h-[2px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+            <motion.div className="h-full rounded-full" initial={{ width: 0 }} animate={{ width: `${signal}%` }} transition={{ duration: 0.7, ease: "easeOut", delay: 0.15 }} style={{ background: barColor }} />
+          </div>
+          <span className="text-[9.5px] font-bold tabular-nums shrink-0" style={{ color: barColor }}>{signal}</span>
         </div>
 
-        {/* Title */}
-        <p className="font-bold leading-snug" style={{ fontSize: "17px", color: "rgba(255,255,255,0.93)" }}>
-          {wmn_label}
-        </p>
+        {/* transmission path */}
+        <div className="flex items-center gap-1.5 flex-wrap text-[10px] leading-none">
+          <span className="text-[7px]" style={{ color: dc.color }}>◆</span>
+          <span className="font-semibold truncate max-w-[110px]" style={{ color: "rgba(255,255,255,0.62)" }} title={path.driver}>{path.driver}</span>
+          {path.sector && <>
+            <span style={{ color: "rgba(255,255,255,0.28)" }}>→</span>
+            <span className="font-semibold" style={{ color: "rgba(255,255,255,0.74)" }}>{path.sector}</span>
+          </>}
+        </div>
 
-        {/* Thesis */}
-        {thesis && (
-          <p
-            className="line-clamp-2 leading-relaxed"
-            style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.58)" }}
-          >
-            {thesis}
-          </p>
+        {/* affected tickers */}
+        {path.tickers.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {path.tickers.map(tk => (
+              <span key={tk} className="text-[9.5px] font-mono font-bold px-1 py-px rounded" style={{ color: dc.color, background: `${dc.color}14` }}>{tk}</span>
+            ))}
+          </div>
         )}
 
-        {/* Pressure bar */}
-        <div className="flex items-center gap-2 mt-0.5">
-          <div
-            className="flex-1 overflow-hidden"
-            style={{ height: "2px", borderRadius: "1px", background: "rgba(255,255,255,0.06)" }}
-          >
-            <motion.div
-              style={{ height: "100%", background: barColor }}
-              initial={{ width: 0 }}
-              animate={{ width: `${score}%` }}
-              transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
-            />
-          </div>
-          <span className="tabular-nums font-bold" style={{ fontSize: "11px", color: barColor }}>
-            {score}
-          </span>
-        </div>
+        {/* why */}
+        {why && <p className="text-[10.5px] leading-snug line-clamp-2" style={{ color: "rgba(255,255,255,0.52)" }}>{why}</p>}
 
-        {/* Theme tag */}
-        {matchedTheme && (
-          <div className="flex items-center gap-1.5" style={{ marginTop: "2px" }}>
-            <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.32)" }}>Theme:</span>
-            <span
-              className="truncate"
-              style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.50)", maxWidth: "200px" }}
-            >
-              {matchedTheme.name}
-            </span>
-            {matchedTheme.confidence_label && (
-              <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.28)" }}>
-                · {matchedTheme.confidence_label}
-              </span>
-            )}
-          </div>
+        {/* what to watch */}
+        {watch && (
+          <p className="text-[9.5px] leading-snug flex items-start gap-1" style={{ color: "rgba(255,255,255,0.42)" }}>
+            <span className="font-bold uppercase tracking-wide shrink-0" style={{ color: `${dc.color}c0` }}>Watch</span>
+            <span className="truncate">{watch}</span>
+          </p>
         )}
       </div>
     </motion.button>
   );
 }
-
-
-// ── Theme card (ranks 2-5) ────────────────────────────────────────────────────
-
-function WMNCard({
-  item, index, onClick, matchedTheme,
-}: { item: WhatMattersNowItem; index: number; onClick: () => void; matchedTheme?: ThemeIntelligence }) {
-  const { cluster, thesis, wmn_label, rank } = item;
-  const p              = cluster.primary;
-  const color          = mutedColor(catColor(p.category));
-  const score          = Math.round(p.signal_score ?? 0);
-  const barColor       = pressureBarColor(score, color);
-  // Prefer corroboration evidence (confirming sources) over a single cluster's count.
-  const storyLabel     = (item.source_count ?? 0) >= 2
-    ? `${item.source_count} sources confirming`
-    : cluster.story_count === 1 ? "1 story" : `${cluster.story_count} stories`;
-  const sentiment      = classifyImpact(p.impact ?? "");
-  const dirConfig      = sentiment !== "neutral" ? DIRECTION_CONFIG[sentiment as keyof typeof DIRECTION_CONFIG] : null;
-  const accentOpacity  = 0.25 + (score / 100) * 0.55;
-
-  return (
-    <motion.button
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.08, duration: 0.35, ease: [0.22, 0, 0.36, 1] }}
-      whileHover={{ y: -1, transition: { duration: 0.18 } }}
-      onClick={onClick}
-      className="snap-start flex-shrink-0 w-[210px] md:w-auto text-left relative overflow-hidden flex flex-col"
-      style={{
-        // Secondary tier — a dimmer panel than the #111827 primary banner so the
-        // four sub-cards clearly recede and don't read as duplicate primaries.
-        background:    "#0D1322",
-        borderRadius:  "10px",
-        borderTop:     "1px solid rgba(255,255,255,0.055)",
-        borderRight:   "1px solid rgba(255,255,255,0.04)",
-        borderBottom:  "1px solid rgba(255,255,255,0.055)",
-      }}
-    >
-      {/* Left vertical accent bar */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-[2px]"
-        style={{ background: color, opacity: accentOpacity }}
-      />
-
-      {/* Dim rank indicator */}
-      <span
-        className="absolute top-2.5 right-3 tabular-nums font-bold"
-        style={{ fontSize: "9px", color: "rgba(255,255,255,0.15)" }}
-      >
-        {rank}
-      </span>
-
-      {/* Content */}
-      <div className="pl-4 pr-4 pt-3 pb-3 flex flex-col flex-1 gap-1.5">
-
-        {/* Title */}
-        <p
-          className="font-bold leading-snug line-clamp-2"
-          style={{ fontSize: "13.5px", color: "rgba(255,255,255,0.88)", paddingRight: "14px" }}
-        >
-          {wmn_label}
-        </p>
-
-        {/* Thesis */}
-        {thesis ? (
-          <p
-            className="line-clamp-2 leading-relaxed flex-1"
-            style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.52)" }}
-          >
-            {thesis}
-          </p>
-        ) : (
-          <div className="flex-1" />
-        )}
-
-        {/* Pressure bar */}
-        <div className="flex items-center gap-2 mt-1">
-          <div
-            className="flex-1 overflow-hidden"
-            style={{ height: "2px", borderRadius: "1px", background: "rgba(255,255,255,0.05)" }}
-          >
-            <motion.div
-              style={{ height: "100%", background: barColor }}
-              initial={{ width: 0 }}
-              animate={{ width: `${score}%` }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.08 + 0.2 }}
-            />
-          </div>
-          <span className="tabular-nums font-bold" style={{ fontSize: "10px", color: barColor }}>
-            {score}
-          </span>
-        </div>
-
-        {/* Metadata row */}
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[10px] flex-1 min-w-0 truncate" style={{ color: "rgba(255,255,255,0.52)" }}>
-            {storyLabel}
-            <span className="mx-1 opacity-40">·</span>
-            <span className="font-semibold" style={{ color }}>{p.category}</span>
-          </span>
-          {dirConfig && (
-            <span
-              className="text-[9px] font-semibold leading-none shrink-0"
-              style={{ color: dirConfig.color }}
-            >
-              {dirConfig.label}
-            </span>
-          )}
-        </div>
-
-        {/* Theme tag */}
-        {matchedTheme && (
-          <div className="flex items-center gap-1 mt-0.5 min-w-0">
-            <span
-              className="truncate"
-              style={{ fontSize: "8.5px", color: "rgba(255,255,255,0.48)" }}
-              title={matchedTheme.name}
-            >
-              {matchedTheme.name}
-            </span>
-          </div>
-        )}
-
-      </div>
-    </motion.button>
-  );
-}
-
-
-// ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function WhatMattersNowSkeleton() {
   return (
-    <section className="mb-10">
+    <section className="mb-9">
       <div className="flex items-center gap-3 mb-3">
         <div className="h-2.5 w-32 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
         <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
       </div>
-      {/* Mobile skeleton */}
-      <div className="flex gap-2 overflow-x-auto md:hidden">
-        {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
-      </div>
-      {/* Desktop skeleton */}
-      <div className="hidden md:flex md:flex-col gap-2.5">
-        <div
-          className="relative overflow-hidden"
-          style={{ background: "rgba(7,12,24,0.94)", borderRadius: "10px" }}
-        >
-          <div className="absolute left-0 top-0 bottom-0 w-[3px] animate-pulse" style={{ background: "rgba(74,120,184,0.4)" }} />
-          <div className="pl-5 pr-4 py-3.5 space-y-2.5">
-            <div className="h-2.5 w-20 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
-            <div className="h-4 w-3/4 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
-            <div className="h-3 w-full rounded animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
-            <div className="h-[2px] w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.06)" }} />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="relative overflow-hidden rounded-[10px]" style={{ background: "rgba(8,12,22,0.9)" }}>
+            <div className="absolute left-0 top-0 bottom-0 w-[2.5px] animate-pulse" style={{ background: "rgba(74,120,184,0.3)" }} />
+            <div className="pl-4 pr-3.5 py-3 space-y-2">
+              <div className="h-3.5 w-3/4 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+              <div className="h-[2px] w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+              <div className="h-2.5 w-2/3 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+              <div className="h-2.5 w-full rounded animate-pulse" style={{ background: "rgba(255,255,255,0.04)" }} />
+            </div>
           </div>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
-        </div>
+        ))}
       </div>
     </section>
-  );
-}
-
-function SkeletonCard() {
-  return (
-    <div
-      className="flex-shrink-0 w-[210px] md:w-auto relative overflow-hidden"
-      style={{ background: "rgba(6,10,20,0.88)", borderRadius: "8px" }}
-    >
-      <div className="absolute left-0 top-0 bottom-0 w-[2px] animate-pulse" style={{ background: "rgba(74,120,184,0.3)" }} />
-      <div className="pl-4 pr-4 py-3 space-y-2">
-        <div className="h-3.5 w-full rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-        <div className="h-3 w-4/5 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-        <div className="h-[2px] w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-        <div className="h-2.5 w-3/4 rounded animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-      </div>
-    </div>
   );
 }

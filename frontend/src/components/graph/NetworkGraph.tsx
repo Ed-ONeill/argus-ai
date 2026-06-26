@@ -50,9 +50,17 @@ export interface NetworkGraphProps {
   /** Resolve a richer/recentred graph when a node is activated (domain adapter). */
   expand?: (node: GraphNode) => GraphModel | null;
   height?: number;
+  /** Header label (default "Argus Transmission Map"). */
+  title?: string;
+  /** Tag shown after the title (overrides the Capital Flow / Narrative tag). */
+  subtitle?: string;
+  /** Show the M&A timeline playback footer (default true). */
+  showTimeline?: boolean;
+  /** Show the role filter chips (default true). */
+  showFilters?: boolean;
 }
 
-export default function NetworkGraph({ model: rootModel, expand, height = 460 }: NetworkGraphProps) {
+export default function NetworkGraph({ model: rootModel, expand, height = 460, title = "Argus Transmission Map", subtitle, showTimeline = true, showFilters = true }: NetworkGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simRef = useRef<ForceSimulation | null>(null);
@@ -103,6 +111,7 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
     model.edges.forEach(e => e.themes?.forEach(t => s.add(t)));
     return [...s];
   }, [model]);
+  const presentRoles = useMemo(() => new Set(model.nodes.map(n => n.role).filter(Boolean) as RelationType[]), [model]);
 
   const variant: "narrative" | "capital" = model.id.startsWith("narrative") ? "narrative" : "capital";
   // The adapter now infers institutional transmission for every deal (even rumors),
@@ -483,9 +492,9 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
             <ChevronLeft size={12} />Back
           </button>
         )}
-        <span className="text-[8.5px] font-black uppercase tracking-[0.16em]" style={{ color: "rgba(82,176,200,0.85)" }}>Argus Transmission Map</span>
+        <span className="text-[8.5px] font-black uppercase tracking-[0.16em]" style={{ color: "rgba(82,176,200,0.85)" }}>{title}</span>
         <span className="text-[8px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ color: variant === "narrative" ? "#fb923c" : "#7cc7d8", background: variant === "narrative" ? "rgba(251,146,60,0.12)" : "rgba(82,176,200,0.12)" }}>
-          {variant === "narrative" ? "Narrative Propagation" : "Capital Flow"}
+          {subtitle ?? (variant === "narrative" ? "Narrative Propagation" : "Capital Flow")}
         </span>
         <span className="hidden sm:inline text-[8px] tabular-nums" style={{ color: "rgba(255,255,255,0.3)" }}>Signal Density {model.nodes.length}·{model.edges.length}</span>
         {!sparse && (
@@ -506,9 +515,9 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
       </div>
 
       {/* Filters + theme overlay */}
-      {!sparse && (
+      {!sparse && (showFilters || availableThemes.length > 0) && (
         <div className="flex items-center gap-1.5 px-3 py-2 border-b flex-wrap" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-          {FILTERS.map(f => (
+          {showFilters && FILTERS.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className="text-[9px] font-semibold px-1.5 py-0.5 rounded transition-colors"
               style={filter === f.key
@@ -629,15 +638,17 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
           </div>
         )}
 
-        {/* Legend + relationship-strength key */}
+        {/* Legend — only the relationship types actually present */}
         {!sparse && (
           <div className="absolute bottom-2 left-2 z-10 flex flex-wrap gap-x-2.5 gap-y-1 max-w-[58%]">
-            {(["acquirer", "target", "beneficiary", "competitor", "supplier", "second-order", "theme"] as RelationType[]).map(rt => (
-              <span key={rt} className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: RELATION_META[rt].color }} />
-                <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.42)" }}>{RELATION_META[rt].label}</span>
-              </span>
-            ))}
+            {(["acquirer", "target", "beneficiary", "competitor", "supplier", "second-order", "theme", "sector", "cross-sector", "capital-rotation"] as RelationType[])
+              .filter(rt => presentRoles.has(rt))
+              .map(rt => (
+                <span key={rt} className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: RELATION_META[rt].color }} />
+                  <span className="text-[8px]" style={{ color: "rgba(255,255,255,0.42)" }}>{RELATION_META[rt].label}</span>
+                </span>
+              ))}
           </div>
         )}
 
@@ -651,7 +662,7 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
       </div>
 
       {/* Timeline playback */}
-      {!sparse && (
+      {!sparse && showTimeline && (
         <div className="flex items-center gap-3 px-3 py-2 border-t" style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}>
           <button onClick={() => { if (stage >= TIMELINE_STAGES.length - 1) setStage(0); setPlaying(p => !p); }}
             className="flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-white/10" style={{ background: "rgba(82,176,200,0.14)", color: "#7cc7d8" }}>
