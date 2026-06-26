@@ -7,7 +7,8 @@
  */
 
 import type { MADeal } from "@/hooks/useMAIntelligence";
-import { tickerInfo, companyPeers, type DealIntel } from "@/lib/maIntelligence";
+import { tickerInfo, companyPeers, resolveSectorRoles, comparablesFor, type DealIntel } from "@/lib/maIntelligence";
+import { seedThemeFor, narrativeChain } from "@/lib/argusReasoning";
 import type { GraphModel, GraphNode, GraphEdge, RelationType } from "@/lib/graph/types";
 
 // Rough mega-cap set for the "mega-cap" filter (illustrative, not exhaustive).
@@ -18,7 +19,11 @@ function tickerFields(t: string): Partial<GraphNode> {
   return { ticker: t, name: info?.name, sector: info?.sector, exchange: info?.exchange, isPublic: !!info, megaCap: MEGA.has(t.toUpperCase()), recenterable: !!info };
 }
 
-/** Build the capital-transmission graph for a single deal. */
+/** Build the capital-transmission graph for a single deal.
+ *  Treats the network as an INTELLIGENCE PRODUCT: it infers sector relationships,
+ *  peers, suppliers, themes, narrative propagation, cross-border effects, capital
+ *  rotation and historical precedents so an announced deal renders a meaningful
+ *  network even when the headline names only a couple of entities. */
 export function buildDealGraph(deal: MADeal, intel: DealIntel): GraphModel {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -43,46 +48,99 @@ export function buildDealGraph(deal: MADeal, intel: DealIntel): GraphModel {
     link(centerId, id, "target", 1, 0, "Target");
   }
 
-  const secId = `sector:${deal.sector}`;
-  add({ id: secId, label: deal.sector, kind: "sector", role: "sector", stage: 1, reason: "Primary sector exposed to the transaction" });
+  // Resolve sector relationships by inference: literal sector → theme-implied sector.
+  const resolved = resolveSectorRoles(deal.sector, intel.themeTags);
+  const sectorName = deal.sector === "Other" && resolved ? resolved.sector : deal.sector;
+  const secId = `sector:${sectorName}`;
+  add({ id: secId, label: sectorName, kind: "sector", role: "sector", stage: 1, reason: "Primary sector exposed to the transaction" });
   link(centerId, secId, "sector", 0.7, 1, "Primary sector");
 
+  const exclude = new Set([intel.buyer, intel.target, ...deal.entities].filter(Boolean).map(s => (s as string).toUpperCase()));
+  const keep = (arr: string[]) => arr.filter(t => !exclude.has(t.toUpperCase()));
+  // Prefer the deal's own extracted read-through; fall back to inferred sector peers.
   const supGroup = intel.readThroughGroups.find(g => g.role === "Suppliers")?.tickers ?? [];
   const secondGroup = intel.readThroughGroups.find(g => g.role === "Second-order")?.tickers ?? [];
+  const beneficiaries = intel.capitalTransmission.beneficiaries.length ? intel.capitalTransmission.beneficiaries : resolved ? keep(resolved.beneficiaries).slice(0, 3) : [];
+  const competitors   = intel.capitalTransmission.casualties.length   ? intel.capitalTransmission.casualties   : resolved ? keep(resolved.competitors).slice(0, 3) : [];
+  const suppliers     = supGroup.length   ? supGroup   : resolved ? keep(resolved.suppliers).slice(0, 3) : [];
+  const secondOrder   = secondGroup.length ? secondGroup : resolved ? keep(resolved.secondOrder).slice(0, 2) : [];
 
-  intel.capitalTransmission.beneficiaries.forEach((t, i) => {
+  beneficiaries.forEach((t, i) => {
     const id = `co:${t}`;
     add({ id, label: t, kind: "company", role: "beneficiary", stage: 1, reason: "Likely beneficiary of the sector re-rate", confidence: 70 - i * 3, beneficiaryScore: 80 - i * 7, themes: intel.themeTags, ...tickerFields(t) });
     link(secId, id, "beneficiary", 0.88 - i * 0.08, 1, "Beneficiary", intel.themeTags);
   });
-  intel.capitalTransmission.casualties.forEach((t, i) => {
+  competitors.forEach((t, i) => {
     const id = `co:${t}`;
     add({ id, label: t, kind: "company", role: "competitor", stage: 2, reason: "Faces a newly-scaled competitor", confidence: 62 - i * 3, beneficiaryScore: 38 - i * 6, ...tickerFields(t) });
     link(secId, id, "competitor", 0.72 - i * 0.08, 2, "Competitor");
   });
-  supGroup.forEach((t, i) => {
+  suppliers.forEach((t, i) => {
     const id = `co:${t}`;
     add({ id, label: t, kind: "company", role: "supplier", stage: 2, reason: "Upstream supplier gaining order visibility", confidence: 56 - i * 3, beneficiaryScore: 60 - i * 6, ...tickerFields(t) });
     link(secId, id, "supplier", 0.6 - i * 0.07, 2, "Supplier");
   });
-  secondGroup.forEach((t, i) => {
+  secondOrder.forEach((t, i) => {
     const id = `co:${t}`;
     add({ id, label: t, kind: "company", role: "second-order", stage: 3, reason: "Second-order read-through", confidence: 48 - i * 3, beneficiaryScore: 52 - i * 6, ...tickerFields(t) });
     link(secId, id, "second-order", 0.45 - i * 0.06, 3, "Second-order");
   });
 
+  // When no named peers can be inferred (e.g. an unclassified sector), still render
+  // the capital-rotation path so any named deal produces a meaningful network.
+  if (beneficiaries.length === 0 && competitors.length === 0) {
+    const lane: [string, string, string][] = [
+      ["rot1", "Valuation reset", "The transaction sets a fresh valuation marker for the space"],
+      ["rot2", "Scale leaders re-rate", "Larger operators re-rate on consolidation optionality"],
+      ["rot3", "Sub-scale peers in play", "Smaller peers screen as the next acquisition targets"],
+    ];
+    let prev = secId;
+    lane.forEach(([id, label, reason], i) => {
+      add({ id, label, kind: "group", role: "capital-rotation", stage: i + 1, reason });
+      link(prev, id, "capital-rotation", 0.55 - i * 0.08, i + 1, "Capital rotation");
+      prev = id;
+    });
+  }
+
+  // Themes + narrative propagation chain (capital-rotation paths between narratives).
   intel.themeTags.forEach(th => {
     const id = `theme:${th}`;
     add({ id, label: th, kind: "theme", role: "theme", stage: 4, reason: "Active narrative connected to the deal — open to trace its propagation", themes: [th], recenterable: true });
     link(centerId, id, "theme", 0.5, 4, "Theme", [th]);
   });
+  const seed = seedThemeFor(deal, intel);
+  if (seed) {
+    const seedId = `theme:${seed}`;
+    if (!seen.has(seedId)) { add({ id: seedId, label: seed, kind: "theme", role: "theme", stage: 4, reason: "Narrative seed", themes: [seed], recenterable: true }); link(centerId, seedId, "theme", 0.5, 4, "Theme", [seed]); }
+    let prevId = seedId;
+    for (const step of narrativeChain(seed, 4)) {
+      const id = `theme:${step.to}`;
+      add({ id, label: step.to, kind: "theme", role: "theme", stage: 4, reason: `${step.relation} · ${step.rationale}`, themes: [step.to], recenterable: true });
+      link(prevId, id, "capital-rotation", Math.max(0.3, step.weight * 0.6), 4, `Capital rotation: ${step.rationale}`, [step.to]);
+      prevId = id;
+    }
+  }
 
+  // Cross-border geography effect.
+  if (intel.crossBorder) {
+    add({ id: "xborder", label: intel.country ? `${intel.country} · X-border` : "Cross-border", kind: "group", role: "cross-sector", stage: 2, crossBorder: true,
+      reason: intel.country ? `${intel.country} cross-border exposure — FX, foreign-investment review and repatriation` : "Cross-border structure adds review and FX considerations" });
+    link(centerId, "xborder", "cross-sector", 0.45, 2, "Cross-border effect");
+  }
+  // Cross-sector read-through effect.
   const xeff = intel.capitalTransmission.effects.find(e => e.label === "Cross-Sector");
   if (xeff) {
-    const id = "xsector";
-    add({ id, label: "Cross-sector", kind: "group", role: "cross-sector", stage: 4, reason: xeff.text });
-    link(secId, id, "cross-sector", 0.4, 4, xeff.text);
+    add({ id: "xsector", label: "Cross-sector", kind: "group", role: "cross-sector", stage: 4, reason: xeff.text });
+    link(secId, "xsector", "cross-sector", 0.4, 4, xeff.text);
   }
+
+  // Historical precedents (comparable transactions) as second-order context.
+  const comps = intel.comparables.length ? intel.comparables : comparablesFor(resolved?.sector ?? deal.sector);
+  comps.slice(0, 3).forEach((c, i) => {
+    const id = `cmp:${c.acquirer}-${c.target}`;
+    add({ id, label: `${c.acquirer}→${c.target}`, kind: "group", role: "second-order", stage: 3, name: `${c.acquirer} → ${c.target} · ${c.value} (${c.year})`, reason: `Historical precedent: ${c.acquirer} acquired ${c.target} (${c.value}, ${c.year})` });
+    link(centerId, id, "second-order", 0.38 - i * 0.05, 3, "Historical precedent");
+  });
 
   return { id: `deal:${deal.id}`, centerId, title: "Capital Transmission Network", subtitle: eventLabel, nodes, edges };
 }

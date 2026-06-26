@@ -286,6 +286,30 @@ export function companyPeers(ticker: string): { sector: string; beneficiaries: s
   return { sector: key, beneficiaries: ex(roles.beneficiaries), competitors: ex(roles.competitors), suppliers: ex(roles.suppliers), secondOrder: ex(roles.secondOrder) };
 }
 
+// Theme tag → sector bucket, so a deal whose literal sector is "Other" can still
+// resolve inferred peer relationships from the narrative it belongs to.
+const THEME_SECTOR: Record<string, string> = {
+  "AI Infrastructure": "Technology", "Cloud Security": "Technology", "Semiconductor Sovereignty": "Technology",
+  "Energy Transition": "Energy", "Energy Infrastructure": "Energy",
+  "Defense Consolidation": "Industrials", "Industrial Automation": "Industrials",
+  "Healthcare Consolidation": "Healthcare", "Private Capital": "Financials",
+};
+
+/** Resolve sector-peer roles for a deal: literal sector → theme-implied sector → null.
+ *  Lets the transmission graph infer beneficiaries/competitors/suppliers even when
+ *  the headline never names a sector. */
+export function resolveSectorRoles(sector: string, themeTags: string[]): { sector: string; beneficiaries: string[]; competitors: string[]; suppliers: string[]; secondOrder: string[] } | null {
+  const tryKey = (k: string) => {
+    const norm = SECTOR_ROLE_KEY[k] ?? k;
+    const r = SECTOR_ROLES[norm];
+    return r ? { sector: norm, beneficiaries: r.beneficiaries, competitors: r.competitors, suppliers: r.suppliers, secondOrder: r.secondOrder } : null;
+  };
+  const direct = tryKey(sector);
+  if (direct) return direct;
+  for (const t of themeTags) { const m = THEME_SECTOR[t]; if (m) { const r = tryKey(m); if (r) return r; } }
+  return null;
+}
+
 // ── Small helpers ──────────────────────────────────────────────────────────────
 
 function firstMatch(text: string, table: [string, RegExp][]): string[] {
@@ -920,6 +944,12 @@ function pickComparables(deal: MADeal, buyer: string | null, target: string | nu
   const list = COMPARABLE_DEALS[deal.sector] ?? [];
   const ex = new Set([buyer, target, ...deal.entities].filter(Boolean).map(s => (s as string).toLowerCase()));
   return list.filter(c => !ex.has(c.acquirer.toLowerCase()) && !ex.has(c.target.toLowerCase())).slice(0, 4);
+}
+
+/** Comparable historical deals for an (already-resolved) sector key — used by the
+ *  transmission graph to add precedent nodes even when intel.comparables is empty. */
+export function comparablesFor(sector: string): { acquirer: string; target: string; value: string; year: string }[] {
+  return COMPARABLE_DEALS[SECTOR_ROLE_KEY[sector] ?? sector] ?? [];
 }
 
 // ── Institutional confidence — how well-supported the read is (not the odds) ────

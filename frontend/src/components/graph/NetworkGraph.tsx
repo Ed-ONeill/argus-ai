@@ -84,8 +84,11 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
   }, [model]);
 
   const variant: "narrative" | "capital" = model.id.startsWith("narrative") ? "narrative" : "capital";
-  // A graph with too little relationship density reads as unfinished — show a strip instead.
-  const sparse = model.nodes.length <= 4 || model.edges.length <= 2;
+  // Reserve the Limited Signal strip for genuinely anonymous deals — no identified
+  // counterparty AND nothing meaningful to infer. Any named deal renders the full
+  // inferred network (sector peers, themes, narrative, precedents, cross-border…).
+  const hasCounterparty = model.nodes.some(n => n.role === "acquirer" || n.role === "target");
+  const sparse = !hasCounterparty && model.nodes.length <= 5;
 
   const [hovered, setHovered] = useState<{ node: GraphNode; sx: number; sy: number } | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
@@ -471,8 +474,8 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
                 ))}
             </div>
             <p className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>Limited signal</p>
-            <p className="text-[9.5px] leading-snug max-w-[260px] mt-1" style={{ color: "rgba(255,255,255,0.36)" }}>
-              Insufficient relationship density for a full transmission network. Core parties shown above; deeper read-through unlocks as the deal develops.
+            <p className="text-[9.5px] leading-snug max-w-[270px] mt-1" style={{ color: "rgba(255,255,255,0.36)" }}>
+              No identified counterparties yet — typical of an early rumor. The full transmission network renders once the parties are named.
             </p>
           </div>
         ) : (
