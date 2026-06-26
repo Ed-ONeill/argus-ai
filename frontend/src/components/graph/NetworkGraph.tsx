@@ -61,7 +61,10 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
 
   const [stack, setStack] = useState<GraphModel[]>([rootModel]);
   const model = stack[stack.length - 1];
-  useEffect(() => { setStack([rootModel]); setSelected(null); }, [rootModel]);
+  const [rootId, setRootId] = useState<string | null>(null); // re-rooted focus (null = event)
+  useEffect(() => { setStack([rootModel]); setSelected(null); setRootId(null); }, [rootModel]);
+  useEffect(() => { setRootId(null); }, [model]);
+  useEffect(() => { simRef.current?.setRoot(rootId); }, [rootId]);
 
   const recenter = useCallback((node: GraphNode) => {
     if (!node.recenterable || !expand) return false;
@@ -81,6 +84,19 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
     });
     return m;
   }, [model]);
+  // Parent map (BFS from the current root) → lets hover highlight the full
+  // transmission path (root → node), not just immediate neighbours.
+  const parentMap = useMemo(() => {
+    const root = rootId ?? model.centerId;
+    const parent = new Map<string, string>();
+    const visited = new Set([root]);
+    const q = [root];
+    while (q.length) {
+      const u = q.shift()!;
+      for (const v of (adjacency.get(u) ?? [])) if (!visited.has(v)) { visited.add(v); parent.set(v, u); q.push(v); }
+    }
+    return parent;
+  }, [adjacency, rootId, model.centerId]);
   const availableThemes = useMemo(() => {
     const s = new Set<string>();
     model.nodes.forEach(n => n.themes?.forEach(t => s.add(t)));
@@ -89,11 +105,9 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
   }, [model]);
 
   const variant: "narrative" | "capital" = model.id.startsWith("narrative") ? "narrative" : "capital";
-  // Reserve the Limited Signal strip for genuinely anonymous deals — no identified
-  // counterparty AND nothing meaningful to infer. Any named deal renders the full
-  // inferred network (sector peers, themes, narrative, precedents, cross-border…).
-  const hasCounterparty = model.nodes.some(n => n.role === "acquirer" || n.role === "target");
-  const sparse = !hasCounterparty && model.nodes.length <= 5;
+  // The adapter now infers institutional transmission for every deal (even rumors),
+  // so a graph is essentially never empty — only fall back if there is truly nothing.
+  const sparse = model.nodes.length <= 2;
 
   const [hovered, setHovered] = useState<{ node: GraphNode; sx: number; sy: number } | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
@@ -119,9 +133,13 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
     return hit?.id ?? null;
   }, [query, model]);
 
+  // Per-node reveal progress (0→1) eased in the draw loop so timeline nodes fade in.
+  const revealRef = useRef(new Map<string, number>());
+
   useEffect(() => {
     const { w, h } = sizeRef.current;
     simRef.current = new ForceSimulation(model, w, h);
+    revealRef.current = new Map();
     camRef.current.tfx = w / 2; camRef.current.tfy = h / 2; camRef.current.tscale = 1;
   }, [model]);
 
@@ -170,6 +188,7 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
     const ro = new ResizeObserver(resize);
     ro.observe(container);
 
+    let last = performance.now();
     const draw = (now: number) => {
       const sim = simRef.current;
       const { w, h } = sizeRef.current;
@@ -177,7 +196,8 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
       const v = viewRef.current;
       if (!sim) { rafRef.current = requestAnimationFrame(draw); return; }
 
-      for (let i = 0; i < 2; i++) sim.step();
+      const dt = (now - last) / 1000; last = now;
+      sim.step(dt);
       cam.fx += (cam.tfx - cam.fx) * 0.12;
       cam.fy += (cam.tfy - cam.fy) * 0.12;
       cam.scale += (cam.tscale - cam.scale) * 0.12;
@@ -209,9 +229,15 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
       }
       ctx.restore();
 
-      // Active path: the hovered/selected node + its direct neighbours.
+      // Active TRANSMISSION PATH: the hovered/selected node, its neighbours, and the
+      // full cause→effect path back to the root. Everything else fades.
       const focusId = v.hoveredId ?? v.selectedId;
-      const active = focusId ? new Set<string>([focusId, ...(adjacency.get(focusId) ?? [])]) : null;
+      let active: Set<string> | null = null;
+      if (focusId) {
+        active = new Set<string>([focusId, ...(adjacency.get(focusId) ?? [])]);
+        let p = parentMap.get(focusId), guard = 0;
+        while (p && guard++ < 48) { active.add(p); p = parentMap.get(p); }
+      }
 
       // ── Edges as transmission paths ──
       for (const e of model.edges) {
@@ -220,15 +246,18 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         if (!a || !b || !na || !nb) continue;
         if (!nodeVisible(na, v) || !nodeVisible(nb, v)) continue;
         if ((e.stage ?? 0) > v.stage) continue;
-        const incident = active ? (e.source === focusId || e.target === focusId) : false;
+        const lit = active ? (active.has(e.source) && active.has(e.target)) : false;
         const dimOverlay = v.overlay ? !(e.themes?.includes(v.overlay)) : false;
-        const faded = (active && !incident) || dimOverlay;
+        const faded = (active && !lit) || dimOverlay;
         const conf = ((na.confidence ?? nb.confidence ?? 60)) / 100;
         const themeEmph = variantLocal === "narrative" && (e.type === "theme" || e.type === "capital-rotation");
+        // edges strengthen as the market digests over the timeline
+        const matured = 1 + Math.min(0.35, Math.max(0, v.stage - (e.stage ?? 0)) * 0.09);
+        const ew = Math.min(1, e.weight * matured);
         const [ax, ay] = W2S(a.x, a.y), [bx, by] = W2S(b.x, b.y);
         const col = RELATION_META[e.type].color;
-        let op = (0.07 + e.weight * 0.28) * (0.4 + conf * 0.6) * (themeEmph ? 1.4 : 1);
-        if (faded) op *= 0.1; else if (incident) op = Math.min(0.92, op * 2.5);
+        let op = (0.07 + ew * 0.28) * (0.4 + conf * 0.6) * (themeEmph ? 1.4 : 1);
+        if (faded) op *= 0.08; else if (lit) op = Math.min(0.95, op * 2.6);
 
         // direction gradient: brighter at the driver (source), fading toward the consequence
         const grad = ctx.createLinearGradient(ax, ay, bx, by);
@@ -237,33 +266,35 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         grad.addColorStop(1, hexA(col, op * 0.28));
         ctx.save();
         ctx.strokeStyle = grad;
-        ctx.lineWidth = (0.6 + e.weight * 2.4) * cam.scale * (incident ? 1.6 : 1);
+        ctx.lineWidth = (0.6 + ew * 2.4) * cam.scale * (lit ? 1.7 : 1);
         ctx.setLineDash([4, 7]);
-        ctx.lineDashOffset = -((t * (8 + e.weight * 24)) % 11);
-        if (incident) { ctx.shadowColor = hexA(col, 0.5); ctx.shadowBlur = 7; }
+        ctx.lineDashOffset = -((t * (8 + ew * 24)) % 11);
+        if (lit) { ctx.shadowColor = hexA(col, 0.55); ctx.shadowBlur = 8; }
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
         ctx.restore();
 
-        // glowing capital particles flowing driver → consequence
-        if (!faded && (e.weight > 0.45 || incident)) {
-          const count = e.weight > 0.7 || incident ? 2 : 1;
-          const speed = 0.1 + e.weight * 0.12;
+        // glowing capital particles — flow ONLY on connected paths when focused,
+        // ambient on strong edges otherwise; density encodes transmission strength
+        const animate = active ? lit : ew > 0.45;
+        if (!faded && animate) {
+          const count = lit ? 3 : ew > 0.75 ? 3 : ew > 0.5 ? 2 : 1;
+          const speed = 0.09 + ew * 0.13;
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
           for (let p = 0; p < count; p++) {
             const tt = ((t * speed + p / count + hashFrac(e.source + e.target)) % 1);
             const px = ax + (bx - ax) * tt, py = ay + (by - ay) * tt;
-            const pr = (incident ? 2.2 : 1.6) * cam.scale;
+            const pr = (lit ? 2.3 : 1.6) * cam.scale;
             const pg = ctx.createRadialGradient(px, py, 0, px, py, pr * 2.4);
-            pg.addColorStop(0, hexA(col, incident ? 0.95 : 0.7));
+            pg.addColorStop(0, hexA(col, lit ? 0.98 : 0.7));
             pg.addColorStop(1, hexA(col, 0));
             ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(px, py, pr * 2.4, 0, Math.PI * 2); ctx.fill();
           }
           ctx.restore();
         }
 
-        // relationship label on active paths
-        if (incident && cam.scale > 0.75) {
+        // relationship label on the highlighted transmission path
+        if (lit && cam.scale > 0.75) {
           const mx = (ax + bx) / 2, my = (ay + by) / 2;
           ctx.save();
           ctx.font = "600 8px ui-sans-serif, system-ui";
@@ -288,17 +319,26 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         const isActive = isHover || isSel || isMatch;
         const focusDim = active ? !active.has(n.id) : false;
         const variantDim = variantLocal === "narrative" && n.kind !== "theme" && n.kind !== "event";
-        let op = visible ? 1 : 0.1;
-        if (focusDim) op *= 0.2;
+        // timeline reveal — nodes fade in smoothly as the market digests over time
+        const rv = revealRef.current;
+        const revealT = visible ? 1 : 0.08;
+        const reveal = (rv.get(n.id) ?? revealT) + (revealT - (rv.get(n.id) ?? revealT)) * 0.07;
+        rv.set(n.id, reveal);
+        let op = reveal;
+        if (focusDim) op *= 0.22;
         if (variantDim) op *= 0.7;
         // layered depth: nodes farther from centre recede slightly
-        if (visible && !isActive) op *= 1 - Math.min(0.22, (Math.hypot(s.x - w / 2, s.y - h / 2) / Math.max(w, h)) * 0.5);
+        if (!isActive) op *= 1 - Math.min(0.22, (Math.hypot(s.x - w / 2, s.y - h / 2) / Math.max(w, h)) * 0.5);
         const highConf = (n.confidence ?? 0) >= 75;
-        const breath = (isActive || highConf) && visible ? 1 + 0.03 * Math.sin(t * 1.8 + hashFrac(n.id) * 6.28) : 1;
-        const r = s.radius * cam.scale * breath;
+        // importance grows as later stages mature (the market reprices it)
+        const grow = 1 + Math.min(0.2, Math.max(0, v.stage - (n.stage ?? 0)) * 0.06);
+        const major = n.kind === "event" || s.radius > 16 || highConf;
+        const breath = (isActive || major) ? 1 + 0.025 * Math.sin(t * 1.6 + hashFrac(n.id) * 6.28) : 1;
+        const r = s.radius * cam.scale * breath * grow;
 
-        // soft additive bloom — premium glow that reads as light, not a game effect
-        const bloomA = (isActive ? 0.34 : n.kind === "event" ? 0.24 : 0.11) * op;
+        // soft additive bloom — glow INTENSITY encodes confidence
+        const confGlow = 0.05 + ((n.confidence ?? 50) / 100) * 0.15; // 0.05–0.20
+        const bloomA = (isActive ? 0.34 : n.kind === "event" ? 0.26 : confGlow) * op;
         if (bloomA > 0.02) {
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
@@ -310,7 +350,14 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
           ctx.restore();
         }
 
-        // subtle directional pulse for active nodes only
+        // gentle perpetual pulse on the primary node — alive, never gimmicky
+        if (n.kind === "event" && visible && !isActive) {
+          const gp = (t * 0.4) % 1;
+          ctx.strokeStyle = hexA(col, (1 - gp) * 0.16 * op);
+          ctx.lineWidth = 1.1 * cam.scale;
+          ctx.beginPath(); ctx.arc(sx, sy, r + gp * 16 * cam.scale, 0, Math.PI * 2); ctx.stroke();
+        }
+        // directional pulse for active nodes
         if (isActive && visible) {
           const pulse = (t * 0.7 + hashFrac(n.id)) % 1;
           ctx.strokeStyle = hexA(col, (1 - pulse) * 0.4 * op);
@@ -367,7 +414,7 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
     };
     rafRef.current = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(rafRef.current); ro.disconnect(); };
-  }, [model, nodeMap, adjacency, nodeVisible, matchedId, height, sparse]);
+  }, [model, nodeMap, adjacency, parentMap, nodeVisible, matchedId, height, sparse]);
 
   // ── Pointer interaction ──────────────────────────────────────────────────────
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -406,13 +453,15 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
     const wasDrag = dragRef.current?.moved; dragRef.current = null;
     if (wasDrag) return;
     const hit = pick(e.clientX, e.clientY);
-    if (!hit) { setSelected(null); return; }
-    if (recenter(hit.node)) return;
+    if (!hit) { setSelected(null); setRootId(null); return; } // background → release focus
+    // Clicking a node re-roots the transmission tree on it (smooth, in-place).
     setSelected(hit.node);
+    setRootId(hit.node.id === model.centerId ? null : hit.node.id);
+    camRef.current.tfx = sizeRef.current.w / 2; camRef.current.tfy = sizeRef.current.h / 2; camRef.current.tscale = 1;
   };
 
   const zoom = (dir: number) => { const c = camRef.current; c.tscale = Math.max(0.5, Math.min(2.4, c.tscale * (dir > 0 ? 1.2 : 0.83))); };
-  const resetView = () => { const { w, h } = sizeRef.current; const c = camRef.current; c.tfx = w / 2; c.tfy = h / 2; c.tscale = 1; simRef.current?.reheat(0.5); };
+  const resetView = () => { const { w, h } = sizeRef.current; const c = camRef.current; c.tfx = w / 2; c.tfy = h / 2; c.tscale = 1; setRootId(null); };
 
   const neighbours = useMemo(() => {
     if (!selected) return [];
