@@ -178,15 +178,15 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
       const t = now / 1000;
       ctx.clearRect(0, 0, w, h);
 
-      // Faint radial ring zones — make the structure feel intentionally designed.
-      const minDim = Math.min(w, h);
-      const aspect = Math.min(1.55, Math.max(1, w / Math.max(1, h)));
+      // Faint radial ring zones — match the layout rings so structure reads as designed.
+      const ry = Math.max(48, h / 2 - 40);
+      const aspect = Math.min(1.7, Math.max(1.05, (w / 2 - 52) / ry));
       const [zcx, zcy] = W2S(w / 2, h / 2);
       ctx.save();
-      for (const rf of [0.21, 0.34, 0.47]) {
+      for (const rf of [0.40, 0.68, 0.96]) {
         ctx.beginPath();
-        ctx.ellipse(zcx, zcy, minDim * rf * aspect * cam.scale, minDim * rf * cam.scale, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(130,170,200,0.045)";
+        ctx.ellipse(zcx, zcy, ry * rf * aspect * cam.scale, ry * rf * cam.scale, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(130,170,200,0.04)";
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -210,19 +210,20 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         const themeEmph = variantLocal === "narrative" && (e.type === "theme" || e.type === "capital-rotation");
         const [ax, ay] = W2S(a.x, a.y), [bx, by] = W2S(b.x, b.y);
         const col = RELATION_META[e.type].color;
-        let op = (0.07 + e.weight * 0.30) * (0.4 + conf * 0.6) * (themeEmph ? 1.4 : 1);
-        if (faded) op *= 0.16; else if (incident) op = Math.min(0.9, op * 2.2);
+        let op = (0.07 + e.weight * 0.28) * (0.4 + conf * 0.6) * (themeEmph ? 1.4 : 1);
+        if (faded) op *= 0.1; else if (incident) op = Math.min(0.92, op * 2.5);
 
         // direction gradient: brighter at the driver (source), fading toward the consequence
         const grad = ctx.createLinearGradient(ax, ay, bx, by);
         grad.addColorStop(0, hexA(col, op));
-        grad.addColorStop(1, hexA(col, op * 0.4));
+        grad.addColorStop(0.65, hexA(col, op * 0.6));
+        grad.addColorStop(1, hexA(col, op * 0.28));
         ctx.save();
         ctx.strokeStyle = grad;
-        ctx.lineWidth = (0.6 + e.weight * 2.6) * cam.scale * (incident ? 1.5 : 1);
-        ctx.setLineDash([5, 9]);
-        ctx.lineDashOffset = -((t * (10 + e.weight * 34)) % 14);
-        if (incident) { ctx.shadowColor = hexA(col, 0.6); ctx.shadowBlur = 8; }
+        ctx.lineWidth = (0.6 + e.weight * 2.4) * cam.scale * (incident ? 1.6 : 1);
+        ctx.setLineDash([4, 7]);
+        ctx.lineDashOffset = -((t * (8 + e.weight * 24)) % 11);
+        if (incident) { ctx.shadowColor = hexA(col, 0.5); ctx.shadowBlur = 7; }
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
         ctx.restore();
 
@@ -269,56 +270,69 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         if (focusDim) op *= 0.2;
         if (variantDim) op *= 0.7;
         const highConf = (n.confidence ?? 0) >= 75;
-        const breath = (isActive || highConf) && visible ? 1 + 0.05 * Math.sin(t * 2 + hashFrac(n.id) * 6.28) : 1;
+        const breath = (isActive || highConf) && visible ? 1 + 0.03 * Math.sin(t * 1.8 + hashFrac(n.id) * 6.28) : 1;
         const r = s.radius * cam.scale * breath;
 
-        // outer glow halo (inner glow read)
-        const haloA = (isActive ? 0.42 : n.kind === "event" ? 0.3 : 0.15) * op;
+        // outer glow halo — restrained (cleaner, not game-y)
+        const haloA = (isActive ? 0.3 : n.kind === "event" ? 0.2 : 0.09) * op;
         if (haloA > 0.02) {
-          const halo = ctx.createRadialGradient(sx, sy, r * 0.4, sx, sy, r * 2.9);
+          const halo = ctx.createRadialGradient(sx, sy, r * 0.5, sx, sy, r * 2.7);
           halo.addColorStop(0, hexA(col, haloA));
           halo.addColorStop(1, hexA(col, 0));
-          ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(sx, sy, r * 2.9, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(sx, sy, r * 2.7, 0, Math.PI * 2); ctx.fill();
         }
 
-        // directional pulse ring for active nodes
+        // subtle directional pulse for active nodes only
         if (isActive && visible) {
-          const pulse = (t * 0.8 + hashFrac(n.id)) % 1;
-          ctx.strokeStyle = hexA(col, (1 - pulse) * 0.5 * op);
-          ctx.lineWidth = 1.5 * cam.scale;
-          ctx.beginPath(); ctx.arc(sx, sy, r + pulse * 14 * cam.scale, 0, Math.PI * 2); ctx.stroke();
+          const pulse = (t * 0.7 + hashFrac(n.id)) % 1;
+          ctx.strokeStyle = hexA(col, (1 - pulse) * 0.4 * op);
+          ctx.lineWidth = 1.4 * cam.scale;
+          ctx.beginPath(); ctx.arc(sx, sy, r + pulse * 12 * cam.scale, 0, Math.PI * 2); ctx.stroke();
         }
 
-        // glass surface — top-left highlight fading to a dark glass edge
-        const body = ctx.createRadialGradient(sx - r * 0.35, sy - r * 0.35, r * 0.1, sx, sy, r);
-        body.addColorStop(0, hexA(col, 0.46 * op));
-        body.addColorStop(0.55, hexA(col, 0.2 * op));
-        body.addColorStop(1, hexA("#0a0f18", 0.55 * op));
+        // glass surface — soft top-left highlight into a dark glass edge (subtler)
+        const body = ctx.createRadialGradient(sx - r * 0.32, sy - r * 0.32, r * 0.1, sx, sy, r);
+        body.addColorStop(0, hexA(col, 0.33 * op));
+        body.addColorStop(0.6, hexA(col, 0.13 * op));
+        body.addColorStop(1, hexA("#0a0f18", 0.5 * op));
         ctx.fillStyle = body; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
 
-        // inner core glow
-        ctx.fillStyle = hexA(col, 0.5 * op);
-        ctx.beginPath(); ctx.arc(sx, sy, r * 0.3, 0, Math.PI * 2); ctx.fill();
+        // clean inner core
+        ctx.fillStyle = hexA(col, 0.4 * op);
+        ctx.beginPath(); ctx.arc(sx, sy, r * 0.26, 0, Math.PI * 2); ctx.fill();
 
-        // thin outer ring
+        // outer ring — stronger on hover/selected
         ctx.save();
-        ctx.lineWidth = (isActive ? 2 : 1.2) * cam.scale;
-        ctx.strokeStyle = hexA(col, (isActive ? 0.95 : 0.55) * op);
-        if (isActive) { ctx.shadowColor = hexA(col, 0.7); ctx.shadowBlur = 10; }
+        ctx.lineWidth = (isActive ? 2.4 : 1.2) * cam.scale;
+        ctx.strokeStyle = hexA(col, (isActive ? 1 : 0.5) * op);
+        if (isActive) { ctx.shadowColor = hexA(col, 0.55); ctx.shadowBlur = 8; }
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
         ctx.restore();
         if (isMatch) { ctx.lineWidth = 1; ctx.strokeStyle = hexA(col, 0.45); ctx.beginPath(); ctx.arc(sx, sy, r + 5, 0, Math.PI * 2); ctx.stroke(); }
 
-        // label with contrast
-        const label = n.kind === "company" ? (n.ticker ?? n.label) : n.label;
-        const shown = label.length > 18 ? label.slice(0, 17) + "…" : label;
-        ctx.save();
-        ctx.font = `${n.kind === "event" ? 600 : 500} ${n.kind === "event" ? 12 : 10.5}px ui-sans-serif, system-ui`;
-        ctx.textAlign = "center"; ctx.textBaseline = "top";
-        ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 4;
-        ctx.fillStyle = hexA("#ffffff", (n.kind === "event" ? 0.95 : 0.74) * Math.max(op, 0.22));
-        ctx.fillText(shown, sx, sy + r + 4);
-        ctx.restore();
+        // label — offset below (flips above near the edge), ellipsis only when needed,
+        // hidden for nodes dimmed out of the active path
+        const dimmedOut = active != null && !active.has(n.id) && n.id !== model.centerId;
+        if (!dimmedOut) {
+          const label = n.kind === "company" ? (n.ticker ?? n.label) : n.label;
+          ctx.save();
+          ctx.font = `${n.kind === "event" ? 700 : 600} ${n.kind === "event" ? 12 : 10}px ui-sans-serif, system-ui`;
+          ctx.textAlign = "center"; ctx.textBaseline = "top";
+          const maxW = n.kind === "event" ? 132 : 96;
+          let shown = label;
+          if (ctx.measureText(shown).width > maxW) {
+            while (shown.length > 4 && ctx.measureText(shown + "…").width > maxW) shown = shown.slice(0, -1);
+            shown += "…";
+          }
+          const half = ctx.measureText(shown).width / 2;
+          const lx = Math.max(half + 4, Math.min(w - half - 4, sx));
+          const below = sy + r + 5;
+          const ly = below + 12 > h - 3 ? sy - r - 14 : below;
+          ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 4;
+          ctx.fillStyle = hexA("#ffffff", (n.kind === "event" ? 0.96 : 0.78) * Math.max(op, 0.22));
+          ctx.fillText(shown, lx, ly);
+          ctx.restore();
+        }
       }
 
       rafRef.current = requestAnimationFrame(draw);

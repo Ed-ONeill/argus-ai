@@ -68,9 +68,12 @@ export class ForceSimulation {
       rings[ringOf(node.role)].push(node);
     }
 
-    const minDim = Math.min(this.w, this.h);
-    const aspect = Math.min(1.55, Math.max(1, this.w / Math.max(1, this.h))); // spread wider to fill the card
-    const ringR: Record<number, number> = { 1: minDim * 0.21, 2: minDim * 0.34, 3: minDim * 0.47 };
+    // Fill the canvas intentionally: outer ring reaches near the vertical edge
+    // (leaving label room) and spreads horizontally via aspect — minimal dead space.
+    const padY = 40, padX = 52;
+    const ry = Math.max(48, this.h / 2 - padY);
+    const aspect = Math.min(1.7, Math.max(1.05, (this.w / 2 - padX) / ry));
+    const ringR: Record<number, number> = { 1: ry * 0.40, 2: ry * 0.68, 3: ry * 0.96 };
     const ringRot: Record<number, number> = { 1: -Math.PI / 2, 2: -Math.PI / 2 + 0.42, 3: -Math.PI / 2 + 0.21 };
 
     const anchor = new Map<string, { x: number; y: number; ring: number }>();
@@ -80,7 +83,7 @@ export class ForceSimulation {
       const count = Math.max(1, arr.length);
       arr.forEach((node, i) => {
         const ang = ringRot[ring] + ((i + 0.5) / count) * Math.PI * 2;
-        const rr = ringR[ring] * (0.9 + jit(node.id) * 0.2);
+        const rr = ringR[ring] * (0.94 + jit(node.id) * 0.12);
         anchor.set(node.id, { x: cx + Math.cos(ang) * rr * aspect, y: cy + Math.sin(ang) * rr, ring });
       });
     }

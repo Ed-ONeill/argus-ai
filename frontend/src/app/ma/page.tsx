@@ -424,11 +424,11 @@ function NarrativeBlock({ seedTheme, propagation, memory }: { seedTheme: string 
   );
 }
 
-function ComparablesBlock({ deal, intel }: { deal: MADeal; intel: DealIntel }) {
+function ComparablesBlock({ deal, intel, bare }: { deal: MADeal; intel: DealIntel; bare?: boolean }) {
   if (intel.comparables.length === 0) return null;
   return (
     <div>
-      <SecHead letter="◷" title="Comparable Deals" color="rgba(255,255,255,0.5)" right={<span className="text-[8px] uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.3)" }}>{deal.sector} precedents</span>} />
+      {!bare && <SecHead letter="◷" title="Comparable Deals" color="rgba(255,255,255,0.5)" right={<span className="text-[8px] uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.3)" }}>{deal.sector} precedents</span>} />}
       <div className="grid sm:grid-cols-2 gap-1.5">
         {intel.comparables.map(c => (
           <a key={`${c.acquirer}-${c.target}`} href={`https://www.google.com/search?q=${encodeURIComponent(`${c.acquirer} ${c.target} acquisition`)}`} target="_blank" rel="noopener noreferrer"
@@ -449,11 +449,11 @@ function ComparablesBlock({ deal, intel }: { deal: MADeal; intel: DealIntel }) {
   );
 }
 
-function SimilarBlock({ similar }: { similar: { d: MADeal; i: DealIntel }[] }) {
+function SimilarBlock({ similar, bare }: { similar: { d: MADeal; i: DealIntel }[]; bare?: boolean }) {
   if (similar.length === 0) return null;
   return (
     <div>
-      <SecHead letter="≈" title="Similar Recent Deals" color="rgba(167,139,250,0.8)" right={<span className="text-[8px] uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.3)" }}>in this feed</span>} />
+      {!bare && <SecHead letter="≈" title="Similar Recent Deals" color="rgba(167,139,250,0.8)" right={<span className="text-[8px] uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.3)" }}>in this feed</span>} />}
       <div className="space-y-2">
         {similar.map(({ d, i }) => (
           <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer" className="group/sim flex items-start gap-2">
@@ -469,15 +469,20 @@ function SimilarBlock({ similar }: { similar: { d: MADeal; i: DealIntel }[] }) {
   );
 }
 
-function TransactionBlock({ intel }: { intel: DealIntel }) {
+function hasTxnDetails(intel: DealIntel): boolean {
+  const a = intel.advisorSides;
+  const hasAdvisors = intel.advisors.banks.length > 0 || intel.advisors.legal.length > 0;
+  return intel.economics.length > 0 || intel.financingDetail.length > 0 || intel.competingBidders.length > 0 || hasAdvisors || a.financing.length > 0 || intel.readThroughGroups.length > 0 || intel.readThrough.length > 0 || intel.dynamicSections.length > 0;
+}
+
+function TransactionBlock({ intel, bare }: { intel: DealIntel; bare?: boolean }) {
   const a = intel.advisorSides;
   const hasAdvisors = intel.advisors.banks.length > 0 || intel.advisors.legal.length > 0;
   const hasSidedAdvisors = a.buyFinancial.length + a.sellFinancial.length + a.buyLegal.length + a.sellLegal.length > 0;
-  const hasAny = intel.economics.length > 0 || intel.financingDetail.length > 0 || intel.competingBidders.length > 0 || hasAdvisors || a.financing.length > 0 || intel.readThroughGroups.length > 0 || intel.readThrough.length > 0 || intel.dynamicSections.length > 0;
-  if (!hasAny) return null;
+  if (!hasTxnDetails(intel)) return null;
   return (
     <div>
-      <SecHead letter="D" title="Transaction Details" color="rgba(82,176,200,0.8)" />
+      {!bare && <SecHead letter="D" title="Transaction Details" color="rgba(82,176,200,0.8)" />}
       {intel.economics.length > 0 && (
         <div className="rounded-lg border grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 mb-3" style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}>
           {intel.economics.map(e => (
@@ -544,7 +549,7 @@ function TransactionBlock({ intel }: { intel: DealIntel }) {
   );
 }
 
-function TransmissionDetailBlock({ intel }: { intel: DealIntel }) {
+function TransmissionDetailBlock({ intel, bare }: { intel: DealIntel; bare?: boolean }) {
   const ct = intel.capitalTransmission;
   const flowSteps = [
     { label: "Acquirer",       items: [ct.flow.acquirer], color: "#a78bfa", mono: false },
@@ -554,8 +559,8 @@ function TransmissionDetailBlock({ intel }: { intel: DealIntel }) {
     ...(ct.flow.themes.length        ? [{ label: "Themes",         items: ct.flow.themes,        color: "#c4b5fd", mono: false }] : []),
   ];
   return (
-    <div className="rounded-lg border p-3 pt-2.5" style={{ borderColor: "rgba(82,176,200,0.2)", background: "rgba(82,176,200,0.045)" }}>
-      <p className="text-[8.5px] font-black uppercase tracking-[0.16em] mb-2.5" style={{ color: "rgba(82,176,200,0.8)" }}>E · Capital Transmission</p>
+    <div className={bare ? "" : "rounded-lg border p-3 pt-2.5"} style={bare ? undefined : { borderColor: "rgba(82,176,200,0.2)", background: "rgba(82,176,200,0.045)" }}>
+      {!bare && <p className="text-[8.5px] font-black uppercase tracking-[0.16em] mb-2.5" style={{ color: "rgba(82,176,200,0.8)" }}>E · Capital Transmission</p>}
       <div className="mb-3">
         {flowSteps.map((step, i) => (
           <div key={step.label} className="flex items-start gap-2.5">
@@ -747,7 +752,7 @@ function DealCard({ deal, index, ctx, open, onToggle, siblings, onOpenFull }: { 
             </button>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             {tab === "Overview" && (<>
               <AssessmentBlock intel={intel} signal={signal} compact />
               <StatusBlock intel={intel} />
@@ -790,6 +795,23 @@ function DealCard({ deal, index, ctx, open, onToggle, siblings, onOpenFull }: { 
   );
 }
 
+// Collapsible "show more" section for the drawer's lower-priority detail.
+function DrawerAccordion({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border" style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.015)" }}>
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-3 py-2 transition-colors hover:bg-white/[0.02]">
+        <span className="text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.55)" }}>{title}</span>
+        <span className="ml-auto text-[8.5px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.32)" }}>{open ? "Hide" : "Show more"}</span>
+        <ChevronRight size={13} className={cn("transition-transform", open && "rotate-90")} style={{ color: "rgba(255,255,255,0.4)" }} />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-1 border-t" style={{ borderColor: "rgba(255,255,255,0.05)" }}>{children}</div>
+      )}
+    </div>
+  );
+}
+
 // Full-intelligence drawer — the deep-dive, off the feed. Keeps cards compact.
 function DealIntelligenceDrawer({ deal, intel, ctx, siblings, onClose }: { deal: MADeal; intel: DealIntel; ctx: DealContext; siblings: MADeal[]; onClose: () => void }) {
   const [graphMode, setGraphMode] = useState<"deal" | "narrative">("deal");
@@ -818,10 +840,10 @@ function DealIntelligenceDrawer({ deal, intel, ctx, siblings, onClose }: { deal:
           </div>
           <button onClick={onClose} className="shrink-0 p-1 rounded transition-colors hover:bg-white/10" style={{ color: "rgba(255,255,255,0.5)" }}><X size={16} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto scrollbar-hide p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto scrollbar-hide p-4 space-y-3">
+          {/* High-priority intelligence, with the network as the centrepiece */}
           <AssessmentBlock intel={intel} signal={signal} />
           <StatusBlock intel={intel} />
-          <ImpactBlock intel={intel} />
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[9.5px] font-bold uppercase tracking-[0.15em]" style={{ color: "rgba(82,176,200,0.8)" }}>Capital Transmission Network</span>
@@ -836,12 +858,21 @@ function DealIntelligenceDrawer({ deal, intel, ctx, siblings, onClose }: { deal:
             </div>
             <NetworkGraph model={activeGraph} height={420} expand={(node) => node.ticker ? buildCompanyGraph(node.ticker) : buildNarrativeGraph(node.label)} />
           </div>
+          <ImpactBlock intel={intel} />
           <PredictionBlock predictions={predictions} />
           <NarrativeBlock seedTheme={seedTheme} propagation={propagation} memory={memory} />
-          <ComparablesBlock deal={deal} intel={intel} />
-          <SimilarBlock similar={similar} />
-          <TransactionBlock intel={intel} />
-          <TransmissionDetailBlock intel={intel} />
+
+          {/* Lower-priority deep detail — collapsed by default */}
+          {intel.comparables.length > 0 && (
+            <DrawerAccordion title="Comparable Deals"><ComparablesBlock deal={deal} intel={intel} bare /></DrawerAccordion>
+          )}
+          {similar.length > 0 && (
+            <DrawerAccordion title="Similar Recent Deals"><SimilarBlock similar={similar} bare /></DrawerAccordion>
+          )}
+          {hasTxnDetails(intel) && (
+            <DrawerAccordion title="Transaction Details"><TransactionBlock intel={intel} bare /></DrawerAccordion>
+          )}
+          <DrawerAccordion title="Capital Transmission Detail"><TransmissionDetailBlock intel={intel} bare /></DrawerAccordion>
         </div>
       </motion.aside>
     </>
