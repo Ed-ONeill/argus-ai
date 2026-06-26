@@ -28,6 +28,11 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 function nodeColor(n: GraphNode): string { return RELATION_META[n.role ?? "sector"].color; }
 
+// Representative colour per cluster (drives the soft cluster-haze regions).
+const CLUSTER_COLOR: Record<string, string> = {
+  core: "#a78bfa", market: "#52b0c8", narrative: "#fb923c", second: "#c4b5fd",
+};
+
 function passesFilter(n: GraphNode, f: FilterKey): boolean {
   switch (f) {
     case "all": return true;
@@ -181,17 +186,26 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
       const t = now / 1000;
       ctx.clearRect(0, 0, w, h);
 
-      // Faint radial ring zones — match the layout rings so structure reads as designed.
-      const ry = Math.max(48, h / 2 - 40);
-      const aspect = Math.min(1.7, Math.max(1.05, (w / 2 - 52) / ry));
-      const [zcx, zcy] = W2S(w / 2, h / 2);
+      // Soft cluster haze — glowing regions behind related-node groups give the
+      // network layered depth (Palantir/Bloomberg-Labs feel) and make clusters legible.
+      const haze = new Map<string, { x: number; y: number; n: number }>();
+      for (const n of model.nodes) {
+        const s = sim.get(n.id); if (!s) continue;
+        const e = haze.get(s.cluster) ?? { x: 0, y: 0, n: 0 };
+        e.x += s.x; e.y += s.y; e.n++; haze.set(s.cluster, e);
+      }
       ctx.save();
-      for (const rf of [0.40, 0.68, 0.96]) {
-        ctx.beginPath();
-        ctx.ellipse(zcx, zcy, ry * rf * aspect * cam.scale, ry * rf * cam.scale, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(130,170,200,0.04)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
+      ctx.globalCompositeOperation = "lighter";
+      for (const [key, e] of haze) {
+        if (e.n < 2) continue;
+        const [hx, hy] = W2S(e.x / e.n, e.y / e.n);
+        const col = CLUSTER_COLOR[key] ?? "#52b0c8";
+        const R = (78 + e.n * 11) * cam.scale;
+        const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, R);
+        g.addColorStop(0, hexA(col, 0.06));
+        g.addColorStop(0.5, hexA(col, 0.022));
+        g.addColorStop(1, hexA(col, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, R, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
 
@@ -230,17 +244,22 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
         ctx.restore();
 
-        // moving capital particles on strong / active paths
-        if (!faded && (e.weight > 0.5 || incident)) {
+        // glowing capital particles flowing driver → consequence
+        if (!faded && (e.weight > 0.45 || incident)) {
           const count = e.weight > 0.7 || incident ? 2 : 1;
           const speed = 0.1 + e.weight * 0.12;
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
           for (let p = 0; p < count; p++) {
             const tt = ((t * speed + p / count + hashFrac(e.source + e.target)) % 1);
             const px = ax + (bx - ax) * tt, py = ay + (by - ay) * tt;
-            ctx.beginPath();
-            ctx.fillStyle = hexA(col, incident ? 0.95 : 0.62);
-            ctx.arc(px, py, (incident ? 2.1 : 1.5) * cam.scale, 0, Math.PI * 2); ctx.fill();
+            const pr = (incident ? 2.2 : 1.6) * cam.scale;
+            const pg = ctx.createRadialGradient(px, py, 0, px, py, pr * 2.4);
+            pg.addColorStop(0, hexA(col, incident ? 0.95 : 0.7));
+            pg.addColorStop(1, hexA(col, 0));
+            ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(px, py, pr * 2.4, 0, Math.PI * 2); ctx.fill();
           }
+          ctx.restore();
         }
 
         // relationship label on active paths
@@ -272,17 +291,23 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460 }:
         let op = visible ? 1 : 0.1;
         if (focusDim) op *= 0.2;
         if (variantDim) op *= 0.7;
+        // layered depth: nodes farther from centre recede slightly
+        if (visible && !isActive) op *= 1 - Math.min(0.22, (Math.hypot(s.x - w / 2, s.y - h / 2) / Math.max(w, h)) * 0.5);
         const highConf = (n.confidence ?? 0) >= 75;
         const breath = (isActive || highConf) && visible ? 1 + 0.03 * Math.sin(t * 1.8 + hashFrac(n.id) * 6.28) : 1;
         const r = s.radius * cam.scale * breath;
 
-        // outer glow halo — restrained (cleaner, not game-y)
-        const haloA = (isActive ? 0.3 : n.kind === "event" ? 0.2 : 0.09) * op;
-        if (haloA > 0.02) {
-          const halo = ctx.createRadialGradient(sx, sy, r * 0.5, sx, sy, r * 2.7);
-          halo.addColorStop(0, hexA(col, haloA));
-          halo.addColorStop(1, hexA(col, 0));
-          ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(sx, sy, r * 2.7, 0, Math.PI * 2); ctx.fill();
+        // soft additive bloom — premium glow that reads as light, not a game effect
+        const bloomA = (isActive ? 0.34 : n.kind === "event" ? 0.24 : 0.11) * op;
+        if (bloomA > 0.02) {
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          const bloom = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 3.1);
+          bloom.addColorStop(0, hexA(col, bloomA));
+          bloom.addColorStop(0.45, hexA(col, bloomA * 0.34));
+          bloom.addColorStop(1, hexA(col, 0));
+          ctx.fillStyle = bloom; ctx.beginPath(); ctx.arc(sx, sy, r * 3.1, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
         }
 
         // subtle directional pulse for active nodes only

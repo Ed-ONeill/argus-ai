@@ -86,19 +86,35 @@ export function buildDealGraph(deal: MADeal, intel: DealIntel): GraphModel {
     link(secId, id, "second-order", 0.45 - i * 0.06, 3, "Second-order");
   });
 
-  // When no named peers can be inferred (e.g. an unclassified sector), still render
-  // the capital-rotation path so any named deal produces a meaningful network.
+  // When no named peers can be inferred (unclassified sector), infer the realistic
+  // MARKET MECHANISMS the deal actually flows through — deal-specific, so the graph
+  // is unique rather than a generic fallback chain.
   if (beneficiaries.length === 0 && competitors.length === 0) {
-    const lane: [string, string, string][] = [
-      ["rot1", "Valuation reset", "The transaction sets a fresh valuation marker for the space"],
-      ["rot2", "Scale leaders re-rate", "Larger operators re-rate on consolidation optionality"],
-      ["rot3", "Sub-scale peers in play", "Smaller peers screen as the next acquisition targets"],
-    ];
-    let prev = secId;
-    lane.forEach(([id, label, reason], i) => {
-      add({ id, label, kind: "group", role: "capital-rotation", stage: i + 1, reason });
-      link(prev, id, "capital-rotation", 0.55 - i * 0.08, i + 1, "Capital rotation");
-      prev = id;
+    const text = `${deal.title} ${deal.summary} ${intel.rationale}`.toLowerCase();
+    const concepts: { id: string; label: string; reason: string; type: RelationType }[] = [];
+    if (deal.peFirm || intel.txnType === "Sponsor Buyout" || intel.txnType === "Take Private" || intel.financing === "LBO" || intel.financingDetail.length > 0)
+      concepts.push({ id: "imc-credit", label: "Leverage & Credit", reason: "Buyout financing routes demand through leveraged-credit markets", type: "capital-rotation" });
+    if (intel.txnType === "Merger" || intel.sizeClass === "mega" || intel.sizeClass === "large")
+      concepts.push({ id: "imc-antitrust", label: "Antitrust & Remedies", reason: "Scale invites competition review and potential divestitures", type: "cross-sector" });
+    if (/data\s*cent|\bai\b|compute|cloud|gpu|hyperscal/.test(text))
+      concepts.push({ id: "imc-compute", label: "Compute & Power Demand", reason: "Digital-infrastructure exposure pulls compute and power demand", type: "capital-rotation" });
+    if (/vertical|supply\s*chain|upstream|downstream/.test(text))
+      concepts.push({ id: "imc-supply", label: "Supply-chain Control", reason: "Integration tightens control of the supply chain", type: "supplier" });
+    if (/distress|bankrupt|restructur|chapter\s*11/.test(text))
+      concepts.push({ id: "imc-restruct", label: "Restructuring & Recovery", reason: "Distressed dynamics reshape recovery expectations", type: "capital-rotation" });
+    if (/activist|elliott|starboard|proxy|trian/.test(text))
+      concepts.push({ id: "imc-gov", label: "Governance Pressure", reason: "Activist involvement raises governance scrutiny", type: "competitor" });
+    if (intel.financing === "Cash" || /committed\s+financing|fully\s+financed/.test(text))
+      concepts.push({ id: "imc-bs", label: "Balance-sheet Capacity", reason: "Cash consideration draws on corporate balance-sheet capacity", type: "capital-rotation" });
+
+    const chosen = concepts.slice(0, 4);
+    chosen.push({ id: "imc-rerate", label: "Sector Re-rating", reason: "Comparable valuations mark to the transaction", type: "capital-rotation" });
+    const sinkId = "imc-realloc";
+    add({ id: sinkId, label: "Capital Reallocation", kind: "group", role: "capital-rotation", stage: 3, reason: "Net effect: capital reallocates toward the surviving platform and its mechanisms" });
+    chosen.forEach((c, i) => {
+      add({ id: c.id, label: c.label, kind: "group", role: c.type, stage: 2, reason: c.reason });
+      link(secId, c.id, c.type, 0.6 - i * 0.05, 2, c.reason);
+      link(c.id, sinkId, "capital-rotation", 0.42, 3, "Capital reallocation");
     });
   }
 
