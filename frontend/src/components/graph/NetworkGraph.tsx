@@ -58,9 +58,20 @@ export interface NetworkGraphProps {
   showTimeline?: boolean;
   /** Show the role filter chips (default true). */
   showFilters?: boolean;
+  /**
+   * Page controller hook: fired whenever the selected node changes. The Feed uses
+   * this to drive every section below the graph (Focus mode). null = Global mode.
+   */
+  onFocusChange?: (node: GraphNode | null) => void;
+  /** Increment from outside to release the current selection (exit Focus mode). */
+  clearNonce?: number;
+  /** Fired as the hovered node changes — feeds the page-wide hover-highlight beam. */
+  onHoverChange?: (node: GraphNode | null) => void;
+  /** Normalized tokens of the active page beam — matching nodes stay lit, rest dim. */
+  beamTokens?: Set<string> | null;
 }
 
-export default function NetworkGraph({ model: rootModel, expand, height = 460, title = "Argus Transmission Map", subtitle, showTimeline = true, showFilters = true }: NetworkGraphProps) {
+export default function NetworkGraph({ model: rootModel, expand, height = 460, title = "Argus Transmission Map", subtitle, showTimeline = true, showFilters = true, onFocusChange, clearNonce, onHoverChange, beamTokens }: NetworkGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simRef = useRef<ForceSimulation | null>(null);
@@ -131,6 +142,42 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
   useEffect(() => {
     viewRef.current = { filter, overlay, stage, hoveredId: hovered?.node.id ?? null, selectedId: selected?.id ?? null };
   }, [filter, overlay, stage, hovered, selected]);
+
+  // ── Page controller wiring ───────────────────────────────────────────────────
+  // Selection is the single source of truth for Focus mode. Publish it upward
+  // through a ref so a changing callback identity never re-fires on its own.
+  const onFocusRef = useRef(onFocusChange);
+  useEffect(() => { onFocusRef.current = onFocusChange; }, [onFocusChange]);
+  useEffect(() => { onFocusRef.current?.(selected); }, [selected]);
+
+  // Page-wide hover beam: broadcast the hovered node up, and receive the active
+  // beam (tokens) to softly light matching nodes when the hover came from elsewhere.
+  const onHoverRef = useRef(onHoverChange);
+  useEffect(() => { onHoverRef.current = onHoverChange; }, [onHoverChange]);
+  useEffect(() => { onHoverRef.current?.(hovered?.node ?? null); }, [hovered]);
+  const beamRef = useRef<Set<string> | null>(beamTokens ?? null);
+  useEffect(() => { beamRef.current = beamTokens ?? null; }, [beamTokens]);
+  const nodeTok = useMemo(() => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const map = new Map<string, Set<string>>();
+    for (const n of model.nodes) {
+      const s = new Set<string>();
+      for (const v of [n.ticker, n.label, n.name, n.sector, ...(n.themes ?? [])]) { if (!v) continue; const t = norm(v); if (t) s.add(t); }
+      map.set(n.id, s);
+    }
+    return map;
+  }, [model]);
+
+  // External "Exit to Global Market" — release selection and recentre.
+  const clearSeen = useRef(clearNonce);
+  useEffect(() => {
+    if (clearNonce === clearSeen.current) return;
+    clearSeen.current = clearNonce;
+    setSelected(null);
+    setRootId(null);
+    const { w, h } = sizeRef.current, c = camRef.current;
+    c.tfx = w / 2; c.tfy = h / 2; c.tscale = 1;
+  }, [clearNonce]);
 
   const matchedId = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -246,6 +293,12 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         active = new Set<string>([focusId, ...(adjacency.get(focusId) ?? [])]);
         let p = parentMap.get(focusId), guard = 0;
         while (p && guard++ < 48) { active.add(p); p = parentMap.get(p); }
+      } else if (beamRef.current && beamRef.current.size) {
+        // Hover came from elsewhere on the page — light nodes whose tokens match.
+        const beam = beamRef.current;
+        const matched = new Set<string>();
+        for (const n of model.nodes) { const ts = nodeTok.get(n.id); if (ts && setsIntersect(ts, beam)) matched.add(n.id); }
+        if (matched.size) active = matched;
       }
 
       // ── Edges as transmission paths ──
@@ -423,7 +476,7 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
     };
     rafRef.current = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(rafRef.current); ro.disconnect(); };
-  }, [model, nodeMap, adjacency, parentMap, nodeVisible, matchedId, height, sparse]);
+  }, [model, nodeMap, adjacency, parentMap, nodeVisible, matchedId, height, sparse, nodeTok]);
 
   // ── Pointer interaction ──────────────────────────────────────────────────────
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -709,6 +762,11 @@ function hexA(hex: string, a: number): string {
   const h = hex.replace("#", "");
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
   return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a))})`;
+}
+function setsIntersect(a: Set<string>, b: Set<string>): boolean {
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  for (const x of small) if (big.has(x)) return true;
+  return false;
 }
 function hashFrac(s: string): number {
   let h = 2166136261;

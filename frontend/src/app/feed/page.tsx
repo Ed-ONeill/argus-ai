@@ -9,8 +9,6 @@ import { useWatchlist } from "@/hooks/useWatchlist";
 import { useMarketState } from "@/hooks/useMarketState";
 import { TopStoriesGrid } from "@/components/feed/TopStoriesGrid";
 import { FilterChips } from "@/components/feed/FilterChips";
-import { ClusterStream } from "@/components/feed/ClusterStream";
-import { WhatMattersNow } from "@/components/feed/WhatMattersNow";
 import { NewStoriesBanner } from "@/components/feed/NewStoriesBanner";
 import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
@@ -19,8 +17,10 @@ import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from "@/lib/feedRanker";
+import { nodeToFocus, buildFocusMatcher, clusterMatchesFocus, wmnMatchesFocus, itemMatchesFocus, focusKindLabel } from "@/lib/feedFocus";
 import { formatRelativeAge } from "@/lib/utils";
-import type { FeedItem, ThemeIntelligence, StoryCluster } from "@/lib/types";
+import type { GraphNode } from "@/lib/graph/types";
+import type { FeedItem, ThemeIntelligence, StoryCluster, TopStories } from "@/lib/types";
 
 // Heavy / non-critical pieces kept out of the feed's First Load JS. The Argus
 // Market Map (the hero) carries the interactive graph engine, so it is lazily
@@ -35,6 +35,27 @@ const ArgusMarketMap = dynamic(
           style={{ background: "#0e1424", border: "1px solid rgba(255,255,255,0.06)" }} />
       </div>
     ),
+  },
+);
+// The adaptive intelligence workspace pulls in the theme-intelligence engine
+// (which transitively imports the M&A engine), so it is lazily chunked to keep
+// the feed's First Load lean — same discipline as the Market Map hero.
+const IntelligenceWorkspace = dynamic(
+  () => import("@/components/feed/IntelligenceWorkspace").then(m => m.IntelligenceWorkspace),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[340px] rounded-2xl animate-pulse" style={{ background: "rgba(12,18,32,0.6)", border: "1px solid rgba(255,255,255,0.08)" }} />
+    ),
+  },
+);
+// The block-based stream also pulls the theme-intelligence engine (catalysts,
+// thesis, memory trend), so it is lazily chunked like the workspace.
+const IntelligenceStream = dynamic(
+  () => import("@/components/feed/IntelligenceStream").then(m => m.IntelligenceStream),
+  {
+    ssr: false,
+    loading: () => <div className="space-y-2.5">{[0, 1, 2].map(i => <div key={i} className="h-28 rounded-xl animate-pulse" style={{ background: "rgba(8,12,20,0.55)", borderLeft: "3px solid rgba(255,255,255,0.06)" }} />)}</div>,
   },
 );
 const ThemeTerminal = dynamic(
@@ -76,6 +97,13 @@ export default function FeedPage() {
   const [selectedTheme,    setSelectedTheme]    = useState<ThemeIntelligence | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
+  // ── Market Map controller ──────────────────────────────────────────────────
+  // The graph is the operating system for the feed: the selected node puts the
+  // page into Focus mode and every section below reflects it. null = Global.
+  const [focusNode, setFocusNode] = useState<GraphNode | null>(null);
+  const [clearNonce, setClearNonce] = useState(0);
+  const exitFocus = useCallback(() => { setFocusNode(null); setClearNonce(n => n + 1); }, []);
+
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
@@ -99,6 +127,20 @@ export default function FeedPage() {
     [watchlist],
   );
 
+  // Map the selected graph node → page focus, then pre-compute the matcher once
+  // and reuse it across every section so the page filters in a single pass.
+  const focus   = useMemo(() => nodeToFocus(focusNode), [focusNode]);
+  const matcher = useMemo(() => (focus ? buildFocusMatcher(focus, themes) : null), [focus, themes]);
+
+  // Stable snapshot reference: selecting a node re-renders the page, and an inline
+  // object literal would rebuild the graph model every render — resetting the very
+  // selection the user just made. Memoize on the primitive values.
+  const mapSnapshot = useMemo(() => ({
+    riskRegime:  ms.riskRegime,
+    volRegime:   ms.volRegime,
+    regimeLabel: ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined,
+  }), [ms.riskRegime, ms.volRegime, ms.trend.riskDirection, ms.trend.label]);
+
   useEffect(() => {
     if (!data?.clusters) return;
     const current = new Set(data.clusters.map(c => c.id));
@@ -108,7 +150,8 @@ export default function FeedPage() {
     prevIdsRef.current = current;
   }, [data?.clusters]);
 
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [params.categories, data?.generated_at]);
+  // Reset pagination on category/data change — and whenever the graph focus moves.
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [params.categories, data?.generated_at, focus?.nodeId]);
 
   const allClusters     = data?.clusters?.length
     ? data.clusters
@@ -118,8 +161,13 @@ export default function FeedPage() {
   const rankedClusters  = useMemo(() => rankClusters(allClusters, prefs), [allClusters, prefs]);
   const dedupedClusters = useMemo(() => capEventDominance(rankedClusters), [rankedClusters]);
   const cappedClusters  = useMemo(() => dedupedClusters.slice(0, MAX_FEED_SIZE), [dedupedClusters]);
-  const visibleClusters = cappedClusters.slice(0, visibleCount);
-  const hasMore         = visibleCount < cappedClusters.length;
+  // Focus mode: the Live Market Stream reflects whatever is selected in the map.
+  const focusedClusters = useMemo(
+    () => (matcher ? cappedClusters.filter(c => clusterMatchesFocus(c, matcher)) : cappedClusters),
+    [cappedClusters, matcher],
+  );
+  const visibleClusters = focusedClusters.slice(0, visibleCount);
+  const hasMore         = visibleCount < focusedClusters.length;
 
   // Personalization active → the gate ran, so the ranked list can be much shorter
   // than the raw cluster set. Surface counts so an intentionally short, high-signal
@@ -142,6 +190,25 @@ export default function FeedPage() {
     () => rankWhatMattersNow(data?.what_matters_now ?? [], prefs),
     [data?.what_matters_now, prefs],
   );
+
+  // Focus mode filters the derived intelligence sections too (What Matters Now +
+  // the Signal Picks), so the entire page is a reflection of the selected node.
+  const focusedWmn = useMemo(
+    () => (matcher ? personalizedWmn.filter(w => wmnMatchesFocus(w, matcher)) : personalizedWmn),
+    [personalizedWmn, matcher],
+  );
+  const focusedTopStories = useMemo<TopStories>(() => {
+    const base = data?.top_stories ?? { top_deal: null, top_macro: null, top_single_name: null, top_price_move: null, top_policy_risk: null };
+    if (!matcher) return base;
+    const keep = (it: FeedItem | null) => (it && itemMatchesFocus(it, matcher) ? it : null);
+    return {
+      top_deal:        keep(base.top_deal),
+      top_macro:       keep(base.top_macro),
+      top_single_name: keep(base.top_single_name),
+      top_price_move:  keep(base.top_price_move),
+      top_policy_risk: keep(base.top_policy_risk),
+    };
+  }, [data?.top_stories, matcher]);
 
   useEffect(() => {
     if (error) console.error("[feed] query error:", error);
@@ -200,9 +267,16 @@ export default function FeedPage() {
       {/* Body aligned to the Markets workstation surface (#0A0F1C) for product consistency. */}
       <div className="relative" style={{ background: "#0A0F1C", minHeight: "calc(100vh - 3.5rem)" }}>
 
-        {/* Depth grid — institutional reference grid behind all layers */}
-        <div aria-hidden className="absolute inset-0 pointer-events-none select-none"
+        {/* Depth grid — institutional reference grid behind all layers; slow drift
+            keeps the surface alive (the system is never frozen). */}
+        <div aria-hidden className="tg-drift absolute inset-0 pointer-events-none select-none"
           style={{ backgroundImage: GRID_BG, backgroundRepeat: "repeat" }} />
+
+        {/* Reading scanline — a faint sweep down the page = Argus reading the tape. */}
+        <div aria-hidden className="absolute inset-x-0 top-0 h-[42%] pointer-events-none overflow-hidden">
+          <div className="tg-scan absolute inset-x-0 h-px"
+            style={{ background: "linear-gradient(to right, transparent, rgba(82,176,200,0.22) 35%, rgba(82,176,200,0.30) 50%, rgba(82,176,200,0.22) 65%, transparent)" }} />
+        </div>
 
         {/* Primary radial glow — field pressure color bleeds from graph through feed */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
@@ -214,8 +288,8 @@ export default function FeedPage() {
               : "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(8,22,66,0.62) 0%, rgba(6,14,44,0.28) 38%, transparent 68%)",
           }} />
 
-        {/* Secondary ambient field — left asymmetric depth, regime-tinted */}
-        <div aria-hidden className="absolute inset-0 pointer-events-none"
+        {/* Secondary ambient field — left asymmetric depth, regime-tinted; breathes (adaptive lighting) */}
+        <div aria-hidden className="tg-ambient absolute inset-0 pointer-events-none"
           style={{
             background: ms.riskRegime === "risk-off"
               ? "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(40,10,10,0.24) 0%, transparent 72%)"
@@ -224,9 +298,10 @@ export default function FeedPage() {
               : "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(8,18,46,0.28) 0%, transparent 72%)",
           }} />
 
-        {/* Tertiary ambient — right-side asymmetric field, regime-tinted */}
-        <div aria-hidden className="absolute inset-0 pointer-events-none"
+        {/* Tertiary ambient — right-side asymmetric field, regime-tinted; breathes out of phase */}
+        <div aria-hidden className="tg-ambient absolute inset-0 pointer-events-none"
           style={{
+            animationDelay: "-4.5s",
             background: ms.riskRegime === "risk-off"
               ? "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(36,8,8,0.16) 0%, transparent 72%)"
               : "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(6,12,36,0.18) 0%, transparent 72%)",
@@ -244,33 +319,69 @@ export default function FeedPage() {
               : "radial-gradient(ellipse 90% 28% at 50% 48%, rgba(5,12,34,0.20) 0%, transparent 65%)",
           }} />
 
+        {/* Transmission wave — a one-shot sweep each time fresh intelligence
+            propagates in (re-keyed on the data timestamp). */}
+        {data?.generated_at && (
+          <div aria-hidden key={data.generated_at} className="absolute inset-x-0 top-0 h-16 pointer-events-none overflow-hidden">
+            <div className="tg-wave absolute inset-y-0 w-1/3"
+              style={{ background: `linear-gradient(to right, transparent, ${ms.riskRegime === "risk-off" ? "rgba(248,113,113,0.16)" : "rgba(82,176,200,0.16)"}, transparent)` }} />
+          </div>
+        )}
+
         {/* New stories banner — sticky inside the dark environment */}
         <NewStoriesBanner
           visible={hasNew && !isFetching}
           onLoad={() => refresh(false)}
         />
 
-        {/* ── Argus Market Map — Feed hero ──────────────────────────────────
+        {/* ── Argus Market Map — the operating system for the feed ──────────
             Interactive capital-transmission map (Macro Driver → Theme → Sector →
-            Assets) on the reusable graph engine, plus Today's Market Story desk
-            note. Hover traces a transmission path; click pins + re-centres. */}
+            Assets) on the reusable graph engine. Selecting a node puts the whole
+            page into Focus mode; every section below reflects the selection. */}
         <ArgusMarketMap
           themes={personalizedThemes}
-          snapshot={{
-            riskRegime: ms.riskRegime,
-            volRegime: ms.volRegime,
-            regimeLabel: ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined,
-          }}
+          snapshot={mapSnapshot}
           isLoading={isLoading}
+          focus={focus}
+          onFocusChange={setFocusNode}
+          clearNonce={clearNonce}
         />
 
-        {/* ── What Matters Now — the map, decoded (explanation layer) ──────── */}
+        {/* ── Focus mode banner — the page is now reflecting one node ──────── */}
+        {focus && (
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3">
+            <div className="flex items-center gap-3 rounded-lg border px-3.5 py-2"
+              style={{ borderColor: "rgba(82,176,200,0.28)", background: "linear-gradient(90deg, rgba(82,176,200,0.10), rgba(82,176,200,0.02))" }}>
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="tg-live-dot absolute inline-flex h-full w-full rounded-full" style={{ background: "#7cc7d8" }} />
+                <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: "#7cc7d8" }} />
+              </span>
+              <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: "#7cc7d8" }}>Focus</span>
+              <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+                style={{ color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.05)" }}>{focusKindLabel(focus.kind)}</span>
+              <span className="text-[13px] font-bold truncate" style={{ color: "rgba(255,255,255,0.94)" }}>{focus.label}</span>
+              <span className="text-[10px] tabular-nums hidden sm:inline" style={{ color: "rgba(255,255,255,0.42)" }}>
+                {focusedClusters.length} {focusedClusters.length === 1 ? "story" : "stories"} · {focusedWmn.length} signals
+              </span>
+              <button onClick={exitFocus}
+                className="ml-auto shrink-0 text-[10px] font-semibold px-2.5 py-1 rounded-md transition-colors hover:bg-white/10"
+                style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)", background: "rgba(82,176,200,0.08)" }}>
+                Exit to Global Market
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Intelligence Workspace — the selected node, fully decoded ──────
+            Replaces the What-Matters-Now card grid with one adaptive Bloomberg-
+            style dashboard. The theme behind the selected graph node becomes the
+            centerpiece; the whole workspace re-renders as the focus changes. */}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
-          <WhatMattersNow
-            items={personalizedWmn}
-            isLoading={isLoading}
+          <IntelligenceWorkspace
+            focus={focus}
             themes={personalizedThemes}
-            marketIntensity={ms.atmosphereIntensity}
+            clusters={data?.clusters ?? []}
+            isLoading={isLoading}
           />
         </div>
 
@@ -307,24 +418,21 @@ export default function FeedPage() {
               style={{ background: "linear-gradient(to right, rgba(255,255,255,0.05), transparent)" }} />
           </div>
 
-          {/* ── Live Market Stream ────────────────────────────────────── */}
-          <ClusterStream
+          {/* ── Live Market Stream — heterogeneous intelligence blocks ──── */}
+          <IntelligenceStream
             clusters={visibleClusters}
+            themes={themes}
             savedIds={savedIds}
             newIds={newIds}
             onSave={handleSave}
-            isLoading={isPending}
             watchedEntities={watchedEntities.size > 0 ? watchedEntities : undefined}
-            themes={themes}
+            isLoading={isPending}
           />
 
           {/* ── Signal Picks — after stream, by type ─────────────────── */}
           {!isLoading && !hasMore && (
             <TopStoriesGrid
-              stories={data?.top_stories ?? {
-                top_deal: null, top_macro: null,
-                top_single_name: null, top_price_move: null, top_policy_risk: null,
-              }}
+              stories={focusedTopStories}
               savedIds={savedIds}
               onSave={handleSave}
               isLoading={false}
@@ -342,9 +450,9 @@ export default function FeedPage() {
                   border: "1px solid rgba(255,255,255,0.09)",
                 }}
               >
-                Show {Math.min(PAGE_SIZE, cappedClusters.length - visibleCount)} more
+                Show {Math.min(PAGE_SIZE, focusedClusters.length - visibleCount)} more
                 <span className="ml-1.5" style={{ color: "rgba(255,255,255,0.28)" }}>
-                  ({cappedClusters.length - visibleCount} remaining)
+                  ({focusedClusters.length - visibleCount} remaining)
                 </span>
               </button>
             </div>

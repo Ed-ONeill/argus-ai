@@ -3,7 +3,10 @@
 import { useMemo } from "react";
 import NetworkGraph from "@/components/graph/NetworkGraph";
 import { buildMarketMap, buildMarketStory, type MarketSnapshot } from "@/lib/marketMap";
+import { buildFocusStory, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
+import { useActiveBeamTokens, setBeacon, releaseBeacon, nodeTokens } from "@/lib/feedHighlight";
 import { confColor, convScore } from "@/app/markets/marketsShared";
+import type { GraphNode } from "@/lib/graph/types";
 import type { ThemeIntelligence } from "@/lib/types";
 
 /**
@@ -16,11 +19,20 @@ interface Props {
   themes: ThemeIntelligence[];
   snapshot: MarketSnapshot;
   isLoading?: boolean;
+  /** Page-level focus (the selected node, mapped). null = Global Market mode. */
+  focus?: FeedFocus | null;
+  /** Fired when the graph selection changes — drives the whole page. */
+  onFocusChange?: (node: GraphNode | null) => void;
+  /** Increment to release the selection from outside (exit Focus mode). */
+  clearNonce?: number;
 }
 
-export function ArgusMarketMap({ themes, snapshot, isLoading }: Props) {
+export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChange, clearNonce }: Props) {
+  const beam = useActiveBeamTokens();
   const model = useMemo(() => buildMarketMap(themes, snapshot), [themes, snapshot]);
-  const story = useMemo(() => buildMarketStory(themes, snapshot), [themes, snapshot]);
+  const globalStory = useMemo(() => buildMarketStory(themes, snapshot), [themes, snapshot]);
+  const focusStory = useMemo(() => (focus ? buildFocusStory(focus, themes) : null), [focus, themes]);
+  const story = focus ? focusStory : globalStory;
 
   const mapped = useMemo(() =>
     [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 6).filter(t => (t.related_industries ?? []).length),
@@ -56,16 +68,30 @@ export function ArgusMarketMap({ themes, snapshot, isLoading }: Props) {
           {isLoading ? (
             <div className="w-full rounded-xl border animate-pulse" style={{ height: 440, borderColor: "rgba(82,176,200,0.2)", background: "rgba(5,9,16,0.6)" }} />
           ) : (
-            <NetworkGraph model={model} height={440} title="Argus Market Map" subtitle="Capital Flow" showTimeline={false} showFilters={false} />
+            <NetworkGraph model={model} height={440} title="Argus Market Map" subtitle="Capital Flow" showTimeline={false} showFilters={false}
+              onFocusChange={onFocusChange} clearNonce={clearNonce} beamTokens={beam}
+              onHoverChange={n => n ? setBeacon(nodeTokens(n)) : releaseBeacon()} />
           )}
         </div>
 
         {/* Today's Market Story */}
         <div className="rounded-xl border p-4 flex flex-col" style={{ borderColor: "rgba(255,255,255,0.08)", background: "linear-gradient(180deg, rgba(20,30,46,0.55), rgba(5,9,16,0.8))" }}>
           <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-[8.5px] font-black uppercase tracking-[0.16em]" style={{ color: "rgba(255,255,255,0.55)" }}>Today&apos;s Market Story</span>
-            <span className="ml-auto text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: regimeColor, background: `${regimeColor}1a` }}>{regimeLabel}</span>
+            <span className="text-[8.5px] font-black uppercase tracking-[0.16em]" style={{ color: focus ? "#7cc7d8" : "rgba(255,255,255,0.55)" }}>
+              {focus ? "Focus Read" : "Today's Market Story"}
+            </span>
+            <span className="ml-auto text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+              style={focus
+                ? { color: "#7cc7d8", background: "rgba(82,176,200,0.14)" }
+                : { color: regimeColor, background: `${regimeColor}1a` }}>
+              {focus ? focusKindLabel(focus.kind) : regimeLabel}
+            </span>
           </div>
+
+          {/* Focus headline — what the selected node is */}
+          {!isLoading && focus && (
+            <p className="text-[13px] font-bold leading-tight mb-2" style={{ color: "rgba(255,255,255,0.94)" }}>{focus.label}</p>
+          )}
 
           {isLoading ? (
             <div className="space-y-2 animate-pulse">
@@ -86,7 +112,9 @@ export function ArgusMarketMap({ themes, snapshot, isLoading }: Props) {
                 </div>
               )}
               <p className="text-[8.5px] mt-auto pt-3" style={{ color: "rgba(255,255,255,0.28)" }}>
-                Hover a node to trace its transmission · click to pin and re-centre
+                {focus
+                  ? "The feed below is filtered to this node · click the map background to return to Global Market"
+                  : "Select any node to drive the feed · hover to trace its transmission"}
               </p>
             </>
           ) : (
