@@ -11,6 +11,7 @@ import {
   Headphones, ArrowUpRight, Activity, Network, Building2, Sprout,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TickerChip } from "@/components/common/TickerChip";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
@@ -657,8 +658,9 @@ function IndustryTransmissionMap({ industry, themes }: { industry: IndustryConfi
             <Step role="Expressions">
               <span className="inline-flex flex-wrap items-center gap-1">
                 {r.tickers.map(tk => (
-                  <span key={tk} className="text-[10px] font-bold font-mono leading-none px-1.5 py-0.5 rounded"
-                    style={{ color: c, background: `${c}10` }}>{tk}</span>
+                  <TickerChip key={tk} ticker={tk} mono={false} color={c}
+                    className="text-[10px] font-bold font-mono leading-none px-1.5 py-0.5 rounded"
+                    style={{ background: `${c}10` }} />
                 ))}
               </span>
             </Step>
@@ -996,13 +998,9 @@ export default function IndustryDetailPage() {
           {/* Key asset chips */}
           <div className="flex flex-wrap gap-1.5 mb-4">
             {industry.keyAssets.map(ticker => (
-              <span
-                key={ticker}
+              <TickerChip key={ticker} ticker={ticker} mono={false} color={industry.color}
                 className="text-[10px] font-bold font-mono px-2.5 py-[5px] rounded-lg leading-none"
-                style={{ color: industry.color, background: `${industry.color}22` }}
-              >
-                {ticker}
-              </span>
+                style={{ background: `${industry.color}22` }} />
             ))}
           </div>
 
@@ -1368,13 +1366,9 @@ export default function IndustryDetailPage() {
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="text-[8.5px] font-bold shrink-0 mt-[3px]" style={{ color: "#10b98180" }}>↑ Benefits</span>
                         {bens.map(a => (
-                          <span
-                            key={a}
+                          <TickerChip key={a} ticker={a} mono={false} color="#10b981"
                             className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
-                            style={{ background: "rgba(16,185,129,0.09)", color: "#10b981" }}
-                          >
-                            {a}
-                          </span>
+                            style={{ background: "rgba(16,185,129,0.09)" }} />
                         ))}
                       </div>
                     )}
@@ -1382,13 +1376,9 @@ export default function IndustryDetailPage() {
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="text-[8.5px] font-bold shrink-0 mt-[3px]" style={{ color: "#ef444480" }}>↓ Headwinds</span>
                         {hwds.map(a => (
-                          <span
-                            key={a}
+                          <TickerChip key={a} ticker={a} mono={false} color="#ef4444"
                             className="text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded leading-none"
-                            style={{ background: "rgba(239,68,68,0.09)", color: "#ef4444" }}
-                          >
-                            {a}
-                          </span>
+                            style={{ background: "rgba(239,68,68,0.09)" }} />
                         ))}
                       </div>
                     )}

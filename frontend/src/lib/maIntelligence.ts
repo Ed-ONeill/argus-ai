@@ -19,6 +19,7 @@
  */
 
 import type { MADeal } from "@/hooks/useMAIntelligence";
+import { tickerInfo, type TickerInfo } from "./tickerMetadata";
 
 export interface DealAdvisors {
   banks: string[];   // financial advisors / debt financing banks detected in text
@@ -163,111 +164,11 @@ const SECTOR_ROLES: Record<string, SectorRoles> = {
   "Media & Telecom": { beneficiaries: ["GOOGL", "META", "NFLX"], competitors: ["DIS", "WBD", "PARA"], suppliers: ["TMUS", "VZ", "T"], secondOrder: ["TTD", "ROKU"] },
 };
 
-// ── Ticker reference data — powers hover cards on every ticker chip ────────────
-export interface TickerInfo { name: string; sector: string; exchange: string }
-const TICKER_META: Record<string, TickerInfo> = {
-  // Technology
-  MSFT: { name: "Microsoft Corporation", sector: "Technology", exchange: "NASDAQ" },
-  ORCL: { name: "Oracle Corporation", sector: "Technology", exchange: "NYSE" },
-  CRM:  { name: "Salesforce, Inc.", sector: "Technology", exchange: "NYSE" },
-  NOW:  { name: "ServiceNow, Inc.", sector: "Technology", exchange: "NYSE" },
-  ADBE: { name: "Adobe Inc.", sector: "Technology", exchange: "NASDAQ" },
-  PANW: { name: "Palo Alto Networks", sector: "Technology", exchange: "NASDAQ" },
-  SNOW: { name: "Snowflake Inc.", sector: "Technology", exchange: "NYSE" },
-  NVDA: { name: "NVIDIA Corporation", sector: "Semiconductors", exchange: "NASDAQ" },
-  AVGO: { name: "Broadcom Inc.", sector: "Semiconductors", exchange: "NASDAQ" },
-  TSM:  { name: "Taiwan Semiconductor", sector: "Semiconductors", exchange: "NYSE" },
-  DDOG: { name: "Datadog, Inc.", sector: "Technology", exchange: "NASDAQ" },
-  CRWD: { name: "CrowdStrike Holdings", sector: "Technology", exchange: "NASDAQ" },
-  // Healthcare
-  LLY:  { name: "Eli Lilly and Company", sector: "Healthcare", exchange: "NYSE" },
-  MRK:  { name: "Merck & Co., Inc.", sector: "Healthcare", exchange: "NYSE" },
-  ABBV: { name: "AbbVie Inc.", sector: "Healthcare", exchange: "NYSE" },
-  PFE:  { name: "Pfizer Inc.", sector: "Healthcare", exchange: "NYSE" },
-  AMGN: { name: "Amgen Inc.", sector: "Healthcare", exchange: "NASDAQ" },
-  GILD: { name: "Gilead Sciences", sector: "Healthcare", exchange: "NASDAQ" },
-  VRTX: { name: "Vertex Pharmaceuticals", sector: "Healthcare", exchange: "NASDAQ" },
-  BMY:  { name: "Bristol Myers Squibb", sector: "Healthcare", exchange: "NYSE" },
-  TMO:  { name: "Thermo Fisher Scientific", sector: "Healthcare", exchange: "NYSE" },
-  DHR:  { name: "Danaher Corporation", sector: "Healthcare", exchange: "NYSE" },
-  IQV:  { name: "IQVIA Holdings", sector: "Healthcare", exchange: "NYSE" },
-  UNH:  { name: "UnitedHealth Group", sector: "Healthcare", exchange: "NYSE" },
-  CVS:  { name: "CVS Health Corporation", sector: "Healthcare", exchange: "NYSE" },
-  // Energy
-  XOM:  { name: "Exxon Mobil Corporation", sector: "Energy", exchange: "NYSE" },
-  CVX:  { name: "Chevron Corporation", sector: "Energy", exchange: "NYSE" },
-  COP:  { name: "ConocoPhillips", sector: "Energy", exchange: "NYSE" },
-  EOG:  { name: "EOG Resources", sector: "Energy", exchange: "NYSE" },
-  DVN:  { name: "Devon Energy", sector: "Energy", exchange: "NYSE" },
-  OXY:  { name: "Occidental Petroleum", sector: "Energy", exchange: "NYSE" },
-  WMB:  { name: "Williams Companies", sector: "Energy", exchange: "NYSE" },
-  SLB:  { name: "SLB (Schlumberger)", sector: "Energy", exchange: "NYSE" },
-  HAL:  { name: "Halliburton Company", sector: "Energy", exchange: "NYSE" },
-  BKR:  { name: "Baker Hughes Company", sector: "Energy", exchange: "NASDAQ" },
-  KMI:  { name: "Kinder Morgan", sector: "Energy", exchange: "NYSE" },
-  // Financials
-  JPM:  { name: "JPMorgan Chase & Co.", sector: "Financials", exchange: "NYSE" },
-  GS:   { name: "Goldman Sachs Group", sector: "Financials", exchange: "NYSE" },
-  MS:   { name: "Morgan Stanley", sector: "Financials", exchange: "NYSE" },
-  BAC:  { name: "Bank of America", sector: "Financials", exchange: "NYSE" },
-  BX:   { name: "Blackstone Inc.", sector: "Financials", exchange: "NYSE" },
-  KKR:  { name: "KKR & Co. Inc.", sector: "Financials", exchange: "NYSE" },
-  APO:  { name: "Apollo Global Management", sector: "Financials", exchange: "NYSE" },
-  C:    { name: "Citigroup Inc.", sector: "Financials", exchange: "NYSE" },
-  WFC:  { name: "Wells Fargo & Company", sector: "Financials", exchange: "NYSE" },
-  SPGI: { name: "S&P Global Inc.", sector: "Financials", exchange: "NYSE" },
-  MCO:  { name: "Moody's Corporation", sector: "Financials", exchange: "NYSE" },
-  // Industrials
-  GE:   { name: "GE Aerospace", sector: "Industrials", exchange: "NYSE" },
-  HON:  { name: "Honeywell International", sector: "Industrials", exchange: "NASDAQ" },
-  RTX:  { name: "RTX Corporation", sector: "Industrials", exchange: "NYSE" },
-  ETN:  { name: "Eaton Corporation", sector: "Industrials", exchange: "NYSE" },
-  PH:   { name: "Parker-Hannifin", sector: "Industrials", exchange: "NYSE" },
-  EMR:  { name: "Emerson Electric", sector: "Industrials", exchange: "NYSE" },
-  CMI:  { name: "Cummins Inc.", sector: "Industrials", exchange: "NYSE" },
-  PCAR: { name: "PACCAR Inc.", sector: "Industrials", exchange: "NASDAQ" },
-  DOV:  { name: "Dover Corporation", sector: "Industrials", exchange: "NYSE" },
-  URI:  { name: "United Rentals", sector: "Industrials", exchange: "NYSE" },
-  FAST: { name: "Fastenal Company", sector: "Industrials", exchange: "NASDAQ" },
-  // Consumer
-  PG:   { name: "Procter & Gamble", sector: "Consumer Staples", exchange: "NYSE" },
-  KO:   { name: "The Coca-Cola Company", sector: "Consumer Staples", exchange: "NYSE" },
-  PEP:  { name: "PepsiCo, Inc.", sector: "Consumer Staples", exchange: "NASDAQ" },
-  MDLZ: { name: "Mondelez International", sector: "Consumer Staples", exchange: "NASDAQ" },
-  KMB:  { name: "Kimberly-Clark", sector: "Consumer Staples", exchange: "NYSE" },
-  CL:   { name: "Colgate-Palmolive", sector: "Consumer Staples", exchange: "NYSE" },
-  EL:   { name: "Estée Lauder Companies", sector: "Consumer Staples", exchange: "NYSE" },
-  ADM:  { name: "Archer-Daniels-Midland", sector: "Consumer Staples", exchange: "NYSE" },
-  BG:   { name: "Bunge Global SA", sector: "Consumer Staples", exchange: "NYSE" },
-  SYY:  { name: "Sysco Corporation", sector: "Consumer Staples", exchange: "NYSE" },
-  WMT:  { name: "Walmart Inc.", sector: "Consumer Staples", exchange: "NYSE" },
-  COST: { name: "Costco Wholesale", sector: "Consumer Staples", exchange: "NASDAQ" },
-  // Real Estate
-  PLD:  { name: "Prologis, Inc.", sector: "Real Estate", exchange: "NYSE" },
-  AMT:  { name: "American Tower", sector: "Real Estate", exchange: "NYSE" },
-  EQIX: { name: "Equinix, Inc.", sector: "Real Estate", exchange: "NASDAQ" },
-  DLR:  { name: "Digital Realty Trust", sector: "Real Estate", exchange: "NYSE" },
-  O:    { name: "Realty Income", sector: "Real Estate", exchange: "NYSE" },
-  SPG:  { name: "Simon Property Group", sector: "Real Estate", exchange: "NYSE" },
-  WELL: { name: "Welltower Inc.", sector: "Real Estate", exchange: "NYSE" },
-  CBRE: { name: "CBRE Group", sector: "Real Estate", exchange: "NYSE" },
-  JLL:  { name: "Jones Lang LaSalle", sector: "Real Estate", exchange: "NYSE" },
-  VICI: { name: "VICI Properties", sector: "Real Estate", exchange: "NYSE" },
-  // Media & Telecom
-  GOOGL:{ name: "Alphabet Inc.", sector: "Communication Services", exchange: "NASDAQ" },
-  META: { name: "Meta Platforms", sector: "Communication Services", exchange: "NASDAQ" },
-  NFLX: { name: "Netflix, Inc.", sector: "Communication Services", exchange: "NASDAQ" },
-  DIS:  { name: "The Walt Disney Company", sector: "Communication Services", exchange: "NYSE" },
-  TMUS: { name: "T-Mobile US", sector: "Communication Services", exchange: "NASDAQ" },
-  VZ:   { name: "Verizon Communications", sector: "Communication Services", exchange: "NYSE" },
-  T:    { name: "AT&T Inc.", sector: "Communication Services", exchange: "NYSE" },
-  WBD:  { name: "Warner Bros. Discovery", sector: "Communication Services", exchange: "NASDAQ" },
-  PARA: { name: "Paramount Global", sector: "Communication Services", exchange: "NASDAQ" },
-  TTD:  { name: "The Trade Desk", sector: "Communication Services", exchange: "NASDAQ" },
-  ROKU: { name: "Roku, Inc.", sector: "Communication Services", exchange: "NASDAQ" },
-};
-/** Reference metadata for a ticker symbol, or null if unknown. */
-export function tickerInfo(t: string): TickerInfo | null { return TICKER_META[t.toUpperCase()] ?? null; }
+// ── Ticker reference data ──────────────────────────────────────────────────────
+// Single source of truth now lives in lib/tickerMetadata.ts. Re-exported here so
+// existing `import { tickerInfo } from "@/lib/maIntelligence"` call sites (e.g.
+// marketMap.ts) keep working unchanged.
+export { tickerInfo, type TickerInfo };
 
 // TICKER_META sector labels → SECTOR_ROLES keys (a few differ from the bucket name).
 const SECTOR_ROLE_KEY: Record<string, string> = {
@@ -277,7 +178,7 @@ const SECTOR_ROLE_KEY: Record<string, string> = {
 };
 /** Sector-peer roles around a single ticker — powers company-centred graphs. */
 export function companyPeers(ticker: string): { sector: string; beneficiaries: string[]; competitors: string[]; suppliers: string[]; secondOrder: string[] } | null {
-  const info = TICKER_META[ticker.toUpperCase()];
+  const info = tickerInfo(ticker);
   if (!info) return null;
   const key = SECTOR_ROLE_KEY[info.sector] ?? info.sector;
   const roles = SECTOR_ROLES[key];

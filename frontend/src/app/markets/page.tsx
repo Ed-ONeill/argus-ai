@@ -10,6 +10,7 @@ import {
   Bookmark, BookmarkCheck, ChevronDown,
 } from "lucide-react";
 import { cn, formatRelativeAge, timeAgo } from "@/lib/utils";
+import { TickerChip } from "@/components/common/TickerChip";
 import { useFeed } from "@/hooks/useFeed";
 import { useSaved } from "@/hooks/useSaved";
 import { useMarketData } from "@/hooks/useMarketData";
@@ -406,7 +407,7 @@ function DominantNarrativeBase({ brief, themes }: {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-emerald-300/70">Primary Beneficiaries</span>
               {benef.map(tk => (
-                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">{tk}</span>
+                <TickerChip key={tk} ticker={tk} mono={false} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25" />
               ))}
             </div>
           )}
@@ -414,7 +415,7 @@ function DominantNarrativeBase({ brief, themes }: {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-red-400/70">Most Exposed</span>
               {losers.tickers.map(tk => (
-                <span key={tk} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-red-500/8 text-red-400/90 border border-red-500/20">{tk}</span>
+                <TickerChip key={tk} ticker={tk} mono={false} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-red-500/8 text-red-400/90 border border-red-500/20" />
               ))}
             </div>
           )}
@@ -898,7 +899,7 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
                     <span className="flex items-center gap-1">
                       <span className="text-[6.5px] font-bold uppercase tracking-wide text-emerald-400/55">Wins</span>
                       {benef.map(tk => (
-                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{tk}</span>
+                        <TickerChip key={tk} ticker={tk} mono={false} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20" />
                       ))}
                     </span>
                   )}
@@ -906,7 +907,7 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
                     <span className="flex items-center gap-1">
                       <span className="text-[6.5px] font-bold uppercase tracking-wide text-red-400/55">Loses</span>
                       {losers.tickers.map(tk => (
-                        <span key={tk} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-red-500/8 text-red-400/90 border border-red-500/15">{tk}</span>
+                        <TickerChip key={tk} ticker={tk} mono={false} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-red-500/8 text-red-400/90 border border-red-500/15" />
                       ))}
                     </span>
                   )}
@@ -998,7 +999,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
               <span className="font-semibold text-ink-secondary">{cleanThemeName(c.t.name)}</span>
               <span className="text-ink-muted/35">→</span>
               {c.tickers.slice(0, 2).map(tk => (
-                <span key={tk} className="font-bold tabular-nums text-emerald-300/90">{tk}</span>
+                <TickerChip key={tk} ticker={tk} mono={false} className="font-bold tabular-nums text-emerald-300/90" />
               ))}
             </span>
           ))}
@@ -1030,7 +1031,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
                 <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-emerald-300/70 mb-0.5">Securities</p>
                 <div className="flex items-center gap-1">
                   {c.tickers.map(tk => (
-                    <span key={tk} className="text-[11px] font-black tabular-nums text-emerald-300">{tk}</span>
+                    <TickerChip key={tk} ticker={tk} mono={false} className="text-[11px] font-black tabular-nums text-emerald-300" />
                   ))}
                 </div>
               </div>
@@ -1188,7 +1189,7 @@ function SectorPositioningBase({ themes }: { themes: ThemeIntelligence[] }) {
                   {p.exposures.length > 0 && (
                     <span className="ml-auto flex items-center gap-1">
                       {p.exposures.slice(0, 3).map(tk => (
-                        <span key={tk} className="text-[9px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">{tk}</span>
+                        <TickerChip key={tk} ticker={tk} mono={false} className="text-[9px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25" />
                       ))}
                     </span>
                   )}
@@ -1224,7 +1225,7 @@ function SectorPositioningBase({ themes }: { themes: ThemeIntelligence[] }) {
                     <OppBlock label="Best Expressions">
                       <div className="flex items-center gap-1 flex-wrap">
                         {p.exposures.map(tk => (
-                          <span key={tk} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{tk}</span>
+                          <TickerChip key={tk} ticker={tk} mono={false} className="text-[11px] font-bold tabular-nums px-1.5 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20" />
                         ))}
                       </div>
                       {p.expressWhy && <p className="text-[8.5px] text-ink-muted/60 leading-snug mt-1">{p.expressWhy}</p>}

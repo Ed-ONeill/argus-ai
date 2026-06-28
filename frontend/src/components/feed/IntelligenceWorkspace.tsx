@@ -9,6 +9,9 @@ import {
 import { deriveDriver, deriveSector, dirOf, themeWatch } from "@/lib/themeTransmission";
 import { focusedThemes, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
 import { Beam } from "@/lib/feedHighlight";
+import { TickerChip } from "@/components/common/TickerChip";
+import { EntityChip } from "@/components/common/EntityChip";
+import { themeEntity, sectorEntity, tickerEntity, useRegisterEntities, type EntityInfo } from "@/lib/entity";
 import { cleanThemeName, confColor } from "@/app/markets/marketsShared";
 import { timeAgo } from "@/lib/utils";
 import type { ThemeIntelligence, StoryCluster } from "@/lib/types";
@@ -111,7 +114,12 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
     benefitsTickers: best?.tickers ?? beneficiaries.slice(0, 4),
     whatChanged, whyMatters, benefitsText, hurt,
     watch: themeWatch(theme),
-    transmission: [driver, name, sector, beneficiaries.slice(0, 3).join(" · ")].filter(Boolean) as string[],
+    transmission: [
+      driver ? { kind: "macro" as const, label: driver } : null,
+      { kind: "theme" as const, label: name },
+      sector ? { kind: "sector" as const, label: sector } : null,
+      beneficiaries.length ? { kind: "raw" as const, label: beneficiaries.slice(0, 3).join(" · ") } : null,
+    ].filter(Boolean) as { kind: "macro" | "theme" | "sector" | "raw"; label: string }[],
     ctx: [name, sector, driver] as (string | null)[],
   };
 }
@@ -124,6 +132,41 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
   }, [focus, themes]);
 
   const r = useMemo(() => (centerpiece ? buildReasoning(centerpiece, clusters) : null), [centerpiece, clusters]);
+
+  // Register the themes + derived sectors as entities, so any EntityChip on the
+  // page (here or future sections) resolves their hover read automatically.
+  const entities = useMemo<EntityInfo[]>(() => {
+    const out: EntityInfo[] = [];
+    const bySector = new Map<string, ThemeIntelligence[]>();
+    const byTicker = new Map<string, ThemeIntelligence[]>();
+    for (const th of themes) {
+      out.push(themeEntity(cleanThemeName(th.name), {
+        confidence: th.confidence, momentum: th.momentum_label,
+        beneficiaries: themeBeneficiaries(th, 3), primarySector: deriveSector(th) ?? undefined,
+      }));
+      const sec = deriveSector(th);
+      if (sec) { const arr = bySector.get(sec) ?? []; arr.push(th); bySector.set(sec, arr); }
+      for (const tk of themeBeneficiaries(th, 5)) { const arr = byTicker.get(tk) ?? []; arr.push(th); byTicker.set(tk, arr); }
+    }
+    for (const [sec, ths] of bySector) {
+      const sorted = [...ths].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+      out.push(sectorEntity(sec, {
+        conviction: sorted.reduce((s, t) => s + (t.confidence ?? 0), 0) / sorted.length,
+        leadingThemes: sorted.slice(0, 2).map(t => cleanThemeName(t.name)),
+        topCompanies: [...new Set(sorted.flatMap(t => themeBeneficiaries(t, 3)))].slice(0, 4),
+      }));
+    }
+    for (const [tk, ths] of byTicker) {
+      const sorted = [...ths].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+      out.push(tickerEntity(tk, {
+        exposureTheme: cleanThemeName(sorted[0].name),
+        conviction: sorted[0].confidence,
+        relatedThemes: sorted.slice(1, 4).map(t => cleanThemeName(t.name)),
+      }));
+    }
+    return out;
+  }, [themes]);
+  useRegisterEntities(entities);
 
   if (isLoading) return <WorkspaceSkeleton />;
   if (!centerpiece || !r) return null;
@@ -192,10 +235,16 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
             <p className="text-[14px] leading-[1.6] font-light" style={{ color: "rgba(255,255,255,0.8)" }}>{r.whyMatters}</p>
             <div className="flex items-center gap-2 flex-wrap mt-3.5">
               {r.transmission.map((node, i) => (
-                <span key={node} className="flex items-center gap-2">
+                <span key={node.label} className="flex items-center gap-2">
                   {i > 0 && <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.24)" }}>→</span>}
-                  <Beam tokens={[node, ...r.ctx]} className="text-[10px] font-semibold tracking-wide inline-block"
-                    style={{ color: i === 1 ? dc : "rgba(255,255,255,0.6)" }}>{node}</Beam>
+                  {node.kind === "raw" ? (
+                    <Beam tokens={[node.label, ...r.ctx]} className="text-[10px] font-semibold tracking-wide inline-block" style={{ color: "rgba(255,255,255,0.6)" }}>{node.label}</Beam>
+                  ) : (
+                    <Beam tokens={[node.label, ...r.ctx]}>
+                      <EntityChip kind={node.kind} label={node.label} mono={false} className="text-[10px] font-semibold tracking-wide inline-block"
+                        style={{ color: node.kind === "theme" ? dc : "rgba(255,255,255,0.6)" }} />
+                    </Beam>
+                  )}
                 </span>
               ))}
             </div>
@@ -298,7 +347,9 @@ function TickerChips({ tickers, color, context = [] }: { tickers: string[]; colo
   return (
     <div className="flex flex-wrap gap-x-2.5 gap-y-1">
       {tickers.map(tk => (
-        <Beam key={tk} tokens={[tk, ...context]} className="text-[11px] font-mono font-bold tracking-wide" style={{ color }}>{tk}</Beam>
+        <Beam key={tk} tokens={[tk, ...context]}>
+          <TickerChip ticker={tk} color={color} size="md" className="tracking-wide" />
+        </Beam>
       ))}
     </div>
   );

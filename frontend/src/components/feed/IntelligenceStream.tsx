@@ -8,6 +8,7 @@ import { classifyImpact } from "@/lib/types";
 import { transmissionPath, dirOf, themeWatch } from "@/lib/themeTransmission";
 import { themeBeneficiaries, generateNextCatalysts, generateThesis, generateBullBearCases } from "@/lib/themeIntelligence";
 import { Beam, useBeam } from "@/lib/feedHighlight";
+import { TickerChip } from "@/components/common/TickerChip";
 import { cleanThemeName } from "@/app/markets/marketsShared";
 import type { StoryCluster, FeedItem, ThemeIntelligence, RelatedStory } from "@/lib/types";
 
@@ -223,8 +224,9 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
           <BlockLabel>Affected Companies</BlockLabel>
           <div className="flex flex-wrap gap-x-2.5 gap-y-1">
             {companies.length ? companies.map(c => (
-              <Beam key={c} tokens={[c, ...ctx]} className="text-[10px] font-mono font-bold inline-block"
-                style={{ color: watchedEntities?.has(c.toLowerCase()) ? CYAN : "rgba(255,255,255,0.7)" }}>{c}</Beam>
+              <Beam key={c} tokens={[c, ...ctx]}>
+                <TickerChip ticker={c} size="md" color={watchedEntities?.has(c.toLowerCase()) ? CYAN : "rgba(255,255,255,0.7)"} className="!text-[10px]" />
+              </Beam>
             )) : <Empty />}
           </div>
         </div>
@@ -350,7 +352,9 @@ function TransmissionRow({ cluster, theme, watched, isSaved, onSave, isNew, watc
           {tickers.length > 0 && (
             <span className="flex items-center gap-2 shrink-0">
               {tickers.map(t => (
-                <Beam key={t} tokens={[t, ...rowCtx]} className="text-[9px] font-mono font-bold" style={{ color: watchedEntities?.has(t.toLowerCase()) ? CYAN : "rgba(255,255,255,0.55)" }}>{t}</Beam>
+                <Beam key={t} tokens={[t, ...rowCtx]}>
+                  <TickerChip ticker={t} size="sm" color={watchedEntities?.has(t.toLowerCase()) ? CYAN : "rgba(255,255,255,0.55)"} className="!text-[9px]" />
+                </Beam>
               ))}
             </span>
           )}
@@ -399,7 +403,7 @@ function TailItem({ cluster, theme }: { cluster: StoryCluster; theme?: ThemeInte
       className="flex items-baseline gap-2 py-1.5 min-w-0 transition-colors hover:bg-white/[0.02]" style={{ ...dimStyle }}>
       <span className="text-[10px] font-black tabular-nums shrink-0 w-5 text-right" style={{ color: "rgba(255,255,255,0.5)" }}>{Math.round(cluster.primary.signal_score)}</span>
       {(cluster.primary.affected_entities ?? [])[0] && (
-        <span className="text-[8.5px] font-mono font-bold shrink-0" style={{ color: `${color}c0` }}>{(cluster.primary.affected_entities ?? [])[0]}</span>
+        <TickerChip ticker={(cluster.primary.affected_entities ?? [])[0]} size="xs" color={`${color}c0`} className="shrink-0" />
       )}
       <span className="text-[10.5px] leading-tight truncate flex-1 min-w-0" style={{ color: "rgba(255,255,255,0.48)" }}>{cluster.primary.title}</span>
     </a>
