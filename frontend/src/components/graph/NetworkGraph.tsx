@@ -69,9 +69,21 @@ export interface NetworkGraphProps {
   onHoverChange?: (node: GraphNode | null) => void;
   /** Normalized tokens of the active page beam — matching nodes stay lit, rest dim. */
   beamTokens?: Set<string> | null;
+  /**
+   * Global market energy 0..1 — modulates the graph's whole motion state: particle
+   * speed/density, transmission tempo, breathing amplitude, sector pulse waves. Low
+   * = calm/quiet, high = energetic (major event). The graph expresses the regime.
+   */
+  energy?: number;
+  /**
+   * Market Replay 0..1 — replays how today's narrative built from the open. Nodes
+   * activate in causal order, confidence/size ramps in, capital flow and sector
+   * leadership emerge over the day. null = live (no replay).
+   */
+  replayProgress?: number | null;
 }
 
-export default function NetworkGraph({ model: rootModel, expand, height = 460, title = "Argus Transmission Map", subtitle, showTimeline = true, showFilters = true, onFocusChange, clearNonce, onHoverChange, beamTokens }: NetworkGraphProps) {
+export default function NetworkGraph({ model: rootModel, expand, height = 460, title = "Argus Transmission Map", subtitle, showTimeline = true, showFilters = true, onFocusChange, clearNonce, onHoverChange, beamTokens, energy, replayProgress }: NetworkGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simRef = useRef<ForceSimulation | null>(null);
@@ -150,6 +162,15 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
   useEffect(() => { onFocusRef.current = onFocusChange; }, [onFocusChange]);
   useEffect(() => { onFocusRef.current?.(selected); }, [selected]);
 
+  // Selection pulse: when the lens changes, the market "recalculates" — a ripple
+  // animates outward from the chosen node and capital-flow particles briefly surge.
+  const pulseRef = useRef<{ id: string | null; t0: number }>({ id: null, t0: 0 });
+  const pulseInit = useRef(false);
+  useEffect(() => {
+    if (!pulseInit.current) { pulseInit.current = true; return; } // skip first mount
+    pulseRef.current = { id: selected?.id ?? model.centerId, t0: performance.now() };
+  }, [selected, model.centerId]);
+
   // Page-wide hover beam: broadcast the hovered node up, and receive the active
   // beam (tokens) to softly light matching nodes when the hover came from elsewhere.
   const onHoverRef = useRef(onHoverChange);
@@ -157,6 +178,54 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
   useEffect(() => { onHoverRef.current?.(hovered?.node ?? null); }, [hovered]);
   const beamRef = useRef<Set<string> | null>(beamTokens ?? null);
   useEffect(() => { beamRef.current = beamTokens ?? null; }, [beamTokens]);
+  // Global market energy — smoothed toward the target each frame so regime shifts
+  // ease in rather than snap. Drives the graph's overall motion temperament.
+  const energyTargetRef = useRef(energy ?? 0.4);
+  const energyRef = useRef(energy ?? 0.4);
+  useEffect(() => { energyTargetRef.current = Math.max(0, Math.min(1, energy ?? 0.4)); }, [energy]);
+  // Sequence index per sector node → a pulse wave can travel sector-by-sector.
+  const seqIndex = useMemo(() => {
+    const map = new Map<string, number>(); let i = 0;
+    for (const n of model.nodes) if (n.kind === "sector") map.set(n.id, i++);
+    return map;
+  }, [model]);
+  // Directed downstream map (source → targets) so Trace Transmission can collect
+  // the full chain of consequences below a node, not just immediate neighbours.
+  const childAdj = useMemo(() => {
+    const m = new Map<string, string[]>();
+    model.edges.forEach(e => { (m.get(e.source) ?? m.set(e.source, []).get(e.source)!).push(e.target); });
+    return m;
+  }, [model]);
+  // Trace Transmission state: the active chain + when the trace began (drives the
+  // stage-by-stage propagation animation). Recomputed when the focused node changes.
+  const traceRef = useRef<{ id: string | null; t0: number }>({ id: null, t0: 0 });
+  const chainRef = useRef<{ id: string | null; set: Set<string> | null; maxStage: number }>({ id: null, set: null, maxStage: 0 });
+
+  // Market Replay: per-node activation time (0..1) — drivers first, then high-
+  // conviction themes, then sectors, then assets; higher confidence activates
+  // earlier within its band. Plus each sector's leadership strength (its strongest
+  // feeding theme's confidence) for the shifting "sector leadership" highlight.
+  const replayRef = useRef<number | null>(replayProgress ?? null);
+  useEffect(() => { replayRef.current = replayProgress ?? null; }, [replayProgress]);
+  const activationMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of model.nodes) {
+      const band = (n.stage ?? 0) / 3;
+      const conf = (n.confidence ?? 55) / 100;
+      m.set(n.id, Math.max(0, Math.min(0.95, band * 0.72 + (1 - conf) * 0.22 + (hashFrac(n.id) - 0.5) * 0.06)));
+    }
+    return m;
+  }, [model]);
+  const sectorStrength = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of model.nodes) {
+      if (n.kind !== "sector") continue;
+      let best = n.confidence ?? 0;
+      for (const nb of (adjacency.get(n.id) ?? [])) { const tn = nodeMap.get(nb); if (tn?.kind === "theme") best = Math.max(best, tn.confidence ?? 0); }
+      m.set(n.id, best);
+    }
+    return m;
+  }, [model, adjacency, nodeMap]);
   const nodeTok = useMemo(() => {
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const map = new Map<string, Set<string>>();
@@ -262,6 +331,73 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
       const t = now / 1000;
       ctx.clearRect(0, 0, w, h);
 
+      // Recalculation pulse strength (1→0 over ~0.9s after a selection).
+      const pulse = pulseRef.current;
+      const pulseAge = pulse.id ? (now - pulse.t0) / 1000 : Infinity;
+      const pulseBoost = pulse.id ? Math.max(0, 1 - pulseAge / 0.9) : 0;
+
+      // Smoothed market energy 0..1 → global motion temperament for this frame.
+      energyRef.current += (energyTargetRef.current - energyRef.current) * 0.04;
+      const energy = energyRef.current;
+      const tempo = 0.6 + energy * 0.9;   // transmission/particle speed multiplier
+
+      // ── Trace Transmission ────────────────────────────────────────────────────
+      // Hover/select isolates a node's COMPLETE causal chain — every ancestor up to
+      // the macro driver and every downstream consequence — and propagates it open
+      // stage by stage (driver → theme → sector → beneficiary assets). Everything
+      // else fades away. Cinematic, not technical.
+      const focusId = v.hoveredId ?? v.selectedId;
+      if (focusId !== traceRef.current.id) {
+        traceRef.current = { id: focusId, t0: now };
+        if (focusId) {
+          const set = new Set<string>([focusId]);
+          let p = parentMap.get(focusId), g = 0;
+          while (p && g++ < 48) { set.add(p); p = parentMap.get(p); }       // ancestors → driver
+          const q = [focusId];
+          while (q.length) { const u = q.shift()!; for (const c of (childAdj.get(u) ?? [])) if (!set.has(c)) { set.add(c); q.push(c); } } // consequences
+          let maxStage = 1; for (const id of set) { const nn = nodeMap.get(id); if (nn) maxStage = Math.max(maxStage, nn.stage ?? 0); }
+          chainRef.current = { id: focusId, set, maxStage };
+        } else chainRef.current = { id: null, set: null, maxStage: 0 };
+      }
+      const chain = chainRef.current;
+      const tracing = !!focusId && !!chain.set;
+      const traceProgress = tracing ? Math.min(1, (now - traceRef.current.t0) / 720) : 1;
+      // 0→1 reveal for a chain element of a given causal stage as the wave passes.
+      const revealOf = (st: number) => {
+        if (!tracing) return 1;
+        const revealT = (st / chain.maxStage) * 0.82;
+        return Math.max(0, Math.min(1, (traceProgress - revealT) / 0.2));
+      };
+
+      let active: Set<string> | null = null;
+      if (tracing) active = chain.set;
+      else if (beamRef.current && beamRef.current.size) {
+        // Hover came from elsewhere on the page — light nodes whose tokens match.
+        const beam = beamRef.current;
+        const matched = new Set<string>();
+        for (const n of model.nodes) { const ts = nodeTok.get(n.id); if (ts && setsIntersect(ts, beam)) matched.add(n.id); }
+        if (matched.size) active = matched;
+      }
+
+      // ── Market Replay ──────────────────────────────────────────────────────────
+      // Replay overrides focus: the whole graph rebuilds itself from the open. Nodes
+      // activate by causal order, capital flow builds, and the leading sector shifts.
+      const replay = replayRef.current;
+      const replaying = replay != null;
+      const repFrac = (id: string) => replaying ? Math.max(0, Math.min(1, (replay! - (activationMap.get(id) ?? 0)) / 0.12)) : 1;
+      let leadSectorId: string | null = null;
+      if (replaying) {
+        active = null;            // no trace/beam highlight while replaying
+        let leadStrength = -1;
+        for (const n of model.nodes) {
+          if (n.kind !== "sector") continue;
+          if (replay! < (activationMap.get(n.id) ?? 1)) continue;   // not active yet today
+          const st = sectorStrength.get(n.id) ?? 0;
+          if (st > leadStrength) { leadStrength = st; leadSectorId = n.id; }
+        }
+      }
+      const flowScale = replaying ? 0.35 + 0.65 * replay! : 1;   // capital flow builds over the day
+
       // Soft cluster haze — glowing regions behind related-node groups give the
       // network layered depth (Palantir/Bloomberg-Labs feel) and make clusters legible.
       const haze = new Map<string, { x: number; y: number; n: number }>();
@@ -272,34 +408,19 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
       }
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
+      const hazeF = tracing ? 0.18 : 1;   // recede the field while tracing a chain
       for (const [key, e] of haze) {
         if (e.n < 2) continue;
         const [hx, hy] = W2S(e.x / e.n, e.y / e.n);
         const col = CLUSTER_COLOR[key] ?? "#52b0c8";
         const R = (78 + e.n * 11) * cam.scale;
         const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, R);
-        g.addColorStop(0, hexA(col, 0.06));
-        g.addColorStop(0.5, hexA(col, 0.022));
+        g.addColorStop(0, hexA(col, 0.06 * hazeF));
+        g.addColorStop(0.5, hexA(col, 0.022 * hazeF));
         g.addColorStop(1, hexA(col, 0));
         ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, R, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
-
-      // Active TRANSMISSION PATH: the hovered/selected node, its neighbours, and the
-      // full cause→effect path back to the root. Everything else fades.
-      const focusId = v.hoveredId ?? v.selectedId;
-      let active: Set<string> | null = null;
-      if (focusId) {
-        active = new Set<string>([focusId, ...(adjacency.get(focusId) ?? [])]);
-        let p = parentMap.get(focusId), guard = 0;
-        while (p && guard++ < 48) { active.add(p); p = parentMap.get(p); }
-      } else if (beamRef.current && beamRef.current.size) {
-        // Hover came from elsewhere on the page — light nodes whose tokens match.
-        const beam = beamRef.current;
-        const matched = new Set<string>();
-        for (const n of model.nodes) { const ts = nodeTok.get(n.id); if (ts && setsIntersect(ts, beam)) matched.add(n.id); }
-        if (matched.size) active = matched;
-      }
 
       // ── Edges as transmission paths ──
       for (const e of model.edges) {
@@ -311,6 +432,10 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         const lit = active ? (active.has(e.source) && active.has(e.target)) : false;
         const dimOverlay = v.overlay ? !(e.themes?.includes(v.overlay)) : false;
         const faded = (active && !lit) || dimOverlay;
+        // Trace: this segment lights only once the propagation wave reaches its
+        // downstream node — so the chain "draws itself" driver → asset.
+        const eReveal = tracing && lit ? revealOf(nb.stage ?? na.stage ?? 0) : 1;
+        const eRep = replaying ? Math.min(repFrac(e.source), repFrac(e.target)) : 1;
         const conf = ((na.confidence ?? nb.confidence ?? 60)) / 100;
         const themeEmph = variantLocal === "narrative" && (e.type === "theme" || e.type === "capital-rotation");
         // edges strengthen as the market digests over the timeline
@@ -319,7 +444,8 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         const [ax, ay] = W2S(a.x, a.y), [bx, by] = W2S(b.x, b.y);
         const col = RELATION_META[e.type].color;
         let op = (0.07 + ew * 0.28) * (0.4 + conf * 0.6) * (themeEmph ? 1.4 : 1);
-        if (faded) op *= 0.08; else if (lit) op = Math.min(0.95, op * 2.6);
+        if (faded) op *= tracing ? 0.035 : 0.08; else if (lit) op = Math.min(0.95, op * 2.6) * (tracing ? 0.1 + 0.9 * eReveal : 1);
+        if (replaying) op *= 0.03 + 0.97 * eRep;   // edge draws in as both ends activate today
 
         // direction gradient: brighter at the driver (source), fading toward the consequence
         const grad = ctx.createLinearGradient(ax, ay, bx, by);
@@ -330,17 +456,20 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         ctx.strokeStyle = grad;
         ctx.lineWidth = (0.6 + ew * 2.4) * cam.scale * (lit ? 1.7 : 1);
         ctx.setLineDash([4, 7]);
-        ctx.lineDashOffset = -((t * (8 + ew * 24)) % 11);
+        ctx.lineDashOffset = -((t * (8 + ew * 24) * tempo) % 11);
         if (lit) { ctx.shadowColor = hexA(col, 0.55); ctx.shadowBlur = 8; }
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
         ctx.restore();
 
-        // glowing capital particles — flow ONLY on connected paths when focused,
-        // ambient on strong edges otherwise; density encodes transmission strength
-        const animate = active ? lit : ew > 0.45;
+        // glowing capital particles — flow ONLY on connected paths when focused;
+        // ambient otherwise. High energy lowers the threshold so MORE transmission
+        // chains light up at once (an energetic market); low energy quiets them.
+        const animate = active ? (lit && (!tracing || eReveal > 0.25)) : (replaying ? eRep > 0.3 : ew > (0.45 - energy * 0.22));
         if (!faded && animate) {
-          const count = lit ? 3 : ew > 0.75 ? 3 : ew > 0.5 ? 2 : 1;
-          const speed = 0.09 + ew * 0.13;
+          // Capital flow surges after a selection (recalc), rises with energy, and
+          // builds through the replayed day (flowScale).
+          const count = (lit ? 3 : ew > 0.75 ? 3 : ew > 0.5 ? 2 : 1) + (pulseBoost > 0.15 ? 2 : 0) + (energy > 0.7 && ew > 0.5 ? 1 : 0) + (replaying && replay! > 0.6 ? 1 : 0);
+          const speed = (0.09 + ew * 0.13) * (1 + pulseBoost * 1.4) * tempo * flowScale;
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
           for (let p = 0; p < count; p++) {
@@ -380,14 +509,19 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         const isHover = v.hoveredId === n.id, isSel = v.selectedId === n.id, isMatch = matchedId === n.id;
         const isActive = isHover || isSel || isMatch;
         const focusDim = active ? !active.has(n.id) : false;
+        const inChain = tracing && !focusDim;
+        const nReveal = inChain ? revealOf(n.stage ?? 0) : 1;  // 0→1 as the wave reaches this node
         const variantDim = variantLocal === "narrative" && n.kind !== "theme" && n.kind !== "event";
         // timeline reveal — nodes fade in smoothly as the market digests over time
         const rv = revealRef.current;
         const revealT = visible ? 1 : 0.08;
         const reveal = (rv.get(n.id) ?? revealT) + (revealT - (rv.get(n.id) ?? revealT)) * 0.07;
         rv.set(n.id, reveal);
+        const nRep = repFrac(n.id);                    // 0→1 as this node activates today
         let op = reveal;
-        if (focusDim) op *= 0.22;
+        if (focusDim) op *= tracing ? 0.05 : 0.22;   // unrelated nodes fade away dramatically
+        if (inChain) op *= 0.12 + 0.88 * nReveal;     // chain nodes bloom in as the wave arrives
+        if (replaying) op *= 0.05 + 0.95 * nRep;      // replay: nodes activate in causal order
         if (variantDim) op *= 0.7;
         // layered depth: nodes farther from centre recede slightly
         if (!isActive) op *= 1 - Math.min(0.22, (Math.hypot(s.x - w / 2, s.y - h / 2) / Math.max(w, h)) * 0.5);
@@ -395,12 +529,19 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         // importance grows as later stages mature (the market reprices it)
         const grow = 1 + Math.min(0.2, Math.max(0, v.stage - (n.stage ?? 0)) * 0.06);
         const major = n.kind === "event" || s.radius > 16 || highConf;
-        const breath = (isActive || major) ? 1 + 0.025 * Math.sin(t * 1.6 + hashFrac(n.id) * 6.28) : 1;
-        const r = s.radius * cam.scale * breath * grow;
+        // Breathing always remains (calm markets still feel alive); amplitude and
+        // tempo rise with energy, and major/active nodes breathe more visibly.
+        const breathAmp = (0.014 + energy * 0.03) * (isActive || major ? 1 : 0.5);
+        const breath = 1 + breathAmp * Math.sin(t * (1.4 + energy * 0.7) + hashFrac(n.id) * 6.28);
+        // Conviction presence — high-confidence themes stand slightly larger.
+        const convScale = 0.93 + ((n.confidence ?? 50) / 100) * 0.16;
+        const r = s.radius * cam.scale * breath * grow * convScale * (replaying ? 0.5 + 0.5 * nRep : 1);
 
-        // soft additive bloom — glow INTENSITY encodes confidence
-        const confGlow = 0.05 + ((n.confidence ?? 50) / 100) * 0.15; // 0.05–0.20
-        const bloomA = (isActive ? 0.34 : n.kind === "event" ? 0.26 : confGlow) * op;
+        // soft additive bloom — glow INTENSITY encodes confidence; the whole field
+        // brightens in an energetic market and quiets when activity is low.
+        const confGlow = 0.04 + ((n.confidence ?? 50) / 100) * 0.20; // weak dim → strong bright
+        const assetReached = inChain && n.kind === "company" && nReveal > 0.9;  // beneficiary destination
+        const bloomA = (isActive ? 0.34 : n.kind === "event" ? 0.26 : confGlow) * op * (0.8 + energy * 0.4) * (assetReached ? 1.7 : 1);
         if (bloomA > 0.02) {
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
@@ -410,6 +551,49 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
           bloom.addColorStop(1, hexA(col, 0));
           ctx.fillStyle = bloom; ctx.beginPath(); ctx.arc(sx, sy, r * 3.1, 0, Math.PI * 2); ctx.fill();
           ctx.restore();
+        }
+
+        // Replay activation — a ring fires as each node comes alive during the day.
+        if (replaying && nRep > 0.02 && nRep < 0.97) {
+          const a = Math.sin(nRep * Math.PI) * 0.55 * op;
+          ctx.strokeStyle = hexA(col, a);
+          ctx.lineWidth = 1.5 * cam.scale;
+          ctx.beginPath(); ctx.arc(sx, sy, r + (8 + (1 - nRep) * 12) * cam.scale, 0, Math.PI * 2); ctx.stroke();
+        }
+        // Sector leadership — the leading active sector pulses steadily (it can shift
+        // through the day as higher-conviction themes activate).
+        if (replaying && n.id === leadSectorId && nRep > 0.5) {
+          const gp = (t * 0.6) % 1;
+          ctx.strokeStyle = hexA(col, (1 - gp) * 0.4 * op);
+          ctx.lineWidth = 1.7 * cam.scale;
+          ctx.beginPath(); ctx.arc(sx, sy, r + gp * 22 * cam.scale, 0, Math.PI * 2); ctx.stroke();
+        }
+
+        // Confirmation point — a ring fires at each node as the wave confirms it.
+        if (inChain && nReveal > 0.02 && nReveal < 0.99) {
+          const a = Math.sin(nReveal * Math.PI) * 0.5 * op;
+          ctx.strokeStyle = hexA(col, a);
+          ctx.lineWidth = 1.6 * cam.scale;
+          ctx.beginPath(); ctx.arc(sx, sy, r + (6 + (1 - nReveal) * 10) * cam.scale, 0, Math.PI * 2); ctx.stroke();
+        }
+        // Beneficiary asset reached — a steady confirmation halo marks the destination.
+        if (assetReached && visible) {
+          const gp = (t * 0.5) % 1;
+          ctx.strokeStyle = hexA(col, (1 - gp) * 0.32 * op);
+          ctx.lineWidth = 1.3 * cam.scale;
+          ctx.beginPath(); ctx.arc(sx, sy, r + gp * 14 * cam.scale, 0, Math.PI * 2); ctx.stroke();
+        }
+
+        // sector pulse WAVE — in an energetic market, sectors pulse in sequence
+        // (phase offset by sequence index) so a wave travels across the row.
+        if (n.kind === "sector" && visible && !isActive && energy > 0.42) {
+          const si = seqIndex.get(n.id) ?? 0;
+          const ph = ((t * (0.4 + energy * 0.45) - si * 0.5) % 1.7 + 1.7) % 1.7;
+          if (ph < 1) {
+            ctx.strokeStyle = hexA(col, (1 - ph) * 0.22 * energy * op);
+            ctx.lineWidth = 1.2 * cam.scale;
+            ctx.beginPath(); ctx.arc(sx, sy, r + ph * 20 * cam.scale, 0, Math.PI * 2); ctx.stroke();
+          }
         }
 
         // gentle perpetual pulse on the primary node — alive, never gimmicky
@@ -472,11 +656,33 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         }
       }
 
+      // ── Recalculation ripple — concentric waves expanding from the chosen node ──
+      if (pulse.id && pulseAge < 1.25) {
+        const ps = sim.get(pulse.id);
+        if (ps) {
+          const [px, py] = W2S(ps.x, ps.y);
+          const pn = nodeMap.get(pulse.id);
+          const col = pn ? nodeColor(pn) : "#52b0c8";
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          for (let k = 0; k < 3; k++) {
+            const rt = pulseAge - k * 0.16;
+            if (rt < 0 || rt > 1) continue;
+            const eased = 1 - Math.pow(1 - rt, 2);
+            const rr = (16 + eased * 175) * cam.scale;
+            ctx.strokeStyle = hexA(col, (1 - rt) * 0.42);
+            ctx.lineWidth = Math.max(0.5, 2.4 * (1 - rt) * cam.scale);
+            ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI * 2); ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+
       rafRef.current = requestAnimationFrame(draw);
     };
     rafRef.current = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(rafRef.current); ro.disconnect(); };
-  }, [model, nodeMap, adjacency, parentMap, nodeVisible, matchedId, height, sparse, nodeTok]);
+  }, [model, nodeMap, adjacency, parentMap, nodeVisible, matchedId, height, sparse, nodeTok, seqIndex, childAdj, activationMap, sectorStrength]);
 
   // ── Pointer interaction ──────────────────────────────────────────────────────
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -709,7 +915,7 @@ export default function NetworkGraph({ model: rootModel, expand, height = 460, t
         {!sparse && focusNode && (
           <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: "rgba(8,12,20,0.8)", border: "1px solid rgba(255,255,255,0.08)" }}>
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: nodeColor(focusNode) }} />
-            <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.55)" }}>Active Path · {focusNode.ticker ?? focusNode.label}</span>
+            <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.55)" }}>Tracing Transmission · {focusNode.ticker ?? focusNode.label}</span>
           </div>
         )}
       </div>

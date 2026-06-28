@@ -30,6 +30,21 @@ import type { StoryCluster, FeedItem, ThemeIntelligence, RelatedStory } from "@/
 
 const GREEN = "#34d399", RED = "#f87171", AMBER = "#fbbf24", SLATE = "#8ea3c4", CYAN = "#52b0c8";
 const dirColor = (d: string) => d === "bullish" ? GREEN : d === "bearish" ? RED : AMBER;
+const dirArrow = (d: string) => d === "bullish" ? "↑" : d === "bearish" ? "↓" : "↕";
+
+function stripDir(s?: string | null): string {
+  return (s ?? "").replace(/^(bullish|bearish|mixed)[:\s–—-]*/i, "").trim();
+}
+// The market implication — the "so what" that leads each entry. Prefers the
+// stored impact read, falls back to a composed transmission consequence.
+function implicationOf(item: FeedItem, sector: string | null, driver: string, dir: string): string {
+  const raw = stripDir(item.impact);
+  if (raw.length > 10) return raw;
+  const where = sector ?? driver;
+  return dir === "bullish" ? `Tailwind for ${where} — capital rotating toward the most exposed names.`
+    : dir === "bearish" ? `Pressure on ${where} — the exposed names carry downgrade risk.`
+    : `Crosscurrents in ${where} — positioning rotating faster than the narrative resolves.`;
+}
 
 interface Props {
   clusters:         StoryCluster[];
@@ -91,7 +106,7 @@ export function IntelligenceStream({ clusters, themes, savedIds, onSave, newIds,
   let dossiers = 0;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {body.map(({ cluster, theme, tier, watched }) => {
         // Cap full dossiers so the report stays varied; extra tier-1s become rows.
         const asDossier = tier === 1 && theme && dossiers < 3;
@@ -115,14 +130,12 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
 }) {
   const [expanded, setExpanded] = useState(false);
   const item = cluster.primary;
-  const color = catColor(item.category);
   const dir = dirOf(theme);
   const dc = dirColor(dir);
   const score = Math.round(item.signal_score);
   const path = transmissionPath(theme);
   const companies = [...new Set([...(item.affected_entities ?? []), ...themeBeneficiaries(theme, 4)])].slice(0, 8);
   const sectors = (theme.related_industries ?? []).slice(0, 4);
-  const impactSent = classifyImpact(item.impact ?? "");
   const related = [...cluster.related].sort((a, b) => (b.published_ts ?? "").localeCompare(a.published_ts ?? ""));
   const cases = generateBullBearCases(theme);
   const cats = generateNextCatalysts(theme);
@@ -139,33 +152,47 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
       data-cluster-id={cluster.id}
       initial={isNew ? { opacity: 0, x: -8 } : { opacity: 0, y: 6 }} animate={{ opacity: 1, x: 0, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="relative rounded-xl overflow-hidden"
-      style={{ background: "linear-gradient(180deg, #131c2e, #0c1220)", border: "1px solid rgba(255,255,255,0.08)", borderLeft: `4px solid ${dc}` }}
+      className="relative overflow-hidden pl-1"
+      style={{ background: "linear-gradient(110deg, rgba(20,28,46,0.32), transparent 60%)", borderLeft: `3px solid ${dc}` }}
     >
       {/* Conviction glow on the accent — pulses while the theme is strengthening */}
       {strengthening && <div aria-hidden className="tg-glow absolute left-0 top-0 bottom-0 w-[3px] pointer-events-none" style={{ background: dc, boxShadow: `0 0 12px ${dc}` }} />}
       {/* One-shot transmission wave when this event is newly arrived */}
       {isNew && <div aria-hidden className="tg-wave absolute inset-y-0 w-1/3 pointer-events-none z-10" style={{ background: `linear-gradient(to right, transparent, ${dc}24, transparent)` }} />}
 
-      {/* Block 1 — Macro Event (large) */}
+      {/* Block 1 — Signal-led header: the theme + market read are the headline;
+          the news story is demoted to a supporting source line. */}
       <div className="relative px-4 pt-3.5 pb-3.5 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
         <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at left top, ${dc}0e, transparent 60%)` }} />
-        <div className="relative flex items-center gap-2 mb-1.5">
-          <span className="text-[8px] font-black uppercase tracking-[0.16em]" style={{ color: dc }}>Lead Event</span>
-          <span className="text-[9.5px] font-semibold" style={{ color }}>{item.category}</span>
+        <div className="relative flex items-center gap-2 mb-2">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: dc, boxShadow: `0 0 8px ${dc}` }} />
+          <span className="text-[8px] font-black uppercase tracking-[0.16em]" style={{ color: dc }}>{dir === "bullish" ? "Risk-On Signal" : dir === "bearish" ? "Risk-Off Signal" : "Crosscurrent"}</span>
+          <span className="text-[8px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.4)" }}>· {theme.momentum_label}</span>
           {isBreaking && (
             <span className="inline-flex items-center gap-1 text-[8px] font-bold" style={{ color: RED }}>
               <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.4, repeat: Infinity }}><Radio size={7} /></motion.span>LIVE
             </span>
           )}
-          <span className="text-[9px] font-semibold ml-auto px-1.5 py-0.5 rounded" style={{ color: dc, background: `${dc}1a` }}>{cleanThemeName(theme.name)}</span>
+          <span className="ml-auto text-[8px] font-bold tabular-nums" style={{ color: "rgba(255,255,255,0.5)" }}>CV {Math.round(theme.confidence ?? 0)}</span>
           <button onClick={onSave} className="p-1 rounded transition-colors shrink-0" style={{ color: isSaved ? CYAN : "rgba(255,255,255,0.4)" }}>
             {isSaved ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
           </button>
         </div>
-        <a href={item.url} target="_blank" rel="noopener noreferrer" className="relative block text-[16px] font-bold leading-snug tracking-[-0.01em] hover:opacity-90 transition-opacity" style={{ color: "rgba(255,255,255,0.97)" }}>
-          {item.title}<ExternalLink size={11} className="inline-block ml-1.5 opacity-30 -translate-y-px" />
-        </a>
+        <div className="relative flex items-start gap-3.5">
+          <div className="shrink-0 flex flex-col items-center pt-0.5">
+            <span className="text-[27px] font-black tabular-nums leading-none" style={{ color: dc }}>{score}</span>
+            <span className="text-[7px] font-bold uppercase tracking-wider mt-0.5" style={{ color: "rgba(255,255,255,0.36)" }}>Signal</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <Beam tokens={[cleanThemeName(theme.name), ...ctx]} className="text-[16px] font-black leading-tight tracking-[-0.01em] block" style={{ color: "rgba(255,255,255,0.96)" }}>{cleanThemeName(theme.name)}</Beam>
+            <p className="text-[12.5px] leading-snug mt-1 font-medium" style={{ color: "rgba(255,255,255,0.84)" }}>{implicationOf(item, path.sector, path.driver, dir)}</p>
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 flex items-start gap-1.5 hover:opacity-90 transition-opacity" style={{ color: "rgba(255,255,255,0.42)" }}>
+              <span className="text-[10px] font-medium shrink-0 uppercase tracking-wide opacity-70">{item.source}</span>
+              <span className="text-[10.5px] leading-snug line-clamp-1">{item.title}</span>
+              <ExternalLink size={9} className="opacity-40 shrink-0 mt-0.5" />
+            </a>
+          </div>
+        </div>
       </div>
 
       {/* Block 2 — Transmission Chain (horizontal flow) */}
@@ -180,51 +207,38 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
         </div>
       </div>
 
-      {/* Block 3 — Affected Sectors + Companies (clustered, two columns) */}
-      <div className="grid sm:grid-cols-2 gap-px border-b" style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.05)" }}>
-        <div className="px-4 py-3" style={{ background: "#0c1220" }}>
+      {/* Block 3 — Affected Sectors + Companies (two columns, separated by air) */}
+      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3 px-4 py-3.5 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+        <div>
           <BlockLabel>Affected Sectors</BlockLabel>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-x-2.5 gap-y-1">
             {sectors.length ? sectors.map(s => (
-              <Beam key={s} tokens={[s, ...ctx]} className="text-[9.5px] font-medium px-1.5 py-0.5 rounded inline-block" style={{ color: dc, background: `${dc}14` }}>
+              <Beam key={s} tokens={[s, ...ctx]} className="text-[10px] font-medium inline-block" style={{ color: dc }}>
                 {dir === "bullish" ? "+ " : dir === "bearish" ? "− " : "→ "}{s}
               </Beam>
             )) : <Empty />}
           </div>
         </div>
-        <div className="px-4 py-3" style={{ background: "#0c1220" }}>
+        <div>
           <BlockLabel>Affected Companies</BlockLabel>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-x-2.5 gap-y-1">
             {companies.length ? companies.map(c => (
-              <Beam key={c} tokens={[c, ...ctx]} className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded inline-block"
-                style={watchedEntities?.has(c.toLowerCase())
-                  ? { color: CYAN, background: "rgba(82,176,200,0.16)", border: "1px solid rgba(82,176,200,0.3)" }
-                  : { color: "rgba(255,255,255,0.66)", background: "rgba(255,255,255,0.05)" }}>{c}</Beam>
+              <Beam key={c} tokens={[c, ...ctx]} className="text-[10px] font-mono font-bold inline-block"
+                style={{ color: watchedEntities?.has(c.toLowerCase()) ? CYAN : "rgba(255,255,255,0.7)" }}>{c}</Beam>
             )) : <Empty />}
           </div>
         </div>
       </div>
 
-      {/* Block 4 — Market Impact (gauge) */}
-      <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-        <div className="flex items-center gap-3">
-          <div className="shrink-0 flex flex-col items-center">
-            <span className="text-[20px] font-black tabular-nums leading-none" style={{ color: dc }}>{score}</span>
-            <span className="text-[7px] font-bold uppercase tracking-wider mt-0.5" style={{ color: "rgba(255,255,255,0.36)" }}>Signal</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <BlockLabel>Market Impact</BlockLabel>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[8.5px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: dc, background: `${dc}1a` }}>
-                {impactSent === "bullish" ? "↑ Bullish" : impactSent === "bearish" ? "↓ Bearish" : "↕ Mixed"}
-              </span>
-              <div className="flex-1 h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
-                <div className="h-full rounded-full" style={{ width: `${score}%`, background: dc }} />
-              </div>
-            </div>
-            {item.impact && <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>{item.impact.replace(/^(bullish|bearish|mixed)[:\s–—]*/i, "")}</p>}
-          </div>
-        </div>
+      {/* Block 4 — Conviction & confirmation (the strength behind the signal) */}
+      <div className="px-4 py-2.5 border-b flex items-center gap-x-5 gap-y-1.5 flex-wrap" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+        <ConvStat label="Conviction" value={`${Math.round(theme.confidence ?? 0)}`} color={dc} />
+        <ConvStat label="Momentum" value={theme.momentum_label} color={dc} />
+        {(theme.momentum_delta ?? 0) !== 0 && (
+          <ConvStat label="Δ Cycle" value={`${(theme.momentum_delta ?? 0) > 0 ? "+" : ""}${Math.round(theme.momentum_delta ?? 0)}`} color={(theme.momentum_delta ?? 0) > 0 ? GREEN : RED} />
+        )}
+        <ConvStat label="Breadth" value={`${Math.round(theme.breadth_score ?? 0)}`} />
+        {mem && mem.confirming_total > 0 && <ConvStat label="Confirmations" value={`${mem.confirming_total}`} color={GREEN} />}
       </div>
 
       {/* Expandable deep blocks */}
@@ -309,32 +323,41 @@ function TransmissionRow({ cluster, theme, watched, isSaved, onSave, isNew, watc
     <motion.article
       data-cluster-id={cluster.id}
       initial={isNew ? { opacity: 0, x: -8 } : { opacity: 0, y: 4 }} animate={{ opacity: 1, x: 0, y: 0 }} transition={{ duration: 0.22 }}
-      whileHover={{ x: 1 }}
-      className="group rounded-lg overflow-hidden"
-      style={{ background: "#0f1626", border: "1px solid rgba(255,255,255,0.05)", borderLeft: `2px solid ${dc}`, boxShadow: watched ? `inset 0 0 0 1px ${CYAN}30` : undefined }}
+      whileHover={{ x: 2 }}
+      className="group relative"
+      style={{ borderLeft: `2px solid ${watched ? CYAN : dc}` }}
     >
-      <div className="px-3.5 py-2.5">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[8px] font-bold uppercase tracking-wide px-1 py-0.5 rounded" style={{ color: dc, background: `${dc}16` }}>
-            {dir === "bullish" ? "↑" : dir === "bearish" ? "↓" : "↕"}
+      <div className="pl-3.5 pr-2 py-2.5 transition-colors group-hover:bg-white/[0.02]">
+        {/* Row 1 — signal magnitude · propagation · conviction */}
+        <div className="flex items-center gap-2.5 mb-1">
+          <span className="flex items-baseline gap-0.5 shrink-0">
+            <span className="text-[10px] font-bold" style={{ color: dc }}>{dirArrow(dir)}</span>
+            <span className="text-[16px] font-black tabular-nums leading-none" style={{ color: dc }}>{score}</span>
           </span>
-          <Beam tokens={[path.driver, ...rowCtx]} className="text-[9px] font-medium truncate" title={path.driver} style={{ color: `${color}d0` }}>{path.driver}</Beam>
-          {path.sector && <><span style={{ color: "rgba(255,255,255,0.26)" }}>→</span><Beam tokens={[path.sector, ...rowCtx]} className="text-[9px] font-semibold shrink-0" style={{ color: "rgba(255,255,255,0.66)" }}>{path.sector}</Beam></>}
-          <span className="ml-auto text-[9px] font-mono tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>{score}</span>
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <Beam tokens={[path.driver, ...rowCtx]} className="text-[10px] font-medium truncate" title={path.driver} style={{ color: `${color}d8` }}>{path.driver}</Beam>
+            {path.sector && <><span className="text-[9px]" style={{ color: "rgba(255,255,255,0.24)" }}>→</span><Beam tokens={[path.sector, ...rowCtx]} className="text-[10px] font-semibold shrink-0" style={{ color: "rgba(255,255,255,0.72)" }}>{path.sector}</Beam></>}
+          </div>
+          {theme && <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.5)" }}>CV {Math.round(theme.confidence ?? 0)}</span>}
           <button onClick={onSave} className="p-0.5 rounded shrink-0" style={{ color: isSaved ? CYAN : "rgba(255,255,255,0.32)" }}>
             {isSaved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
           </button>
         </div>
-        <a href={item.url} target="_blank" rel="noopener noreferrer" className="block text-[13px] font-semibold leading-snug truncate hover:opacity-85 transition-opacity" style={{ color: "rgba(255,255,255,0.9)" }}>{item.title}</a>
-        <div className="flex items-center gap-2 mt-1">
+        {/* Row 2 — the market implication (the read) */}
+        <p className="text-[12px] font-medium leading-snug" style={{ color: "rgba(255,255,255,0.84)" }}>{implicationOf(item, path.sector, path.driver, dir)}</p>
+        {/* Row 3 — affected assets + the news demoted to supporting context */}
+        <div className="flex items-center gap-2 mt-1.5">
           {tickers.length > 0 && (
-            <span className="flex items-center gap-1 min-w-0">
+            <span className="flex items-center gap-2 shrink-0">
               {tickers.map(t => (
-                <Beam key={t} tokens={[t, ...rowCtx]} className="text-[8.5px] font-mono font-bold" style={{ color: watchedEntities?.has(t.toLowerCase()) ? CYAN : "rgba(255,255,255,0.5)" }}>{t}</Beam>
+                <Beam key={t} tokens={[t, ...rowCtx]} className="text-[9px] font-mono font-bold" style={{ color: watchedEntities?.has(t.toLowerCase()) ? CYAN : "rgba(255,255,255,0.55)" }}>{t}</Beam>
               ))}
             </span>
           )}
-          <span className="text-[8.5px] ml-auto shrink-0" style={{ color: "rgba(255,255,255,0.34)" }}>{item.source} · {item.published}</span>
+          <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-[10px] truncate flex-1 min-w-0 hover:opacity-90 transition-opacity" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <span className="opacity-70">{item.source}</span> · {item.title}
+          </a>
+          <span className="text-[8.5px] shrink-0" style={{ color: "rgba(255,255,255,0.3)" }}>{item.published}</span>
         </div>
       </div>
     </motion.article>
@@ -346,19 +369,20 @@ function ClusteredTail({ rows }: { rows: { cluster: StoryCluster; theme?: ThemeI
   const [open, setOpen] = useState(false);
   const shown = open ? rows : rows.slice(0, 6);
   return (
-    <div className="rounded-lg overflow-hidden" style={{ background: "rgba(8,12,20,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
-      <div className="px-3.5 py-2 flex items-center gap-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-        <span className="text-[8px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.4)" }}>Also Moving</span>
-        <span className="text-[8.5px] tabular-nums" style={{ color: "rgba(255,255,255,0.3)" }}>{rows.length} lower-signal stories</span>
+    <div className="pt-3 mt-1">
+      <div className="flex items-center gap-2.5 mb-2">
+        <span className="text-[8px] font-bold uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,0.38)" }}>Also Moving</span>
+        <span className="text-[8.5px] tabular-nums" style={{ color: "rgba(255,255,255,0.28)" }}>{rows.length} lower-signal</span>
+        <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
       </div>
-      <div className="grid sm:grid-cols-2 gap-px" style={{ background: "rgba(255,255,255,0.04)" }}>
+      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-0.5">
         {shown.map(({ cluster: c, theme }) => (
           <TailItem key={c.id} cluster={c} theme={theme} />
         ))}
       </div>
       {rows.length > 6 && (
-        <button onClick={() => setOpen(o => !o)} className="w-full py-1.5 text-[9.5px] font-semibold transition-colors hover:bg-white/[0.03]" style={{ color: "rgba(255,255,255,0.46)" }}>
-          {open ? "Show less" : `Show ${rows.length - 6} more`}
+        <button onClick={() => setOpen(o => !o)} className="mt-2 text-[9.5px] font-semibold transition-colors hover:text-white" style={{ color: "rgba(255,255,255,0.44)" }}>
+          {open ? "Show less" : `Show ${rows.length - 6} more →`}
         </button>
       )}
     </div>
@@ -372,16 +396,27 @@ function TailItem({ cluster, theme }: { cluster: StoryCluster; theme?: ThemeInte
   const { dimStyle, handlers } = useBeam(tokens);
   return (
     <a {...handlers} data-cluster-id={cluster.id} href={cluster.primary.url} target="_blank" rel="noopener noreferrer"
-      className="flex items-center gap-2 px-3 py-2 min-w-0 transition-colors hover:bg-white/[0.03]" style={{ background: "rgba(8,12,20,0.85)", ...dimStyle }}>
-      <span className="w-1 h-1 rounded-full shrink-0" style={{ background: color, opacity: 0.6 }} />
-      <span className="text-[11px] leading-tight truncate flex-1" style={{ color: "rgba(255,255,255,0.6)" }}>{cluster.primary.title}</span>
-      <span className="text-[8px] font-mono tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.3)" }}>{Math.round(cluster.primary.signal_score)}</span>
+      className="flex items-baseline gap-2 py-1.5 min-w-0 transition-colors hover:bg-white/[0.02]" style={{ ...dimStyle }}>
+      <span className="text-[10px] font-black tabular-nums shrink-0 w-5 text-right" style={{ color: "rgba(255,255,255,0.5)" }}>{Math.round(cluster.primary.signal_score)}</span>
+      {(cluster.primary.affected_entities ?? [])[0] && (
+        <span className="text-[8.5px] font-mono font-bold shrink-0" style={{ color: `${color}c0` }}>{(cluster.primary.affected_entities ?? [])[0]}</span>
+      )}
+      <span className="text-[10.5px] leading-tight truncate flex-1 min-w-0" style={{ color: "rgba(255,255,255,0.48)" }}>{cluster.primary.title}</span>
     </a>
   );
 }
 
 function BlockLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: "rgba(255,255,255,0.34)" }}>{children}</p>;
+}
+
+function ConvStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span className="text-[12.5px] font-black tabular-nums capitalize leading-none" style={{ color: color ?? "rgba(255,255,255,0.82)" }}>{value}</span>
+      <span className="text-[7.5px] font-bold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.34)" }}>{label}</span>
+    </span>
+  );
 }
 function Empty() { return <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.36)" }}>—</span>; }
 

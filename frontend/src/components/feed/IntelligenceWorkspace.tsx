@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  themeBeneficiaries, bestExpressions, themeLosers, generateBullBearCases,
-  generateNextCatalysts, generateEvidenceItems, computeThemeHealth, computeIntelligenceScore,
+  bestExpressions, themeLosers, generateBullBearCases, generateNextCatalysts,
+  generateInvalidationSignals, themeBeneficiaries, explainMechanism,
 } from "@/lib/themeIntelligence";
 import { deriveDriver, deriveSector, dirOf, themeWatch } from "@/lib/themeTransmission";
 import { focusedThemes, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
@@ -14,14 +14,16 @@ import { timeAgo } from "@/lib/utils";
 import type { ThemeIntelligence, StoryCluster } from "@/lib/types";
 
 /**
- * IntelligenceWorkspace — the adaptive intelligence dashboard that replaces the
- * old "What Matters Now" card grid. One Bloomberg-style workspace, not a list:
- * the theme behind the selected graph node becomes the centerpiece and every
- * panel (metrics, positioning, capital destination, beneficiaries, risks,
- * catalysts, confirmations, competing themes, transmission, supporting stories)
- * is a read of that one entity. Whenever the graph focus changes, the whole
- * workspace re-renders — the user is exploring the graph, not reading news.
+ * IntelligenceWorkspace — the selected theme, read the way a strategist would
+ * think about it, NOT a wall of dashboard widgets. Every theme immediately answers
+ * five questions in priority order:
  *
+ *   1. What changed?      2. Why does it matter?   3. Who benefits?
+ *   4. Who is hurt?       5. What should I watch next?
+ *
+ * Beneficiaries, risks, the transmission path, catalysts and supporting stories
+ * are demoted to SUPPORT the read rather than compete for attention. The only
+ * surviving "metric" is conviction (+ momentum), because it changes the decision.
  * Pure reads of stored theme intelligence + existing derivation helpers.
  */
 
@@ -34,35 +36,12 @@ interface Props {
 
 const GREEN = "#34d399", RED = "#f87171", AMBER = "#fbbf24", SLATE = "#8ea3c4", CYAN = "#7cc7d8";
 const dirColor = (d: string) => d === "bullish" ? GREEN : d === "bearish" ? RED : AMBER;
-const scale = (v: number) => v >= 70 ? GREEN : v >= 45 ? AMBER : SLATE;
-const signed = (n: number) => `${n > 0 ? "+" : ""}${Math.round(n)}`;
 
-// ── Derivations local to the workspace (qualitative reads of stored fields) ────
-function marketPressure(theme: ThemeIntelligence, stories: StoryCluster[]): number {
-  const top = stories.reduce((m, c) => Math.max(m, c.primary.signal_score ?? 0), 0);
-  if (top) return Math.round(top);
-  return Math.round((theme.breadth_score ?? 0) * 0.4 + (theme.confidence ?? 0) * 0.6);
-}
-
-function positioning(theme: ThemeIntelligence): { label: string; color: string; note: string } {
-  const dir = dirOf(theme), mom = theme.momentum_label, accel = theme.momentum_delta ?? 0;
-  const m = theme.memory;
-  const trend = m ? ` · conviction ${m.conviction_window_start}→${m.conviction_current}` : "";
-  if (dir === "bullish" && (mom === "accelerating" || mom === "strengthening"))
-    return { label: "Accumulating", color: GREEN, note: `Conviction building (${signed(accel)} vs prior cycle)${trend}` };
-  if (dir === "bearish")
-    return { label: "Reducing · Defensive", color: RED, note: `Flows rotating away from exposed names${trend}` };
-  if (mom === "cooling" || mom === "reversing")
-    return { label: "Distributing", color: AMBER, note: `Momentum fading; positioning unwinding${trend}` };
-  return { label: "Building · Watching", color: SLATE, note: `Positioning forming; no decisive tilt yet${trend}` };
-}
-
-function competingThemes(center: ThemeIntelligence, themes: ThemeIntelligence[]): ThemeIntelligence[] {
-  const sec = deriveSector(center), drv = deriveDriver(center);
-  return themes
-    .filter(t => t.id !== center.id && (deriveSector(t) === sec || deriveDriver(t) === drv))
-    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
-    .slice(0, 4);
+function firstSentence(text?: string | null): string | null {
+  if (!text) return null;
+  const clean = text.replace(/→|->/g, "—").trim();
+  const dot = clean.indexOf(". ");
+  return dot > 12 ? clean.slice(0, dot + 1) : clean.length <= 180 ? clean : null;
 }
 
 function storiesForTheme(theme: ThemeIntelligence, clusters: StoryCluster[]): StoryCluster[] {
@@ -77,296 +56,271 @@ function storiesForTheme(theme: ThemeIntelligence, clusters: StoryCluster[]): St
   });
 }
 
+// ── The reasoning: five answers + the evidence that supports them ─────────────
+function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
+  const dir = dirOf(theme);
+  const name = cleanThemeName(theme.name);
+  const driver = deriveDriver(theme);
+  const sector = deriveSector(theme);
+  const stories = storiesForTheme(theme, clusters).slice(0, 4);
+  const beneficiaries = themeBeneficiaries(theme, 6);
+  const best = bestExpressions(theme);
+  const losers = themeLosers(theme, 3);
+  const cases = generateBullBearCases(theme);
+  const cats = generateNextCatalysts(theme);
+  const catalyst = cats.find(c => c.direction === "confirming") ?? cats[0] ?? null;
+  const invalidation = generateInvalidationSignals(theme)[0] ?? null;
+  const mem = theme.memory;
+
+  // 1 — What changed?
+  let whatChanged: string;
+  if (mem && mem.conviction_window_start !== mem.conviction_current) {
+    const verb = mem.conviction_current > mem.conviction_window_start ? "strengthened" : "softened";
+    whatChanged = `Conviction has ${verb} from ${mem.conviction_window_start} to ${mem.conviction_current} across ${mem.sessions_observed} sessions`;
+  } else if (theme.momentum_label === "accelerating") {
+    whatChanged = `Momentum has entered an acceleration phase${(theme.momentum_delta ?? 0) > 0 ? ` (+${Math.round(theme.momentum_delta ?? 0)} vs prior cycle)` : ""}`;
+  } else if (theme.momentum_label === "reversing") {
+    whatChanged = `${name} has begun to reverse — a positioning event rather than a consolidation`;
+  } else if (theme.momentum_label === "emerging") {
+    whatChanged = `${name} is newly emerging as a distinct, tradable narrative`;
+  } else {
+    whatChanged = `${name} is ${theme.momentum_label}, holding ${dir === "bullish" ? "a constructive bias" : dir === "bearish" ? "downside pressure" : "a two-way tape"}`;
+  }
+  if (mem && mem.confirmations_today > 0) whatChanged += `, with ${mem.confirmations_today} fresh confirmation${mem.confirmations_today > 1 ? "s" : ""} today`;
+  else if (stories[0]) whatChanged += `; the latest read: “${stories[0].primary.title}”`;
+  whatChanged += ".";
+
+  // 2 — Why does it matter?
+  const whyMatters = explainMechanism(theme)
+    || firstSentence(theme.causal_narrative)
+    || `${driver} is transmitting into ${sector ?? "the broader tape"}; ${dir === "bearish" ? "that pressures" : "that rewards"} the names with the most direct exposure, and the move tends to spread before it is fully priced.`;
+
+  // 3 — Who benefits?
+  const benefitsText = best?.why || cases.bull
+    || `Most direct exposure sits with the leaders in ${sector ?? "the theme's core sector"}.`;
+
+  // 4 — Who is hurt?
+  const hurt = losers
+    ? { text: losers.risk, tickers: losers.tickers, label: losers.sector }
+    : cases.bear
+    ? { text: cases.bear, tickers: [] as string[], label: null as string | null }
+    : null;
+
+  return {
+    name, dir, driver, sector, stories, beneficiaries, catalyst, invalidation,
+    benefitsTickers: best?.tickers ?? beneficiaries.slice(0, 4),
+    whatChanged, whyMatters, benefitsText, hurt,
+    watch: themeWatch(theme),
+    transmission: [driver, name, sector, beneficiaries.slice(0, 3).join(" · ")].filter(Boolean) as string[],
+    ctx: [name, sector, driver] as (string | null)[],
+  };
+}
+
 export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Props) {
-  // Resolve the centerpiece theme: the lead theme behind the selected node, or —
-  // in Global mode — the market-leading theme so the workspace is always live.
   const centerpiece = useMemo(() => {
     const byConf = (a: ThemeIntelligence, b: ThemeIntelligence) => (b.confidence ?? 0) - (a.confidence ?? 0);
-    if (focus) {
-      const ft = focusedThemes(focus, themes).slice().sort(byConf);
-      if (ft.length) return ft[0];
-    }
+    if (focus) { const ft = focusedThemes(focus, themes).slice().sort(byConf); if (ft.length) return ft[0]; }
     return themes.slice().sort(byConf)[0] ?? null;
   }, [focus, themes]);
 
-  const m = useMemo(() => {
-    if (!centerpiece) return null;
-    const t = centerpiece;
-    const stories = storiesForTheme(t, clusters).slice(0, 5);
-    const best = bestExpressions(t);
-    const losers = themeLosers(t, 3);
-    const cases = generateBullBearCases(t);
-    const cats = generateNextCatalysts(t);
-    const catalyst = cats.find(c => c.direction === "confirming" && c.imminent) ?? cats.find(c => c.direction === "confirming") ?? cats[0] ?? null;
-    return {
-      name:      cleanThemeName(t.name),
-      dir:       dirOf(t),
-      health:    computeThemeHealth(t),
-      iScore:    computeIntelligenceScore(t),
-      driver:    deriveDriver(t),
-      sector:    deriveSector(t),
-      pressure:  marketPressure(t, stories),
-      pos:       positioning(t),
-      beneficiaries: themeBeneficiaries(t, 6),
-      best, losers, cases, catalyst,
-      evidence:  generateEvidenceItems(t).filter(e => e.type === "positive").slice(0, 4),
-      watch:     themeWatch(t),
-      competing: competingThemes(t, themes),
-      related:   [...new Set([...themeBeneficiaries(t, 6), ...(t.memory?.historical_tickers ?? [])])].slice(0, 10),
-      stories,
-      transmission: [
-        { label: "Driver", value: deriveDriver(t) },
-        { label: "Theme",  value: cleanThemeName(t.name) },
-        { label: "Sector", value: deriveSector(t) ?? "—" },
-        { label: "Assets", value: themeBeneficiaries(t, 3).join(" · ") || "—" },
-      ],
-    };
-  }, [centerpiece, themes, clusters]);
+  const r = useMemo(() => (centerpiece ? buildReasoning(centerpiece, clusters) : null), [centerpiece, clusters]);
 
   if (isLoading) return <WorkspaceSkeleton />;
-  if (!centerpiece || !m) return null;
+  if (!centerpiece || !r) return null;
 
-  const dc = dirColor(m.dir);
   const t = centerpiece;
+  const dc = dirColor(r.dir);
+  const conf = Math.round(t.confidence ?? 0);
   const contextLabel = focus && focus.kind !== "theme" ? `${focusKindLabel(focus.kind)} · ${focus.label}` : focus ? "Selected theme" : "Market-leading theme";
-  // Context tokens shared by everything in this workspace — hovering any chip
-  // lights the matching theme/sector/driver/company across the whole page.
-  const ctx: (string | null)[] = [m.name, m.sector, m.driver];
-  // Confidence halo, data-bound: brighter with conviction, faster with momentum.
-  const conf = t.confidence ?? 0;
-  const haloDur = t.momentum_label === "accelerating" ? 2.6 : t.momentum_label === "strengthening" ? 3.1
-    : t.momentum_label === "emerging" ? 3.6 : (t.momentum_label === "cooling" || t.momentum_label === "reversing") ? 5.4 : 4.3;
+  const stateWord = r.dir === "bullish" ? "Risk-On" : r.dir === "bearish" ? "Risk-Off" : "Two-Way";
+  const haloDur = t.momentum_label === "accelerating" ? 2.6 : t.momentum_label === "emerging" ? 3.6 : (t.momentum_label === "cooling" || t.momentum_label === "reversing") ? 5.4 : 4.3;
   const haloAlpha = Math.round((0.10 + (conf / 100) * 0.30) * 255).toString(16).padStart(2, "0");
+  const mem = t.memory;
 
   return (
-    <section className="mb-9">
-      {/* Section header */}
-      <div className="flex items-center gap-3 mb-3">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "rgba(255,255,255,0.62)" }}>Intelligence Workspace</span>
-        <span className="text-[9px] font-medium hidden sm:inline" style={{ color: "rgba(255,255,255,0.36)" }}>the selected node, decoded</span>
-        <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.09), transparent)" }} />
-        <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
-          style={{ color: CYAN, background: "rgba(82,176,200,0.12)" }}>{contextLabel}</span>
+    <section className="mb-12">
+      {/* Eyebrow */}
+      <div className="flex items-center gap-3 mb-5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: "rgba(255,255,255,0.5)" }}>Strategist&apos;s Read</span>
+        <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.10), transparent)" }} />
+        <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: CYAN }}>{contextLabel}</span>
       </div>
 
-      {/* The workspace re-mounts (cross-fades) whenever the centerpiece changes. */}
-      <motion.div
-        key={t.id}
-        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: [0.22, 0, 0.36, 1] }}
-        className="rounded-2xl border overflow-hidden"
-        style={{ borderColor: "rgba(255,255,255,0.08)", background: "linear-gradient(180deg, rgba(18,26,42,0.55), rgba(8,12,20,0.85))" }}
-      >
-        {/* Centerpiece header */}
-        <div className="relative px-5 pt-4 pb-4 border-b overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-          <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at left top, ${dc}10 0%, transparent 55%)` }} />
-          {/* Conviction halo around the confidence number — strengthens & quickens with momentum */}
-          <div aria-hidden className="tg-halo absolute -top-12 -right-10 w-52 h-52 rounded-full pointer-events-none"
-            style={{ background: `radial-gradient(circle, ${dc}${haloAlpha} 0%, transparent 70%)`, animationDuration: `${haloDur}s` }} />
-          <div className="relative flex items-start gap-3 flex-wrap">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: dc, boxShadow: `0 0 10px ${dc}` }} />
-                <span className="text-[8px] font-bold uppercase tracking-[0.16em]" style={{ color: dc }}>
-                  {m.dir === "bullish" ? "Risk-On" : m.dir === "bearish" ? "Risk-Off" : "Two-Way"}
+      {/* The read flows as an article — no box; depth comes from light + spacing. */}
+      <motion.article initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.22, 0, 0.36, 1] }} className="relative">
+        <div aria-hidden className="tg-halo absolute -top-20 -left-16 w-80 h-80 rounded-full pointer-events-none -z-10"
+          style={{ background: `radial-gradient(circle, ${dc}${haloAlpha} 0%, transparent 70%)`, animationDuration: `${haloDur}s` }} />
+
+        {/* Masthead — headline + conviction, no container */}
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full" style={{ background: dc, boxShadow: `0 0 10px ${dc}` }} />
+              <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: dc }}>{stateWord}</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.45)" }}>· {t.momentum_label}</span>
+            </div>
+            <h2 className="text-[22px] sm:text-[28px] font-black uppercase leading-[0.95] tracking-[-0.01em]" style={{ color: "rgba(255,255,255,0.96)" }}>{r.name}</h2>
+          </div>
+          <div className="flex items-baseline gap-2 shrink-0">
+            <CountUp value={conf} className="text-[30px] font-black tabular-nums leading-none" style={{ color: confColor(conf), transition: "color 500ms ease" }} />
+            <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.4)" }}>{t.confidence_label || "Conviction"}</span>
+          </div>
+        </div>
+
+        {/* fading hairline — a rule, not a box */}
+        <div className="h-px mt-5 mb-7" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 55%, transparent)" }} />
+
+        {/* The five questions — flowing sections separated by air, cascade on change */}
+        <motion.div key={t.id} initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: 0.07 } } }} className="space-y-8">
+
+          {/* 1 — What changed? (the lead, largest type) */}
+          <Section n="01" label="What changed">
+            <p className="text-[16px] sm:text-[17px] leading-[1.55] font-light" style={{ color: "rgba(255,255,255,0.9)" }}>{r.whatChanged}</p>
+            {mem && mem.conviction_window_start !== mem.conviction_current && (
+              <div className="flex items-center gap-1.5 mt-3 text-[11px] tabular-nums" style={{ color: "rgba(255,255,255,0.5)" }}>
+                <span className="uppercase tracking-wide text-[8px] font-bold" style={{ color: "rgba(255,255,255,0.35)" }}>conviction</span>
+                <span className="font-bold" style={{ color: "rgba(255,255,255,0.62)" }}>{mem.conviction_window_start}</span>
+                <span style={{ color: dc }}>→</span>
+                <span className="font-black text-[13px]" style={{ color: confColor(mem.conviction_current) }}>{mem.conviction_current}</span>
+                <span className="ml-1 text-[8.5px] font-bold uppercase" style={{ color: dc }}>{mem.conviction_trend}</span>
+              </div>
+            )}
+          </Section>
+
+          {/* 2 — Why does it matter? */}
+          <Section n="02" label="Why it matters">
+            <p className="text-[14px] leading-[1.6] font-light" style={{ color: "rgba(255,255,255,0.8)" }}>{r.whyMatters}</p>
+            <div className="flex items-center gap-2 flex-wrap mt-3.5">
+              {r.transmission.map((node, i) => (
+                <span key={node} className="flex items-center gap-2">
+                  {i > 0 && <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.24)" }}>→</span>}
+                  <Beam tokens={[node, ...r.ctx]} className="text-[10px] font-semibold tracking-wide inline-block"
+                    style={{ color: i === 1 ? dc : "rgba(255,255,255,0.6)" }}>{node}</Beam>
                 </span>
-                <span className="text-[8px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ color: m.health.color, background: `${m.health.color}1a` }}>{m.health.label}</span>
-              </div>
-              <h2 className="text-[22px] sm:text-[26px] font-black uppercase leading-none tracking-tight truncate" style={{ color: "rgba(255,255,255,0.97)" }}>{m.name}</h2>
-              <p className="text-[10px] mt-1.5" style={{ color: "rgba(255,255,255,0.42)" }}>
-                {m.driver}{m.sector ? <span> → <span style={{ color: "rgba(255,255,255,0.6)" }}>{m.sector}</span></span> : null} · {m.iScore.label}
-              </p>
+              ))}
             </div>
-            <div className="flex flex-col items-end shrink-0">
-              <span className="text-[30px] font-black tabular-nums leading-none" style={{ color: confColor(t.confidence ?? 0) }}>{Math.round(t.confidence ?? 0)}</span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>{t.confidence_label || "Conviction"}</span>
+          </Section>
+
+          {/* 3 + 4 — Who benefits / Who is hurt — two columns, thin accent rules only */}
+          <motion.div variants={CELL} className="grid md:grid-cols-2 gap-x-10 gap-y-7">
+            <div className="pl-4" style={{ borderLeft: `2px solid ${GREEN}` }}>
+              <SecLabel n="03" label="Who benefits" color={GREEN} />
+              <div className="mt-2"><TickerChips tickers={r.benefitsTickers} color={GREEN} context={r.ctx} /></div>
+              <p className="text-[12px] leading-[1.6] font-light mt-2.5" style={{ color: "rgba(255,255,255,0.6)" }}>{r.benefitsText}</p>
             </div>
-          </div>
-
-          {/* Metrics strip */}
-          <div className="relative grid grid-cols-3 sm:grid-cols-6 gap-px mt-4 rounded-lg overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
-            <Metric label="Confidence"  value={Math.round(t.confidence ?? 0)} color={confColor(t.confidence ?? 0)} bar />
-            <Metric label="Momentum"    text={t.momentum_label} color={dc} arrow={m.dir} />
-            <Metric label="Breadth"     value={Math.round(t.breadth_score ?? 0)} color={scale(t.breadth_score ?? 0)} bar />
-            <Metric label="Acceleration" text={signed(t.momentum_delta ?? 0)} color={(t.momentum_delta ?? 0) >= 0 ? GREEN : RED} />
-            <Metric label="Mkt Pressure" value={m.pressure} color={scale(m.pressure)} bar />
-            <Metric label="Persistence" value={Math.round(t.persistence_score ?? 0)} color={scale(t.persistence_score ?? 0)} bar />
-          </div>
-        </div>
-
-        {/* Panel grid */}
-        <div className="grid lg:grid-cols-3 gap-px" style={{ background: "rgba(255,255,255,0.05)" }}>
-          {/* Institutional Positioning */}
-          <Panel title="Institutional Positioning">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[13px] font-bold" style={{ color: m.pos.color }}>{m.pos.label}</span>
+            <div className="pl-4" style={{ borderLeft: `2px solid ${r.hurt ? RED : "rgba(255,255,255,0.12)"}` }}>
+              <SecLabel n="04" label="Who is hurt" color={r.hurt ? RED : SLATE} />
+              {r.hurt ? (
+                <>
+                  {r.hurt.label && <Beam tokens={[r.hurt.label, ...r.ctx]} className="text-[10.5px] font-semibold mt-2 mb-1.5 inline-block" style={{ color: RED }}>{r.hurt.label}</Beam>}
+                  {r.hurt.tickers.length > 0 && <TickerChips tickers={r.hurt.tickers} color={RED} context={r.ctx} />}
+                  <p className="text-[12px] leading-[1.6] font-light mt-2.5" style={{ color: "rgba(255,255,255,0.6)" }}>{r.hurt.text}</p>
+                </>
+              ) : (
+                <p className="text-[12px] leading-[1.6] font-light mt-2.5" style={{ color: "rgba(255,255,255,0.5)" }}>No clearly exposed losers — the risk is crowding into the same beneficiaries, which leaves the trade vulnerable to a reversal in {r.driver.toLowerCase()}.</p>
+              )}
             </div>
-            <p className="text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>{m.pos.note}</p>
-          </Panel>
+          </motion.div>
 
-          {/* Capital Destination */}
-          <Panel title="Capital Destination">
-            <p className="text-[10.5px] leading-snug mb-2" style={{ color: "rgba(255,255,255,0.62)" }}>
-              {m.sector ? <>Flowing into <Beam tokens={[m.sector, m.name, m.driver]}><b style={{ color: "rgba(255,255,255,0.85)" }}>{m.sector}</b></Beam></> : "Destination forming"}
+          {/* 5 — What to watch next */}
+          <Section n="05" label="What to watch next" color={CYAN}>
+            <p className="text-[14px] leading-[1.6] font-light" style={{ color: "rgba(255,255,255,0.8)" }}>
+              Watch <b className="font-semibold" style={{ color: "rgba(255,255,255,0.94)" }}>{r.watch}</b>.
             </p>
-            <TickerChips tickers={m.best?.tickers ?? m.beneficiaries.slice(0, 4)} color={CYAN} context={ctx} />
-            {m.best?.why && <p className="text-[9.5px] leading-snug mt-2" style={{ color: "rgba(255,255,255,0.42)" }}>{m.best.why}</p>}
-          </Panel>
-
-          {/* Next Confirmation Event */}
-          <Panel title="Next Confirmation Event">
-            {m.catalyst ? (
-              <>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[12px] font-bold" style={{ color: "rgba(255,255,255,0.9)" }}>{m.catalyst.label}</span>
-                  <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded ml-auto shrink-0" style={{ color: m.catalyst.imminent ? AMBER : CYAN, background: m.catalyst.imminent ? "rgba(251,191,36,0.14)" : "rgba(82,176,200,0.12)" }}>{m.catalyst.dateLabel}</span>
+            <div className="flex flex-col gap-2 mt-3">
+              {r.catalyst && (
+                <div className="flex items-baseline gap-2.5 text-[11px]">
+                  <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: r.catalyst.imminent ? AMBER : CYAN }}>{r.catalyst.dateLabel}</span>
+                  <span className="font-light" style={{ color: "rgba(255,255,255,0.58)" }}>{r.catalyst.label} — {r.catalyst.reason}</span>
                 </div>
-                <p className="text-[9.5px] leading-snug" style={{ color: "rgba(255,255,255,0.5)" }}>{m.catalyst.reason}</p>
-                <p className="text-[8.5px] mt-1.5" style={{ color: "rgba(255,255,255,0.36)" }}>{m.catalyst.sensitivity} sensitivity · in {m.catalyst.daysAway}d</p>
-              </>
-            ) : (
-              <p className="text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.5)" }}>Watch {m.watch}.</p>
-            )}
-          </Panel>
+              )}
+              {r.invalidation && (
+                <div className="flex items-baseline gap-2.5 text-[11px]">
+                  <span className="text-[8px] font-bold uppercase tracking-wide shrink-0" style={{ color: RED }}>Invalidates</span>
+                  <span className="font-light" style={{ color: "rgba(255,255,255,0.48)" }}>{r.invalidation.condition} — {r.invalidation.impact}</span>
+                </div>
+              )}
+            </div>
+          </Section>
+        </motion.div>
 
-          {/* Primary Beneficiaries */}
-          <Panel title="Primary Beneficiaries">
-            <TickerChips tickers={m.beneficiaries} color={GREEN} context={ctx} />
-            {m.cases?.bull && <p className="text-[9.5px] leading-snug mt-2" style={{ color: "rgba(255,255,255,0.48)" }}>{m.cases.bull}</p>}
-          </Panel>
-
-          {/* Primary Risks */}
-          <Panel title="Primary Risks">
-            {m.losers ? (
-              <>
-                <Beam tokens={[m.losers.sector, m.name, m.driver]} className="text-[10px] font-semibold mb-1.5 inline-block" style={{ color: RED }}>{m.losers.sector}</Beam>
-                <TickerChips tickers={m.losers.tickers} color={RED} context={[m.losers.sector, m.name, m.driver]} />
-                <p className="text-[9.5px] leading-snug mt-2" style={{ color: "rgba(255,255,255,0.48)" }}>{m.losers.risk}</p>
-              </>
-            ) : (
-              <p className="text-[9.5px] leading-snug" style={{ color: "rgba(255,255,255,0.5)" }}>{m.cases?.bear ?? "Risk concentrates if the macro driver reverses."}</p>
-            )}
-          </Panel>
-
-          {/* Recent Confirmations */}
-          <Panel title="Recent Confirmations">
-            {t.memory && (t.memory.confirmations_today > 0 || t.memory.confirming_total > 0) && (
-              <p className="text-[9.5px] mb-1.5" style={{ color: GREEN }}>
-                {t.memory.confirmations_today > 0 ? `${t.memory.confirmations_today} new today · ` : ""}{t.memory.confirming_total} total confirming
-              </p>
-            )}
-            <ul className="space-y-1">
-              {m.evidence.length ? m.evidence.map((e, i) => (
-                <li key={i} className="flex items-start gap-1.5 text-[9.5px] leading-snug" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  <span className="shrink-0 mt-0.5" style={{ color: GREEN }}>✓</span>{e.label}
-                </li>
-              )) : <li className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.4)" }}>Awaiting independent confirmation.</li>}
-            </ul>
-          </Panel>
-
-          {/* Competing Themes */}
-          <Panel title="Competing Themes">
-            {m.competing.length ? (
-              <div className="space-y-1.5">
-                {m.competing.map(c => (
-                  <Beam key={c.id} tokens={[cleanThemeName(c.name)]} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dirColor(dirOf(c)) }} />
-                    <span className="text-[10.5px] font-medium truncate" style={{ color: "rgba(255,255,255,0.7)" }}>{cleanThemeName(c.name)}</span>
-                    <span className="text-[9.5px] font-bold tabular-nums ml-auto shrink-0" style={{ color: confColor(c.confidence ?? 0) }}>{Math.round(c.confidence ?? 0)}</span>
+        {/* Supporting evidence — quiet footnotes under a single hairline */}
+        {r.stories.length > 0 && (
+          <div className="mt-9 pt-5" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+            <p className="text-[8px] font-bold uppercase tracking-[0.18em] mb-2.5" style={{ color: "rgba(255,255,255,0.3)" }}>Supporting Evidence</p>
+            <motion.div key={t.id} initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: 0.05 } } }} className="space-y-1.5">
+              {r.stories.map(c => (
+                <motion.div key={c.id} variants={{ hidden: { opacity: 0, x: -6 }, visible: { opacity: 1, x: 0, transition: { duration: 0.28, ease: "easeOut" } } }}>
+                  <Beam tokens={[...r.ctx, ...(c.primary.affected_entities ?? [])]} className="w-full flex items-center gap-2.5">
+                    <button onClick={() => { const el = document.querySelector(`[data-cluster-id="${c.id}"]`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                      className="w-full flex items-center gap-2.5 text-left group">
+                      <span className="w-1 h-1 rounded-full shrink-0" style={{ background: dc, opacity: 0.5 }} />
+                      <span className="text-[11px] leading-snug truncate flex-1 transition-colors group-hover:text-white font-light" style={{ color: "rgba(255,255,255,0.55)" }}>{c.primary.title}</span>
+                      <span className="text-[8px] tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.3)" }}>{c.primary.source} · {timeAgo(c.primary.published)}</span>
+                    </button>
                   </Beam>
-                ))}
-              </div>
-            ) : <p className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.4)" }}>No directly competing narratives.</p>}
-          </Panel>
-
-          {/* Related Companies */}
-          <Panel title="Related Companies">
-            <TickerChips tickers={m.related} color={SLATE} context={ctx} />
-          </Panel>
-
-          {/* Transmission Timeline */}
-          <Panel title="Transmission Timeline">
-            <div className="space-y-2">
-              {m.transmission.map((s, i) => (
-                <div key={s.label} className="flex items-start gap-2">
-                  <div className="flex flex-col items-center shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: i === 1 ? dc : "rgba(255,255,255,0.4)" }} />
-                    {i < m.transmission.length - 1 && <span className="w-px h-4" style={{ background: "rgba(255,255,255,0.12)" }} />}
-                  </div>
-                  <div className="min-w-0 -mt-0.5">
-                    <span className="text-[7.5px] font-bold uppercase tracking-wider block" style={{ color: "rgba(255,255,255,0.34)" }}>{s.label}</span>
-                    <Beam tokens={[s.value, m.name, m.sector, m.driver]} className="text-[10.5px] font-semibold inline-block" style={{ color: i === 1 ? dc : "rgba(255,255,255,0.72)" }}>{s.value}</Beam>
-                  </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
-          </Panel>
-        </div>
-
-        {/* Recent supporting stories — full width footer */}
-        <div className="px-5 py-3.5 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-          <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color: "rgba(255,255,255,0.34)" }}>Recent Supporting Stories</p>
-          {m.stories.length ? (
-            <div className="space-y-1.5">
-              {m.stories.map(c => (
-                <Beam key={c.id} tokens={[...ctx, ...(c.primary.affected_entities ?? [])]} className="w-full flex items-center gap-2.5 text-left">
-                  <button onClick={() => { const el = document.querySelector(`[data-cluster-id="${c.id}"]`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
-                    className="w-full flex items-center gap-2.5 text-left group">
-                    <span className="w-1 h-1 rounded-full shrink-0" style={{ background: dc, opacity: 0.6 }} />
-                    <span className="text-[11px] leading-snug truncate flex-1 transition-colors group-hover:text-white" style={{ color: "rgba(255,255,255,0.66)" }}>{c.primary.title}</span>
-                    <span className="text-[8.5px] tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.34)" }}>{c.primary.source} · {timeAgo(c.primary.published)}</span>
-                  </button>
-                </Beam>
-              ))}
-            </div>
-          ) : <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>No supporting stories in the current stream yet.</p>}
-        </div>
-      </motion.div>
+            </motion.div>
+          </div>
+        )}
+      </motion.article>
     </section>
   );
 }
 
 // ── Building blocks ───────────────────────────────────────────────────────────
-function Metric({ label, value, text, color, bar, arrow }: {
-  label: string; value?: number; text?: string; color: string; bar?: boolean; arrow?: string;
-}) {
+const CELL = {
+  hidden:  { opacity: 0, y: 7 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 0, 0.36, 1] } },
+};
+
+function SecLabel({ n, label, color }: { n: string; label: string; color: string }) {
   return (
-    <div className="px-2.5 py-2" style={{ background: "rgba(10,15,28,0.92)" }}>
-      <div className="flex items-baseline gap-1">
-        <span className="text-[15px] font-black tabular-nums leading-none capitalize" style={{ color }}>
-          {arrow ? (arrow === "bullish" ? "▲ " : arrow === "bearish" ? "▼ " : "● ") : ""}{text ?? value}
-        </span>
-      </div>
-      {bar && value !== undefined && (
-        <div className="relative h-[2px] rounded-full overflow-hidden mt-1" style={{ background: "rgba(255,255,255,0.07)" }}>
-          <div className="h-full rounded-full" style={{ width: `${Math.max(3, Math.min(100, value))}%`, background: color }} />
-          {/* Live sheen — the signal is being continuously recomputed (strong bars only) */}
-          {value >= 55 && <div aria-hidden className="tg-sheen absolute inset-y-0 left-0 w-1/3" style={{ background: "linear-gradient(to right, transparent, rgba(255,255,255,0.4), transparent)" }} />}
-        </div>
-      )}
-      <span className="text-[7.5px] font-bold uppercase tracking-wider block mt-1" style={{ color: "rgba(255,255,255,0.36)" }}>{label}</span>
+    <div className="flex items-baseline gap-2.5 mb-1">
+      <span className="text-[11px] font-black tabular-nums" style={{ color }}>{n}</span>
+      <span className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: "rgba(255,255,255,0.42)" }}>{label}</span>
     </div>
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ n, label, color, children }: { n: string; label: string; color?: string; children: React.ReactNode }) {
   return (
-    <div className="px-4 py-3" style={{ background: "rgba(10,15,28,0.92)" }}>
-      <p className="text-[7.5px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color: "rgba(255,255,255,0.34)" }}>{title}</p>
-      {children}
-    </div>
+    <motion.div variants={CELL}>
+      <SecLabel n={n} label={label} color={color ?? "rgba(255,255,255,0.3)"} />
+      <div className="mt-2">{children}</div>
+    </motion.div>
   );
 }
 
 function TickerChips({ tickers, color, context = [] }: { tickers: string[]; color: string; context?: (string | null)[] }) {
   if (!tickers.length) return <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.4)" }}>—</span>;
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-x-2.5 gap-y-1">
       {tickers.map(tk => (
-        <Beam key={tk} tokens={[tk, ...context]} className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ color, background: `${color}14`, border: `1px solid ${color}22` }}>{tk}</Beam>
+        <Beam key={tk} tokens={[tk, ...context]} className="text-[11px] font-mono font-bold tracking-wide" style={{ color }}>{tk}</Beam>
       ))}
     </div>
   );
+}
+
+function CountUp({ value, className, style }: { value: number; className?: string; style?: React.CSSProperties }) {
+  const [disp, setDisp] = useState(value);
+  const fromRef = useRef(value);
+  useEffect(() => {
+    const from = fromRef.current, to = value, t0 = performance.now(), dur = 620;
+    if (from === to) return;
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - p, 3);
+      setDisp(Math.round(from + (to - from) * e));
+      if (p < 1) raf = requestAnimationFrame(tick); else fromRef.current = to;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <span className={className} style={style}>{disp}</span>;
 }
 
 function WorkspaceSkeleton() {
@@ -374,13 +328,16 @@ function WorkspaceSkeleton() {
     <section className="mb-9">
       <div className="h-2.5 w-40 rounded animate-pulse mb-3" style={{ background: "rgba(255,255,255,0.06)" }} />
       <div className="rounded-2xl border overflow-hidden animate-pulse" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(12,18,32,0.6)" }}>
-        <div className="px-5 pt-4 pb-4 border-b space-y-3" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <div className="px-5 pt-4 pb-4 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
           <div className="h-7 w-1/2 rounded" style={{ background: "rgba(255,255,255,0.06)" }} />
-          <div className="grid grid-cols-6 gap-px h-12 rounded-lg overflow-hidden" style={{ background: "rgba(255,255,255,0.04)" }} />
         </div>
-        <div className="grid lg:grid-cols-3 gap-px" style={{ background: "rgba(255,255,255,0.05)" }}>
-          {[...Array(6)].map((_, i) => <div key={i} className="h-24" style={{ background: "rgba(10,15,28,0.92)" }} />)}
-        </div>
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="px-5 py-4 border-b space-y-2" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+            <div className="h-2 w-24 rounded" style={{ background: "rgba(255,255,255,0.05)" }} />
+            <div className="h-3 w-full rounded" style={{ background: "rgba(255,255,255,0.04)" }} />
+            <div className="h-3 w-3/4 rounded" style={{ background: "rgba(255,255,255,0.04)" }} />
+          </div>
+        ))}
       </div>
     </section>
   );

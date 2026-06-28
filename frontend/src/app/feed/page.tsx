@@ -104,6 +104,15 @@ export default function FeedPage() {
   const [clearNonce, setClearNonce] = useState(0);
   const exitFocus = useCallback(() => { setFocusNode(null); setClearNonce(n => n + 1); }, []);
 
+  // Every lens change (selection / deselection) fires a one-shot "recalculation"
+  // pulse the page reacts to — the market feels like it re-thinks.
+  const [pulseKey, setPulseKey] = useState(0);
+  const firstSelection = useRef(true);
+  useEffect(() => {
+    if (firstSelection.current) { firstSelection.current = false; return; }
+    setPulseKey(k => k + 1);
+  }, [focusNode]);
+
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
@@ -140,6 +149,20 @@ export default function FeedPage() {
     volRegime:   ms.volRegime,
     regimeLabel: ms.trend.riskDirection !== "stable" ? ms.trend.label : undefined,
   }), [ms.riskRegime, ms.volRegime, ms.trend.riskDirection, ms.trend.label]);
+
+  // Global market energy 0..1 — drives the graph's motion temperament (calm ↔
+  // energetic). Built from overall pressure, momentum acceleration, vol regime
+  // and regime transitions, so the map expresses the market mood before any text.
+  const marketEnergy = useMemo(() => {
+    let e = (ms.atmosphereIntensity ?? 0.4) * 0.7;
+    if (ms.trend.acceleration === "accelerating") e += 0.22;
+    else if (ms.trend.acceleration === "decelerating") e -= 0.10;
+    if (ms.volRegime === "high") e += 0.24;
+    else if (ms.volRegime === "elevated") e += 0.12;
+    else if (ms.volRegime === "low") e -= 0.10;
+    if (ms.regimeTransition) e += 0.18;
+    return Math.max(0.12, Math.min(1, e));
+  }, [ms.atmosphereIntensity, ms.trend.acceleration, ms.volRegime, ms.regimeTransition]);
 
   useEffect(() => {
     if (!data?.clusters) return;
@@ -267,18 +290,11 @@ export default function FeedPage() {
       {/* Body aligned to the Markets workstation surface (#0A0F1C) for product consistency. */}
       <div className="relative" style={{ background: "#0A0F1C", minHeight: "calc(100vh - 3.5rem)" }}>
 
-        {/* Depth grid — institutional reference grid behind all layers; slow drift
-            keeps the surface alive (the system is never frozen). */}
-        <div aria-hidden className="tg-drift absolute inset-0 pointer-events-none select-none"
+        {/* Depth grid — static institutional reference grid behind all layers */}
+        <div aria-hidden className="absolute inset-0 pointer-events-none select-none"
           style={{ backgroundImage: GRID_BG, backgroundRepeat: "repeat" }} />
 
-        {/* Reading scanline — a faint sweep down the page = Argus reading the tape. */}
-        <div aria-hidden className="absolute inset-x-0 top-0 h-[42%] pointer-events-none overflow-hidden">
-          <div className="tg-scan absolute inset-x-0 h-px"
-            style={{ background: "linear-gradient(to right, transparent, rgba(82,176,200,0.22) 35%, rgba(82,176,200,0.30) 50%, rgba(82,176,200,0.22) 65%, transparent)" }} />
-        </div>
-
-        {/* Primary radial glow — field pressure color bleeds from graph through feed */}
+        {/* Primary radial glow — regime-tinted field pressure (colour = market state) */}
         <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
             background: ms.riskRegime === "risk-off"
@@ -288,8 +304,8 @@ export default function FeedPage() {
               : "radial-gradient(ellipse 130% 75% at 50% 0%, rgba(8,22,66,0.62) 0%, rgba(6,14,44,0.28) 38%, transparent 68%)",
           }} />
 
-        {/* Secondary ambient field — left asymmetric depth, regime-tinted; breathes (adaptive lighting) */}
-        <div aria-hidden className="tg-ambient absolute inset-0 pointer-events-none"
+        {/* Secondary ambient field — left asymmetric depth, regime-tinted (static) */}
+        <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
             background: ms.riskRegime === "risk-off"
               ? "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(40,10,10,0.24) 0%, transparent 72%)"
@@ -298,10 +314,9 @@ export default function FeedPage() {
               : "radial-gradient(ellipse 60% 38% at 14% 55%, rgba(8,18,46,0.28) 0%, transparent 72%)",
           }} />
 
-        {/* Tertiary ambient — right-side asymmetric field, regime-tinted; breathes out of phase */}
-        <div aria-hidden className="tg-ambient absolute inset-0 pointer-events-none"
+        {/* Tertiary ambient — right-side asymmetric field, regime-tinted (static) */}
+        <div aria-hidden className="absolute inset-0 pointer-events-none"
           style={{
-            animationDelay: "-4.5s",
             background: ms.riskRegime === "risk-off"
               ? "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(36,8,8,0.16) 0%, transparent 72%)"
               : "radial-gradient(ellipse 50% 32% at 86% 68%, rgba(6,12,36,0.18) 0%, transparent 72%)",
@@ -328,6 +343,14 @@ export default function FeedPage() {
           </div>
         )}
 
+        {/* Recalculation flash — radial bloom over the graph area on every lens change */}
+        {pulseKey > 0 && (
+          <div key={pulseKey} aria-hidden className="pointer-events-none absolute left-1/2 top-[16%] -translate-x-1/2 -translate-y-1/2 w-[64vw] h-[64vw] max-w-[860px] max-h-[860px] z-[5]">
+            <div className="tg-recalc w-full h-full rounded-full"
+              style={{ background: `radial-gradient(circle, ${ms.riskRegime === "risk-off" ? "rgba(248,113,113,0.10)" : "rgba(82,176,200,0.11)"} 0%, transparent 60%)` }} />
+          </div>
+        )}
+
         {/* New stories banner — sticky inside the dark environment */}
         <NewStoriesBanner
           visible={hasNew && !isFetching}
@@ -345,28 +368,27 @@ export default function FeedPage() {
           focus={focus}
           onFocusChange={setFocusNode}
           clearNonce={clearNonce}
+          energy={marketEnergy}
         />
 
-        {/* ── Focus mode banner — the page is now reflecting one node ──────── */}
+        {/* ── Focus mode — a floating inline marker, no frame ─────────────── */}
         {focus && (
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3">
-            <div className="flex items-center gap-3 rounded-lg border px-3.5 py-2"
-              style={{ borderColor: "rgba(82,176,200,0.28)", background: "linear-gradient(90deg, rgba(82,176,200,0.10), rgba(82,176,200,0.02))" }}>
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="tg-live-dot absolute inline-flex h-full w-full rounded-full" style={{ background: "#7cc7d8" }} />
-                <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: "#7cc7d8" }} />
-              </span>
-              <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: "#7cc7d8" }}>Focus</span>
-              <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
-                style={{ color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.05)" }}>{focusKindLabel(focus.kind)}</span>
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3.5">
+            <div className="relative overflow-hidden flex items-center gap-2.5 py-1">
+              {/* Sweep on each new selection — the lens just changed */}
+              <div key={focus.nodeId} aria-hidden className="tg-wave absolute inset-y-0 left-0 w-1/2 pointer-events-none"
+                style={{ background: "linear-gradient(to right, rgba(82,176,200,0.10), transparent)" }} />
+              <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: "#7cc7d8" }} />
+              <span className="text-[9px] font-black uppercase tracking-[0.18em] shrink-0" style={{ color: "#7cc7d8" }}>Focus</span>
+              <span className="text-[8.5px] font-semibold uppercase tracking-wide shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>{focusKindLabel(focus.kind)}</span>
               <span className="text-[13px] font-bold truncate" style={{ color: "rgba(255,255,255,0.94)" }}>{focus.label}</span>
-              <span className="text-[10px] tabular-nums hidden sm:inline" style={{ color: "rgba(255,255,255,0.42)" }}>
+              <span className="text-[10px] tabular-nums hidden sm:inline shrink-0" style={{ color: "rgba(255,255,255,0.38)" }}>
                 {focusedClusters.length} {focusedClusters.length === 1 ? "story" : "stories"} · {focusedWmn.length} signals
               </span>
               <button onClick={exitFocus}
-                className="ml-auto shrink-0 text-[10px] font-semibold px-2.5 py-1 rounded-md transition-colors hover:bg-white/10"
-                style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)", background: "rgba(82,176,200,0.08)" }}>
-                Exit to Global Market
+                className="ml-auto shrink-0 text-[10px] font-semibold transition-colors hover:text-white"
+                style={{ color: "rgba(124,199,216,0.85)" }}>
+                Exit to Global Market →
               </button>
             </div>
           </div>
@@ -410,9 +432,10 @@ export default function FeedPage() {
 
           {/* ── Stream entry bridge ───────────────────────────────────── */}
           <div className="flex items-center gap-3 mb-4 mt-1">
-            <span className="text-[9px] font-bold uppercase tracking-[0.18em] shrink-0"
-              style={{ color: "rgba(255,255,255,0.32)" }}>
-              Live Market Stream
+            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: "#52b0c8" }} />
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] shrink-0"
+              style={{ color: "rgba(255,255,255,0.5)" }}>
+              Live Intelligence Stream
             </span>
             <div className="flex-1 h-px"
               style={{ background: "linear-gradient(to right, rgba(255,255,255,0.05), transparent)" }} />

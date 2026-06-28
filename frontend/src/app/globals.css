@@ -122,36 +122,24 @@
    is data-bound by the component that uses it (intensity ∝ confidence, speed ∝
    momentum, trigger = new information) — never decorative. Subtle by design. */
 
-/* Confidence halo: a soft breathing glow behind a strengthening theme. Amplitude
-   small; duration set inline (faster = accelerating momentum). */
+/* Confidence halo: glow behind a strengthening theme — opacity ∝ conviction,
+   duration ∝ momentum (both set inline by the component). */
 @keyframes tg-halo  { 0%,100% { opacity: 0.4; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
 .tg-halo { animation: tg-halo 4s ease-in-out infinite; will-change: opacity, transform; }
 
-/* Live sheen sweeping a filled bar = the signal being continuously recomputed. */
-@keyframes tg-sheen { 0% { transform: translateX(-130%); } 55%,100% { transform: translateX(420%); } }
-.tg-sheen { animation: tg-sheen 3.4s cubic-bezier(0.4,0,0.2,1) infinite; }
-
-/* Background scanline — the system is always reading the tape. Very faint, slow. */
-@keyframes tg-scan { 0% { transform: translateY(-8%); opacity: 0; } 10%,90% { opacity: 1; } 100% { transform: translateY(108%); opacity: 0; } }
-.tg-scan { animation: tg-scan 13s linear infinite; will-change: transform; }
-
-/* Slow reference-grid drift — adaptive lighting, never frozen (60px = grid pitch). */
-@keyframes tg-drift { from { background-position: 0 0; } to { background-position: 0 60px; } }
-.tg-drift { animation: tg-drift 26s linear infinite; }
-
-/* Transmission wave — a one-shot sweep fired when new information propagates in. */
+/* Transmission wave — one-shot sweep fired when new information propagates in. */
 @keyframes tg-wave { 0% { transform: translateX(-100%); opacity: 0; } 14% { opacity: 0.85; } 100% { transform: translateX(100%); opacity: 0; } }
 .tg-wave { animation: tg-wave 1.5s cubic-bezier(0.22,0,0.36,1) 1 both; }
 
-/* Conviction glow — a pulsing accent for accelerating/strengthening themes. */
+/* Conviction glow — pulsing accent gated to accelerating/strengthening themes. */
 @keyframes tg-glow  { 0%,100% { opacity: 0.3; } 50% { opacity: 0.95; } }
 .tg-glow { animation: tg-glow 3s ease-in-out infinite; }
 
-/* Ambient field breathing — adaptive lighting on the regime glow layers. */
-@keyframes tg-ambient { 0%,100% { opacity: 0.72; } 50% { opacity: 1; } }
-.tg-ambient { animation: tg-ambient 9s ease-in-out infinite; }
+/* Recalculation flash — one-shot radial bloom when the market lens changes. */
+@keyframes tg-recalc { 0% { opacity: 0; transform: scale(0.55); } 16% { opacity: 0.55; } 100% { opacity: 0; transform: scale(1.35); } }
+.tg-recalc { animation: tg-recalc 1.1s cubic-bezier(0.22,0,0.36,1) 1 both; will-change: opacity, transform; }
 
 @media (prefers-reduced-motion: reduce) {
   .tg-breathe, .tg-live-dot, .tg-band, .tg-tape,
-  .tg-halo, .tg-sheen, .tg-scan, .tg-drift, .tg-wave, .tg-glow, .tg-ambient { animation: none !important; }
+  .tg-halo, .tg-wave, .tg-glow, .tg-recalc { animation: none !important; }
 }
