@@ -13,11 +13,18 @@ import type { ThemeEpisodeGroup } from "@/lib/listenIntelligence";
  */
 
 function Widget({ w }: { w: IntelWidget }) {
+  const empty = !w.value || w.value === "—";
   return (
     <div className="px-3.5 py-3">
       <p className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-1.5 leading-tight">{w.label}</p>
-      <p className="text-[13px] font-bold text-ink leading-tight truncate" style={{ color: w.color }}>{w.value}</p>
-      {w.sub && <p className="text-[9.5px] text-ink-muted mt-0.5 truncate">{w.sub}</p>}
+      {empty ? (
+        <p className="text-[10.5px] italic text-ink-faint leading-tight">Insufficient signal</p>
+      ) : (
+        <>
+          <p className="text-[13px] font-bold text-ink leading-tight truncate" style={{ color: w.color }}>{w.value}</p>
+          {w.sub && <p className="text-[9.5px] text-ink-muted mt-0.5 truncate">{w.sub}</p>}
+        </>
+      )}
     </div>
   );
 }
@@ -31,7 +38,7 @@ interface Props {
 export function IntelligenceLayer({ episodes, themes, groups }: Props) {
   const intel = buildCollectiveIntel(episodes, themes, groups);
   if (!intel) return null;
-  const { consensus: c, widgets, wallStreet: ws } = intel;
+  const { read, consensus: c, widgets, wallStreet: ws } = intel;
 
   return (
     <motion.section
@@ -41,24 +48,30 @@ export function IntelligenceLayer({ episodes, themes, groups }: Props) {
       {/* Eyebrow — the question this section answers */}
       <div className="flex items-center gap-2.5 mb-2.5">
         <span className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">What Wall Street Is Talking About</span>
-        <span className="text-[9px] font-medium text-ink-muted hidden sm:inline">synthesized across every podcast</span>
+        <span className="text-[9px] font-medium text-ink-muted hidden sm:inline">positioning, conviction & the contrarian setup</span>
         <span className="h-px flex-1 bg-edge" />
-        <span className="text-[9.5px] font-semibold text-ink-muted shrink-0">{c.podcastCount} conversations</span>
+        <span className="text-[9.5px] font-semibold text-ink-muted shrink-0">{c.episodeCount} podcasts · {c.mentionCount} theme mentions</span>
+      </div>
+
+      {/* Strategist's read — the one-line synthesis */}
+      <div className="flex items-start gap-2.5 mb-3.5 rounded-xl border border-edge bg-surface px-4 py-3">
+        <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-ink-faint shrink-0 mt-0.5">Read</span>
+        <p className="text-[13px] leading-snug text-ink-secondary font-medium">{read}</p>
       </div>
 
       <div className="grid lg:grid-cols-5 gap-3.5">
-        {/* Left — consensus + widget grid */}
+        {/* Left — positioning + widget grid */}
         <div className="lg:col-span-3 rounded-2xl border border-edge bg-surface overflow-hidden">
-          {/* Conversation Consensus strip */}
+          {/* Positioning strip — consensus + crowding read */}
           <div className="flex items-center gap-3.5 px-4 py-3 border-b border-edge flex-wrap">
-            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-ink-muted shrink-0">Conversation Consensus</span>
+            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-ink-muted shrink-0">Positioning</span>
             <span className="text-[17px] font-black tabular-nums leading-none shrink-0" style={{ color: c.color }}>{c.pct}%</span>
             <span className="text-[10px] font-bold uppercase tracking-wide shrink-0" style={{ color: c.color }}>{c.label}</span>
-            <div className="flex-1 min-w-[80px] h-1.5 rounded-full overflow-hidden flex" style={{ background: "rgba(239,68,68,0.18)" }}>
+            <div className="flex-1 min-w-[70px] h-1.5 rounded-full overflow-hidden flex" style={{ background: "rgba(239,68,68,0.18)" }}>
               <motion.div className="h-full" style={{ background: "#10B981" }}
                 initial={{ width: 0 }} animate={{ width: `${c.pct}%` }} transition={{ duration: 1.1, ease: [0.22, 0, 0.36, 1] }} />
             </div>
-            <span className="text-[9.5px] text-ink-muted shrink-0 hidden sm:inline">{c.themeCount} themes</span>
+            <span className="text-[9.5px] font-semibold shrink-0" style={{ color: c.color }}>{c.crowding}</span>
           </div>
           {/* Widget grid — hairline-separated research cells */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-px" style={{ background: "rgb(var(--edge))" }}>
@@ -71,17 +84,18 @@ export function IntelligenceLayer({ episodes, themes, groups }: Props) {
           </div>
         </div>
 
-        {/* Right — Wall Street Consensus */}
+        {/* Right — The Consensus Trade */}
         {ws && (
           <div className="lg:col-span-2 rounded-2xl border border-edge bg-surface p-5 flex flex-col">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted mb-2.5">Wall Street Consensus</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-muted mb-2.5">The Consensus Trade</p>
             <h3 className="text-[19px] font-black leading-[1.08] tracking-tight text-ink mb-3">{ws.theme}</h3>
-            <div className="flex items-baseline gap-2.5 mb-4">
+            <div className="flex items-baseline gap-2.5 mb-1.5">
               <span className="text-[24px] font-black tabular-nums leading-none" style={{ color: ws.direction === "Bullish" ? "#10B981" : "#EF4444" }}>{ws.pct}%</span>
               <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ws.direction === "Bullish" ? "#10B981" : "#EF4444" }}>{ws.direction}</span>
               <span className="text-[11px] font-semibold text-ink-muted ml-auto">{ws.podcasts} Podcasts</span>
             </div>
-            <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-ink-faint mb-2">Discussed On</p>
+            <p className="text-[10.5px] font-semibold mb-4" style={{ color: ws.positioning.startsWith("Crowded") ? "#F59E0B" : "rgba(120,130,150,0.9)" }}>{ws.positioning}</p>
+            <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-ink-faint mb-2">Desks On The Trade</p>
             <div className="flex flex-wrap gap-1.5 mt-auto">
               {ws.shows.map(s => (
                 <span key={s} className="tg-chip text-[10px] font-medium px-2 py-0.5 rounded-full border border-edge text-ink-secondary bg-raised/40 truncate max-w-[120px]">{s}</span>

@@ -174,10 +174,14 @@ export default function ListenPage() {
   }, [allEpisodes, episodeThemeMap]);
 
   // ── Intelligence derivations ─────────────────────────────────────────────────
-  const themeGroups = useMemo(
-    () => getThemeEpisodeGroups(allEpisodes, themes).slice(0, 5),
+  // Full discussed-theme set — the aggregation must run over ALL matched themes,
+  // not the top-5 display slice (otherwise bullish/bearish/mentions compute over
+  // a tiny window and read blank). The hero takes the top-5 for its momentum viz.
+  const allThemeGroups = useMemo(
+    () => getThemeEpisodeGroups(allEpisodes, themes),
     [allEpisodes, themes],
   );
+  const themeGroups = useMemo(() => allThemeGroups.slice(0, 5), [allThemeGroups]);
 
   const earningsEpisodes = useMemo(
     () => allEpisodes.filter(isEarningsEpisode).slice(0, 8),
@@ -241,7 +245,7 @@ export default function ListenPage() {
         <ConversationHero groups={themeGroups} onThemeClick={setSelectedTheme} />
 
         {/* ── Intelligence Layer — what Wall Street is talking about today ──── */}
-        <IntelligenceLayer episodes={allEpisodes} themes={themes} groups={themeGroups} />
+        <IntelligenceLayer episodes={allEpisodes} themes={themes} groups={allThemeGroups} />
 
         {/* ── Standard topic rails ─────────────────────────────────────────── */}
         {RAIL_DEFS.map((def, i) => (

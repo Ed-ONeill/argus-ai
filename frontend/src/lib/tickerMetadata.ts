@@ -164,3 +164,35 @@ const TICKER_META: Record<string, TickerInfo> = {
 export function tickerInfo(t: string): TickerInfo | null {
   return TICKER_META[t.toUpperCase()] ?? null;
 }
+
+// Distinctive company-name keyword → ticker, for extracting mentioned companies
+// from free text (podcast titles/descriptions). Generic first words (Bank, Global,
+// American…) are excluded so only distinctive names match; tickers cover the rest.
+const NAME_STOP = new Set([
+  "first", "general", "american", "global", "united", "national", "capital",
+  "energy", "southern", "realty", "simon", "public", "group", "the", "bank",
+  "corp", "corporation", "advanced", "intercontinental",
+]);
+const KEYWORD_TICKER: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const [tk, info] of Object.entries(TICKER_META)) {
+    const first = info.name.toLowerCase().split(/[\s,.]+/)[0];
+    if (first.length >= 5 && !NAME_STOP.has(first)) m[first] = tk;
+  }
+  return m;
+})();
+
+/** Extract the tickers of companies mentioned in free text (tickers + names). */
+export function extractCompanies(text: string): string[] {
+  const found = new Set<string>();
+  // Explicit / bare tickers, validated against the dictionary (avoids false hits).
+  for (const m of text.matchAll(/\$?\b([A-Z]{2,5})\b/g)) {
+    if (tickerInfo(m[1])) found.add(m[1].toUpperCase());
+  }
+  // Distinctive company names spelled out.
+  const lower = ` ${text.toLowerCase()} `;
+  for (const kw in KEYWORD_TICKER) {
+    if (lower.includes(` ${kw}`)) found.add(KEYWORD_TICKER[kw]);
+  }
+  return [...found];
+}

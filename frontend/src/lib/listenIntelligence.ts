@@ -6,6 +6,7 @@
  */
 
 import type { Episode, ThemeIntelligence } from "./types";
+import { extractCompanies } from "./tickerMetadata";
 
 // ── Theme-to-episode matching ─────────────────────────────────────────────────
 //
@@ -145,6 +146,27 @@ export function looksLikePerson(entity: string): boolean {
   const words = entity.trim().split(/\s+/);
   if (words.length < 2 || words.length > 4) return false;
   return words.every(w => /^[A-Z][a-z]/.test(w));
+}
+
+// ── Entity extraction from episode text ───────────────────────────────────────
+//
+// The ingestion layer ships episodes with entities = [] (no NER upstream), so we
+// extract companies + people from the title + description here. This is the source
+// for the Listen page's most-mentioned company / voice intelligence and improves
+// theme matching (direct entity matches). Real text-derived signal — not invented.
+
+const PERSON_RE = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z']+){1,2}\b/g;
+
+export function extractPeople(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(PERSON_RE)) if (looksLikePerson(m[0])) out.add(m[0]);
+  return [...out];
+}
+
+/** Companies (tickers) + people mentioned in an episode's title + description. */
+export function extractEntitiesFromText(title: string, description?: string | null): string[] {
+  const text = `${title}. ${description ?? ""}`.slice(0, 1500);
+  return [...new Set([...extractCompanies(text), ...extractPeople(text)])];
 }
 
 export interface SpeakerIntelligence {

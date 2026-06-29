@@ -2,7 +2,16 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { extractEntitiesFromText } from "@/lib/listenIntelligence";
 import type { Episode } from "@/lib/types";
+
+// Ingestion ships episodes with entities = [] (no upstream NER). Derive companies +
+// people from the episode text so the whole intelligence layer has real entities.
+// Prefers any entities the backend does provide (forward-compatible).
+function withEntities(ep: Episode): Episode {
+  if (ep.entities && ep.entities.length > 0) return ep;
+  return { ...ep, entities: extractEntitiesFromText(ep.title, ep.description) };
+}
 
 // ── Recency boost thresholds (hours) ─────────────────────────────────────────
 // Applied during merge sort to surface very fresh content above older high-scorers.
@@ -190,7 +199,7 @@ export function useListen(topic: string) {
       }
 
       return {
-        episodes:   combined,
+        episodes:   combined.map(withEntities),
         isFallback: combined.length === 0,
       };
     },
@@ -217,7 +226,9 @@ export function useListenRails() {
       const res = await fetch("/api/listen?limit=100");
       if (!res.ok) return [];
       const raw: unknown = await res.json();
-      return (Array.isArray(raw) ? (raw as Episode[]) : []).filter(e => !e.is_briefing);
+      return (Array.isArray(raw) ? (raw as Episode[]) : [])
+        .filter(e => !e.is_briefing)
+        .map(withEntities);
     },
     staleTime: 2 * 60_000,
     placeholderData: (prev) => prev,
