@@ -231,70 +231,70 @@ export function EpisodeCard({
     );
   }
 
-  // ── Grid variant — institutional intelligence card ───────────────────────────
+  // ── Grid variant — institutional research note ───────────────────────────────
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05, duration: 0.22 }}
-      whileHover={{ y: -3, scale: 1.012 }}
+      whileHover={{ y: -2 }}
       className={cn(
-        "w-[240px] shrink-0 md:w-auto",
-        "bg-surface rounded-xl border shadow-card",
+        "w-full bg-surface rounded-xl border shadow-card",
         "hover:shadow-card-hover hover:border-edge-strong",
         "transition-shadow duration-200 overflow-hidden flex flex-col group/card",
-        "snap-start",
-        episode.is_secondary ? "border-dashed border-edge opacity-75" : "border-edge",
+        episode.is_secondary ? "border-dashed border-edge opacity-80" : "border-edge",
       )}
     >
-      {/* Topic colour stripe — dimmed for secondary */}
-      <div className="h-[2.5px]" style={{ background: episode.is_secondary ? `${topicColor}55` : topicColor }} />
-
-      <div className="p-3.5 flex flex-col flex-1">
-        {/* ── Source row: artwork · Podcast · Host ── */}
-        <div className="flex items-start gap-2.5 mb-2.5">
-          <EpisodeArtwork show_name={episode.show_name} topics={episode.topics} size={40} />
-          <div className="flex-1 min-w-0 pt-0.5">
+      <div className="p-4 flex flex-col flex-1">
+        {/* ── Masthead: source · host | relevance · conviction ── */}
+        <div className="flex items-start justify-between gap-3 mb-2.5">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
               {episode.is_briefing ? (
                 <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-tight"
                   style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}>ARGUS BRIEFING</span>
               ) : (
-                <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-sm leading-tight"
-                  style={{ background: `${topicColor}14`, color: topicColor }}>{primaryTopic}</span>
+                <span className="inline-flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide leading-tight" style={{ color: topicColor }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: topicColor }} />{primaryTopic}
+                </span>
               )}
               {episode.is_secondary && episode.secondary_label && (
                 <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-raised text-ink-muted border border-edge leading-tight">{episode.secondary_label}</span>
               )}
             </div>
-            <p className="text-2xs text-ink-muted font-semibold leading-tight truncate">{episode.show_name}</p>
-            {host && <p className="text-[9.5px] text-ink-faint leading-tight truncate">Host · {host}</p>}
+            <p className="text-[11px] text-ink-secondary font-semibold leading-tight truncate">{episode.show_name}</p>
+            {host && <p className="text-[9.5px] text-ink-muted leading-tight truncate">{host}</p>}
+          </div>
+          {/* Relevance + conviction — the research signal, immediately obvious */}
+          <div className="flex items-start gap-3 shrink-0">
+            <div className="text-right">
+              <p className="text-[14px] font-black tabular-nums leading-none" style={{ color: relColor }}>{relevance}</p>
+              <p className="text-[6.5px] font-bold uppercase tracking-[0.1em] text-ink-faint mt-0.5">Relevance</p>
+            </div>
+            {conviction !== null && (
+              <div className="text-right">
+                <p className="text-[14px] font-black tabular-nums leading-none" style={{ color: confColor(conviction) }}>{conviction}</p>
+                <p className="text-[6.5px] font-bold uppercase tracking-[0.1em] text-ink-faint mt-0.5">Conviction</p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ── Title — the dominant element ── */}
-        <h3 className="text-[14px] font-bold text-ink leading-[1.25] line-clamp-3 mb-2 tracking-[-0.01em] group-hover/card:text-navy transition-colors">
+        {/* ── Title — the headline of the note ── */}
+        <h3 className="text-[15px] font-bold text-ink leading-[1.25] line-clamp-2 mb-2.5 tracking-[-0.01em] group-hover/card:text-navy transition-colors">
           {episode.title}
         </h3>
 
-        {/* ── Market relevance — immediately obvious ── */}
-        <div className="flex items-center gap-2 mb-2.5">
-          <span className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-muted shrink-0">Relevance</span>
-          <div className="flex-1 h-[5px] rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.05)" }}>
-            <motion.div className="h-full rounded-full" style={{ background: relColor }}
-              initial={{ width: 0 }} animate={{ width: `${Math.max(4, relevance)}%` }}
-              transition={{ delay: index * 0.05 + 0.15, duration: 0.7, ease: [0.22, 0, 0.36, 1] }} />
+        {/* ── Argus Intelligence — the read ── */}
+        <div className="rounded-lg px-2.5 py-2 mb-2.5" style={{ background: "rgba(82,176,200,0.05)", border: "1px solid rgba(82,176,200,0.12)" }}>
+          <div className="flex items-center gap-1 mb-1">
+            <Sparkles size={9} style={{ color: "#52b0c8" }} />
+            <span className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(82,176,200,0.95)" }}>Argus Intelligence</span>
           </div>
-          <span className="text-[11px] font-black tabular-nums shrink-0" style={{ color: relColor }}>{relevance}</span>
-        </div>
-
-        {/* ── Why it matters — one scannable sentence ── */}
-        <div className="flex gap-2 mb-2.5">
-          <span className="w-[2px] rounded-full shrink-0 self-stretch" style={{ background: topicColor, minHeight: "1.5rem" }} />
           <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-2">{whyListen ?? episode.why_it_matters}</p>
         </div>
 
-        {/* ── Key themes + conviction ── */}
+        {/* ── Themes + companies ── */}
         {(matchedThemes ?? []).length > 0 && (
           <div className="flex flex-wrap items-center gap-1 mb-2">
             {(matchedThemes ?? []).map(t => {
@@ -307,19 +307,12 @@ export function EpisodeCard({
                 </button>
               );
             })}
-            {conviction !== null && (
-              <span className="text-[9px] font-bold tabular-nums ml-auto shrink-0" style={{ color: confColor(conviction) }}>
-                CV {conviction}
-              </span>
-            )}
           </div>
         )}
-
-        {/* ── Companies discussed ── */}
         {companies.length > 0 && (
           <div className="flex items-center gap-1.5 mb-2.5">
-            <span className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-faint shrink-0">Cos</span>
-            <div className="flex flex-wrap gap-x-2 gap-y-0.5 min-w-0">
+            <span className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-faint shrink-0">Discussed</span>
+            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 min-w-0">
               {companies.map(c => isTicker(c)
                 ? <TickerChip key={c} ticker={c} size="sm" color="#475569" />
                 : <span key={c} className="text-[9.5px] font-medium text-ink-secondary truncate">{c}</span>)}
@@ -327,16 +320,13 @@ export function EpisodeCard({
           </div>
         )}
 
-        {/* ── Expandable AI Summary + Related Themes ── */}
+        {/* ── Expandable full note + related themes ── */}
         <AnimatePresence initial={false}>
           {expanded && (
             <motion.div key="ai" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.22, ease: "easeInOut" }} className="overflow-hidden">
-              <div className="rounded-lg p-2.5 mb-2.5" style={{ background: "rgba(82,176,200,0.05)", border: "1px solid rgba(82,176,200,0.14)" }}>
-                <div className="flex items-center gap-1 mb-1.5">
-                  <Sparkles size={9} style={{ color: "#52b0c8" }} />
-                  <span className="text-[8px] font-bold uppercase tracking-[0.13em]" style={{ color: "rgba(82,176,200,0.9)" }}>AI Summary</span>
-                </div>
+              <div className="rounded-lg p-2.5 mb-2.5" style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.05)" }}>
+                <p className="text-[8px] font-bold uppercase tracking-[0.13em] text-ink-muted mb-1">Full Note</p>
                 <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-4">{aiSummary}</p>
                 {relatedThemes.length > 0 && (
                   <>
@@ -354,7 +344,7 @@ export function EpisodeCard({
           )}
         </AnimatePresence>
 
-        {/* ── Footer: duration · time | save · summary · transcript · play ── */}
+        {/* ── Footer: runtime · time | save · note · transcript · play ── */}
         <div className="flex items-center justify-between pt-2.5 mt-auto border-t border-edge/60">
           <div className="flex items-center gap-1.5 text-2xs text-ink-muted">
             <Clock size={9} />

@@ -11,7 +11,6 @@ import { fetchFeed } from "@/lib/api";
 import { EpisodeCard } from "@/components/listen/EpisodeCard";
 import { ConversationHero } from "@/components/listen/ConversationHero";
 import { IntelligenceLayer } from "@/components/listen/IntelligenceLayer";
-import { ConversationNetwork } from "@/components/listen/ConversationNetwork";
 import { MiniPlayer } from "@/components/listen/MiniPlayer";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import {
@@ -25,14 +24,17 @@ import type { Episode, ThemeIntelligence, FeedResponse } from "@/lib/types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Curated, question-framed sections — intelligence over volume. Duration-only
+// buckets (quick / long form) are dropped: they answer no question.
 const RAIL_DEFS = [
-  { key: "macroMarket" as const, label: "Market Open · Macro",   color: "#2563EB", subtitle: ""             },
-  { key: "maPrivate"   as const, label: "M&A + Private Markets", color: "#7C3AED", subtitle: ""             },
-  { key: "venture"     as const, label: "Venture + Startups",    color: "#10B981", subtitle: ""             },
-  { key: "company"     as const, label: "Company Deep Dives",    color: "#0891B2", subtitle: ""             },
-  { key: "quick"       as const, label: "Quick Listens",         color: "#6B7280", subtitle: "Under 15 min" },
-  { key: "longForm"    as const, label: "Long Form",             color: "#374151", subtitle: "45 min+"      },
+  { key: "macroMarket" as const, label: "What's moving the macro conversation?",   color: "#2563EB", subtitle: "" },
+  { key: "maPrivate"   as const, label: "Who's doing deals?",                       color: "#7C3AED", subtitle: "" },
+  { key: "venture"     as const, label: "Where is venture capital looking?",        color: "#10B981", subtitle: "" },
+  { key: "company"     as const, label: "Which companies are under the microscope?", color: "#0891B2", subtitle: "" },
 ];
+
+// Highest-signal curation — a handful of conversations per question, not a carousel.
+const RAIL_LIMIT = 3;
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -55,11 +57,12 @@ function Rail({
   onSave, onPlay, episodeThemes, whyListenMap, onThemeClick, earningsBadge,
 }: RailProps) {
   if (episodes.length === 0) return null;
+  const shown = episodes.slice(0, RAIL_LIMIT);
   return (
-    <section className="mb-8">
+    <section className="mb-9">
       <div className="flex items-center gap-2.5 mb-3.5">
         <div className="h-3 w-[3px] rounded-full shrink-0" style={{ background: color }} />
-        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink">{title}</h2>
+        <h2 className="text-[13px] font-bold text-ink">{title}</h2>
         {subtitle && (
           <span className="text-2xs text-ink-muted hidden sm:inline">{subtitle}</span>
         )}
@@ -70,12 +73,13 @@ function Rail({
           </span>
         )}
         <span className="h-px flex-1 bg-edge" />
-        <span className="text-2xs font-medium text-ink-muted bg-raised px-2 py-0.5 rounded-full shrink-0">
-          {episodes.length}
+        <span className="text-2xs font-medium text-ink-muted shrink-0">
+          {shown.length} of {episodes.length}
         </span>
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-hide snap-x snap-mandatory">
-        {episodes.map((ep, i) => (
+      {/* Responsive grid — native wrap, no carousel/arrows */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+        {shown.map((ep, i) => (
           <EpisodeCard
             key={ep.id}
             episode={ep}
@@ -236,20 +240,8 @@ export default function ListenPage() {
         {/* ── Conversation Hero — the most-discussed theme + momentum ───────── */}
         <ConversationHero groups={themeGroups} onThemeClick={setSelectedTheme} />
 
-        {/* ── Intelligence Layer — what every podcast collectively says ─────── */}
+        {/* ── Intelligence Layer — what Wall Street is talking about today ──── */}
         <IntelligenceLayer episodes={allEpisodes} themes={themes} groups={themeGroups} />
-
-        {/* ── Conversation Network — signature: how ideas spread (Market Map engine) */}
-        <ConversationNetwork
-          episodes={allEpisodes}
-          groups={themeGroups}
-          episodeThemeMap={episodeThemeMap}
-          whyListenMap={whyListenMap}
-          savedIds={savedIds}
-          onSave={toggleSave}
-          onPlay={setPlaying}
-          onThemeClick={setSelectedTheme}
-        />
 
         {/* ── Standard topic rails ─────────────────────────────────────────── */}
         {RAIL_DEFS.map((def, i) => (
@@ -277,7 +269,7 @@ export default function ListenPage() {
             transition={{ duration: 0.22, delay: 0.32 }}
           >
             <Rail
-              title="Earnings Intelligence"
+              title="What are earnings calls revealing?"
               color="#F59E0B"
               episodes={earningsEpisodes}
               earningsBadge
@@ -296,7 +288,7 @@ export default function ListenPage() {
           >
             <div className="flex items-center gap-2.5 mb-3.5">
               <div className="h-3 w-[3px] rounded-full shrink-0" style={{ background: "#8B5CF6" }} />
-              <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink">Voices This Week</h2>
+              <h2 className="text-[13px] font-bold text-ink">Who&apos;s doing the talking?</h2>
               <Mic size={10} className="text-ink-muted" />
               <span className="h-px flex-1 bg-edge" />
             </div>

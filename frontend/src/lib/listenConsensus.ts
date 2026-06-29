@@ -83,6 +83,12 @@ export function buildCollectiveIntel(
   const topSector  = topCount(sectorCount);
   const topMacro   = topCount(macroCount);
 
+  // ── New entrants & week-over-week change ──
+  const isNew = (t: ThemeIntelligence) => t.momentum_label === "emerging" || !!t.memory?.is_new || t.memory?.status === "new";
+  const newThemes = groups.filter(g => isNew(g.theme)).sort((a, b) => b.matchCount - a.matchCount);
+  const mover = [...groups].sort((a, b) => Math.abs(b.theme.momentum_delta ?? 0) - Math.abs(a.theme.momentum_delta ?? 0))[0];
+  const moverDelta = Math.round(mover?.theme.momentum_delta ?? 0);
+
   const widgets: IntelWidget[] = [
     { label: "Most Bullish Theme", value: bullThemes[0] ? cleanName(bullThemes[0].theme.name) : "—",
       sub: bullThemes[0] ? `Conviction ${Math.round(bullThemes[0].theme.confidence ?? 0)}` : undefined, color: "#10B981" },
@@ -90,6 +96,10 @@ export function buildCollectiveIntel(
       sub: bearThemes[0] ? `Conviction ${Math.round(bearThemes[0].theme.confidence ?? 0)}` : undefined, color: "#EF4444" },
     { label: "Fastest-Growing Narrative", value: fastest ? cleanName(fastest.theme.name) : "—",
       sub: fastest ? `▲ +${Math.round(fastest.theme.momentum_delta ?? 0)} momentum` : undefined, color: "#52b0c8" },
+    { label: "New Entrant", value: newThemes[0] ? cleanName(newThemes[0].theme.name) : "—",
+      sub: newThemes.length > 1 ? `${newThemes.length} new this week` : newThemes[0] ? "entered this week" : undefined, color: "#8B5CF6" },
+    { label: "Biggest Shift vs Last Week", value: mover ? cleanName(mover.theme.name) : "—",
+      sub: mover ? `${moverDelta > 0 ? "▲ +" : "▼ "}${moverDelta} vs last week` : undefined, color: moverDelta >= 0 ? "#10B981" : "#EF4444" },
     { label: "Most Mentioned Company", value: topCompany?.label ?? "—",
       sub: topCompany ? `${topCompany.count} episodes` : undefined },
     { label: "Most Mentioned Sector", value: topSector?.label ?? "—",

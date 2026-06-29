@@ -38,10 +38,10 @@ export function IntelligenceLayer({ episodes, themes, groups }: Props) {
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.05 }}
       className="mb-8"
     >
-      {/* Eyebrow */}
+      {/* Eyebrow — the question this section answers */}
       <div className="flex items-center gap-2.5 mb-2.5">
-        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">Intelligence Layer</span>
-        <span className="text-[9px] font-medium text-ink-muted hidden sm:inline">what every podcast is collectively saying</span>
+        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-ink">What Wall Street Is Talking About</span>
+        <span className="text-[9px] font-medium text-ink-muted hidden sm:inline">synthesized across every podcast</span>
         <span className="h-px flex-1 bg-edge" />
         <span className="text-[9.5px] font-semibold text-ink-muted shrink-0">{c.podcastCount} conversations</span>
       </div>
@@ -60,9 +60,14 @@ export function IntelligenceLayer({ episodes, themes, groups }: Props) {
             </div>
             <span className="text-[9.5px] text-ink-muted shrink-0 hidden sm:inline">{c.themeCount} themes</span>
           </div>
-          {/* Widget grid — hairline-separated cells */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px" style={{ background: "rgb(var(--edge))" }}>
-            {widgets.map(w => <div key={w.label} className="bg-surface"><Widget w={w} /></div>)}
+          {/* Widget grid — hairline-separated research cells */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-px" style={{ background: "rgb(var(--edge))" }}>
+            {widgets.map((w, i) => (
+              <motion.div key={w.label} className="bg-surface"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 + i * 0.03, duration: 0.25 }}>
+                <Widget w={w} />
+              </motion.div>
+            ))}
           </div>
         </div>
 
