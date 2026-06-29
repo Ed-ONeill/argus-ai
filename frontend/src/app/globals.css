@@ -139,7 +139,12 @@
 @keyframes tg-recalc { 0% { opacity: 0; transform: scale(0.55); } 16% { opacity: 0.55; } 100% { opacity: 0; transform: scale(1.35); } }
 .tg-recalc { animation: tg-recalc 1.1s cubic-bezier(0.22,0,0.36,1) 1 both; will-change: opacity, transform; }
 
+/* Capital-flow packet — a glow that briefly lights each chain node/connector as a
+   pulse travels downstream; per-element animation-delay makes the wave move. */
+@keyframes tg-packet { 0% { opacity: 0; } 1.5% { opacity: 0.85; } 9% { opacity: 0; } 100% { opacity: 0; } }
+.tg-packet { animation: tg-packet 7s linear infinite; will-change: opacity; }
+
 @media (prefers-reduced-motion: reduce) {
   .tg-breathe, .tg-live-dot, .tg-band, .tg-tape,
-  .tg-halo, .tg-wave, .tg-glow, .tg-recalc { animation: none !important; }
+  .tg-halo, .tg-wave, .tg-glow, .tg-recalc, .tg-packet { animation: none !important; }
 }

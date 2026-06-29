@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Layers, ArrowDown, ExternalLink, Building2, FileText, RefreshCw, AlertCircle, ChevronRight } from "lucide-react";
 import { useMarketState } from "@/hooks/useMarketState";
@@ -14,6 +14,12 @@ import {
   type CapitalFlowLayer,
   type FlowStatus,
 } from "@/lib/capitalFlow";
+import {
+  flowPressure, capitalDestinations, capitalSources, biggestFlow,
+  flowStrength, flowTimeline, radarAxes, takeaways,
+  type FlowItem, type FlowMetric, type TimelineNode, type RadarAxis,
+} from "@/lib/capitalFlowIntel";
+import { TickerChip } from "@/components/common/TickerChip";
 import { useFeed } from "@/hooks/useFeed";
 import {
   computeThemeEvolutionState,
@@ -35,11 +41,11 @@ function FlowStatusBadge({ status }: { status: FlowStatus }) {
   );
 }
 
-function FlowConnector({ status }: { status: FlowStatus }) {
+function FlowConnector({ status, seq, dim }: { status: FlowStatus; seq: number; dim: boolean }) {
   const color = FLOW_STATUS_COLOR[status];
   const flowing = status === "accelerating" || status === "expanding";
   return (
-    <div className="flex flex-col items-center py-0.5">
+    <div className="flex flex-col items-center py-0.5 transition-opacity duration-300" style={{ opacity: dim ? 0.22 : 1 }}>
       <div className="w-px h-4 relative overflow-hidden" style={{ background: `${color}22` }}>
         {flowing && (
           <motion.div
@@ -49,29 +55,47 @@ function FlowConnector({ status }: { status: FlowStatus }) {
             transition={{ repeat: Infinity, duration: 0.9, ease: "linear" }}
           />
         )}
+        {/* travelling packet glow */}
+        <div aria-hidden className="tg-packet absolute inset-0" style={{ background: color, animationDelay: `${seq * 0.18}s` }} />
       </div>
       <ArrowDown size={10} style={{ color: `${color}60` }} />
     </div>
   );
 }
 
-function FlowLayerCard({ layer, index }: { layer: CapitalFlowLayer; index: number }) {
-  const color   = FLOW_STATUS_COLOR[layer.status];
-  const isOpen  = layer.status === "accelerating" || layer.status === "expanding";
+const CHAIN_CELL = {
+  hidden:  { opacity: 0, x: -12 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.35, ease: [0.22, 0, 0.36, 1] } },
+};
+
+function FlowLayerCard({ layer, seq, dim, lit, isHovered, onHover }: {
+  layer: CapitalFlowLayer; seq: number; dim: boolean; lit: boolean; isHovered: boolean; onHover: () => void;
+}) {
+  const color    = FLOW_STATUS_COLOR[layer.status];
+  const isOpen   = layer.status === "accelerating" || layer.status === "expanding";
   const isClosed = layer.status === "contracting" || layer.status === "blocked";
+  const accel    = layer.status === "accelerating";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.06, duration: 0.3 }}
-      className="relative rounded-xl border p-4"
+    <div
+      onMouseEnter={onHover}
+      className="relative rounded-xl border p-4 transition-all duration-200"
       style={{
-        background:   isOpen  ? `${color}08` : isClosed ? "rgba(248,113,113,0.04)" : "rgba(255,255,255,0.025)",
-        borderColor:  isOpen  ? `${color}22` : isClosed ? "rgba(248,113,113,0.14)" : "rgba(255,255,255,0.06)",
+        background:   isOpen ? `${color}08` : isClosed ? "rgba(248,113,113,0.04)" : "rgba(255,255,255,0.025)",
+        // micro-interaction: brighter border on hover, propagation-aware fade/dim
+        borderColor:  isHovered ? `${color}66` : lit ? `${color}3a` : isOpen ? `${color}22` : isClosed ? "rgba(248,113,113,0.14)" : "rgba(255,255,255,0.06)",
+        opacity:      dim ? 0.3 : isClosed ? 0.8 : 1,
+        transform:    isHovered ? "translateY(-2px)" : "none",
+        boxShadow:    isHovered ? `0 10px 32px ${color}26, 0 0 0 1px ${color}33` : "none",
       }}
     >
-      <div className="flex items-start justify-between gap-3">
+      {/* travelling packet — a glow that briefly lights this node as the pulse passes */}
+      <div aria-hidden className="tg-packet absolute inset-0 rounded-xl pointer-events-none"
+        style={{ boxShadow: `inset 0 0 22px ${color}44`, border: `1px solid ${color}`, animationDelay: `${seq * 0.18}s` }} />
+      {/* accelerating node — soft breathing accent (calm for neutral, none for closed) */}
+      {accel && <div aria-hidden className="tg-glow absolute left-0 top-3 bottom-3 w-[2px] rounded-full" style={{ background: color }} />}
+
+      <div className="relative flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.82)" }}>
@@ -92,6 +116,38 @@ function FlowLayerCard({ layer, index }: { layer: CapitalFlowLayer; index: numbe
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+// The transmission chain: a live capital-flow engine. A pulse travels downstream
+// (CSS, per-element delay); hovering any node isolates everything downstream of it.
+function CapitalFlowChain({ layers }: { layers: CapitalFlowLayer[] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  return (
+    <motion.div
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: "-60px" }}
+      variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
+      onMouseLeave={() => setHovered(null)}
+    >
+      {layers.map((layer, i) => {
+        const downstream = hovered === null || i >= hovered;   // hovered node + everything below
+        const dim        = hovered !== null && !downstream;
+        return (
+          <motion.div key={layer.id} variants={CHAIN_CELL}>
+            <FlowLayerCard
+              layer={layer} seq={i * 2}
+              dim={dim} lit={hovered !== null && downstream} isHovered={hovered === i}
+              onHover={() => setHovered(i)}
+            />
+            {i < layers.length - 1 && (
+              <FlowConnector status={layer.status} seq={i * 2 + 1} dim={hovered !== null && i < hovered} />
+            )}
+          </motion.div>
+        );
+      })}
     </motion.div>
   );
 }
@@ -179,6 +235,228 @@ function SponsorDealRow({ deal, index }: { deal: { title: string; peFirm: string
   );
 }
 
+// ── Shared building blocks ─────────────────────────────────────────────────────
+
+function SectionLabel({ children, accent = "#52b0c8" }: { children: React.ReactNode; accent?: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <div className="w-1.5 h-1.5 rounded-full" style={{ background: accent }} />
+      <h2 className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>{children}</h2>
+    </div>
+  );
+}
+
+// Reveal wrapper — staggered scroll-in; nothing appears abruptly.
+function Reveal({ children, className, delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+  return (
+    <motion.div className={className}
+      initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }} transition={{ duration: 0.4, delay, ease: [0.22, 0, 0.36, 1] }}>
+      {children}
+    </motion.div>
+  );
+}
+
+// ── 1 · Capital Pressure Bar ───────────────────────────────────────────────────
+function CapitalPressureBar({ layers }: { layers: CapitalFlowLayer[] }) {
+  const p = useMemo(() => flowPressure(layers), [layers]);
+  return (
+    <div className="flex items-center gap-4 sm:gap-6 mt-6 px-4 py-3 rounded-xl border flex-wrap"
+      style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+      <span className="text-[10px] font-bold uppercase tracking-[0.16em] shrink-0" style={{ color: "rgba(255,255,255,0.5)" }}>Private Capital Flow</span>
+      <div className="flex-1 min-w-[140px] h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <motion.div className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${p.color}88, ${p.color})` }}
+          initial={{ width: 0 }} animate={{ width: `${p.score}%` }} transition={{ duration: 1.4, ease: [0.22, 0, 0.36, 1] }} />
+      </div>
+      <span className="text-[22px] font-black tabular-nums leading-none shrink-0" style={{ color: p.color }}>{p.score}</span>
+      <span className="text-[10px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: p.color }}>{p.label}</span>
+      <span className="flex items-center gap-1 text-[10px] font-semibold shrink-0" style={{ color: p.trend === "improving" ? "#22c55e" : p.trend === "deteriorating" ? "#ef4444" : "rgba(255,255,255,0.5)" }}>
+        {p.trend === "improving" ? "▲" : p.trend === "deteriorating" ? "▼" : "▪"} {p.trendLabel}
+      </span>
+      <span className="text-[10px] hidden sm:inline shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>{p.liquidity}</span>
+    </div>
+  );
+}
+
+// ── 2 + 3 · Flow item row (destination / source) ───────────────────────────────
+function FlowItemRow({ item, max, i }: { item: FlowItem; max: number; i: number }) {
+  const w = Math.round((Math.abs(item.value) / max) * 100);
+  return (
+    <motion.div className="flex items-center gap-3"
+      initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
+      transition={{ delay: i * 0.05, duration: 0.3 }}>
+      <span className="text-[11px] font-medium w-32 shrink-0 truncate" style={{ color: "rgba(255,255,255,0.7)" }}>{item.label}</span>
+      <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+        <motion.div className="h-full rounded-full" style={{ background: item.color }}
+          initial={{ width: 0 }} whileInView={{ width: `${Math.max(4, w)}%` }} viewport={{ once: true }}
+          transition={{ delay: i * 0.05 + 0.1, duration: 0.7, ease: "easeOut" }} />
+      </div>
+      <span className="text-[11px] font-bold tabular-nums w-9 text-right shrink-0" style={{ color: item.color }}>
+        {item.value > 0 ? "+" : ""}{item.value}
+      </span>
+    </motion.div>
+  );
+}
+
+function FlowColumn({ title, items, accent }: { title: string; items: FlowItem[]; accent: string }) {
+  const max = Math.max(1, ...items.map(i => Math.abs(i.value)));
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] mb-3" style={{ color: accent }}>{title}</p>
+      <div className="space-y-2.5">
+        {items.length ? items.map((it, i) => <FlowItemRow key={it.label} item={it} max={max} i={i} />)
+          : <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>No material rotation detected.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── 4 · Today's Biggest Flow ───────────────────────────────────────────────────
+function BiggestFlowCard({ flow }: { flow: ReturnType<typeof biggestFlow> }) {
+  if (!flow) return null;
+  const dc = flow.direction > 0 ? "#22c55e" : flow.direction < 0 ? "#ef4444" : "#fbbf24";
+  return (
+    <div className="relative rounded-xl border overflow-hidden p-5"
+      style={{ borderColor: `${dc}33`, background: `linear-gradient(135deg, ${dc}0e, rgba(255,255,255,0.015) 55%)` }}>
+      <div aria-hidden className="tg-glow absolute left-0 top-4 bottom-4 w-[2px] rounded-full" style={{ background: dc }} />
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-[9px] font-bold uppercase tracking-[0.18em] mb-1.5" style={{ color: "rgba(255,255,255,0.42)" }}>Today&apos;s Biggest Flow</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[20px] font-black leading-none" style={{ color: "rgba(255,255,255,0.95)" }}>{flow.label}</span>
+            <span className="text-[18px] font-black" style={{ color: dc }}>{flow.direction > 0 ? "↑" : flow.direction < 0 ? "↓" : "↔"}</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-end shrink-0">
+          <span className="text-[26px] font-black tabular-nums leading-none" style={{ color: dc }}>{flow.confidence}</span>
+          <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.4)" }}>Confidence</span>
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3 mt-4">
+        <TakeawayLine label="Reason" value={flow.reason} />
+        <div>
+          <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(255,255,255,0.36)" }}>Beneficiaries</p>
+          {flow.beneficiaries.length ? (
+            <div className="flex flex-wrap gap-x-2.5 gap-y-1">
+              {flow.beneficiaries.map(b => <TickerChip key={b} ticker={b} size="md" color="#22c55e" />)}
+            </div>
+          ) : <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>—</p>}
+        </div>
+        <TakeawayLine label="Invalidation" value={flow.invalidation} color="#f87171" />
+      </div>
+    </div>
+  );
+}
+
+// ── 5 · Flow Strength ──────────────────────────────────────────────────────────
+function FlowStrengthGrid({ metrics }: { metrics: FlowMetric[] }) {
+  const col = (v: number) => v >= 66 ? "#22c55e" : v >= 40 ? "#fbbf24" : "#f97316";
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+      {metrics.map((m, i) => (
+        <motion.div key={m.label}
+          initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05, duration: 0.3 }}>
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="text-[9.5px] font-medium" style={{ color: "rgba(255,255,255,0.55)" }}>{m.label}</span>
+            <span className="text-[12px] font-black tabular-nums" style={{ color: col(m.value) }}>{m.value}</span>
+          </div>
+          <div className="h-[5px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <motion.div className="h-full rounded-full" style={{ background: col(m.value) }}
+              initial={{ width: 0 }} whileInView={{ width: `${m.value}%` }} viewport={{ once: true }} transition={{ delay: i * 0.05 + 0.1, duration: 0.7, ease: "easeOut" }} />
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// ── 6 · Transmission Timeline ──────────────────────────────────────────────────
+function TransmissionTimeline({ nodes }: { nodes: TimelineNode[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <div className="flex flex-col gap-0">
+      {nodes.map((n, i) => {
+        const color = FLOW_STATUS_COLOR[n.status];
+        return (
+          <div key={`${n.label}-${i}`}>
+            <motion.button onMouseEnter={() => setOpen(i)} onMouseLeave={() => setOpen(null)}
+              initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05, duration: 0.3 }}
+              className="w-full flex items-center gap-3 text-left group">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 8px ${color}66` }} />
+              <span className="text-[11px] font-semibold w-28 shrink-0 truncate" style={{ color: "rgba(255,255,255,0.78)" }}>{n.label}</span>
+              <span className="text-[9.5px]" style={{ color }}>{n.signal}</span>
+              <span className="ml-auto text-[8.5px] tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.28)" }}>{FLOW_STATUS_LABEL[n.status]}</span>
+            </motion.button>
+            <div className="overflow-hidden transition-all duration-200" style={{ maxHeight: open === i ? 48 : 0, opacity: open === i ? 1 : 0 }}>
+              <p className="text-[10px] leading-snug pl-5 py-1.5" style={{ color: "rgba(255,255,255,0.42)" }}>{n.evidence}</p>
+            </div>
+            {i < nodes.length - 1 && <div className="ml-[3px] w-px h-3" style={{ background: "rgba(255,255,255,0.12)" }} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── 7 · Live Capital Radar ─────────────────────────────────────────────────────
+function CapitalRadar({ axes }: { axes: RadarAxis[] }) {
+  const size = 220, c = size / 2, R = 78;
+  const pt = (i: number, r: number) => {
+    const a = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
+    return [c + Math.cos(a) * r, c + Math.sin(a) * r] as const;
+  };
+  const poly = axes.map((ax, i) => pt(i, R * ax.value).join(",")).join(" ");
+  return (
+    <div className="flex items-center justify-center">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {[0.33, 0.66, 1].map(g => (
+          <polygon key={g} points={axes.map((_, i) => pt(i, R * g).join(",")).join(" ")}
+            fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
+        ))}
+        {axes.map((_, i) => { const [x, y] = pt(i, R); return <line key={i} x1={c} y1={c} x2={x} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />; })}
+        <motion.polygon points={poly} fill="rgba(82,176,200,0.14)" stroke="#52b0c8" strokeWidth={1.5}
+          initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }}
+          transition={{ duration: 0.7, ease: [0.22, 0, 0.36, 1] }} style={{ transformOrigin: "center" }} />
+        {axes.map((ax, i) => {
+          const [x, y] = pt(i, R * ax.value);
+          const [lx, ly] = pt(i, R + 16);
+          return (
+            <g key={ax.label}>
+              <motion.circle cx={x} cy={y} r={2.5} fill="#7cc7d8"
+                animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 3, repeat: Infinity, delay: i * 0.35, ease: "easeInOut" }} />
+              <text x={lx} y={ly} fontSize={7.5} fontWeight={600} textAnchor={lx < c - 4 ? "end" : lx > c + 4 ? "start" : "middle"}
+                dominantBaseline="middle" fill="rgba(255,255,255,0.5)">{ax.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── 8 · Institutional takeaways ────────────────────────────────────────────────
+function TakeawayLine({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div>
+      <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(255,255,255,0.36)" }}>{label}</p>
+      <p className="text-[11px] leading-snug" style={{ color: color ?? "rgba(255,255,255,0.78)" }}>{value}</p>
+    </div>
+  );
+}
+
+function TakeawaysGrid({ items }: { items: { label: string; value: string }[] }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+      {items.map((t, i) => (
+        <motion.div key={t.label}
+          initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.04, duration: 0.3 }}>
+          <TakeawayLine label={t.label} value={t.value} color={t.label === "Most At Risk" || t.label === "Invalidation" ? "#f87171" : t.label === "Most Leveraged" ? "#34d399" : undefined} />
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PrivateMarketsPage() {
@@ -223,6 +501,19 @@ export default function PrivateMarketsPage() {
   const openLayers   = capitalFlow.layers.filter(l => l.status === "accelerating" || l.status === "expanding").length;
   const closedLayers = capitalFlow.layers.filter(l => l.status === "contracting"  || l.status === "blocked").length;
 
+  // ── Institutional intelligence — all derived from the live flow + themes ────
+  const allThemes = useMemo(() => feedData?.theme_intelligence ?? [], [feedData]);
+  const rateHigh  = tnxRate !== null && tnxRate > 4.5;
+  const riskOff   = riskRegime === "risk-off";
+  const layers    = capitalFlow.layers;
+  const destinations = useMemo(() => capitalDestinations(allThemes, layers), [allThemes, layers]);
+  const sources      = useMemo(() => capitalSources(allThemes, layers, rateHigh, riskOff), [allThemes, layers, rateHigh, riskOff]);
+  const biggest      = useMemo(() => biggestFlow(allThemes), [allThemes]);
+  const strength     = useMemo(() => flowStrength(layers, allThemes), [layers, allThemes]);
+  const timeline     = useMemo(() => flowTimeline(layers, destinations), [layers, destinations]);
+  const radar        = useMemo(() => radarAxes(allThemes, layers, riskOff), [allThemes, layers, riskOff]);
+  const takeawayItems = useMemo(() => takeaways(layers, allThemes, rateHigh, riskOff), [layers, allThemes, rateHigh, riskOff]);
+
   return (
     <div className="min-h-screen pb-24" style={{ background: "#030710" }}>
 
@@ -265,43 +556,77 @@ export default function PrivateMarketsPage() {
               </span>
             )}
           </div>
+
+          {/* 1 · Capital Pressure Bar — instant health of private markets */}
+          <CapitalPressureBar layers={layers} />
         </div>
       </div>
 
       {/* ── Body ─────────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
 
-          {/* ── Capital Flow Chain — main column ─────────────────────── */}
-          <div className="lg:col-span-3">
-            <div className="flex items-center gap-2 mb-5">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#52b0c8" }} />
-              <h2 className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>
-                Capital Flow Transmission
-              </h2>
-              <span className="text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
-                Monetary Policy → IPO Window
-              </span>
-            </div>
+          {/* ── Capital Flow — main column ───────────────────────────── */}
+          <div className="lg:col-span-3 space-y-10">
 
+            {/* 4 · Today's Biggest Flow — the focal point */}
+            {biggest && <Reveal><BiggestFlowCard flow={biggest} /></Reveal>}
+
+            {/* Transmission chain */}
             <div>
-              {capitalFlow.layers.map((layer, i) => (
-                <div key={layer.id}>
-                  <FlowLayerCard layer={layer} index={i} />
-                  {i < capitalFlow.layers.length - 1 && (
-                    <FlowConnector status={layer.status} />
-                  )}
-                </div>
-              ))}
+              <div className="flex items-center gap-2 mb-5">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#52b0c8" }} />
+                <h2 className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>
+                  Capital Flow Transmission
+                </h2>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
+                  Monetary Policy → IPO Window
+                </span>
+              </div>
+              <CapitalFlowChain layers={layers} />
+              <p className="mt-4 text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.22)" }}>
+                Capital flow status derived from live market regime, 10Y yield, M&A deal activity, and SEC EDGAR S-1 pipeline. Updated in real time as conditions change.
+              </p>
             </div>
 
-            <p className="mt-4 text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.22)" }}>
-              Capital flow status derived from live market regime, 10Y yield, M&A deal activity, and SEC EDGAR S-1 pipeline. Updated in real time as conditions change.
-            </p>
+            {/* 2 + 3 · Where capital is going / leaving */}
+            <Reveal>
+              <SectionLabel>Capital Rotation</SectionLabel>
+              <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
+                <FlowColumn title="Where Capital Is Going" items={destinations} accent="#34d399" />
+                <FlowColumn title="Where Capital Is Leaving" items={sources} accent="#f87171" />
+              </div>
+            </Reveal>
+
+            {/* 5 · Flow strength */}
+            <Reveal>
+              <SectionLabel>Flow Strength</SectionLabel>
+              <FlowStrengthGrid metrics={strength} />
+            </Reveal>
+
+            {/* 6 + 7 · Transmission timeline + rotation radar */}
+            <Reveal>
+              <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
+                <div>
+                  <SectionLabel>Transmission Timeline</SectionLabel>
+                  <TransmissionTimeline nodes={timeline} />
+                </div>
+                <div>
+                  <SectionLabel>Live Capital Radar</SectionLabel>
+                  <CapitalRadar axes={radar} />
+                </div>
+              </div>
+            </Reveal>
+
+            {/* 8 · Institutional takeaways */}
+            <Reveal>
+              <SectionLabel>Institutional Takeaways</SectionLabel>
+              <TakeawaysGrid items={takeawayItems} />
+            </Reveal>
           </div>
 
-          {/* ── Right column ─────────────────────────────────────────── */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* ── Right column — permanent intelligence panel (sticky) ─── */}
+          <div className="lg:col-span-2 space-y-6 lg:sticky lg:top-6 lg:self-start">
 
             {/* IPO Pipeline */}
             <div className="rounded-xl border p-5"
