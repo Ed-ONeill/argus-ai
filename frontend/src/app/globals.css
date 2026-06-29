@@ -144,7 +144,13 @@
 @keyframes tg-packet { 0% { opacity: 0; } 1.5% { opacity: 0.85; } 9% { opacity: 0; } 100% { opacity: 0; } }
 .tg-packet { animation: tg-packet 7s linear infinite; will-change: opacity; }
 
+/* Intelligence chip — subtle lift + glow in the chip's OWN colour on hover
+   (box-shadow uses currentColor). Communicates interactivity, never flashy. */
+.tg-chip { transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
+.tg-chip:hover { transform: translateY(-1px); box-shadow: 0 0 9px -3px currentColor; }
+
 @media (prefers-reduced-motion: reduce) {
   .tg-breathe, .tg-live-dot, .tg-band, .tg-tape,
   .tg-halo, .tg-wave, .tg-glow, .tg-recalc, .tg-packet { animation: none !important; }
+  .tg-chip:hover { transform: none; }
 }

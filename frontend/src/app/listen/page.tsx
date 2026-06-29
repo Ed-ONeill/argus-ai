@@ -2,13 +2,16 @@
 
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Headphones, TrendingUp, Mic, BarChart2 } from "lucide-react";
+import { Headphones, Mic, BarChart2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useListenRails } from "@/hooks/useListen";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
 import { fetchFeed } from "@/lib/api";
 import { EpisodeCard } from "@/components/listen/EpisodeCard";
+import { ConversationHero } from "@/components/listen/ConversationHero";
+import { IntelligenceLayer } from "@/components/listen/IntelligenceLayer";
+import { ConversationNetwork } from "@/components/listen/ConversationNetwork";
 import { MiniPlayer } from "@/components/listen/MiniPlayer";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import {
@@ -21,12 +24,6 @@ import {
 import type { Episode, ThemeIntelligence, FeedResponse } from "@/lib/types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const SIGNAL_COLOR: Record<string, string> = {
-  strong: "#10B981",
-  medium: "#F59E0B",
-  weak:   "#6B7280",
-};
 
 const RAIL_DEFS = [
   { key: "macroMarket" as const, label: "Market Open · Macro",   color: "#2563EB", subtitle: ""             },
@@ -174,7 +171,7 @@ export default function ListenPage() {
 
   // ── Intelligence derivations ─────────────────────────────────────────────────
   const themeGroups = useMemo(
-    () => getThemeEpisodeGroups(allEpisodes, themes).slice(0, 4),
+    () => getThemeEpisodeGroups(allEpisodes, themes).slice(0, 5),
     [allEpisodes, themes],
   );
 
@@ -225,7 +222,7 @@ export default function ListenPage() {
         >
           <div className="flex items-center gap-2 mb-1">
             <Headphones size={18} className="text-navy" />
-            <h1 className="text-xl font-semibold text-ink">Listen Intelligence</h1>
+            <h1 className="text-xl font-semibold text-ink">Listen</h1>
             {totalEpisodes > 0 && (
               <span className="text-xs text-ink-muted ml-1">{totalEpisodes} podcasts</span>
             )}
@@ -236,69 +233,23 @@ export default function ListenPage() {
           <p className="text-sm text-ink-secondary">{contextLine}</p>
         </motion.div>
 
-        {/* ── Most Discussed Themes This Week ──────────────────────────────── */}
-        {themeGroups.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28, delay: 0.06 }}
-            className="mb-8 rounded-2xl border border-edge p-4"
-            style={{ background: "rgba(0,0,0,0.02)" }}
-          >
-            <div className="flex items-center gap-2.5 mb-3">
-              <TrendingUp size={11} className="text-ink-muted shrink-0" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">
-                Most Discussed Themes This Week
-              </span>
-              <span className="h-px flex-1 bg-edge" />
-              <span className="text-2xs text-ink-faint">
-                {themeGroups.length} theme{themeGroups.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {themeGroups.map(({ theme, matchCount }) => {
-                const sc = SIGNAL_COLOR[theme.signal_strength] ?? "#6B7280";
-                return (
-                  <button
-                    key={theme.id}
-                    onClick={() => setSelectedTheme(theme)}
-                    className="text-left p-3 rounded-xl border border-edge bg-surface hover:border-edge-strong hover:shadow-sm transition-all duration-150 group"
-                  >
-                    {/* Signal stripe */}
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sc }} />
-                      <span className="text-[9px] font-bold uppercase tracking-[0.10em]" style={{ color: sc }}>
-                        {theme.signal_strength}
-                      </span>
-                    </div>
-                    <p className="text-[12px] font-semibold text-ink leading-snug mb-1 line-clamp-2 group-hover:text-navy transition-colors">
-                      {theme.name}
-                    </p>
-                    <p className="text-[10px] text-ink-muted mb-1.5">
-                      {matchCount} podcast{matchCount !== 1 ? "s" : ""}
-                    </p>
-                    {theme.related_industries.slice(0, 2).length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {theme.related_industries.slice(0, 2).map(ind => (
-                          <span
-                            key={ind}
-                            className="text-[9px] px-1.5 py-0.5 rounded leading-none"
-                            style={{
-                              background: "rgba(82,176,200,0.08)",
-                              color:      "rgba(82,176,200,0.80)",
-                            }}
-                          >
-                            {ind}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.section>
-        )}
+        {/* ── Conversation Hero — the most-discussed theme + momentum ───────── */}
+        <ConversationHero groups={themeGroups} onThemeClick={setSelectedTheme} />
+
+        {/* ── Intelligence Layer — what every podcast collectively says ─────── */}
+        <IntelligenceLayer episodes={allEpisodes} themes={themes} groups={themeGroups} />
+
+        {/* ── Conversation Network — signature: how ideas spread (Market Map engine) */}
+        <ConversationNetwork
+          episodes={allEpisodes}
+          groups={themeGroups}
+          episodeThemeMap={episodeThemeMap}
+          whyListenMap={whyListenMap}
+          savedIds={savedIds}
+          onSave={toggleSave}
+          onPlay={setPlaying}
+          onThemeClick={setSelectedTheme}
+        />
 
         {/* ── Standard topic rails ─────────────────────────────────────────── */}
         {RAIL_DEFS.map((def, i) => (
