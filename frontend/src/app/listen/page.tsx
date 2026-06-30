@@ -2,101 +2,26 @@
 
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Headphones, Mic, BarChart2 } from "lucide-react";
+import { Headphones, BarChart2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useListenRails } from "@/hooks/useListen";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useThemeAlerts } from "@/hooks/useThemeAlerts";
 import { fetchFeed } from "@/lib/api";
-import { EpisodeCard } from "@/components/listen/EpisodeCard";
 import { ConversationHero } from "@/components/listen/ConversationHero";
 import { IntelligenceLayer } from "@/components/listen/IntelligenceLayer";
+import {
+  ProprietarySignals, NarrativeRotation, HighestConviction, CrowdedAndMissing,
+  CompaniesAndSectors, PeopleAndFunds, CompanyHeatmap, FirmsDriving, InfluentialEpisodes,
+} from "@/components/listen/ListenSections";
 import { MiniPlayer } from "@/components/listen/MiniPlayer";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import {
   matchEpisodeThemes,
   getThemeEpisodeGroups,
-  isEarningsEpisode,
-  extractSpeakers,
   generateWhyListen,
 } from "@/lib/listenIntelligence";
 import type { Episode, ThemeIntelligence, FeedResponse } from "@/lib/types";
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-// Curated, question-framed sections — intelligence over volume. Duration-only
-// buckets (quick / long form) are dropped: they answer no question.
-const RAIL_DEFS = [
-  { key: "macroMarket" as const, label: "What's moving the macro conversation?",   color: "#2563EB", subtitle: "" },
-  { key: "maPrivate"   as const, label: "Who's doing deals?",                       color: "#7C3AED", subtitle: "" },
-  { key: "venture"     as const, label: "Where is venture capital looking?",        color: "#10B981", subtitle: "" },
-  { key: "company"     as const, label: "Which companies are under the microscope?", color: "#0891B2", subtitle: "" },
-];
-
-// Highest-signal curation — a handful of conversations per question, not a carousel.
-const RAIL_LIMIT = 3;
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-interface RailProps {
-  title:          string;
-  subtitle?:      string;
-  color:          string;
-  episodes:       Episode[];
-  savedIds:       string[];
-  onSave:         (ep: Episode) => void;
-  onPlay:         (ep: Episode) => void;
-  episodeThemes:  Map<string, ThemeIntelligence[]>;
-  whyListenMap:   Map<string, string>;
-  onThemeClick:   (theme: ThemeIntelligence) => void;
-  earningsBadge?: boolean;
-}
-
-function Rail({
-  title, subtitle, color, episodes, savedIds,
-  onSave, onPlay, episodeThemes, whyListenMap, onThemeClick, earningsBadge,
-}: RailProps) {
-  if (episodes.length === 0) return null;
-  const shown = episodes.slice(0, RAIL_LIMIT);
-  return (
-    <section className="mb-9">
-      <div className="flex items-center gap-2.5 mb-3.5">
-        <div className="h-3 w-[3px] rounded-full shrink-0" style={{ background: color }} />
-        <h2 className="text-[13px] font-bold text-ink">{title}</h2>
-        {subtitle && (
-          <span className="text-2xs text-ink-muted hidden sm:inline">{subtitle}</span>
-        )}
-        {earningsBadge && (
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: "rgba(245,158,11,0.10)", color: "#F59E0B", border: "1px solid rgba(245,158,11,0.18)" }}>
-            Q RESULTS
-          </span>
-        )}
-        <span className="h-px flex-1 bg-edge" />
-        <span className="text-2xs font-medium text-ink-muted shrink-0">
-          {shown.length} of {episodes.length}
-        </span>
-      </div>
-      {/* Responsive grid — native wrap, no carousel/arrows */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
-        {shown.map((ep, i) => (
-          <EpisodeCard
-            key={ep.id}
-            episode={ep}
-            isSaved={savedIds.includes(ep.id)}
-            onSave={() => onSave(ep)}
-            onPlay={onPlay}
-            variant="grid"
-            index={i}
-            matchedThemes={episodeThemes.get(ep.id)}
-            whyListen={whyListenMap.get(ep.id)}
-            onThemeClick={onThemeClick}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
 
 function Skeleton() {
   return (
@@ -136,7 +61,7 @@ export default function ListenPage() {
   const [selectedTheme, setSelectedTheme] = useState<ThemeIntelligence | null>(null);
 
   // ── Episodes ────────────────────────────────────────────────────────────────
-  const { rails, isLoading, totalEpisodes, allEpisodes } = useListenRails();
+  const { isLoading, totalEpisodes, allEpisodes } = useListenRails();
 
   // ── Themes (from feed cache — free if feed page was visited) ────────────────
   const { data: feedData } = useQuery<FeedResponse>({
@@ -183,31 +108,12 @@ export default function ListenPage() {
   );
   const themeGroups = useMemo(() => allThemeGroups.slice(0, 5), [allThemeGroups]);
 
-  const earningsEpisodes = useMemo(
-    () => allEpisodes.filter(isEarningsEpisode).slice(0, 8),
-    [allEpisodes],
-  );
-
-  const speakers = useMemo(
-    () => extractSpeakers(allEpisodes),
-    [allEpisodes],
-  );
-
   // ── Handlers ─────────────────────────────────────────────────────────────────
   function toggleSave(ep: Episode) {
     setSavedIds(prev =>
       prev.includes(ep.id) ? prev.filter(id => id !== ep.id) : [...prev, ep.id],
     );
   }
-
-  const railProps = {
-    savedIds,
-    onSave:        toggleSave,
-    onPlay:        setPlaying,
-    episodeThemes: episodeThemeMap,
-    whyListenMap,
-    onThemeClick:  setSelectedTheme,
-  };
 
   if (isLoading) return <Skeleton />;
 
@@ -247,81 +153,27 @@ export default function ListenPage() {
         {/* ── Intelligence Layer — what Wall Street is talking about today ──── */}
         <IntelligenceLayer episodes={allEpisodes} themes={themes} groups={allThemeGroups} />
 
-        {/* ── Standard topic rails ─────────────────────────────────────────── */}
-        {RAIL_DEFS.map((def, i) => (
-          <motion.div
-            key={def.key}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, delay: 0.08 + i * 0.04 }}
-          >
-            <Rail
-              title={def.label}
-              subtitle={def.subtitle}
-              color={def.color}
-              episodes={rails[def.key]}
-              {...railProps}
+        {/* ── Proprietary intelligence — synthesis, not browsing ───────────── */}
+        {totalEpisodes > 0 && (
+          <>
+            <ProprietarySignals groups={allThemeGroups} episodes={allEpisodes} episodeThemeMap={episodeThemeMap} />
+            <NarrativeRotation groups={allThemeGroups} onThemeClick={setSelectedTheme} />
+            <HighestConviction groups={allThemeGroups} onThemeClick={setSelectedTheme} />
+            <CrowdedAndMissing groups={allThemeGroups} onThemeClick={setSelectedTheme} />
+            <CompaniesAndSectors groups={allThemeGroups} episodes={allEpisodes} />
+            <PeopleAndFunds episodes={allEpisodes} />
+            <CompanyHeatmap groups={allThemeGroups} episodes={allEpisodes} />
+            <FirmsDriving episodes={allEpisodes} episodeThemeMap={episodeThemeMap} />
+            <InfluentialEpisodes
+              episodes={allEpisodes}
+              episodeThemeMap={episodeThemeMap}
+              whyListenMap={whyListenMap}
+              savedIds={savedIds}
+              onSave={toggleSave}
+              onPlay={setPlaying}
+              onThemeClick={setSelectedTheme}
             />
-          </motion.div>
-        ))}
-
-        {/* ── Earnings Intelligence ─────────────────────────────────────────── */}
-        {earningsEpisodes.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, delay: 0.32 }}
-          >
-            <Rail
-              title="What are earnings calls revealing?"
-              color="#F59E0B"
-              episodes={earningsEpisodes}
-              earningsBadge
-              {...railProps}
-            />
-          </motion.div>
-        )}
-
-        {/* ── Voices This Week ─────────────────────────────────────────────── */}
-        {speakers.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, delay: 0.36 }}
-            className="mb-8"
-          >
-            <div className="flex items-center gap-2.5 mb-3.5">
-              <div className="h-3 w-[3px] rounded-full shrink-0" style={{ background: "#8B5CF6" }} />
-              <h2 className="text-[13px] font-bold text-ink">Who&apos;s doing the talking?</h2>
-              <Mic size={10} className="text-ink-muted" />
-              <span className="h-px flex-1 bg-edge" />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {speakers.map(s => {
-                const initials = s.name.split(" ").slice(0, 2).map(w => w[0]).join("");
-                return (
-                  <div
-                    key={s.name}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-edge bg-surface"
-                  >
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold"
-                      style={{ background: "rgba(139,92,246,0.08)", color: "#8B5CF6" }}
-                    >
-                      {initials}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-ink leading-tight">{s.name}</p>
-                      <p className="text-[10px] text-ink-muted leading-tight">
-                        {s.episodeCount} ep{s.episodeCount !== 1 ? "s" : ""}
-                        {s.topics.length > 0 && ` · ${s.topics.slice(0, 2).join(", ")}`}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.section>
+          </>
         )}
 
         {/* ── Empty state ──────────────────────────────────────────────────── */}
@@ -338,9 +190,8 @@ export default function ListenPage() {
           <div className="flex items-center gap-3 pt-4 mt-2 border-t border-edge">
             <BarChart2 size={10} className="text-ink-faint shrink-0" />
             <p className="text-2xs text-ink-faint">
-              {totalEpisodes} podcasts across {Object.values(rails).flat().length} curated picks
-              {themes.length > 0 && ` · ${themeGroups.length} active themes`}
-              {earningsEpisodes.length > 0 && ` · ${earningsEpisodes.length} earnings episodes`}
+              {totalEpisodes} podcasts synthesized
+              {themes.length > 0 && ` · ${allThemeGroups.length} themes in conversation`}
             </p>
           </div>
         )}

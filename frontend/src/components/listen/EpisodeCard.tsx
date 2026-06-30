@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ExternalLink, Play, Bookmark, BookmarkCheck, Clock, Sparkles, FileText, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn, timeAgo } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { TOPIC_COLOR } from "./TopicFilterBar";
 import { TickerChip } from "@/components/common/TickerChip";
 import { confColor } from "@/app/markets/marketsShared";
 import { looksLikePerson } from "@/lib/listenIntelligence";
+import { episodeIntel, buildBriefing, similarEpisodes, contradictingEpisodes } from "@/lib/episodeIntel";
 import type { Episode, ThemeIntelligence } from "@/lib/types";
 
 const THEME_SIGNAL_COLOR: Record<string, string> = {
@@ -89,12 +90,16 @@ interface EpisodeCardProps {
   matchedThemes?: ThemeIntelligence[];
   onThemeClick?:  (theme: ThemeIntelligence) => void;
   whyListen?:     string;
+  // Corpus context (grid variant) → powers similar / contradicting episodes.
+  allEpisodes?:     Episode[];
+  episodeThemeMap?: Map<string, ThemeIntelligence[]>;
 }
 
 export function EpisodeCard({
   episode, isSaved, onSave, onPlay,
   variant = "grid", index = 0,
   matchedThemes, onThemeClick, whyListen,
+  allEpisodes, episodeThemeMap,
 }: EpisodeCardProps) {
   const primaryTopic = episode.topics[0] ?? "Markets";
   const topicColor   = TOPIC_COLOR[primaryTopic] ?? "#6B7280";
@@ -113,8 +118,13 @@ export function EpisodeCard({
   const conviction   = primaryTheme ? Math.round(primaryTheme.confidence ?? 0) : null;
   const relevance    = Math.round(episode.relevance_score ?? 0);
   const relColor     = relevanceColor(relevance);
-  const relatedThemes = (primaryTheme?.related_macro_factors ?? []).slice(0, 3);
   const aiSummary    = episode.description?.trim() || episode.why_it_matters;
+  // Investment intelligence — the card leads with this (rotating contextual label).
+  const intel        = episodeIntel(episode, primaryTheme);
+  // Full institutional briefing — revealed on expand (Argus already "listened").
+  const briefing     = useMemo(() => buildBriefing(episode, primaryTheme), [episode, primaryTheme]);
+  const similar      = useMemo(() => allEpisodes && episodeThemeMap ? similarEpisodes(episode, primaryTheme, allEpisodes, episodeThemeMap) : [], [episode, primaryTheme, allEpisodes, episodeThemeMap]);
+  const contradicting = useMemo(() => allEpisodes && episodeThemeMap ? contradictingEpisodes(episode, primaryTheme, allEpisodes, episodeThemeMap) : [], [episode, primaryTheme, allEpisodes, episodeThemeMap]);
 
   function handleListen(e: React.MouseEvent) {
     e.stopPropagation();
@@ -262,8 +272,6 @@ export function EpisodeCard({
                 <span className="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-raised text-ink-muted border border-edge leading-tight">{episode.secondary_label}</span>
               )}
             </div>
-            <p className="text-[11px] text-ink-secondary font-semibold leading-tight truncate">{episode.show_name}</p>
-            {host && <p className="text-[9.5px] text-ink-muted leading-tight truncate">{host}</p>}
           </div>
           {/* Relevance + conviction — the research signal, immediately obvious */}
           <div className="flex items-start gap-3 shrink-0">
@@ -285,14 +293,50 @@ export function EpisodeCard({
           {episode.title}
         </h3>
 
-        {/* ── Argus Intelligence — the read ── */}
+        {/* ── The read — contextual label rotates by the episode's signal ── */}
         <div className="rounded-lg px-2.5 py-2 mb-2.5" style={{ background: "rgba(82,176,200,0.05)", border: "1px solid rgba(82,176,200,0.12)" }}>
           <div className="flex items-center gap-1 mb-1">
             <Sparkles size={9} style={{ color: "#52b0c8" }} />
-            <span className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(82,176,200,0.95)" }}>Argus Intelligence</span>
+            <span className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(82,176,200,0.95)" }}>{intel?.label ?? "Why It Matters"}</span>
           </div>
-          <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-2">{whyListen ?? episode.why_it_matters}</p>
+          <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-3">{intel?.read ?? whyListen ?? episode.why_it_matters}</p>
         </div>
+
+        {/* ── Beneficiaries / at-risk — the trade ── */}
+        {intel && (intel.beneficiaries.length > 0 || intel.atRisk.length > 0) && (
+          <div className="flex flex-col gap-1.5 mb-2">
+            {intel.beneficiaries.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14" style={{ color: "rgba(16,185,129,0.85)" }}>Benefits</span>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 min-w-0">
+                  {intel.beneficiaries.map(t => <TickerChip key={t} ticker={t} size="sm" color="#10B981" />)}
+                </div>
+              </div>
+            )}
+            {intel.atRisk.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14" style={{ color: "rgba(239,68,68,0.85)" }}>At Risk</span>
+                <span className="text-[10px] font-medium truncate" style={{ color: "rgba(239,68,68,0.85)" }}>{intel.atRisk.join(" · ")}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Catalyst + contrarian flag ── */}
+        {intel && (
+          <div className="flex flex-col gap-1 mb-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14 text-ink-faint">Catalyst</span>
+              <span className="text-[10px] text-ink-muted truncate">{intel.catalyst}</span>
+            </div>
+            {intel.contrarian && (
+              <div className="flex items-start gap-1.5">
+                <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14 mt-0.5" style={{ color: "rgba(139,92,246,0.85)" }}>Contrarian</span>
+                <span className="text-[10px] leading-snug text-ink-muted">{intel.contrarian}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Themes + companies ── */}
         {(matchedThemes ?? []).length > 0 && (
@@ -320,38 +364,59 @@ export function EpisodeCard({
           </div>
         )}
 
-        {/* ── Expandable full note + related themes ── */}
+        {/* ── Expandable institutional briefing — Argus already listened ── */}
         <AnimatePresence initial={false}>
           {expanded && (
-            <motion.div key="ai" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.22, ease: "easeInOut" }} className="overflow-hidden">
-              <div className="rounded-lg p-2.5 mb-2.5" style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.05)" }}>
-                <p className="text-[8px] font-bold uppercase tracking-[0.13em] text-ink-muted mb-1">Full Note</p>
-                <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-4">{aiSummary}</p>
-                {relatedThemes.length > 0 && (
+            <motion.div key="briefing" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.24, ease: "easeInOut" }} className="overflow-hidden">
+              <div className="rounded-lg p-3 mb-2.5 space-y-2.5" style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.05)" }}>
+                {briefing ? (
                   <>
-                    <p className="text-[8px] font-bold uppercase tracking-[0.13em] text-ink-muted mt-2 mb-1">Related Themes</p>
-                    <div className="flex flex-wrap gap-1">
-                      {relatedThemes.map(rt => (
-                        <span key={rt} className="text-[9px] px-1.5 py-0.5 rounded leading-none"
-                          style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.42)" }}>{rt}</span>
-                      ))}
+                    <Brief label="Executive Summary">{briefing.executiveSummary}</Brief>
+                    <Brief label="Investment Thesis">{briefing.thesis}</Brief>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="pl-2" style={{ borderLeft: "2px solid rgba(16,185,129,0.4)" }}>
+                        <BriefLabel color="rgba(16,185,129,0.85)">Bull Case</BriefLabel>
+                        <p className="text-[10.5px] leading-snug text-ink-secondary">{briefing.bull}</p>
+                      </div>
+                      <div className="pl-2" style={{ borderLeft: "2px solid rgba(239,68,68,0.4)" }}>
+                        <BriefLabel color="rgba(239,68,68,0.85)">Bear Case</BriefLabel>
+                        <p className="text-[10.5px] leading-snug text-ink-secondary">{briefing.bear}</p>
+                      </div>
                     </div>
+                    <BriefList label="Risks" items={briefing.risks} color="rgba(239,68,68,0.85)" />
+                    <BriefList label="Catalysts" items={briefing.catalysts} color="rgba(82,176,200,0.9)" />
+                    {briefing.relatedNarratives.length > 0 && (
+                      <div>
+                        <BriefLabel>Related Narratives</BriefLabel>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {briefing.relatedNarratives.map(rt => (
+                            <span key={rt} className="text-[9px] px-1.5 py-0.5 rounded leading-none" style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.42)" }}>{rt}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </>
+                ) : (
+                  <p className="text-2xs text-ink-secondary leading-relaxed">{aiSummary}</p>
+                )}
+
+                {similar.length > 0 && (
+                  <BriefEpisodes label="Similar Episodes" episodes={similar} onPlay={onPlay} accent="rgba(82,176,200,0.9)" />
+                )}
+                {contradicting.length > 0 && (
+                  <BriefEpisodes label="Contradicting Episodes" episodes={contradicting} onPlay={onPlay} accent="rgba(245,158,11,0.9)" />
                 )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* ── Footer: runtime · time | save · note · transcript · play ── */}
-        <div className="flex items-center justify-between pt-2.5 mt-auto border-t border-edge/60">
-          <div className="flex items-center gap-1.5 text-2xs text-ink-muted">
-            <Clock size={9} />
-            <span>{formatDuration(episode.duration_seconds)}</span>
-            <span className="text-edge-strong">·</span>
-            <span>{formatPublished(episode.published_at)}</span>
-          </div>
+        {/* ── Footer: source · runtime de-emphasized | save · note · transcript · play ── */}
+        <div className="flex items-center justify-between gap-2 pt-2.5 mt-auto border-t border-edge/60">
+          <p className="text-[9px] text-ink-faint truncate min-w-0 flex-1">
+            {episode.show_name}{host ? ` · ${host}` : ""} · {formatDuration(episode.duration_seconds)} · {formatPublished(episode.published_at)}
+          </p>
 
           <div className="flex items-center gap-0.5">
             <button onClick={e => { e.stopPropagation(); onSave(); }}
@@ -361,7 +426,7 @@ export function EpisodeCard({
             </button>
             <button onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
               className={cn("p-1 rounded transition-colors flex items-center", expanded ? "text-accent" : "text-ink-faint hover:text-ink-muted")}
-              title="AI summary">
+              title={expanded ? "Hide briefing" : "Full Argus briefing"}>
               <Sparkles size={11} />
               <ChevronDown size={9} className={cn("transition-transform", expanded && "rotate-180")} />
             </button>
@@ -387,5 +452,44 @@ export function EpisodeCard({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ── Briefing building blocks ──────────────────────────────────────────────────
+function BriefLabel({ children, color }: { children: React.ReactNode; color?: string }) {
+  return <p className="text-[8px] font-bold uppercase tracking-[0.13em] mb-1" style={{ color: color ?? "rgba(0,0,0,0.42)" }}>{children}</p>;
+}
+function Brief({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><BriefLabel>{label}</BriefLabel><p className="text-[10.5px] leading-snug text-ink-secondary">{children}</p></div>;
+}
+function BriefList({ label, items, color }: { label: string; items: string[]; color?: string }) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <BriefLabel color={color}>{label}</BriefLabel>
+      <ul className="space-y-0.5">
+        {items.map((it, i) => (
+          <li key={i} className="text-[10px] leading-snug text-ink-secondary flex gap-1.5">
+            <span className="shrink-0" style={{ color }}>•</span>{it}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+function BriefEpisodes({ label, episodes, onPlay, accent }: { label: string; episodes: Episode[]; onPlay: (ep: Episode) => void; accent: string }) {
+  return (
+    <div>
+      <BriefLabel color={accent}>{label}</BriefLabel>
+      <div className="space-y-1">
+        {episodes.map(ep => (
+          <button key={ep.id} onClick={e => { e.stopPropagation(); onPlay(ep); }} className="w-full flex items-center gap-1.5 text-left group/se">
+            <Play size={8} className="shrink-0 opacity-50 group-hover/se:opacity-90" style={{ color: accent }} />
+            <span className="text-[10px] leading-snug truncate flex-1 text-ink-secondary group-hover/se:text-ink transition-colors">{ep.title}</span>
+            <span className="text-[8.5px] shrink-0 text-ink-faint">{ep.show_name}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
