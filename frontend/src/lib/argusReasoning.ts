@@ -1,13 +1,13 @@
 /**
- * lib/argusReasoning.ts — the Argus reasoning engine.
+ * lib/argusReasoning.ts, the Argus reasoning engine.
  *
  * Turns a single event (today: an M&A deal) into proprietary intelligence:
  * a narrative-propagation chain, a multi-axis signal profile, probabilistic
- * next-event predictions, and a historical-pattern memory — each with explicit
+ * next-event predictions, and a historical-pattern memory, each with explicit
  * reasoning ("explain why"). Pure, deterministic, zero-LLM, the same
  * interpretive register Argus uses elsewhere. Domain-agnostic where possible;
  * the relationship graph below is the shared backbone meant to later power
- * themes, sectors, commodities, macro and policy — not just M&A.
+ * themes, sectors, commodities, macro and policy, not just M&A.
  */
 
 import type { MADeal } from "@/hooks/useMAIntelligence";
@@ -150,7 +150,7 @@ const STRUCTURAL_THEMES = new Set(["AI Infrastructure", "Energy Transition", "Se
 export interface SignalScore { label: string; value: number; why: string }
 export interface SignalProfile { scores: SignalScore[]; composite: number }
 
-/** Seven-axis signal profile for an intelligence item — sortable, explainable. */
+/** Seven-axis signal profile for an intelligence item, sortable, explainable. */
 export function buildSignalProfile(deal: MADeal, intel: DealIntel): SignalProfile {
   const tierImportance = { headline: 95, major: 78, standard: 58, minor: 42 }[intel.tier];
   const chainLen = (() => { const s = seedThemeFor(deal, intel); return s ? narrativeChain(s).length : 0; })();
@@ -160,7 +160,7 @@ export function buildSignalProfile(deal: MADeal, intel: DealIntel): SignalProfil
 
   const scores: SignalScore[] = [
     { label: "Novelty", value: clamp((intel.status === "Rumored" ? 80 : intel.status === "Negotiating" ? 66 : 48) + (intel.crossBorder ? 9 : 0) + (intel.competingBidders.length ? 8 : 0)),
-      why: intel.status === "Rumored" ? "Early, unconfirmed signal — information edge is highest" : "Announced terms — partly priced, lower novelty" },
+      why: intel.status === "Rumored" ? "Early, unconfirmed signal, information edge is highest" : "Announced terms, partly priced, lower novelty" },
     { label: "Importance", value: clamp(tierImportance),
       why: `${intel.tier} significance tier by size and conviction` },
     { label: "Confidence", value: intel.confidence.score,
@@ -170,7 +170,7 @@ export function buildSignalProfile(deal: MADeal, intel: DealIntel): SignalProfil
     { label: "Propagation", value: clamp(34 + chainLen * 7 + intel.themeTags.length * 4),
       why: chainLen ? `Transmits ${chainLen} hops through the narrative graph` : "Limited onward propagation" },
     { label: "Duration", value: clamp((structural ? 74 : 48) + (intel.rationale.includes("Distressed") ? -16 : 0) + (intel.txnType === "Sponsor Buyout" ? 8 : 0)),
-      why: structural ? "Anchored to a multi-year structural theme" : "Event-driven — shorter half-life" },
+      why: structural ? "Anchored to a multi-year structural theme" : "Event-driven, shorter half-life" },
     { label: "Institutional Interest", value: clamp(40 + advisorCount * 8 + (intel.tier === "headline" ? 18 : intel.tier === "major" ? 9 : 0) + (deal.peFirm ? 10 : 0)),
       why: advisorCount ? `${advisorCount} named advisors engaged` : "Inferred from size and sponsor profile" },
   ];
@@ -181,7 +181,7 @@ export function buildSignalProfile(deal: MADeal, intel: DealIntel): SignalProfil
 // ── 8. Prediction layer ────────────────────────────────────────────────────────
 export interface Prediction { kind: string; label: string; probability: number; basis: string }
 
-/** Probabilistic next events — always framed as likelihoods, never certainty. */
+/** Probabilistic next events, always framed as likelihoods, never certainty. */
 export function buildPredictions(deal: MADeal, intel: DealIntel): Prediction[] {
   const out: Prediction[] = [];
   const consolidating = intel.txnType === "Merger" || /consolidat|scale/i.test(intel.rationale) || intel.themeTags.includes("Scale Acquisition");
@@ -190,7 +190,7 @@ export function buildPredictions(deal: MADeal, intel: DealIntel): Prediction[] {
   const suppliers = intel.readThroughGroups.find(g => g.role === "Suppliers")?.tickers ?? [];
   const chain = (() => { const s = seedThemeFor(deal, intel); return s ? narrativeChain(s) : []; })();
 
-  if (consolidating) out.push({ kind: "Consolidation", label: `Further ${deal.sector} consolidation within 2–3 quarters`,
+  if (consolidating) out.push({ kind: "Consolidation", label: `Further ${deal.sector} consolidation within 2-3 quarters`,
     probability: clamp(52 + (big ? 16 : 0) + (intel.themeTags.length >= 2 ? 6 : 0)), basis: "A scale precedent in the sector raises the strategic cost of standing still" });
 
   if (big && (intel.txnType === "Merger" || intel.crossBorder)) out.push({ kind: "Regulatory", label: "Extended antitrust / regulatory review likely",
@@ -214,7 +214,7 @@ export function buildPredictions(deal: MADeal, intel: DealIntel): Prediction[] {
 // ── 7 + 11. Relationship memory / historical pattern ───────────────────────────
 export interface HistoricalPattern { chain: string[]; note: string }
 
-/** "This type of event has historically propagated into …" — built from the
+/** "This type of event has historically propagated into …", built from the
  *  narrative graph, framed as remembered precedent. */
 export function historicalPattern(deal: MADeal, intel: DealIntel): HistoricalPattern | null {
   const seed = seedThemeFor(deal, intel);

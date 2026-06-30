@@ -557,7 +557,7 @@ export function ThemeDrawer({
                   {invalidation.slice(0, 3).map((sig, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <span className="text-[10px] font-bold shrink-0 leading-snug"
-                        style={{ color: "rgba(239,68,68,0.55)" }}>—</span>
+                        style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
                       <p className="text-[11.5px] leading-snug font-medium"
                         style={{ color: "rgba(255,255,255,0.65)" }}>{sig.condition}</p>
                     </div>
@@ -1476,7 +1476,7 @@ export function ThemeDrawer({
                   {invalidation.map((sig, i) => (
                     <div key={i} className="space-y-0.5">
                       <div className="flex items-start gap-2">
-                        <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>—</span>
+                        <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
                         <p className="text-[11.5px] leading-snug font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>{sig.condition}</p>
                       </div>
                       <p className="text-[10.5px] leading-snug ml-4" style={{ color: "rgba(255,255,255,0.30)" }}>{sig.impact}</p>

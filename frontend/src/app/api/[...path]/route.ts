@@ -25,7 +25,7 @@ async function proxy(
   } catch (err) {
     console.error("[proxy] configuration error:", (err as Error).message);
     return NextResponse.json(
-      { error: "Backend not configured — BACKEND_URL missing." },
+      { error: "Backend not configured, BACKEND_URL missing." },
       { status: 503 },
     );
   }

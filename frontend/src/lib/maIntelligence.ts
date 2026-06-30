@@ -1,16 +1,16 @@
 /**
- * lib/maIntelligence.ts — deterministic deal-intelligence engine.
+ * lib/maIntelligence.ts, deterministic deal-intelligence engine.
  *
  * Turns a raw M&A headline into a structured "intelligence object." Two classes
  * of field, treated differently:
  *
- *   FACTS  (deal value, advisor names, buyer/target, financing) — EXTRACTED from
+ *   FACTS  (deal value, advisor names, buyer/target, financing), EXTRACTED from
  *          the actual title/summary text. If the text does not contain it, the
  *          field is null/empty. Never invented. ("Leave blank rather than
  *          fabricate.")
  *
  *   ANALYSIS (transaction type, strategic rationale, why-now, what's-next, deal
- *          thesis, market implications, read-through peers) — DERIVED
+ *          thesis, market implications, read-through peers), DERIVED
  *          deterministically from the deal's type/sector/keywords + market
  *          context, the same interpretive pattern Argus uses for theme
  *          intelligence. Institutional register, no generic AI filler.
@@ -40,7 +40,7 @@ export interface DealIntel {
   country:     string | null;    // detected geography
   competingBidders: string[];    // other named bidders if the text flags a contest
   financingDetail:  string[];    // "Bridge Loan", "Private Credit", "Bond Offering" if stated
-  economics:   { label: string; value: string }[];   // EV/equity/multiples/synergies — only what's stated
+  economics:   { label: string; value: string }[];   // EV/equity/multiples/synergies, only what's stated
   themeTags:   string[];         // derived intelligence tags (AI Infrastructure, Cross-Border, …)
   // ── Importance ─────────────────────────────────────────────────────────────
   sizeClass:   "mega" | "large" | "medium" | "small" | "unknown";
@@ -48,7 +48,7 @@ export interface DealIntel {
   featured:    boolean;          // visually elevated (mega/large or breaking)
   // ── Visual significance tier (drives adaptive card weight) ──────────────────
   tier: "headline" | "major" | "standard" | "minor";
-  // ── Argus interpretation — the research-note headline read (2–3 sentences) ──
+  // ── Argus interpretation, the research-note headline read (2–3 sentences) ──
   argusAssessment: string;       // deal-specific: why it matters / signal / watch next
   // ── Institutional confidence in the intelligence (not the completion odds) ──
   confidence: { score: number; label: string; supports: string[] };
@@ -70,7 +70,7 @@ export interface DealIntel {
   whyNowBullets:      string[];  // specific timing factors
   implicationBullets: string[];  // who benefits / pressured
   whatNextBullets:    string[];  // forward path
-  // Conditional specialized sections — ONLY the ones that fire for this deal, so
+  // Conditional specialized sections, ONLY the ones that fire for this deal, so
   // no two expanded cards expose the same set.
   dynamicSections:    { label: string; bullets: string[] }[];
   readThrough: string[];                                   // flat (back-compat)
@@ -78,7 +78,7 @@ export interface DealIntel {
   timeline:    { stage: string; done: boolean; current: boolean }[];   // 8-stage lifecycle
   // ── Probability of completion (inferred estimate, not a quoted figure) ───────
   completion:  { pct: number; label: string; color: string; drivers: string[] };
-  // ── Capital transmission — how capital moves because of the deal ─────────────
+  // ── Capital transmission, how capital moves because of the deal ─────────────
   capitalTransmission: {
     chain:         string[];                       // ordered transmission sequence
     beneficiaries: string[];                       // likely beneficiaries (tickers)
@@ -176,7 +176,7 @@ const SECTOR_ROLE_KEY: Record<string, string> = {
   "Communication Services": "Media & Telecom",
   "Consumer Staples": "Consumer",
 };
-/** Sector-peer roles around a single ticker — powers company-centred graphs. */
+/** Sector-peer roles around a single ticker, powers company-centred graphs. */
 export function companyPeers(ticker: string): { sector: string; beneficiaries: string[]; competitors: string[]; suppliers: string[]; secondOrder: string[] } | null {
   const info = tickerInfo(ticker);
   if (!info) return null;
@@ -361,7 +361,7 @@ function extractSynergies(text: string): string | null {
   return null;
 }
 
-// Transaction economics — each line only when the value is stated in the text.
+// Transaction economics, each line only when the value is stated in the text.
 function extractEconomics(text: string, premium: string | null, synergies: string | null): { label: string; value: string }[] {
   const out: { label: string; value: string }[] = [];
   const money = (re: RegExp): string | null => {
@@ -453,7 +453,7 @@ function deriveThemeTags(deal: MADeal, text: string, crossBorder: boolean, sizeC
   return tags.slice(0, 4);
 }
 
-// ── Conditional specialized sections — ONLY those that fire for this deal ───────
+// ── Conditional specialized sections, ONLY those that fire for this deal ───────
 function buildDynamicSections(deal: MADeal, text: string, intel: {
   status: string; txnType: string; crossBorder: boolean; country: string | null;
   financing: string | null; financingDetail: string[]; competingBidders: string[];
@@ -496,7 +496,7 @@ function buildDynamicSections(deal: MADeal, text: string, intel: {
   }
   if (intel.competingBidders.length > 0) {
     out.push({ label: "Competitive Dynamics", bullets: [
-      `Contested process — ${intel.competingBidders.join(", ")} also engaged`,
+      `Contested process, ${intel.competingBidders.join(", ")} also engaged`,
       "A topping bid would pressure the buyer's accretion math",
     ].slice(0, 2) });
   }
@@ -531,7 +531,7 @@ function classifySize(deal: MADeal, usdB: number | null): { sizeClass: DealIntel
   return { sizeClass: "unknown", sizeLabel: "Undisclosed", featured: false };
 }
 
-// ── Bullet generators — every bullet is gated on a real attribute of THIS deal ──
+// ── Bullet generators, every bullet is gated on a real attribute of THIS deal ──
 
 function rationaleBullets(deal: MADeal, text: string, country: string | null, synergies: string | null, txnType: string): string[] {
   const b: string[] = [];
@@ -613,7 +613,7 @@ function computeCompletion(deal: MADeal, text: string, status: string, txnType: 
   if (status === "Completed") return { pct: 100, label: "Closed", color: "#10b981", drivers: ["Transaction completed"] };
   if (deal.dealType === "withdrawn") return { pct: 4, label: "Terminated", color: "#f87171", drivers: ["Deal withdrawn or terminated"] };
 
-  // Base by lifecycle stage — and the headline reason for that base.
+  // Base by lifecycle stage, and the headline reason for that base.
   let pct = ({
     "Closing": 96, "Shareholder Vote": 90, "Signed": 84, "Regulatory Review": 76,
     "Announced": 80, "Negotiating": 54, "Rumored": 30,
@@ -622,7 +622,7 @@ function computeCompletion(deal: MADeal, text: string, status: string, txnType: 
   const drivers: string[] = [({
     "Closing": "Expected to close imminently", "Shareholder Vote": "Awaiting shareholder vote",
     "Signed": "Definitive agreement signed", "Regulatory Review": "In regulatory review",
-    "Announced": "Announced transaction", "Negotiating": "In negotiation — no definitive agreement",
+    "Announced": "Announced transaction", "Negotiating": "In negotiation, no definitive agreement",
     "Rumored": "Rumored / no definitive agreement yet",
   } as Record<string, string>)[status] ?? "Announced transaction"];
 
@@ -649,7 +649,7 @@ function computeCompletion(deal: MADeal, text: string, status: string, txnType: 
   return { pct, label, color, drivers: drivers.slice(0, 4) };
 }
 
-// ── Capital transmission — how capital moves because of the deal ───────────────
+// ── Capital transmission, how capital moves because of the deal ───────────────
 // Ordered "re-rating chain" keyed on the dominant theme, plus sector role flows.
 const TRANSMISSION_CHAINS: Record<string, string[]> = {
   "AI Infrastructure":         ["Hyperscaler capex expectations rise", "AI-infrastructure & data-center names re-rate", "Power, cooling & networking suppliers benefit", "Legacy on-prem vendors de-rate", "AI buildout narrative strengthens"],
@@ -702,10 +702,10 @@ function buildCapitalTransmission(deal: MADeal, text: string, tags: string[], tx
   return { chain, beneficiaries, casualties, effects: effects.slice(0, 5), flow };
 }
 
-// ── Argus Assessment — the research-note headline read ─────────────────────────
+// ── Argus Assessment, the research-note headline read ─────────────────────────
 // Three deal-specific sentences (why it matters / market signal / what to watch),
 // each seed-picked from attribute-gated pools so no two cards read alike. Purely
-// derived interpretation — labelled as such in the UI. Avoids the generic register
+// derived interpretation, labelled as such in the UI. Avoids the generic register
 // ("consolidation is accelerating", "capital rotates toward", "strengthens position").
 function buildArgusAssessment(deal: MADeal, p: {
   buyer: string | null; target: string | null; dealValue: string | null;
@@ -720,7 +720,7 @@ function buildArgusAssessment(deal: MADeal, p: {
   const lead   = p.themeTags[0] ?? null;
   const sectorL = p.sector.toLowerCase();
 
-  // 1 — why it matters
+  // 1, why it matters
   let s1: string[];
   if (p.txnType === "Take Private" || p.txnType === "Sponsor Buyout" || deal.peFirm) {
     s1 = [
@@ -749,7 +749,7 @@ function buildArgusAssessment(deal: MADeal, p: {
     ];
   }
 
-  // 2 — what signal it sends
+  // 2, what signal it sends
   const sig: Record<string, string[]> = {
     "AI Infrastructure":         [`The read-through: owners of compute, power and data-center capacity can increasingly name their price.`, `It is another data point that anything adjacent to AI compute is bought for control, not yield.`],
     "Cloud Security":            [`It tells the market that platform vendors mean to absorb point solutions before AI rewrites the security stack.`, `The signal is security budgets consolidating onto fewer platforms.`],
@@ -761,13 +761,13 @@ function buildArgusAssessment(deal: MADeal, p: {
   };
   let s2: string[];
   if (lead && sig[lead]) s2 = sig[lead];
-  else if (p.competingBidders.length) s2 = [`A contested process says the asset is scarce — ${p.competingBidders[0]} is circling the same target.`, `Rival interest points to genuine scarcity rather than opportunism.`];
+  else if (p.competingBidders.length) s2 = [`A contested process says the asset is scarce, ${p.competingBidders[0]} is circling the same target.`, `Rival interest points to genuine scarcity rather than opportunism.`];
   else if (p.crossBorder) s2 = [`Reaching across borders for this asset suggests the strategic gap could not be filled at home.`, `A cross-border structure signals willingness to take review risk to reach the target.`];
   else s2 = [`It signals ${sectorL} buyers are willing to act while financing and valuations align.`, `The takeaway: strategic buyers view the current ${sectorL} entry point as attractive.`];
 
-  // 3 — what to watch next
+  // 3, what to watch next
   let s3: string[];
-  if (p.status === "Regulatory Review") s3 = [`Watch the antitrust calendar — a remedy package is the swing factor on whether it closes.`, `The next tell is regulators' posture; a forced divestiture would reshape the economics.`];
+  if (p.status === "Regulatory Review") s3 = [`Watch the antitrust calendar, a remedy package is the swing factor on whether it closes.`, `The next tell is regulators' posture; a forced divestiture would reshape the economics.`];
   else if (p.status === "Rumored" || p.status === "Negotiating") s3 = [`Watch for a definitive agreement or a counter-bid before terms firm up.`, `What matters next is whether talks convert to a signed deal or draw a rival.`];
   else if (p.competingBidders.length) s3 = [`Watch whether ${p.competingBidders[0]} returns with a topping offer.`, `The open question is whether a higher bid forces the price up.`];
   else if (p.completion.pct >= 85) s3 = [`With approvals and financing largely in hand, attention turns to integration and the read-through for sector rivals.`, `Close looks routine; the next move is in the peers it puts in play.`];
@@ -777,7 +777,7 @@ function buildArgusAssessment(deal: MADeal, p: {
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
-// Market impact — winners / losers / re-rating / follow-on targets, from sector
+// Market impact, winners / losers / re-rating / follow-on targets, from sector
 // roles. Tickers framed as potential read-through, not claimed involvement.
 function buildMarketImpact(deal: MADeal, roles: SectorRoles | undefined, keep: (a: string[]) => string[],
   beneficiaries: string[], casualties: string[], premium: string | null, dealValue: string | null, seed: number): DealIntel["marketImpact"] {
@@ -847,13 +847,13 @@ function pickComparables(deal: MADeal, buyer: string | null, target: string | nu
   return list.filter(c => !ex.has(c.acquirer.toLowerCase()) && !ex.has(c.target.toLowerCase())).slice(0, 4);
 }
 
-/** Comparable historical deals for an (already-resolved) sector key — used by the
+/** Comparable historical deals for an (already-resolved) sector key, used by the
  *  transmission graph to add precedent nodes even when intel.comparables is empty. */
 export function comparablesFor(sector: string): { acquirer: string; target: string; value: string; year: string }[] {
   return COMPARABLE_DEALS[SECTOR_ROLE_KEY[sector] ?? sector] ?? [];
 }
 
-// ── Institutional confidence — how well-supported the read is (not the odds) ────
+// ── Institutional confidence, how well-supported the read is (not the odds) ────
 function buildConfidence(deal: MADeal, status: string, dealValue: string | null,
   advisors: DealAdvisors, themeTags: string[]): DealIntel["confidence"] {
   let score = 38 + Math.round(deal.signalScore * 0.42);   // base ~38–80
@@ -878,7 +878,7 @@ function buildConfidence(deal: MADeal, status: string, dealValue: string | null,
   return { score, label, supports: supports.slice(0, 6) };
 }
 
-// ── Visual significance tier — drives adaptive card weight ─────────────────────
+// ── Visual significance tier, drives adaptive card weight ─────────────────────
 function computeTier(sizeClass: DealIntel["sizeClass"], usdB: number | null, signalScore: number, txnType: string): DealIntel["tier"] {
   if ((usdB != null && usdB >= 50) || (sizeClass === "mega" && txnType === "Merger") || (signalScore >= 88 && (sizeClass === "mega" || sizeClass === "large"))) return "headline";
   if (sizeClass === "mega" || sizeClass === "large" || signalScore >= 80) return "major";
@@ -961,7 +961,7 @@ export function enrichDeal(deal: MADeal, ctx: DealContext = {}): DealIntel {
   };
 }
 
-// ── M&A market regime — what the deal tape is signaling, before any single deal ──
+// ── M&A market regime, what the deal tape is signaling, before any single deal ──
 
 export interface RegimeMetric { label: string; display: string; pct: number; color: string; hint: string }
 
@@ -1006,7 +1006,7 @@ export function largestDeals(deals: MADeal[]): { deal: MADeal; value: string; us
 export interface AdvisorActivity { name: string; deals: number; legal: boolean }
 
 /** League-table style advisor ranking, counted across the deal set (only names
- *  actually detected in deal text — never fabricated). */
+ *  actually detected in deal text, never fabricated). */
 export function rankAdvisors(deals: MADeal[]): AdvisorActivity[] {
   const counts = new Map<string, { n: number; legal: boolean }>();
   for (const d of deals) {
@@ -1053,7 +1053,7 @@ export function rankIndustries(deals: MADeal[]): IndustryActivity[] {
     .slice(0, 6);
 }
 
-// ── Live IB dashboard — consolidated league tables (single pass) ────────────────
+// ── Live IB dashboard, consolidated league tables (single pass) ────────────────
 
 function fmtUsdB(usdB: number): string {
   return usdB >= 1000 ? `$${(usdB / 1000).toFixed(1)}T` : usdB >= 10 ? `$${usdB.toFixed(0)}B` : `$${usdB.toFixed(1)}B`;

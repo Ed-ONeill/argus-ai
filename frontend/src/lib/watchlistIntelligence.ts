@@ -90,7 +90,7 @@ function deriveAlertChip(
   if (breadthDiff >=  10) return { label: "Broadening", direction: "up" };
   if (breadthDiff <= -10) return { label: "Narrowing",  direction: "down" };
 
-  // No previous snapshot — fall back to API-reported delta
+  // No previous snapshot, fall back to API-reported delta
   if (!prev) {
     const d = theme.momentum_delta ?? 0;
     if (d >= 12 && ml === "accelerating")                   return { label: "Accelerating",  direction: "up" };
@@ -120,7 +120,7 @@ function deriveChangeSentence(
     if (ml === "emerging")      return `${n} emerged`;
   }
   if (breadthDiff >=  10) return `${n} broadened across sectors`;
-  if (breadthDiff <= -10) return `${n} narrowed — concentration risk`;
+  if (breadthDiff <= -10) return `${n} narrowed, concentration risk`;
   if (signalChanged && prev) {
     const cur  = SIGNAL_RANK[theme.signal_strength] ?? 0;
     const past = SIGNAL_RANK[prev.signal_strength]  ?? 0;
@@ -128,11 +128,11 @@ function deriveChangeSentence(
     if (cur < past) return `${n} signal weakened`;
   }
 
-  // No previous snapshot — fall back to API delta
+  // No previous snapshot, fall back to API delta
   if (!prev) {
     const d = theme.momentum_delta ?? 0;
-    if (d >= 12) return `${n} accelerated — momentum +${Math.round(d)}`;
-    if (d <= -10) return `${n} weakened — momentum ${Math.round(d)}`;
+    if (d >= 12) return `${n} accelerated, momentum +${Math.round(d)}`;
+    if (d <= -10) return `${n} weakened, momentum ${Math.round(d)}`;
     if (theme.momentum_label === "accelerating") return `${n} is accelerating`;
     if (theme.momentum_label === "reversing")    return `${n} moved to At Risk`;
   }

@@ -342,7 +342,7 @@ function BriefSealed({
                 : (
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.68)" }}>
-                      {confidence ? `${Math.round(confidence)}%` : "—"}
+                      {confidence ? `${Math.round(confidence)}%` : "-"}
                     </span>
                     {confidence && (
                       <div style={{ flex: 1, height: "2px", background: "rgba(255,255,255,0.08)", borderRadius: "1px" }}>
@@ -790,7 +790,7 @@ export default function LandingPage() {
 
   const ratesArrow =
     ms.ratesRegime === "rising"  ? "↑" :
-    ms.ratesRegime === "falling" ? "↓" : "—";
+    ms.ratesRegime === "falling" ? "↓" : "-";
 
   const pulseDotColor =
     ms.riskRegime === "risk-on"  ? "#3ab880" :

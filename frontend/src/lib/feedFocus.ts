@@ -1,5 +1,5 @@
 /**
- * lib/feedFocus.ts — the Argus Market Map controller vocabulary.
+ * lib/feedFocus.ts, the Argus Market Map controller vocabulary.
  *
  * The Market Map is the operating system for the Feed: selecting a node puts the
  * whole page into Focus mode, and every section below the graph reflects whatever
@@ -7,7 +7,7 @@
  * (which produces a selected GraphNode) and the page sections (which need to ask
  * "does this story / signal belong to what's selected?").
  *
- * Pure, deterministic reads of already-stored fields — nothing invented.
+ * Pure, deterministic reads of already-stored fields, nothing invented.
  */
 
 import type { GraphNode } from "@/lib/graph/types";
@@ -15,6 +15,7 @@ import type { FeedItem, StoryCluster, WhatMattersNowItem, ThemeIntelligence } fr
 import { deriveDriver, deriveSector, themeWatch, dirOf } from "@/lib/themeTransmission";
 import { themeBeneficiaries } from "@/lib/themeIntelligence";
 import { cleanThemeName } from "@/app/markets/marketsShared";
+import { sanitizeCopy } from "@/lib/utils";
 
 export type FocusKind = "theme" | "sector" | "company" | "driver";
 
@@ -36,7 +37,7 @@ export function focusKindLabel(kind: FocusKind): string { return KIND_LABEL[kind
 
 /**
  * Map a graph node to a page-level focus. The market center / event node returns
- * null — that is Global Market mode (no filtering).
+ * null, that is Global Market mode (no filtering).
  */
 export function nodeToFocus(node: GraphNode | null): FeedFocus | null {
   if (!node) return null;
@@ -73,7 +74,7 @@ export function focusedThemes(focus: FeedFocus, themes: ThemeIntelligence[]): Th
   }
 }
 
-// Keyword fallback — tokens that, found in a story, mark it as on-focus. Kept to
+// Keyword fallback, tokens that, found in a story, mark it as on-focus. Kept to
 // reasonably long tokens so a focus never matches stories on incidental words.
 function focusKeywords(focus: FeedFocus, fThemes: ThemeIntelligence[]): string[] {
   const out = new Set<string>();
@@ -132,7 +133,7 @@ export function wmnMatchesFocus(wmn: WhatMattersNowItem, m: FocusMatcher): boole
   return clusterMatchesFocus(wmn.cluster, m);
 }
 
-// ── Focused desk note — "Today's Market Story", re-read for the selected node ──
+// ── Focused desk note, "Today's Market Story", re-read for the selected node ──
 export interface FocusStory { headline: string; paragraph: string; watch: string; movers: string[] }
 
 /**
@@ -147,7 +148,7 @@ export function buildFocusStory(focus: FeedFocus, themes: ThemeIntelligence[]): 
   if (!lead) {
     return {
       headline:  focus.label,
-      paragraph: `Tracking ${focus.label} as a ${kindLabel}. No firm theme is driving it yet — the read sharpens as confirming signal accumulates.`,
+      paragraph: `Tracking ${focus.label} as a ${kindLabel}. No firm theme is driving it yet, the read sharpens as confirming signal accumulates.`,
       watch:     "fresh confirmation before sizing conviction",
       movers:    [],
     };
@@ -171,8 +172,8 @@ export function buildFocusStory(focus: FeedFocus, themes: ThemeIntelligence[]): 
 
   return {
     headline:  focus.label,
-    paragraph,
-    watch:     themeWatch(lead),
+    paragraph: sanitizeCopy(paragraph),
+    watch:     sanitizeCopy(themeWatch(lead)),
     movers:    fThemes.slice(0, 4).map(t => cleanThemeName(t.name)),
   };
 }

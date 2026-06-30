@@ -13,7 +13,7 @@ import { cleanThemeName } from "@/app/markets/marketsShared";
 import type { StoryCluster, FeedItem, ThemeIntelligence, RelatedStory } from "@/lib/types";
 
 /**
- * IntelligenceStream — the Live Market Stream re-imagined as a living intelligence
+ * IntelligenceStream, the Live Market Stream re-imagined as a living intelligence
  * report, NOT a feed of identical news cards. Each event renders at a different
  * visual weight depending on signal:
  *
@@ -36,15 +36,15 @@ const dirArrow = (d: string) => d === "bullish" ? "↑" : d === "bearish" ? "↓
 function stripDir(s?: string | null): string {
   return (s ?? "").replace(/^(bullish|bearish|mixed)[:\s–—-]*/i, "").trim();
 }
-// The market implication — the "so what" that leads each entry. Prefers the
+// The market implication, the "so what" that leads each entry. Prefers the
 // stored impact read, falls back to a composed transmission consequence.
 function implicationOf(item: FeedItem, sector: string | null, driver: string, dir: string): string {
   const raw = stripDir(item.impact);
   if (raw.length > 10) return raw;
   const where = sector ?? driver;
-  return dir === "bullish" ? `Tailwind for ${where} — capital rotating toward the most exposed names.`
-    : dir === "bearish" ? `Pressure on ${where} — the exposed names carry downgrade risk.`
-    : `Crosscurrents in ${where} — positioning rotating faster than the narrative resolves.`;
+  return dir === "bullish" ? `Tailwind for ${where}, capital rotating toward the most exposed names.`
+    : dir === "bearish" ? `Pressure on ${where}, the exposed names carry downgrade risk.`
+    : `Crosscurrents in ${where}, positioning rotating faster than the narrative resolves.`;
 }
 
 interface Props {
@@ -125,7 +125,7 @@ export function IntelligenceStream({ clusters, themes, savedIds, onSave, newIds,
   );
 }
 
-// ── Lead Dossier — the full vertical intelligence report ──────────────────────
+// ── Lead Dossier, the full vertical intelligence report ──────────────────────
 function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }: {
   cluster: StoryCluster; theme: ThemeIntelligence; isSaved: boolean; onSave: () => void; isNew?: boolean; watchedEntities?: Set<string>;
 }) {
@@ -143,7 +143,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
   const catalyst = cats.find(c => c.direction === "confirming") ?? cats[0] ?? null;
   const mem = theme.memory;
   const isBreaking = item.signal_strength === "strong" && /^(\d+)(m|h)/.test(item.published ?? "");
-  // Shared context tokens — hovering anything in this dossier lights the matching
+  // Shared context tokens, hovering anything in this dossier lights the matching
   // theme / sector / driver / company across the whole page (and the graph nodes).
   const ctx: (string | null)[] = [cleanThemeName(theme.name), path.sector, path.driver];
   const strengthening = theme.momentum_label === "accelerating" || theme.momentum_label === "strengthening";
@@ -156,12 +156,12 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
       className="relative overflow-hidden pl-1"
       style={{ background: "linear-gradient(110deg, rgba(20,28,46,0.32), transparent 60%)", borderLeft: `3px solid ${dc}` }}
     >
-      {/* Conviction glow on the accent — pulses while the theme is strengthening */}
+      {/* Conviction glow on the accent, pulses while the theme is strengthening */}
       {strengthening && <div aria-hidden className="tg-glow absolute left-0 top-0 bottom-0 w-[3px] pointer-events-none" style={{ background: dc, boxShadow: `0 0 12px ${dc}` }} />}
       {/* One-shot transmission wave when this event is newly arrived */}
       {isNew && <div aria-hidden className="tg-wave absolute inset-y-0 w-1/3 pointer-events-none z-10" style={{ background: `linear-gradient(to right, transparent, ${dc}24, transparent)` }} />}
 
-      {/* Block 1 — Signal-led header: the theme + market read are the headline;
+      {/* Block 1, Signal-led header: the theme + market read are the headline;
           the news story is demoted to a supporting source line. */}
       <div className="relative px-4 pt-3.5 pb-3.5 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
         <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at left top, ${dc}0e, transparent 60%)` }} />
@@ -196,7 +196,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
         </div>
       </div>
 
-      {/* Block 2 — Transmission Chain (horizontal flow) */}
+      {/* Block 2, Transmission Chain (horizontal flow) */}
       <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
         <BlockLabel>Transmission Chain</BlockLabel>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -208,7 +208,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
         </div>
       </div>
 
-      {/* Block 3 — Affected Sectors + Companies (two columns, separated by air) */}
+      {/* Block 3, Affected Sectors + Companies (two columns, separated by air) */}
       <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3 px-4 py-3.5 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
         <div>
           <BlockLabel>Affected Sectors</BlockLabel>
@@ -232,7 +232,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
         </div>
       </div>
 
-      {/* Block 4 — Conviction & confirmation (the strength behind the signal) */}
+      {/* Block 4, Conviction & confirmation (the strength behind the signal) */}
       <div className="px-4 py-2.5 border-b flex items-center gap-x-5 gap-y-1.5 flex-wrap" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
         <ConvStat label="Conviction" value={`${Math.round(theme.confidence ?? 0)}`} color={dc} />
         <ConvStat label="Momentum" value={theme.momentum_label} color={dc} />
@@ -247,7 +247,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div key="deep" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.26, ease: "easeInOut" }} className="overflow-hidden">
-            {/* Block 5 — Supporting Articles (timeline) */}
+            {/* Block 5, Supporting Articles (timeline) */}
             {related.length > 0 && (
               <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
                 <BlockLabel>Supporting Articles · {related.length}</BlockLabel>
@@ -257,7 +257,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
               </div>
             )}
 
-            {/* Block 6 — Contradictory Signals (distinct red) */}
+            {/* Block 6, Contradictory Signals (distinct red) */}
             <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)", background: "rgba(239,68,68,0.03)" }}>
               <div className="flex items-center gap-1.5 mb-1.5">
                 <AlertTriangle size={9} style={{ color: RED }} />
@@ -265,11 +265,11 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
                 {mem && mem.contradicting_total > 0 && <span className="text-[8px] font-bold ml-auto" style={{ color: RED }}>{mem.contradictions_today > 0 ? `${mem.contradictions_today} today · ` : ""}{mem.contradicting_total} total</span>}
               </div>
               <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.62)" }}>
-                {cases.bear || "No material counter-signal in the current evidence — confirmation is one-sided, which itself is a crowding risk."}
+                {cases.bear || "No material counter-signal in the current evidence, confirmation is one-sided, which itself is a crowding risk."}
               </p>
             </div>
 
-            {/* Block 7 — Prediction (emphasised) */}
+            {/* Block 7, Prediction (emphasised) */}
             <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)", borderLeft: `2px solid ${dc}` }}>
               <BlockLabel>Prediction</BlockLabel>
               <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}>{generateThesis(theme)}</p>
@@ -281,13 +281,13 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
               )}
             </div>
 
-            {/* Block 8 — Probability Changes (conviction trend bar) */}
+            {/* Block 8, Probability Changes (conviction trend bar) */}
             <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
               <BlockLabel>Probability Changes</BlockLabel>
               <ProbabilityBar theme={theme} />
             </div>
 
-            {/* Block 9 — Institutional Watch */}
+            {/* Block 9, Institutional Watch */}
             <div className="px-4 py-3" style={{ background: "rgba(82,176,200,0.04)" }}>
               <BlockLabel>Institutional Watch</BlockLabel>
               <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.64)" }}>
@@ -308,7 +308,7 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
   );
 }
 
-// ── Transmission Row — compact horizontal block ───────────────────────────────
+// ── Transmission Row, compact horizontal block ───────────────────────────────
 function TransmissionRow({ cluster, theme, watched, isSaved, onSave, isNew, watchedEntities }: {
   cluster: StoryCluster; theme?: ThemeIntelligence; watched: boolean; isSaved: boolean; onSave: () => void; isNew?: boolean; watchedEntities?: Set<string>;
 }) {
@@ -330,7 +330,7 @@ function TransmissionRow({ cluster, theme, watched, isSaved, onSave, isNew, watc
       style={{ borderLeft: `2px solid ${watched ? CYAN : dc}` }}
     >
       <div className="pl-3.5 pr-2 py-2.5 transition-colors group-hover:bg-white/[0.02]">
-        {/* Row 1 — signal magnitude · propagation · conviction */}
+        {/* Row 1, signal magnitude · propagation · conviction */}
         <div className="flex items-center gap-2.5 mb-1">
           <span className="flex items-baseline gap-0.5 shrink-0">
             <span className="text-[10px] font-bold" style={{ color: dc }}>{dirArrow(dir)}</span>
@@ -345,9 +345,9 @@ function TransmissionRow({ cluster, theme, watched, isSaved, onSave, isNew, watc
             {isSaved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
           </button>
         </div>
-        {/* Row 2 — the market implication (the read) */}
+        {/* Row 2, the market implication (the read) */}
         <p className="text-[12px] font-medium leading-snug" style={{ color: "rgba(255,255,255,0.84)" }}>{implicationOf(item, path.sector, path.driver, dir)}</p>
-        {/* Row 3 — affected assets + the news demoted to supporting context */}
+        {/* Row 3, affected assets + the news demoted to supporting context */}
         <div className="flex items-center gap-2 mt-1.5">
           {tickers.length > 0 && (
             <span className="flex items-center gap-2 shrink-0">
@@ -368,7 +368,7 @@ function TransmissionRow({ cluster, theme, watched, isSaved, onSave, isNew, watc
   );
 }
 
-// ── Clustered Tail — the long tail grouped into one dense block ────────────────
+// ── Clustered Tail, the long tail grouped into one dense block ────────────────
 function ClusteredTail({ rows }: { rows: { cluster: StoryCluster; theme?: ThemeIntelligence }[] }) {
   const [open, setOpen] = useState(false);
   const shown = open ? rows : rows.slice(0, 6);
@@ -422,7 +422,7 @@ function ConvStat({ label, value, color }: { label: string; value: string; color
     </span>
   );
 }
-function Empty() { return <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.36)" }}>—</span>; }
+function Empty() { return <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.36)" }}>-</span>; }
 
 function ChainNode({ label, color, emphasis, tokens }: { label: string; color: string; emphasis?: boolean; tokens?: (string | null | undefined)[] }) {
   return (

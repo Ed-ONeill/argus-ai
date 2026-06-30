@@ -107,7 +107,7 @@ function isUp(t: TickerData): boolean {
   return t.key === "TNX" ? t.change > 0 : t.changePercent > 0;
 }
 
-// Convert raw SEC filing titles ("8-K — Other Events") into readable labels and
+// Convert raw SEC filing titles ("8-K, Other Events") into readable labels and
 // strip the em dash. Non-filing titles pass through unchanged.
 const FILING_FORM_RE = /\b(8-K|10-K|10-Q|S-1|S-3|6-K|20-F|13[DG]|424B\d?|DEF 14A|SC 13[DG])\b\s*[—–-]?\s*(.*)$/i;
 function cleanFilingTitle(raw: string): string {
@@ -129,7 +129,7 @@ function regimeAccentColor(regime: string): string {
   return "#818cf8";
 }
 
-// Time-horizon bucket — analyst register, no "momentum fading" filler.
+// Time-horizon bucket, analyst register, no "momentum fading" filler.
 function timeBucket(t: ThemeIntelligence): string {
   if (t.momentum_label === "reversing" || t.momentum_label === "cooling") return "Tactical";
   if ((t.persistence_cycles ?? 0) >= 6)  return "Structural";
@@ -166,7 +166,7 @@ function SnapCell({ label, value, color, sub }: {
   return (
     <div className="min-w-0 px-3 py-2 border-r border-edge last:border-r-0">
       <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-ink-muted/70 mb-1 truncate">{label}</p>
-      {/* Default to dark ink — this card is a white surface, so the previous
+      {/* Default to dark ink, this card is a white surface, so the previous
           translucent-white default rendered invisibly (the "washed out" look). */}
       <p className="text-[15px] font-black leading-none tracking-tight truncate tabular-nums"
         style={{ color: color ?? "rgb(var(--ink))" }}>{value}</p>
@@ -221,11 +221,11 @@ function MarketSnapshotBase({ themes, sectorData, regime, brief }: {
         <SnapCell label="Market State" value={state} color={accent} />
         <SnapCell label="Conviction" value={`${convScore(conviction)}`} color={confColor(conviction)} />
         <SnapCell label="Breadth" value={`${confirming}/${total}`} sub="sectors confirming" />
-        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "—"} />
-        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "—"} color="#10b981"
+        <SnapCell label="Dominant Theme" value={dominant ? cleanThemeName(dominant.name) : "-"} />
+        <SnapCell label="Fastest Accelerating" value={fastest ? cleanThemeName(fastest.name) : "-"} color="#10b981"
           sub={fastest ? `${(fastest.momentum_delta ?? 0) >= 0 ? "+" : ""}${fastest.momentum_delta ?? 0} mom` : undefined} />
-        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "—"} color="#ef4444" />
-        <SnapCell label="Largest Opportunity" value={opp ? opp.sector : "—"} color="#10b981"
+        <SnapCell label="Largest Risk" value={risk ? cleanThemeName(risk.name) : "-"} color="#ef4444" />
+        <SnapCell label="Largest Opportunity" value={opp ? opp.sector : "-"} color="#10b981"
           sub={opp ? `${opp.conviction}% conviction` : undefined} />
       </div>
     </div>
@@ -245,7 +245,7 @@ function InternalStat({ label, pos, neg }: { label: string; pos: number; neg: nu
   );
 }
 
-// Compact, clickable mover chip — a theme and its momentum delta.
+// Compact, clickable mover chip, a theme and its momentum delta.
 function MoverChip({ t, onClick }: { t: ThemeIntelligence; onClick: () => void }) {
   const d   = t.momentum_delta ?? 0;
   const up  = d > 0;
@@ -260,7 +260,7 @@ function MoverChip({ t, onClick }: { t: ThemeIntelligence; onClick: () => void }
   );
 }
 
-// Market Pulse — one dense band that merges the old Internals strip and the
+// Market Pulse, one dense band that merges the old Internals strip and the
 // "Today's Changes" card: breadth tallies plus the day's biggest theme movers,
 // each clickable into the drawer. Replaces two stacked sections with a glance.
 function MarketPulseStripBase({ themes, onThemeClick }: {
@@ -325,8 +325,8 @@ function deriveWhy(brief: MarketBrief | null | undefined, top: ThemeIntelligence
   const verb   = _MOMENTUM_VERB[top.momentum_label] ?? "remained in focus";
   const factor = (top.related_macro_factors ?? [])[0];
   const base   = `${cleanThemeName(top.name)} ${verb}${factor ? `, driven by ${cleanMacroLabel(factor)}` : ""}.`;
-  // Memory: compare today against the theme's own history — what changed (or held)
-  // and whether conviction is rising/falling — so the narrative is not reactive.
+  // Memory: compare today against the theme's own history, what changed (or held)
+  // and whether conviction is rising/falling, so the narrative is not reactive.
   const memLine = memorySentences(top, 0)[0];
   return memLine ? `${base} ${memLine}` : base;
 }
@@ -347,7 +347,7 @@ function DominantNarrativeBase({ brief, themes }: {
   const losers     = top ? themeLosers(top, 3) : null;
   const drivers    = themes.slice(0, 5);
   const trend      = confTrend(top?.momentum_delta ?? 0);
-  const horizon    = top ? timeBucket(top) : "—";
+  const horizon    = top ? timeBucket(top) : "-";
   const confirming = top
     ? themes.filter(t => t.momentum_direction === top.momentum_direction).length
     : themes.length;
@@ -355,13 +355,13 @@ function DominantNarrativeBase({ brief, themes }: {
   return (
     <div className="mb-4 rounded-xl border border-edge-strong shadow-card overflow-hidden bg-surface"
       style={{ borderTop: `4px solid ${cColor}` }}>
-      {/* hero headline — the focal point */}
+      {/* hero headline, the focal point */}
       <div className="px-5 pt-4 pb-4">
         <p className="text-[8.5px] font-bold uppercase tracking-[0.24em] text-ink-muted/60 mb-2">Dominant Narrative</p>
         <p className="text-[22px] sm:text-[26px] font-black text-ink leading-[1.1] tracking-tight break-words">{whatHappened}</p>
       </div>
 
-      {/* stats strip — dark-tinted band for rhythm + larger numbers */}
+      {/* stats strip, dark-tinted band for rhythm + larger numbers */}
       <div className="grid grid-cols-4 divide-x divide-edge border-y border-edge" style={{ background: "rgba(255,255,255,0.025)" }}>
         <div className="px-3 py-2">
           <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Confidence</p>
@@ -381,7 +381,7 @@ function DominantNarrativeBase({ brief, themes }: {
         </div>
       </div>
 
-      {/* why (explanation) vs market impact (evidence) — visually distinguished */}
+      {/* why (explanation) vs market impact (evidence), visually distinguished */}
       <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-edge">
         <div className="px-5 py-3">
           <p className="text-[7.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/55 mb-1.5">Why It Happened</p>
@@ -400,7 +400,7 @@ function DominantNarrativeBase({ brief, themes }: {
         </div>
       </div>
 
-      {/* who wins / who loses — prominent securities */}
+      {/* who wins / who loses, prominent securities */}
       {(benef.length > 0 || losers) && (
         <div className="px-4 py-2.5 border-t border-edge/60 flex flex-wrap items-center gap-x-4 gap-y-2">
           {benef.length > 0 && (
@@ -683,7 +683,7 @@ function MarketIntelBar({
                 {loading ? (
                   <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.15)" }}>…</span>
                 ) : offline ? (
-                  <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.12)" }}>—</span>
+                  <span style={{ fontSize: "8px", color: "rgba(255,255,255,0.12)" }}>-</span>
                 ) : (
                   <span
                     className="text-[10px] font-bold tabular-nums"
@@ -757,9 +757,9 @@ function shortRisk(t: ThemeIntelligence): string {
   // ahead of the generic structural risk, so the watch line is not purely reactive.
   const m = t.memory;
   if (m && m.status === "weakening" && (m.sessions_in_status ?? 0) >= 2) {
-    return `Weakening ${m.sessions_in_status} sessions — conviction ${m.conviction_window_start}→${m.conviction_current}`;
+    return `Weakening ${m.sessions_in_status} sessions, conviction ${m.conviction_window_start}→${m.conviction_current}`;
   }
-  if (m && m.status === "stale") return `Dormant — last confirmed ${Math.round(m.last_seen_hours_ago)}h ago`;
+  if (m && m.status === "stale") return `Dormant, last confirmed ${Math.round(m.last_seen_hours_ago)}h ago`;
   if (m && m.contradictions_today >= 2) return `Contradicted by ${m.contradictions_today} stories today`;
   const r = deriveKeyRisk(t).replace(/\.$/, "").trim();
   if (r.length <= 50) return r;
@@ -814,7 +814,7 @@ function CatalystRadarStrip({ catalysts }: { catalysts: RadarCatalyst[] }) {
   );
 }
 
-// Per-theme next-catalyst chips — the soonest dated events that move this theme,
+// Per-theme next-catalyst chips, the soonest dated events that move this theme,
 // colored by whether they confirm or threaten the thesis.
 function ThemeCatalystRow({ theme }: { theme: ThemeIntelligence }) {
   const cats = useMemo(() => generateNextCatalysts(theme).slice(0, 2), [theme]);
@@ -870,7 +870,7 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
               className="text-left rounded-lg border border-edge bg-surface flex items-center gap-3 pl-3 pr-3 py-2
                          group transition-colors hover:border-edge-strong hover:bg-raised/40"
               style={{ borderLeft: `3px solid ${mm.color}` }}>
-              {/* BIG conviction — rounded, with the evidence that justifies it */}
+              {/* BIG conviction, rounded, with the evidence that justifies it */}
               <div className="flex flex-col items-center w-12 shrink-0">
                 <span className="text-[26px] font-black tabular-nums leading-none" style={{ color: confColor(conf) }}>{convScore(conf)}</span>
                 <span className="text-[6px] uppercase tracking-wider text-ink-muted/40 mt-px">conviction</span>
@@ -893,7 +893,7 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
                   <span className="text-ink-muted/25">·</span>
                   <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Driver</span> {themePrimaryDriver(t)}</span>
                 </div>
-                {/* who wins / who loses — prominent tickers */}
+                {/* who wins / who loses, prominent tickers */}
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
                   {benef.length > 0 && (
                     <span className="flex items-center gap-1">
@@ -930,7 +930,7 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
 
 
 
-// ── Transmission Map (market causality — the signature view) ──────────────────
+// ── Transmission Map (market causality, the signature view) ──────────────────
 
 function ChainStage({ caption, tone, children }: { caption: string; tone: string; children: React.ReactNode }) {
   return (
@@ -980,7 +980,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
 
   return (
     <div className="mb-4">
-      {/* Secondary view — collapsed by default; the chains restate exposure the
+      {/* Secondary view, collapsed by default; the chains restate exposure the
           Command Center already shows, so this is available on demand only. */}
       <button onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-2 mb-2 group">
@@ -1014,7 +1014,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
               {/* Macro Driver */}
               <ChainStage caption="Macro Driver" tone="#818cf8">{c.macro ?? "Macro backdrop"}</ChainStage>
               <ChainArrow color={clr} />
-              {/* Theme — clickable */}
+              {/* Theme, clickable */}
               <button onClick={() => onNodeClick(c.t)}
                 className="shrink-0 text-left rounded-md border px-2.5 py-1.5 hover:bg-raised transition-colors min-w-[112px]"
                 style={{ borderColor: `${clr}55`, background: `${clr}12` }}>
@@ -1026,7 +1026,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
               {/* Sector */}
               <ChainStage caption="Sector" tone="#64748b">{c.sector}</ChainStage>
               <ChainArrow color={clr} />
-              {/* Securities — the expression */}
+              {/* Securities, the expression */}
               <div className="shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/8 px-2.5 py-1.5 flex flex-col justify-center">
                 <p className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-emerald-300/70 mb-0.5">Securities</p>
                 <div className="flex items-center gap-1">
@@ -1125,7 +1125,7 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
 }
 
 const DIR_META = {
-  // Signal colors tuned for the dark workstation surface — bright enough to read
+  // Signal colors tuned for the dark workstation surface, bright enough to read
   // on #0A0F1C without being neon. Green = bullish, red = bearish.
   bullish: { label: "Bullish", color: "#34d399" },
   bearish: { label: "Bearish", color: "#f87171" },
@@ -1145,7 +1145,7 @@ function OppBlock({ label, color, children }: { label: string; color?: string; c
   );
 }
 
-// Sector Positioning — the single sector view. Every sector ranks here; tapping
+// Sector Positioning, the single sector view. Every sector ranks here; tapping
 // a row expands the full trade case (why it matters, what breaks it, the best
 // expressions), so the old standalone "Opportunities" section folds in as
 // progressive disclosure rather than a duplicate listing.
@@ -1359,7 +1359,7 @@ function EvidenceValidationBase({ themes, clusters, savedIds, onSave }: {
 
 // Memoized section components: when the drawer opens (drawerData state changes
 // on MarketsPage) these skip re-render entirely because their props (visible
-// themes + stable callbacks) are unchanged — no recompute of sector positions,
+// themes + stable callbacks) are unchanged, no recompute of sector positions,
 // transmission chains, or beneficiary lookups.
 const MarketSnapshot                = memo(MarketSnapshotBase);
 const MarketPulseStrip              = memo(MarketPulseStripBase);
@@ -1404,7 +1404,7 @@ export default function MarketsPage() {
   const derivedRegime = data?.sector_data?.derived_regime ?? "";
   const sectorData    = data?.sector_data ?? null;
 
-  // Theme intelligence — computed once, shared by all sections
+  // Theme intelligence, computed once, shared by all sections
   const visible = useMemo(
     () => themes.filter(t => t.signal_strength === "strong" || t.signal_strength === "medium"),
     [themes],
@@ -1448,7 +1448,7 @@ export default function MarketsPage() {
 
   return (
     <div className="markets-dark min-h-screen" style={{ background: "rgb(var(--canvas))" }}>
-      {/* Argus identity header — compact */}
+      {/* Argus identity header, compact */}
       <div style={{ background: "rgba(6,10,22,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: "16px" }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
@@ -1476,18 +1476,18 @@ export default function MarketsPage() {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
 
-        {/* First-load skeleton — avoids a blank page before cache responds */}
+        {/* First-load skeleton, avoids a blank page before cache responds */}
         {isLoading && visible.length === 0 && <MarketsSkeleton />}
 
-        {/* ══ 1. MARKET STATE — at-a-glance dashboard ══════════ */}
+        {/* ══ 1. MARKET STATE, at-a-glance dashboard ══════════ */}
         <SectionHeader label="Market State" />
         <MarketSnapshot themes={visible} sectorData={sectorData} regime={derivedRegime} brief={data?.market_brief} />
 
-        {/* ══ 2. DOMINANT NARRATIVE — the plain-language read, kept directly
+        {/* ══ 2. DOMINANT NARRATIVE, the plain-language read, kept directly
             under the snapshot so the market view is graspable in one screen ══ */}
         <DominantNarrative brief={data?.market_brief} themes={visible} />
 
-        {/* Live prices + regime — single strip (the standalone price tape
+        {/* Live prices + regime, single strip (the standalone price tape
             duplicated these instruments and was removed) */}
         <MarketIntelBar
           regime={derivedRegime}
@@ -1522,19 +1522,19 @@ export default function MarketsPage() {
           )}
         </AnimatePresence>
 
-        {/* Market internals + movers — secondary detail, below the headline read */}
+        {/* Market internals + movers, secondary detail, below the headline read */}
         <MarketPulseStrip themes={visible} onThemeClick={openDrawer} />
 
-        {/* ══ 3. THEME COMMAND CENTER — what's driving it + catalysts ══ */}
+        {/* ══ 3. THEME COMMAND CENTER, what's driving it + catalysts ══ */}
         <ThemeCommandCenter themes={visible} onThemeClick={openDrawer} />
 
-        {/* ══ 4. SECTOR POSITIONING — where it matters + the trade ══ */}
+        {/* ══ 4. SECTOR POSITIONING, where it matters + the trade ══ */}
         <SectorPositioning themes={visible} />
 
-        {/* ══ 5. TRANSMISSION MAP — how it spreads (secondary, collapsed) ══ */}
+        {/* ══ 5. TRANSMISSION MAP, how it spreads (secondary, collapsed) ══ */}
         <ThemeTransmission themes={visible} onNodeClick={openDrawer} />
 
-        {/* ══ 6. EVIDENCE VALIDATION — why we believe it ═══════ */}
+        {/* ══ 6. EVIDENCE VALIDATION, why we believe it ═══════ */}
         <div ref={clusterRef} className="mb-4">
           <EvidenceValidation
             themes={visible}
@@ -1544,7 +1544,7 @@ export default function MarketsPage() {
           />
         </div>
 
-        {/* Watchlist — personal tracking, below the core workflow */}
+        {/* Watchlist, personal tracking, below the core workflow */}
         <WatchlistPanel
           followed={followed}
           liveThemes={visible}
@@ -1555,7 +1555,7 @@ export default function MarketsPage() {
 
       </div>
 
-      {/* Shared drawer — opened by theme cards, watchlist, and chain nodes */}
+      {/* Shared drawer, opened by theme cards, watchlist, and chain nodes */}
       <ThemeDetailDrawer
         data={drawerData}
         onClose={() => setDrawerData(null)}

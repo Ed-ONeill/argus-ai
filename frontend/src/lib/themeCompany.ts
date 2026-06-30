@@ -1,5 +1,5 @@
 /**
- * themeCompany.ts — Company Intelligence Engine
+ * themeCompany.ts, Company Intelligence Engine
  *
  * Derives company-level exposure scoring, directional classification,
  * thesis rationale, drivers/risks, ranking signals, transmission paths,
@@ -260,9 +260,9 @@ function buildRationale(
   }
 
   if (direction === "beneficiary" && delta > 8) {
-    core += " — signal accelerating";
+    core += ", signal accelerating";
   } else if (direction === "headwind" && delta < -5) {
-    core += " — signal deteriorating";
+    core += ", signal deteriorating";
   }
 
   return (core.charAt(0).toUpperCase() + core.slice(1)).replace(/\s{2,}/g, " ") + ".";
@@ -333,7 +333,7 @@ function computeRankingChange(
   const ind0     = inds[0] ?? "primary sector";
   const sector   = meta?.sector ?? "";
 
-  // Earlier positions in the asset list are more anchored — less volatile
+  // Earlier positions in the asset list are more anchored, less volatile
   const posWeight = Math.max(0, 3 - index);
   const magnitude = Math.min(posWeight, Math.round(Math.abs(delta) / 5));
 
@@ -355,9 +355,9 @@ function computeRankingChange(
     const breadthNote = breadth >= 60 ? ` and breadth expanded into ${ind0}` : "";
     reason = `${sector || "Sector"} exposure deepened${momentumAdj}${breadthNote}`;
   } else if (change < 0) {
-    reason = `Relative positioning softened${momentumAdj} — signal flow shifted`;
+    reason = `Relative positioning softened${momentumAdj}, signal flow shifted`;
   } else {
-    reason = `Position held — aligned with current ${ind0} dynamics`;
+    reason = `Position held, aligned with current ${ind0} dynamics`;
   }
 
   return { change, reason };
@@ -434,7 +434,7 @@ export function computeTransmissionPaths(
       const secWords = e.sector.toLowerCase().split(/\s+/);
       return secWords.some(sw => indWords.some(iw => sw.includes(iw) || iw.includes(sw)));
     });
-    const ticker = matched?.ticker ?? exposures[Math.min(i, exposures.length - 1)]?.ticker ?? "—";
+    const ticker = matched?.ticker ?? exposures[Math.min(i, exposures.length - 1)]?.ticker ?? "-";
     return { industry, ticker };
   });
 }

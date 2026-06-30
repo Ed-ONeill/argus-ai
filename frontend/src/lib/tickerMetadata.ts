@@ -154,7 +154,7 @@ const TICKER_META: Record<string, TickerInfo> = {
   ROKU: { name: "Roku, Inc.", sector: "Communication Services", exchange: "NASDAQ" },
   // ── Rates / Credit / Commodity proxies ──
   TLT:  { name: "iShares 20+ Yr Treasury Bond ETF", sector: "Rates", exchange: "NASDAQ" },
-  IEF:  { name: "iShares 7–10 Yr Treasury Bond ETF", sector: "Rates", exchange: "NASDAQ" },
+  IEF:  { name: "iShares 7-10 Yr Treasury Bond ETF", sector: "Rates", exchange: "NASDAQ" },
   TNX:  { name: "10-Year Treasury Yield Index", sector: "Rates" },
   HYG:  { name: "iShares High Yield Corporate Bond ETF", sector: "Credit", exchange: "NYSE Arca" },
   GLD:  { name: "SPDR Gold Shares", sector: "Commodities", exchange: "NYSE Arca" },

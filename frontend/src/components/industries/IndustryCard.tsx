@@ -127,7 +127,7 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
               className="text-[20px] font-black tabular-nums leading-none"
               style={{ color: scoreColor }}
             >
-              {(hasData || hasTheme) ? effectiveScore.toFixed(0) : "—"}
+              {(hasData || hasTheme) ? effectiveScore.toFixed(0) : "-"}
             </span>
           </div>
 

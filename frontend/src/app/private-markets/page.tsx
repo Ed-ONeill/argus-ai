@@ -340,7 +340,7 @@ function BiggestFlowCard({ flow }: { flow: ReturnType<typeof biggestFlow> }) {
             <div className="flex flex-wrap gap-x-2.5 gap-y-1">
               {flow.beneficiaries.map(b => <TickerChip key={b} ticker={b} size="md" color="#22c55e" />)}
             </div>
-          ) : <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>—</p>}
+          ) : <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>-</p>}
         </div>
         <TakeawayLine label="Invalidation" value={flow.invalidation} color="#f87171" />
       </div>

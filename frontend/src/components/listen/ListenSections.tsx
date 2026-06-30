@@ -14,10 +14,10 @@ import type { Episode, ThemeIntelligence } from "@/lib/types";
 import type { ThemeEpisodeGroup } from "@/lib/listenIntelligence";
 
 /**
- * ListenSections — the Listen page organized by INVESTMENT QUESTIONS, not podcast
+ * ListenSections, the Listen page organized by INVESTMENT QUESTIONS, not podcast
  * category. Each section answers one allocator question with its own visualization
  * (diverging bars, ranked list, table, leaderboard, company/sector bars, episode
- * list). Reuses the page's existing tokens / colours / type — synthesis changes,
+ * list). Reuses the page's existing tokens / colours / type, synthesis changes,
  * style does not. Modular: every section is an independent export.
  */
 
@@ -44,7 +44,7 @@ function Section({ children }: { children: React.ReactNode }) {
 }
 function Empty() { return <p className="text-[10.5px] italic text-ink-faint">Insufficient signal</p>; }
 
-// Shared bar row — label (optionally clickable) + bar + value.
+// Shared bar row, label (optionally clickable) + bar + value.
 function BarRow({ label, pct, color, value, valueColor, onClick, delay = 0 }: {
   label: React.ReactNode; pct: number; color: string; value: string; valueColor?: string; onClick?: () => void; delay?: number;
 }) {
@@ -64,7 +64,7 @@ function BarRow({ label, pct, color, value, valueColor, onClick, delay = 0 }: {
     : <div className="flex items-center gap-3 group/row">{body}</div>;
 }
 
-// ── Proprietary synthesis signals — single-stat institutional widgets ─────────
+// ── Proprietary synthesis signals, single-stat institutional widgets ─────────
 export function ProprietarySignals({ groups, episodes, episodeThemeMap }: { groups: ThemeEpisodeGroup[]; episodes: Episode[]; episodeThemeMap: Map<string, ThemeIntelligence[]> }) {
   const signals = useMemo(() => proprietarySignals(groups, episodes, episodeThemeMap), [groups, episodes, episodeThemeMap]);
   if (!signals.length) return null;
@@ -73,7 +73,7 @@ export function ProprietarySignals({ groups, episodes, episodeThemeMap }: { grou
       <SectionHeader title="Proprietary signals" accent={PURPLE} hint="synthesis you can't get from Spotify" />
       <div className="rounded-2xl border border-edge bg-surface overflow-hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px" style={{ background: "rgb(var(--edge))" }}>
         {signals.map(s => {
-          const empty = !s.value || s.value === "—";
+          const empty = !s.value || s.value === "-";
           return (
             <div key={s.label} className="bg-surface px-3.5 py-3">
               <p className="text-[8px] font-bold uppercase tracking-[0.11em] text-ink-muted mb-1.5 leading-tight">{s.label}</p>
@@ -89,7 +89,7 @@ export function ProprietarySignals({ groups, episodes, episodeThemeMap }: { grou
   );
 }
 
-// ── Narrative rotation — what's rotating in vs out (movers · velocity) ─────────
+// ── Narrative rotation, what's rotating in vs out (movers · velocity) ─────────
 function RotationCol({ label, color, rows, onThemeClick, sign }: { label: string; color: string; rows: ReturnType<typeof narrativeRotation>["inflow"]; onThemeClick: ThemeClick; sign: 1 | -1 }) {
   const max = Math.max(1, ...rows.map(r => Math.abs(r.delta)));
   return (
@@ -110,14 +110,14 @@ export function NarrativeRotation({ groups, onThemeClick }: { groups: ThemeEpiso
   return (
     <Section>
       <div className="grid sm:grid-cols-2 gap-3.5">
-        <RotationCol label="Rotating in — largest increase" color={GREEN} rows={inflow} onThemeClick={onThemeClick} sign={1} />
-        <RotationCol label="Rotating out — largest drop" color={RED} rows={outflow} onThemeClick={onThemeClick} sign={-1} />
+        <RotationCol label="Rotating in, largest increase" color={GREEN} rows={inflow} onThemeClick={onThemeClick} sign={1} />
+        <RotationCol label="Rotating out, largest drop" color={RED} rows={outflow} onThemeClick={onThemeClick} sign={-1} />
       </div>
     </Section>
   );
 }
 
-// ── Q3 · Highest-conviction ideas — table ─────────────────────────────────────
+// ── Q3 · Highest-conviction ideas, table ─────────────────────────────────────
 export function HighestConviction({ groups, onThemeClick }: { groups: ThemeEpisodeGroup[]; onThemeClick: ThemeClick }) {
   const rows = useMemo(() => highestConviction(groups), [groups]);
   if (!rows.length) return null;
@@ -143,7 +143,7 @@ export function HighestConviction({ groups, onThemeClick }: { groups: ThemeEpiso
   );
 }
 
-// ── Q4 + Q5 · Crowded vs Missing — two single-question panels, side by side ───
+// ── Q4 + Q5 · Crowded vs Missing, two single-question panels, side by side ───
 function StatList({ rows, color, metric, onThemeClick }: { rows: ReturnType<typeof crowdedNarratives>; color: string; metric: (r: ReturnType<typeof crowdedNarratives>[number]) => string; onThemeClick: ThemeClick }) {
   return (
     <div className="space-y-2.5">
@@ -180,7 +180,7 @@ export function CrowdedAndMissing({ groups, onThemeClick }: { groups: ThemeEpiso
   );
 }
 
-// ── Most discussed companies & sectors — bar leaderboards side by side ────────
+// ── Most discussed companies & sectors, bar leaderboards side by side ────────
 export function CompaniesAndSectors({ groups, episodes }: { groups: ThemeEpisodeGroup[]; episodes: Episode[] }) {
   const companies = useMemo(() => mostDiscussedCompanies(episodes), [episodes]);
   const sectors   = useMemo(() => sectorsGaining(groups), [groups]);
@@ -217,7 +217,7 @@ export function CompaniesAndSectors({ groups, episodes }: { groups: ThemeEpisode
   );
 }
 
-// ── Most referenced CEOs / voices & funds — two leaderboards ──────────────────
+// ── Most referenced CEOs / voices & funds, two leaderboards ──────────────────
 export function PeopleAndFunds({ episodes }: { episodes: Episode[] }) {
   const people = useMemo(() => mostReferencedPeople(episodes), [episodes]);
   const funds  = useMemo(() => mostReferencedFunds(episodes), [episodes]);
@@ -289,7 +289,7 @@ function HeatRow({ ticker, row, max }: { ticker: string; row: number[]; max: num
   );
 }
 
-// ── Q8 · Which firms are driving the conversation? — leaderboard ──────────────
+// ── Q8 · Which firms are driving the conversation?, leaderboard ──────────────
 export function FirmsDriving({ episodes, episodeThemeMap }: { episodes: Episode[]; episodeThemeMap: Map<string, ThemeIntelligence[]> }) {
   const sources = useMemo(() => firmsDriving(episodes, episodeThemeMap), [episodes, episodeThemeMap]);
   if (!sources.length) return null;

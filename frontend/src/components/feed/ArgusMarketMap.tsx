@@ -11,7 +11,7 @@ import type { GraphNode } from "@/lib/graph/types";
 import type { ThemeIntelligence } from "@/lib/types";
 
 /**
- * ArgusMarketMap — the Feed hero. A live capital-transmission map (macro driver →
+ * ArgusMarketMap, the Feed hero. A live capital-transmission map (macro driver →
  * theme → sector → assets) rendered on the reusable graph engine, plus a compact
  * "Today's Market Story" desk note. The signature first-screen experience.
  */
@@ -22,11 +22,11 @@ interface Props {
   isLoading?: boolean;
   /** Page-level focus (the selected node, mapped). null = Global Market mode. */
   focus?: FeedFocus | null;
-  /** Fired when the graph selection changes — drives the whole page. */
+  /** Fired when the graph selection changes, drives the whole page. */
   onFocusChange?: (node: GraphNode | null) => void;
   /** Increment to release the selection from outside (exit Focus mode). */
   clearNonce?: number;
-  /** Global market energy 0..1 — modulates the graph's motion temperament. */
+  /** Global market energy 0..1, modulates the graph's motion temperament. */
   energy?: number;
 }
 
@@ -105,7 +105,7 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
                 replayProgress={replaying ? progress : null}
                 onHoverChange={n => n ? setBeacon(nodeTokens(n)) : releaseBeacon()} />
 
-              {/* Market Replay — scrub how today's narrative built from the open */}
+              {/* Market Replay, scrub how today's narrative built from the open */}
               {hasMap && (
                 <div className="mt-2 flex items-center gap-2.5 min-h-[26px]">
                   {!replaying ? (
@@ -134,7 +134,7 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
           )}
         </div>
 
-        {/* Today's Market Story — floats beside the map; depth from a soft wash, no frame */}
+        {/* Today's Market Story, floats beside the map; depth from a soft wash, no frame */}
         <div className="relative px-1 pt-1 flex flex-col">
           <div aria-hidden className="absolute -inset-x-2 -top-3 bottom-0 -z-10 pointer-events-none rounded-2xl"
             style={{ background: "radial-gradient(120% 80% at 100% 0%, rgba(30,42,64,0.35), transparent 70%)" }} />
@@ -150,7 +150,7 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
             </span>
           </div>
 
-          {/* Focus headline — what the selected node is */}
+          {/* Focus headline, what the selected node is */}
           {!isLoading && focus && (
             <p className="text-[13px] font-bold leading-tight mb-2" style={{ color: "rgba(255,255,255,0.94)" }}>{focus.label}</p>
           )}
@@ -180,7 +180,7 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
               </p>
             </>
           ) : (
-            <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Reading the tape — the market story resolves as themes firm up.</p>
+            <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Reading the tape, the market story resolves as themes firm up.</p>
           )}
         </div>
       </div>

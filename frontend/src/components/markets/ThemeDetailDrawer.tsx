@@ -341,7 +341,7 @@ export function ThemeDetailDrawer({
                             )}
                           </div>
                         ) : (
-                          <p className="text-[11px] text-ink-muted italic">—</p>
+                          <p className="text-[11px] text-ink-muted italic">-</p>
                         )}
                       </div>
 
@@ -363,7 +363,7 @@ export function ThemeDetailDrawer({
                             )}
                           </div>
                         ) : (
-                          <p className="text-[11px] text-ink-muted italic">—</p>
+                          <p className="text-[11px] text-ink-muted italic">-</p>
                         )}
                       </div>
 

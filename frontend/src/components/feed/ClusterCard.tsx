@@ -6,7 +6,7 @@ import {
   ExternalLink, Bookmark, BookmarkCheck, Zap,
   ChevronDown, Loader2, ChevronRight, Clock, Radio,
 } from "lucide-react";
-import { cn, catColor } from "@/lib/utils";
+import { cn, catColor, sanitizeCopy } from "@/lib/utils";
 import { analyzeItemDeep } from "@/lib/api";
 import type { StoryCluster, FeedItem, RelatedStory, DeepAnalysis, ThemeIntelligence } from "@/lib/types";
 import type { ClusterAffinity } from "@/lib/feedRanker";
@@ -320,7 +320,7 @@ export function ClusterCard({
                        hover:opacity-80 transition-opacity"
             style={{ color: "rgba(255,255,255,0.78)" }}
           >
-            {item.title}
+            {sanitizeCopy(item.title)}
           </a>
           <span
             className="text-[8.5px] tabular-nums font-mono shrink-0 ml-1"
@@ -454,7 +454,7 @@ export function ClusterCard({
           )}
           style={{ color: "rgba(255,255,255,0.96)" }}
         >
-          {item.title}
+          {sanitizeCopy(item.title)}
           <ExternalLink
             size={10}
             className="inline-block ml-1.5 opacity-0 group-hover:opacity-40 -translate-y-px"
@@ -504,7 +504,7 @@ export function ClusterCard({
           <>
             <p className="text-[12px] leading-relaxed mb-2"
               style={{ color: "rgba(255,255,255,0.78)" }}>
-              {item.summary}
+              {sanitizeCopy(item.summary)}
             </p>
 
             {item.why_it_matters && !analyzed && (
@@ -512,7 +512,7 @@ export function ClusterCard({
                 className="text-[11.5px] leading-relaxed mb-3 pl-2.5 italic"
                 style={{ color: "rgba(255,255,255,0.64)", borderLeft: `1px solid ${color}55` }}
               >
-                {item.why_it_matters}
+                {sanitizeCopy(item.why_it_matters)}
               </p>
             )}
 
@@ -781,7 +781,7 @@ function AnalysisNote({
       {/* 1. Why It Matters */}
       {item.why_it_matters && (
         <NoteSection label="Why It Matters" color={color} last={lastIdx === 0}>
-          {item.why_it_matters}
+          {sanitizeCopy(item.why_it_matters)}
         </NoteSection>
       )}
 
@@ -802,7 +802,7 @@ function AnalysisNote({
             )}
           </div>
           <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.74)" }}>
-            {impactBody}
+            {sanitizeCopy(impactBody)}
           </p>
         </div>
       )}

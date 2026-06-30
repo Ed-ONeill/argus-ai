@@ -164,7 +164,7 @@ function ImpactColumn({ title, icon, tickers, color }: { title: string; icon: Re
       <div className="flex flex-wrap gap-1">
         {tickers.length > 0
           ? tickers.map(t => <TickerChip key={t} ticker={t} color={color} />)
-          : <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.28)" }}>—</span>}
+          : <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.28)" }}>-</span>}
       </div>
     </div>
   );

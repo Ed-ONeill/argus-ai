@@ -184,7 +184,7 @@ function EmptySlotCard({ label, message, index }: { label: string; message: stri
       </span>
       <div className="flex flex-col items-center justify-center flex-1 gap-1 py-4 text-center">
         <span className="text-sm leading-none select-none"
-          style={{ color: "rgba(255,255,255,0.18)" }} aria-hidden>—</span>
+          style={{ color: "rgba(255,255,255,0.18)" }} aria-hidden>-</span>
         <p className="text-[9.5px] italic leading-snug"
           style={{ color: "rgba(255,255,255,0.28)" }}>{message}</p>
       </div>

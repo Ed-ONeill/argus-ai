@@ -32,7 +32,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Chip design, wafer fab, EDA equipment, and advanced packaging",
     keyAssets:              ["NVDA", "AMD", "AVGO", "QCOM", "MU", "ASML", "INTC", "TSM", "ARM", "AMAT", "LRCX", "KLAC", "MRVL", "TXN", "NXPI", "ON", "MCHP", "TER", "ENTG", "SMCI"],
     macroDrivers:           ["AI Capex", "Export Controls", "GPU Supply", "TSMC Yield", "HBM Cycle"],
-    geopoliticalExposure:   "Critical — Taiwan fab concentration and China export controls create multi-year supply chain bifurcation risk that is structurally repricing the sector.",
+    geopoliticalExposure:   "Critical, Taiwan fab concentration and China export controls create multi-year supply chain bifurcation risk that is structurally repricing the sector.",
     maTheme:                "Hyperscaler custom silicon programs and ARM licensing expansion are reshaping the competitive landscape as QUALCOMM and Intel navigate potential consolidation.",
   },
   {
@@ -45,7 +45,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Enterprise SaaS, cloud platforms, and cybersecurity",
     keyAssets:              ["MSFT", "CRM", "SNOW", "NOW", "WDAY", "ADBE", "PANW", "ORCL", "DDOG", "ZS", "CRWD", "FTNT", "PLTR", "MDB", "OKTA", "VEEV", "HUBS", "S", "GTLB", "SPLK"],
     macroDrivers:           ["10Y Yield", "Cloud ARR", "AI Integration", "NRR", "Security Spend"],
-    geopoliticalExposure:   "Moderate — data sovereignty regulations and government customer exposure create revenue risk in sensitive international deployments.",
+    geopoliticalExposure:   "Moderate, data sovereignty regulations and government customer exposure create revenue risk in sensitive international deployments.",
     maTheme:                "Consolidation around AI-native platforms is accelerating as legacy vendors acquire generative AI capabilities to defend ARR against displacement.",
   },
   {
@@ -58,7 +58,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Defense prime contractors, aerospace systems, and satellite",
     keyAssets:              ["LMT", "RTX", "NOC", "GD", "BA", "GE", "HII", "KTOS", "TDG", "HEICO", "BWXT", "LDOS", "SAIC", "AXON", "CW", "SPR", "CACI", "DRS", "HXL", "L3H"],
     macroDrivers:           ["NATO Budgets", "Defense Backlog", "NDAA", "Geopolitical Risk", "F-35 Production"],
-    geopoliticalExposure:   "Very High — ongoing conflicts and NATO 2% commitment expansion are direct budget drivers; reshoring defense production is a structural multi-year theme.",
+    geopoliticalExposure:   "Very High, ongoing conflicts and NATO 2% commitment expansion are direct budget drivers; reshoring defense production is a structural multi-year theme.",
     maTheme:                "European defense consolidation and U.S. prime contractor backlog expansion are creating multi-year order book visibility that decouples A&D from the broader industrial cycle.",
   },
   {
@@ -71,7 +71,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Upstream E&P, midstream infrastructure, and LNG exports",
     keyAssets:              ["XOM", "CVX", "COP", "OXY", "SLB", "HAL", "VLO", "LNG", "MPC", "PSX", "DVN", "EOG", "FANG", "WMB", "KMI", "ET", "EPD", "HES", "MRO", "APA"],
     macroDrivers:           ["WTI Price", "OPEC+ Quota", "NG Inventory", "Refinery Cap", "LNG Demand"],
-    geopoliticalExposure:   "Very High — OPEC+ supply decisions, pipeline geopolitics, and shipping disruptions create continuous price volatility that impacts the entire sector.",
+    geopoliticalExposure:   "Very High, OPEC+ supply decisions, pipeline geopolitics, and shipping disruptions create continuous price volatility that impacts the entire sector.",
     maTheme:                "Permian Basin consolidation created megacap dominance; remaining independents face capital return pressure rather than growth expectations from the buy-side.",
   },
   {
@@ -84,7 +84,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Banks, capital markets, insurance, and alternative asset managers",
     keyAssets:              ["JPM", "BAC", "GS", "MS", "BLK", "BX", "KKR", "AXP", "C", "WFC", "SCHW", "V", "MA", "PNC", "COF", "ARES", "APO", "OWL", "CG", "TROW"],
     macroDrivers:           ["Yield Curve", "NIM", "Credit Spreads", "CRE Exposure", "M&A Flow"],
-    geopoliticalExposure:   "Moderate — sanctions regimes, sovereign credit exposure, and cross-border capital flow restrictions respond to geopolitical escalation and affect fee income visibility.",
+    geopoliticalExposure:   "Moderate, sanctions regimes, sovereign credit exposure, and cross-border capital flow restrictions respond to geopolitical escalation and affect fee income visibility.",
     maTheme:                "Private credit managers are capturing market share from banks retreating under Basel III endgame; direct lending AUM expansion is the dominant structural theme.",
   },
   {
@@ -97,7 +97,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Industrial machinery, freight, logistics, and automation",
     keyAssets:              ["HON", "CAT", "DE", "UPS", "FDX", "CSX", "UNP", "ABB", "ITW", "EMR", "ETN", "PH", "ROK", "XYL", "GNRC", "FAST", "GWW", "CARR", "OTIS", "EXPD"],
     macroDrivers:           ["Freight PMI", "Infra Spending", "Capex Cycle", "Backlog Cover", "PMI"],
-    geopoliticalExposure:   "Moderate — reshoring and friend-shoring policies are creating domestic demand at the expense of cross-border supply chain efficiency.",
+    geopoliticalExposure:   "Moderate, reshoring and friend-shoring policies are creating domestic demand at the expense of cross-border supply chain efficiency.",
     maTheme:                "Industrial automation and robotics M&A is accelerating as labor cost pressure crosses the deployment ROI threshold across manufacturing verticals.",
   },
   {
@@ -110,7 +110,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Retail, consumer brands, e-commerce, and leisure",
     keyAssets:              ["WMT", "AMZN", "COST", "TGT", "MCD", "SBUX", "NKE", "TSLA", "HD", "LOW", "TJX", "LULU", "F", "GM", "RH", "BURL", "FIVE", "DG", "YUM", "CMG"],
     macroDrivers:           ["Real Wages", "CPI Delta", "Credit Utilization", "Savings Rate", "Confidence"],
-    geopoliticalExposure:   "Low-moderate — tariff exposure on manufactured goods and currency pass-through from import pricing create margin risk for consumer-facing brands.",
+    geopoliticalExposure:   "Low-moderate, tariff exposure on manufactured goods and currency pass-through from import pricing create margin risk for consumer-facing brands.",
     maTheme:                "Spending bifurcation between value channels and luxury is the dominant theme; discount retail consolidation and premiumization strategies are running in parallel.",
   },
   {
@@ -123,7 +123,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Pharmaceuticals, biotech pipelines, and healthcare services",
     keyAssets:              ["JNJ", "LLY", "MRK", "ABBV", "UNH", "PFE", "AMGN", "ISRG", "BMY", "GILD", "REGN", "MRNA", "BIIB", "VRTX", "ELV", "HUM", "CVS", "BSX", "MDT", "GEHC"],
     macroDrivers:           ["FDA Calendar", "GLP-1 Pipeline", "Drug Pricing Policy", "IRA Impact", "Biotech Funding"],
-    geopoliticalExposure:   "Moderate — drug pricing negotiations, generics competition from India and China, and WHO policy create regulatory margin risk across global franchises.",
+    geopoliticalExposure:   "Moderate, drug pricing negotiations, generics competition from India and China, and WHO policy create regulatory margin risk across global franchises.",
     maTheme:                "GLP-1 platform acquisitions and AI drug discovery investments are reshaping R&D capital allocation as big pharma repositions around obesity and metabolic disease.",
   },
   {
@@ -136,7 +136,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "REITs, data center operators, and commercial property",
     keyAssets:              ["AMT", "EQIX", "PLD", "DLR", "SPG", "PSA", "AVB", "VTR", "CCI", "SBAC", "ARE", "EQR", "ESS", "NNN", "O", "VICI", "WPC", "KIM", "STAG", "CBRE"],
     macroDrivers:           ["10Y Yield", "Cap Rates", "CRE Vacancy", "CMBS Spreads", "Data Ctr Demand"],
-    geopoliticalExposure:   "Low — primarily domestic exposure with cross-border data center deployment creating limited country-risk in EU regulatory and data residency environments.",
+    geopoliticalExposure:   "Low, primarily domestic exposure with cross-border data center deployment creating limited country-risk in EU regulatory and data residency environments.",
     maTheme:                "Data center REITs are structurally diverging from the broader REIT complex as AI-driven colocation demand creates pricing power absent from office and retail assets.",
   },
   {
@@ -149,7 +149,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Bitcoin, Ethereum, exchanges, and blockchain infrastructure",
     keyAssets:              ["BTC", "ETH", "COIN", "MSTR", "MARA", "RIOT", "SQ", "PYPL", "HUT", "CLSK", "CORZ", "BTBT", "IREN", "WULF", "BITO", "GBTC", "BNB", "SOL", "AVAX", "DOGE"],
     macroDrivers:           ["BTC ETF Flows", "Fed Policy", "Stablecoin Regulation", "Halving Cycle", "Institutional Adoption"],
-    geopoliticalExposure:   "High — fragmented regulatory frameworks across EU (MiCA), U.S. (SEC/CFTC), and emerging market bans create uneven operating environments for exchanges and protocols.",
+    geopoliticalExposure:   "High, fragmented regulatory frameworks across EU (MiCA), U.S. (SEC/CFTC), and emerging market bans create uneven operating environments for exchanges and protocols.",
     maTheme:                "Bitcoin ETF approval drove institutional adoption creating structural demand separated from the retail speculation cycle; exchange consolidation is accelerating.",
   },
   {
@@ -162,7 +162,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Power generators, grid operators, and nuclear energy",
     keyAssets:              ["NEE", "CEG", "VST", "AEP", "DUK", "SO", "PCG", "EXC", "D", "SRE", "ED", "AWK", "ES", "FE", "WEC", "XEL", "NRG", "AES", "FSLR", "ENPH"],
     macroDrivers:           ["10Y Yield", "Power Load Growth", "Nuclear PPA", "Grid Capex", "AI Power Demand"],
-    geopoliticalExposure:   "Low-moderate — uranium supply from Kazakhstan and rare earth dependencies for renewable buildout create limited but structural geopolitical exposure.",
+    geopoliticalExposure:   "Low-moderate, uranium supply from Kazakhstan and rare earth dependencies for renewable buildout create limited but structural geopolitical exposure.",
     maTheme:                "Nuclear PPA deals with data centers are creating a new pricing mechanism that decouples merchant generators from regulated utility multiples.",
   },
   {
@@ -175,7 +175,7 @@ export const INDUSTRIES: IndustryConfig[] = [
     description:            "Digital media, streaming platforms, telecom, and advertising",
     keyAssets:              ["GOOGL", "META", "NFLX", "DIS", "CMCSA", "T", "VZ", "TMUS", "SNAP", "PINS", "WBD", "PARA", "IAC", "TTD", "ROKU", "SPOT", "CHTR", "PUBM", "MGNI", "ZM"],
     macroDrivers:           ["Ad Spend", "ARPU Trend", "Streaming Churn", "5G Capex", "AI Targeting"],
-    geopoliticalExposure:   "Moderate — content restrictions, social media regulation (DSA/DMA), and telecom spectrum policy create revenue risk in key European and Asian markets.",
+    geopoliticalExposure:   "Moderate, content restrictions, social media regulation (DSA/DMA), and telecom spectrum policy create revenue risk in key European and Asian markets.",
     maTheme:                "Sports rights monetization and streaming consolidation are the primary themes as linear TV cash flow funds digital content investment at declining rates.",
   },
 ];

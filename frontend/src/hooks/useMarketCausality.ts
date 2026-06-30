@@ -75,13 +75,13 @@ function applyContext(chain: RawChain, ms: MarketState): RawChain {
       }
       break;
 
-    // VIX ↑ into a rally = expansion vol, not stress vol — reframe entirely
+    // VIX ↑ into a rally = expansion vol, not stress vol, reframe entirely
     case "vol-elevated":
       if (riskRegime === "risk-on") {
         return {
           ...chain,
           confidence: chain.confidence * 0.58,
-          contextNote: "Vol elevated into rally — participation breadth",
+          contextNote: "Vol elevated into rally, participation breadth",
           reframe:     "Expansion Vol",
           implications: chain.implications.map(imp => {
             if (imp.label === "Risk Assets ↓")
@@ -92,12 +92,12 @@ function applyContext(chain: RawChain, ms: MarketState): RawChain {
           }),
         };
       }
-      // VIX ↑ + yields falling = flight-to-safety regime — amplify
+      // VIX ↑ + yields falling = flight-to-safety regime, amplify
       if (ms.ratesRegime === "falling") {
         return {
           ...chain,
           confidence: Math.min(chain.confidence * 1.18, 0.98),
-          contextNote: "Flight-to-safety regime — bonds and hedging aligned",
+          contextNote: "Flight-to-safety regime, bonds and hedging aligned",
         };
       }
       break;
@@ -108,7 +108,7 @@ function applyContext(chain: RawChain, ms: MarketState): RawChain {
         return {
           ...chain,
           confidence: chain.confidence * 0.70,
-          contextNote: "Dollar bid with growth — not EM stress signal",
+          contextNote: "Dollar bid with growth, not EM stress signal",
           implications: chain.implications.map(imp =>
             imp.label === "EM Pressure"
               ? { ...imp, strength: "weak" as const, contextDampened: true }
@@ -129,7 +129,7 @@ function applyContext(chain: RawChain, ms: MarketState): RawChain {
       }
       break;
 
-    // Risk-on + low vol = confirmed environment — amplify
+    // Risk-on + low vol = confirmed environment, amplify
     case "risk-on":
       if (volRegime === "low") {
         return {
@@ -147,13 +147,13 @@ function applyContext(chain: RawChain, ms: MarketState): RawChain {
       }
       break;
 
-    // Yields ↓ + vol elevated = textbook flight-to-safety — amplify
+    // Yields ↓ + vol elevated = textbook flight-to-safety, amplify
     case "yields-falling":
       if (volRegime === "elevated" || volRegime === "high") {
         return {
           ...chain,
           confidence: Math.min(chain.confidence * 1.18, 0.98),
-          contextNote: "Flight-to-safety bid — bond and hedging signals aligned",
+          contextNote: "Flight-to-safety bid, bond and hedging signals aligned",
         };
       }
       break;
@@ -181,7 +181,7 @@ function detectConflicts(ms: MarketState): ConflictSignal[] {
     });
   }
 
-  // Vol spiking into a bid market — breadth vs. hedging divergence
+  // Vol spiking into a bid market, breadth vs. hedging divergence
   if ((volRegime === "elevated" || volRegime === "high") && riskRegime === "risk-on") {
     out.push({
       id:       "vol-vs-risk",
@@ -220,7 +220,7 @@ function detectConflicts(ms: MarketState): ConflictSignal[] {
       id:       "rates-fall-vol-spike",
       label:    "Yields ↓ / VIX ↑",
       tension:  "high",
-      note:     "Flight-to-safety + fear spike — recession/shock pattern",
+      note:     "Flight-to-safety + fear spike, recession/shock pattern",
       dominant: "vol",
     });
   }

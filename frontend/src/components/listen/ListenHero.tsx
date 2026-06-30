@@ -105,7 +105,7 @@ export function ListenHero({ episode, isSaved, onSave, onPlay }: ListenHeroProps
               style={{ background: topicColor, minHeight: "2rem" }}
             />
             <p className="text-xs text-ink-secondary leading-relaxed">
-              <span className="font-semibold text-ink">Why it matters — </span>
+              <span className="font-semibold text-ink">Why it matters: </span>
               {episode.why_it_matters}
             </p>
           </div>

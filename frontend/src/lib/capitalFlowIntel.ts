@@ -99,7 +99,7 @@ export interface BiggestFlow {
 }
 function firstSentence(s?: string): string | null {
   if (!s) return null;
-  const c = s.replace(/→|->/g, "—").trim();
+  const c = s.replace(/→|->/g, "-").trim();
   const dot = c.indexOf(". ");
   return dot > 12 ? c.slice(0, dot + 1) : c.length <= 150 ? c : null;
 }
@@ -183,10 +183,10 @@ export function takeaways(layers: CapitalFlowLayer[], themes: ThemeIntelligence[
   return [
     { label: "Institutional Positioning", value: rateHigh ? "Up-in-quality, short duration" : riskOff ? "Defensive, cash-heavy" : "Risk-on, deploying selectively" },
     { label: "What Smart Money Is Doing", value: dest.length ? `Rotating into ${dest.slice(0, 2).map(d => d.label).join(" & ")}` : "Holding, awaiting catalyst" },
-    { label: "Most Leveraged",            value: big?.beneficiaries.length ? big.beneficiaries.join(" · ") : "—" },
+    { label: "Most Leveraged",            value: big?.beneficiaries.length ? big.beneficiaries.join(" · ") : "-" },
     { label: "Most At Risk",              value: rateHigh ? "Commercial Real Estate · Regional Banks" : riskOff ? "Late-Stage VC · IPO pipeline" : "Crowded long-duration growth" },
     { label: "Catalysts",                 value: "Next FOMC · CPI print · earnings-season guidance" },
     { label: "Invalidation",              value: big?.invalidation ?? "Macro driver reverses." },
-    { label: "Expected Duration",         value: persist >= 6 ? "Multi-quarter (structural)" : persist >= 3 ? "1–2 quarters" : "Tactical (weeks)" },
+    { label: "Expected Duration",         value: persist >= 6 ? "Multi-quarter (structural)" : persist >= 3 ? "1-2 quarters" : "Tactical (weeks)" },
   ];
 }

@@ -13,7 +13,7 @@ import type { ThemeEpisodeGroup } from "@/lib/listenIntelligence";
  */
 
 function Widget({ w }: { w: IntelWidget }) {
-  const empty = !w.value || w.value === "—";
+  const empty = !w.value || w.value === "-";
   return (
     <div className="px-3.5 py-3">
       <p className="text-[8px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-1.5 leading-tight">{w.label}</p>
@@ -65,8 +65,7 @@ export function IntelligenceLayer({ episodes, themes, groups }: Props) {
           {/* Positioning strip — consensus + crowding read */}
           <div className="flex items-center gap-3.5 px-4 py-3 border-b border-edge flex-wrap">
             <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-ink-muted shrink-0">Positioning</span>
-            <span className="text-[17px] font-black tabular-nums leading-none shrink-0" style={{ color: c.color }}>{c.pct}%</span>
-            <span className="text-[10px] font-bold uppercase tracking-wide shrink-0" style={{ color: c.color }}>{c.label}</span>
+            <span className="text-[13px] font-black uppercase tracking-wide leading-none shrink-0" style={{ color: c.color }}>{c.display}</span>
             <div className="flex-1 min-w-[70px] h-1.5 rounded-full overflow-hidden flex" style={{ background: "rgba(239,68,68,0.18)" }}>
               <motion.div className="h-full" style={{ background: "#10B981" }}
                 initial={{ width: 0 }} animate={{ width: `${c.pct}%` }} transition={{ duration: 1.1, ease: [0.22, 0, 0.36, 1] }} />

@@ -1,11 +1,12 @@
 /**
- * lib/episodeIntel.ts — turns an episode + its matched theme into the investment
+ * lib/episodeIntel.ts, turns an episode + its matched theme into the investment
  * intelligence an episode card should lead with (implication, beneficiaries, at-
  * risk, catalyst, risk, contrarian) plus a CONTEXTUAL summary label that rotates
  * by the episode's signal profile, so cards read as dynamically generated rather
  * than templated. Light: reads stored theme fields only, no heavy engine.
  */
 
+import { sanitizeCopy } from "./utils";
 import type { Episode, ThemeIntelligence } from "./types";
 
 const isTicker = (s: string) => /^[A-Z][A-Z.]{0,5}$/.test(s);
@@ -20,7 +21,7 @@ function negativeSectors(t: ThemeIntelligence): string[] {
 }
 function firstSentence(s?: string): string | null {
   if (!s) return null;
-  const c = s.replace(/→|->/g, "—").trim();
+  const c = s.replace(/→/g, ", ").replace(/ {2,}/g, " ").trim();   // unicode arrows -> comma; keep "->"
   const dot = c.indexOf(". ");
   return dot > 12 ? c.slice(0, dot + 1) : c.length <= 165 ? c : null;
 }
@@ -77,13 +78,13 @@ export function episodeIntel(ep: Episode, theme: ThemeIntelligence | null | unde
   const narrative = firstSentence(theme.causal_narrative);
 
   const implication = dir > 0
-    ? `Tailwind for ${sector}${beneficiaries.length ? ` — ${beneficiaries.slice(0, 2).join(" / ")} the cleanest expressions` : ""}.`
+    ? `Tailwind for ${sector}${beneficiaries.length ? `, ${beneficiaries.slice(0, 2).join(" / ")} the cleanest expressions` : ""}.`
     : dir < 0
-    ? `Pressure on ${sector}${atRisk.length ? ` and ${atRisk[0]}` : ""} — the exposed names carry downgrade risk.`
+    ? `Pressure on ${sector}${atRisk.length ? ` and ${atRisk[0]}` : ""}, the exposed names carry downgrade risk.`
     : `Two-way setup in ${sector}; positioning is rotating faster than the narrative resolves.`;
 
   const contrarian = vol >= 60
-    ? `Two-sided debate — fade risk if the consensus call on ${sector} is wrong.`
+    ? `Two-sided debate, fade risk if the consensus call on ${sector} is wrong.`
     : (conf >= 72 && mom === "accelerating")
     ? "Consensus is leaning in; the contrarian risk is positioning, not thesis."
     : null;
@@ -98,10 +99,10 @@ export function episodeIntel(ep: Episode, theme: ThemeIntelligence | null | unde
   else if (h % 5 === 0) { label = "Catalyst"; read = `${catalyst} is the next test. ${implication}`; }
   else { label = NEUTRAL_LABELS[h % NEUTRAL_LABELS.length]; read = narrative && h % 2 === 0 ? narrative : implication; }
 
-  return { label, read, beneficiaries, atRisk, catalyst, risk, confidence: conf, contrarian };
+  return { label, read: sanitizeCopy(read), beneficiaries, atRisk, catalyst: sanitizeCopy(catalyst), risk: sanitizeCopy(risk), confidence: conf, contrarian: sanitizeCopy(contrarian) };
 }
 
-// ── Full institutional briefing — what an analyst hands you after listening ────
+// ── Full institutional briefing, what an analyst hands you after listening ────
 const uniq = (a: string[]) => [...new Set(a.filter(Boolean))];
 function stateVerb(t: ThemeIntelligence): string {
   switch (t.momentum_label) {
@@ -142,17 +143,17 @@ export function buildBriefing(ep: Episode, theme: ThemeIntelligence | null | und
   const secondOrder = (theme.second_order_effects ?? []).map(s => s.replace(/\s+/g, " ").trim()).filter(s => s.length > 12 && !s.includes("→"));
 
   return {
-    executiveSummary: desc
+    executiveSummary: sanitizeCopy(desc
       ? `${desc} The institutional read: ${implication}.`
-      : `${name} ${stateVerb(theme)} — ${implication}. ${narrative ?? `${driver} is the driver into ${sector}.`}`,
-    thesis: `${name} ${stateVerb(theme)}, centered in ${sector}. The case rests on ${driver} sustaining direction into ${sector}${ben.length ? `, with ${ben.join(", ")} the cleanest expressions` : ""}.`,
-    bull: dir >= 0
+      : `${name} ${stateVerb(theme)}, ${implication}. ${narrative ?? `${driver} is the driver into ${sector}.`}`),
+    thesis: sanitizeCopy(`${name} ${stateVerb(theme)}, centered in ${sector}. The case rests on ${driver} sustaining direction into ${sector}${ben.length ? `, with ${ben.join(", ")} the cleanest expressions` : ""}.`),
+    bull: sanitizeCopy(dir >= 0
       ? `If ${driver} holds, ${sector} earnings inflect and ${ben[0] ?? "the leaders"} re-rate as flows concentrate.`
-      : `Stabilization in ${driver} sets up a mean-reversion in oversold ${sector} names.`,
-    bear: `If ${risk.toLowerCase()}, ${sector} de-rates and the crowded ${dir >= 0 ? "long" : "short"} unwinds.`,
-    risks: uniq([risk + ".", ...secondOrder.slice(0, 1), "Positioning is crowded if the tape has already priced this."]).slice(0, 3),
-    catalysts: uniq([catalyst, ...(theme.related_macro_factors ?? []).slice(0, 2).map(m => `Watch ${m}`)]).slice(0, 3),
-    relatedNarratives: uniq([...(theme.related_macro_factors ?? []), ...(theme.podcast_topics ?? []), ...secondOrder.slice(0, 1)]).slice(0, 5),
+      : `Stabilization in ${driver} sets up a mean-reversion in oversold ${sector} names.`),
+    bear: sanitizeCopy(`If ${risk.toLowerCase()}, ${sector} de-rates and the crowded ${dir >= 0 ? "long" : "short"} unwinds.`),
+    risks: uniq([risk + ".", ...secondOrder.slice(0, 1), "Positioning is crowded if the tape has already priced this."]).slice(0, 3).map(sanitizeCopy),
+    catalysts: uniq([catalyst, ...(theme.related_macro_factors ?? []).slice(0, 2).map(m => `Watch ${m}`)]).slice(0, 3).map(sanitizeCopy),
+    relatedNarratives: uniq([...(theme.related_macro_factors ?? []), ...(theme.podcast_topics ?? []), ...secondOrder.slice(0, 1)]).slice(0, 5).map(sanitizeCopy),
   };
 }
 

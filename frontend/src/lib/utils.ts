@@ -6,6 +6,22 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// ── Copy normalization ──────────────────────────────────────────────────────
+// House style: no em dashes ("—") or en dashes ("–") in displayed copy. Run any
+// generated or backend-sourced string through this before render. Em dash becomes
+// a comma; en dash becomes a spaced hyphen; double spaces collapse. Plain ASCII
+// arrows ("->") and unicode arrows ("→") are left untouched.
+export function sanitizeCopy<T extends string | null | undefined>(s: T): T {
+  if (typeof s !== "string") return s;
+  return (s as string)
+    .replace(/\s*—\s*/g, ", ")          // em dash -> comma
+    .replace(/\s*–\s*/g, " - ")          // en dash -> spaced hyphen
+    .replace(/^[\s,]+/, "")               // no leading comma/space from a leading dash
+    .replace(/\s+([,;:.!?])/g, "$1")      // no space before punctuation
+    .replace(/ {2,}/g, " ")               // collapse double spaces
+    .trim() as T;
+}
+
 // ── Relative time ─────────────────────────────────────────────────────────────
 // One implementation for the whole product, so timestamps read identically on
 // every page and can never render "NaN" / "NaNd ago". Invalid or missing input

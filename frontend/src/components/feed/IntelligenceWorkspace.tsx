@@ -17,7 +17,7 @@ import { timeAgo } from "@/lib/utils";
 import type { ThemeIntelligence, StoryCluster } from "@/lib/types";
 
 /**
- * IntelligenceWorkspace — the selected theme, read the way a strategist would
+ * IntelligenceWorkspace, the selected theme, read the way a strategist would
  * think about it, NOT a wall of dashboard widgets. Every theme immediately answers
  * five questions in priority order:
  *
@@ -42,7 +42,7 @@ const dirColor = (d: string) => d === "bullish" ? GREEN : d === "bearish" ? RED 
 
 function firstSentence(text?: string | null): string | null {
   if (!text) return null;
-  const clean = text.replace(/→|->/g, "—").trim();
+  const clean = text.replace(/→/g, ", ").replace(/ {2,}/g, " ").trim();
   const dot = clean.indexOf(". ");
   return dot > 12 ? clean.slice(0, dot + 1) : clean.length <= 180 ? clean : null;
 }
@@ -75,7 +75,7 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   const invalidation = generateInvalidationSignals(theme)[0] ?? null;
   const mem = theme.memory;
 
-  // 1 — What changed?
+  // 1, What changed?
   let whatChanged: string;
   if (mem && mem.conviction_window_start !== mem.conviction_current) {
     const verb = mem.conviction_current > mem.conviction_window_start ? "strengthened" : "softened";
@@ -83,7 +83,7 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   } else if (theme.momentum_label === "accelerating") {
     whatChanged = `Momentum has entered an acceleration phase${(theme.momentum_delta ?? 0) > 0 ? ` (+${Math.round(theme.momentum_delta ?? 0)} vs prior cycle)` : ""}`;
   } else if (theme.momentum_label === "reversing") {
-    whatChanged = `${name} has begun to reverse — a positioning event rather than a consolidation`;
+    whatChanged = `${name} has begun to reverse, a positioning event rather than a consolidation`;
   } else if (theme.momentum_label === "emerging") {
     whatChanged = `${name} is newly emerging as a distinct, tradable narrative`;
   } else {
@@ -93,16 +93,16 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   else if (stories[0]) whatChanged += `; the latest read: “${stories[0].primary.title}”`;
   whatChanged += ".";
 
-  // 2 — Why does it matter?
+  // 2, Why does it matter?
   const whyMatters = explainMechanism(theme)
     || firstSentence(theme.causal_narrative)
     || `${driver} is transmitting into ${sector ?? "the broader tape"}; ${dir === "bearish" ? "that pressures" : "that rewards"} the names with the most direct exposure, and the move tends to spread before it is fully priced.`;
 
-  // 3 — Who benefits?
+  // 3, Who benefits?
   const benefitsText = best?.why || cases.bull
     || `Most direct exposure sits with the leaders in ${sector ?? "the theme's core sector"}.`;
 
-  // 4 — Who is hurt?
+  // 4, Who is hurt?
   const hurt = losers
     ? { text: losers.risk, tickers: losers.tickers, label: losers.sector }
     : cases.bear
@@ -189,12 +189,12 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
         <span className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: CYAN }}>{contextLabel}</span>
       </div>
 
-      {/* The read flows as an article — no box; depth comes from light + spacing. */}
+      {/* The read flows as an article, no box; depth comes from light + spacing. */}
       <motion.article initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.22, 0, 0.36, 1] }} className="relative">
         <div aria-hidden className="tg-halo absolute -top-20 -left-16 w-80 h-80 rounded-full pointer-events-none -z-10"
           style={{ background: `radial-gradient(circle, ${dc}${haloAlpha} 0%, transparent 70%)`, animationDuration: `${haloDur}s` }} />
 
-        {/* Masthead — headline + conviction, no container */}
+        {/* Masthead, headline + conviction, no container */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-2">
@@ -210,13 +210,13 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
           </div>
         </div>
 
-        {/* fading hairline — a rule, not a box */}
+        {/* fading hairline, a rule, not a box */}
         <div className="h-px mt-5 mb-7" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 55%, transparent)" }} />
 
-        {/* The five questions — flowing sections separated by air, cascade on change */}
+        {/* The five questions, flowing sections separated by air, cascade on change */}
         <motion.div key={t.id} initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: 0.07 } } }} className="space-y-8">
 
-          {/* 1 — What changed? (the lead, largest type) */}
+          {/* 1, What changed? (the lead, largest type) */}
           <Section n="01" label="What changed">
             <p className="text-[16px] sm:text-[17px] leading-[1.55] font-light" style={{ color: "rgba(255,255,255,0.9)" }}>{r.whatChanged}</p>
             {mem && mem.conviction_window_start !== mem.conviction_current && (
@@ -230,7 +230,7 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
             )}
           </Section>
 
-          {/* 2 — Why does it matter? */}
+          {/* 2, Why does it matter? */}
           <Section n="02" label="Why it matters">
             <p className="text-[14px] leading-[1.6] font-light" style={{ color: "rgba(255,255,255,0.8)" }}>{r.whyMatters}</p>
             <div className="flex items-center gap-2 flex-wrap mt-3.5">
@@ -250,7 +250,7 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
             </div>
           </Section>
 
-          {/* 3 + 4 — Who benefits / Who is hurt — two columns, thin accent rules only */}
+          {/* 3 + 4, Who benefits / Who is hurt, two columns, thin accent rules only */}
           <motion.div variants={CELL} className="grid md:grid-cols-2 gap-x-10 gap-y-7">
             <div className="pl-4" style={{ borderLeft: `2px solid ${GREEN}` }}>
               <SecLabel n="03" label="Who benefits" color={GREEN} />
@@ -266,12 +266,12 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
                   <p className="text-[12px] leading-[1.6] font-light mt-2.5" style={{ color: "rgba(255,255,255,0.6)" }}>{r.hurt.text}</p>
                 </>
               ) : (
-                <p className="text-[12px] leading-[1.6] font-light mt-2.5" style={{ color: "rgba(255,255,255,0.5)" }}>No clearly exposed losers — the risk is crowding into the same beneficiaries, which leaves the trade vulnerable to a reversal in {r.driver.toLowerCase()}.</p>
+                <p className="text-[12px] leading-[1.6] font-light mt-2.5" style={{ color: "rgba(255,255,255,0.5)" }}>No clearly exposed losers, the risk is crowding into the same beneficiaries, which leaves the trade vulnerable to a reversal in {r.driver.toLowerCase()}.</p>
               )}
             </div>
           </motion.div>
 
-          {/* 5 — What to watch next */}
+          {/* 5, What to watch next */}
           <Section n="05" label="What to watch next" color={CYAN}>
             <p className="text-[14px] leading-[1.6] font-light" style={{ color: "rgba(255,255,255,0.8)" }}>
               Watch <b className="font-semibold" style={{ color: "rgba(255,255,255,0.94)" }}>{r.watch}</b>.
@@ -280,20 +280,20 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
               {r.catalyst && (
                 <div className="flex items-baseline gap-2.5 text-[11px]">
                   <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: r.catalyst.imminent ? AMBER : CYAN }}>{r.catalyst.dateLabel}</span>
-                  <span className="font-light" style={{ color: "rgba(255,255,255,0.58)" }}>{r.catalyst.label} — {r.catalyst.reason}</span>
+                  <span className="font-light" style={{ color: "rgba(255,255,255,0.58)" }}>{r.catalyst.label}, {r.catalyst.reason}</span>
                 </div>
               )}
               {r.invalidation && (
                 <div className="flex items-baseline gap-2.5 text-[11px]">
                   <span className="text-[8px] font-bold uppercase tracking-wide shrink-0" style={{ color: RED }}>Invalidates</span>
-                  <span className="font-light" style={{ color: "rgba(255,255,255,0.48)" }}>{r.invalidation.condition} — {r.invalidation.impact}</span>
+                  <span className="font-light" style={{ color: "rgba(255,255,255,0.48)" }}>{r.invalidation.condition}, {r.invalidation.impact}</span>
                 </div>
               )}
             </div>
           </Section>
         </motion.div>
 
-        {/* Supporting evidence — quiet footnotes under a single hairline */}
+        {/* Supporting evidence, quiet footnotes under a single hairline */}
         {r.stories.length > 0 && (
           <div className="mt-9 pt-5" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
             <p className="text-[8px] font-bold uppercase tracking-[0.18em] mb-2.5" style={{ color: "rgba(255,255,255,0.3)" }}>Supporting Evidence</p>
@@ -343,7 +343,7 @@ function Section({ n, label, color, children }: { n: string; label: string; colo
 }
 
 function TickerChips({ tickers, color, context = [] }: { tickers: string[]; color: string; context?: (string | null)[] }) {
-  if (!tickers.length) return <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.4)" }}>—</span>;
+  if (!tickers.length) return <span className="text-[9.5px]" style={{ color: "rgba(255,255,255,0.4)" }}>-</span>;
   return (
     <div className="flex flex-wrap gap-x-2.5 gap-y-1">
       {tickers.map(tk => (

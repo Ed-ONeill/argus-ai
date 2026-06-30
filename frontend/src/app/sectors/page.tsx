@@ -36,7 +36,7 @@ const PATTERN_META: Record<string, { label: string; Icon: React.FC<{ size?: numb
 };
 
 // ── Narrative generator ───────────────────────────────────────────────────────
-// Pure function — builds a one-line analyst summary from existing data fields.
+// Pure function, builds a one-line analyst summary from existing data fields.
 // Zero LLM calls. Selects the most specific applicable template.
 
 function generateNarrative(
@@ -55,21 +55,21 @@ function generateNarrative(
     } compress growth valuations and drive positioning toward yield and commodity exposure.`;
   }
   if (rotation?.pattern === "ai-cycle") {
-    return `${leader.name} is capturing dominant signal — AI infrastructure and semiconductor catalysts are concentrating cross-asset momentum into the sector.`;
+    return `${leader.name} is capturing dominant signal, AI infrastructure and semiconductor catalysts are concentrating cross-asset momentum into the sector.`;
   }
   if (rotation?.pattern === "commodity") {
     const second = runner?.name ?? "Materials";
     return `Commodity sectors in control: ${leader.name} and ${second} signal concentration suggests supply-side catalysts are the primary market driver.`;
   }
   if (rotation?.pattern === "defensive") {
-    return `Defensive rotation underway — ${rotation.to_sector} is attracting signal as growth and consumer momentum fades against a ${regimeLabel ?? "challenging"} backdrop.`;
+    return `Defensive rotation underway, ${rotation.to_sector} is attracting signal as growth and consumer momentum fades against a ${regimeLabel ?? "challenging"} backdrop.`;
   }
   if (rotation?.pattern === "growth-to-value") {
     const second = runner?.name ?? "Industrials";
     return `Value rotation: ${leader.name} and ${second} are outpacing growth in signal strength, consistent with a ${regimeLabel ?? "value-favoring"} regime shift.`;
   }
 
-  // No rotation — describe regime alignment
+  // No rotation, describe regime alignment
   const tailwindSectors = sectorData.sectors
     .filter(s => s.regime_alignment === "tailwind")
     .slice(0, 2)
@@ -78,16 +78,16 @@ function generateNarrative(
   if (leader.regime_alignment === "tailwind" && tailwindSectors.length > 0) {
     const tail = tailwindSectors.join(" and ");
     const verb = tailwindSectors.length === 1 ? "carries" : "carry";
-    return `${tail} ${verb} regime tailwind in a ${regimeLabel ?? "supportive"} environment — signal concentration aligns with the macro backdrop.`;
+    return `${tail} ${verb} regime tailwind in a ${regimeLabel ?? "supportive"} environment, signal concentration aligns with the macro backdrop.`;
   }
   if (leader.regime_alignment === "headwind" && regimeLabel) {
-    return `${leader.name} leads despite a ${regimeLabel} headwind — signal divergence from regime positioning warrants monitoring for mean reversion.`;
+    return `${leader.name} leads despite a ${regimeLabel} headwind, signal divergence from regime positioning warrants monitoring for mean reversion.`;
   }
   if (runner) {
     return `${leader.name} and ${runner.name} are capturing the majority of market signal across ${sectorData.sectors.length} active sectors.`;
   }
 
-  return `${leader.name} leads with signal score ${leader.signal_score.toFixed(0)} — ${sectorData.sectors.length} sector${sectorData.sectors.length !== 1 ? "s" : ""} active.`;
+  return `${leader.name} leads with signal score ${leader.signal_score.toFixed(0)}, ${sectorData.sectors.length} sector${sectorData.sectors.length !== 1 ? "s" : ""} active.`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ function RotationCard({ signal, index }: { signal: RotationSignal; index: number
         </span>
       </div>
 
-      {/* Confidence bar — immediately under the header */}
+      {/* Confidence bar, immediately under the header */}
       <div className="h-[2px] rounded-full bg-raised overflow-hidden -mt-1.5">
         <motion.div
           className="h-full rounded-full"
@@ -153,7 +153,7 @@ function RotationCard({ signal, index }: { signal: RotationSignal; index: number
         />
       </div>
 
-      {/* FROM → TO — the primary visual anchor */}
+      {/* FROM → TO, the primary visual anchor */}
       <div className="flex items-baseline gap-2 pt-0.5">
         <span
           className="text-[11.5px] font-semibold leading-tight"
@@ -172,7 +172,7 @@ function RotationCard({ signal, index }: { signal: RotationSignal; index: number
         </span>
       </div>
 
-      {/* Reason — data-forward, no truncation */}
+      {/* Reason, data-forward, no truncation */}
       <p className="text-[11px] text-ink-secondary/75 leading-relaxed">
         {signal.reason}
       </p>
@@ -262,7 +262,7 @@ export default function SectorsPage() {
             )}
           </div>
 
-          {/* Narrative — analyst pull-quote anchored to dominant sector color */}
+          {/* Narrative, analyst pull-quote anchored to dominant sector color */}
           {!isLoading && narrative ? (
             <p
               className="pl-3.5 py-0.5 border-l-[2px] text-[12.5px] text-ink-secondary leading-relaxed"

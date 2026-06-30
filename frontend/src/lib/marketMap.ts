@@ -1,18 +1,19 @@
 /**
- * lib/marketMap.ts — Argus Market Map adapter + morning desk note.
+ * lib/marketMap.ts, Argus Market Map adapter + morning desk note.
  *
  * Turns live theme intelligence + market state into:
  *   • a GraphModel for the reusable NetworkGraph engine (macro driver → theme →
  *     sector → assets, a capital-transmission map of how markets are moving), and
  *   • a "Today's Market Story" institutional desk note (deterministic, no LLM).
  *
- * Pure read of stored theme fields — nothing invented.
+ * Pure read of stored theme fields, nothing invented.
  */
 
 import type { ThemeIntelligence } from "@/lib/types";
 import { themeBeneficiaries } from "@/lib/themeIntelligence";
 import { tickerInfo } from "@/lib/maIntelligence";
 import { cleanThemeName } from "@/app/markets/marketsShared";
+import { sanitizeCopy } from "@/lib/utils";
 import { dirOf, deriveDriver, deriveSector } from "@/lib/themeTransmission";
 import type { GraphModel, GraphNode, GraphEdge, RelationType } from "@/lib/graph/types";
 
@@ -32,7 +33,7 @@ const MKT_TICKERS: Record<string, { name: string; sector: string }> = {
   SO:  { name: "Southern Company", sector: "Utilities" },
   ARES:{ name: "Ares Management", sector: "Financials" },
   TLT: { name: "iShares 20+ Yr Treasury", sector: "Rates" },
-  IEF: { name: "iShares 7–10 Yr Treasury", sector: "Rates" },
+  IEF: { name: "iShares 7-10 Yr Treasury", sector: "Rates" },
   HYG: { name: "iShares High-Yield Credit", sector: "Credit" },
   USO: { name: "United States Oil Fund", sector: "Energy" },
   GLD: { name: "SPDR Gold Shares", sector: "Commodities" },
@@ -90,7 +91,7 @@ export function buildMarketMap(themes: ThemeIntelligence[], snap: MarketSnapshot
     add({ id: secId, label: sector, kind: "sector", role: "sector", stage: 2, themes: [name], reason: "Sector carrying the transmission" });
     link(thId, secId, "sector", 0.66, 2, "Sector", [name]);
 
-    // assets — coloured by the theme's direction (bullish=beneficiary, bearish=pressured)
+    // assets, coloured by the theme's direction (bullish=beneficiary, bearish=pressured)
     const role: RelationType = dir === "bearish" ? "competitor" : dir === "neutral" ? "supplier" : "beneficiary";
     tickers.forEach((tk, i) => {
       const meta = assetMeta(tk);
@@ -103,7 +104,7 @@ export function buildMarketMap(themes: ThemeIntelligence[], snap: MarketSnapshot
   return { id: `market:${Date.now()}`, centerId, title: "Argus Market Map", subtitle: regimeLabel, nodes, edges };
 }
 
-// ── Today's Market Story — institutional morning desk note (deterministic) ─────
+// ── Today's Market Story, institutional morning desk note (deterministic) ─────
 export interface MarketStory { paragraph: string; watch: string; movers: string[] }
 
 function confirmSignal(driver: string): string {
@@ -131,7 +132,7 @@ export function buildMarketStory(themes: ThemeIntelligence[], snap: MarketSnapsh
   const lead = ranked[0];
   const driver = deriveDriver(lead);
 
-  // 1 — what is moving
+  // 1, what is moving
   const leadName = cleanThemeName(lead.name).toLowerCase();
   let s1: string;
   if (bull.length && bear.length) {
@@ -144,7 +145,7 @@ export function buildMarketStory(themes: ThemeIntelligence[], snap: MarketSnapsh
     s1 = `Markets are working through ${leadName} without a decisive regime tilt.`;
   }
 
-  // 2 — rotation
+  // 2, rotation
   let s2: string;
   if (favored.length && pressured.length) {
     s2 = `The immediate rotation favors ${favored.join(" and ")} while keeping ${pressured.join(" and ")} under pressure.`;
@@ -153,15 +154,15 @@ export function buildMarketStory(themes: ThemeIntelligence[], snap: MarketSnapsh
   } else if (pressured.length) {
     s2 = `${pressured.join(" and ")} carry the pressure; nothing is yet attracting decisive sponsorship.`;
   } else {
-    s2 = `Sector leadership is unsettled — positioning is rotating faster than the narrative is resolving.`;
+    s2 = `Sector leadership is unsettled, positioning is rotating faster than the narrative is resolving.`;
   }
 
-  // 3 — what to watch
+  // 3, what to watch
   const s3 = `The next signal is ${confirmSignal(driver)}.`;
 
   return {
-    paragraph: `${s1} ${s2}`,
-    watch: s3,
+    paragraph: sanitizeCopy(`${s1} ${s2}`),
+    watch: sanitizeCopy(s3),
     movers: ranked.slice(0, 4).map(t => cleanThemeName(t.name)),
   };
 }

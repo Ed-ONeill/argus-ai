@@ -190,7 +190,7 @@ export default function IndustriesPage() {
           <div className="flex flex-wrap items-end gap-7">
             <div>
               <p className="text-[26px] font-black text-white tabular-nums leading-none">
-                {isLoading ? "—" : activeCount}
+                {isLoading ? "-" : activeCount}
               </p>
               <p className="text-[9px] font-semibold text-white/35 uppercase tracking-[0.15em] mt-1">
                 Active Sectors
@@ -199,7 +199,7 @@ export default function IndustriesPage() {
             <div className="w-px h-10 bg-white/10 hidden sm:block" />
             <div>
               <p className="text-[26px] font-black text-white tabular-nums leading-none">
-                {isLoading ? "—" : totalStories}
+                {isLoading ? "-" : totalStories}
               </p>
               <p className="text-[9px] font-semibold text-white/35 uppercase tracking-[0.15em] mt-1">
                 Active Stories
@@ -208,7 +208,7 @@ export default function IndustriesPage() {
             <div className="w-px h-10 bg-white/10 hidden sm:block" />
             <div>
               <p className="text-[15px] font-bold text-white/80 leading-none">
-                {isLoading ? "—" : (dominant ?? "No Leader")}
+                {isLoading ? "-" : (dominant ?? "No Leader")}
               </p>
               <p className="text-[9px] font-semibold text-white/35 uppercase tracking-[0.15em] mt-1">
                 Leading Sector

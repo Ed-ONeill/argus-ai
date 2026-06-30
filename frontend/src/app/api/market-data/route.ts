@@ -91,13 +91,13 @@ const CRUMB_REFRESH_AHEAD_MS = 3 * 60 * 1000;   // refresh in background this lo
 let _crumbCache: CrumbCache | null = null;
 let _crumbInflight: Promise<{ crumb: string; cookies: string }> | null = null;
 
-// Acquire a fresh crumb (consent cookies → getcrumb). Never throws — returns an
+// Acquire a fresh crumb (consent cookies → getcrumb). Never throws - returns an
 // empty crumb on failure so callers proceed (Yahoo may then 401 and fall back).
 async function acquireCrumb(): Promise<{ crumb: string; cookies: string }> {
   const now = Date.now();
 
   // Step 1: Visit Yahoo Finance to receive session cookies (A1, A3, etc.).
-  // NOTE: fc.yahoo.com (old GDPR consent endpoint) is now defunct — returns 404.
+  // NOTE: fc.yahoo.com (old GDPR consent endpoint) is now defunct - returns 404.
   const CONSENT_URLS = ["https://finance.yahoo.com", "https://yahoo.com"];
   let cookies = "";
   for (const consentUrl of CONSENT_URLS) {
@@ -122,7 +122,7 @@ async function acquireCrumb(): Promise<{ crumb: string; cookies: string }> {
         ` cookies=${rawCookies.length} keys=${rawCookies.map(c => c.split("=")[0]).join(",") || "(none)"}`,
       );
     } catch (err) {
-      console.warn(`[market-data] consent: ${consentUrl} failed —`, String(err));
+      console.warn(`[market-data] consent: ${consentUrl} failed -`, String(err));
     }
   }
 
@@ -149,11 +149,11 @@ async function acquireCrumb(): Promise<{ crumb: string; cookies: string }> {
         console.warn(`[market-data] crumb: ${host} status=${crumbRes.status} body=${body.slice(0, 80)}`);
       }
     } catch (err) {
-      console.warn(`[market-data] crumb: ${host} error —`, String(err));
+      console.warn(`[market-data] crumb: ${host} error -`, String(err));
     }
   }
 
-  console.warn("[market-data] crumb: could not acquire — proceeding without auth (expect 401s)");
+  console.warn("[market-data] crumb: could not acquire - proceeding without auth (expect 401s)");
   return { crumb: "", cookies };
 }
 
@@ -317,7 +317,7 @@ async function fetchFromStooq(key: string, label: string): Promise<TickerData> {
     throw new Error(`Stooq: invalid price for ${key}: "${col("close")}"`);
   }
 
-  // Day open is used as proxy for previous close — directionally correct for intraday display
+  // Day open is used as proxy for previous close - directionally correct for intraday display
   const ref           = open > 0 && isFinite(open) ? open : close;
   const change        = close - ref;
   const changePercent = ref > 0 ? (change / ref) * 100 : 0;
@@ -413,9 +413,9 @@ async function fetchTicker(
   // BTC: CoinGecko → Binance → Yahoo fallback
   if (key === "BTC-USD") {
     try { return await fetchBTCFromCoinGecko(); }
-    catch (err) { console.warn(`[market-data] provider=coingecko symbol=BTC-USD status=failed —`, String(err)); }
+    catch (err) { console.warn(`[market-data] provider=coingecko symbol=BTC-USD status=failed -`, String(err)); }
     try { return await fetchBTCFromBinance(); }
-    catch (err) { console.warn(`[market-data] provider=binance symbol=BTC-USD status=failed —`, String(err)); }
+    catch (err) { console.warn(`[market-data] provider=binance symbol=BTC-USD status=failed -`, String(err)); }
     console.log(`[market-data] provider=yahoo symbol=BTC-USD status=fallback`);
     return fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
   }
@@ -426,9 +426,9 @@ async function fetchTicker(
   // before every Yahoo call. It is kept only as a fallback if Yahoo also fails.
   if (key === "TNX") {
     try { return await fetchTNXFromTreasury(); }
-    catch (err) { console.warn(`[market-data] provider=treasury symbol=TNX status=failed —`, String(err)); }
+    catch (err) { console.warn(`[market-data] provider=treasury symbol=TNX status=failed -`, String(err)); }
     try { return await fetchTickerFromYahoo(key, symbol, label, crumb, cookies); }
-    catch (err) { console.warn(`[market-data] provider=yahoo symbol=TNX status=failed —`, String(err)); }
+    catch (err) { console.warn(`[market-data] provider=yahoo symbol=TNX status=failed -`, String(err)); }
     console.log(`[market-data] provider=stooq symbol=TNX status=last_resort`);
     return fetchFromStooq(key, label);
   }
@@ -438,14 +438,14 @@ async function fetchTicker(
     return await fetchTickerFromYahoo(key, symbol, label, crumb, cookies);
   } catch (err) {
     if (STOOQ_SYMBOLS[key]) {
-      console.warn(`[market-data] provider=yahoo symbol=${key} status=failed, trying stooq —`, String(err));
+      console.warn(`[market-data] provider=yahoo symbol=${key} status=failed, trying stooq -`, String(err));
       return fetchFromStooq(key, label);
     }
     throw err;
   }
 }
 
-// ── Cached ticker fetch — stale fallback on total provider failure ────────────
+// ── Cached ticker fetch - stale fallback on total provider failure ────────────
 
 async function fetchTickerCached(
   key:     string,

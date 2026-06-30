@@ -1,5 +1,5 @@
 /**
- * themeEvolution.ts — Narrative Evolution Engine
+ * themeEvolution.ts, Narrative Evolution Engine
  *
  * Maps ThemeIntelligence backend signals to one of 7 evolution states,
  * using momentum_label as the primary signal enriched by persistence,
@@ -24,10 +24,10 @@ export type ThemeEvolutionState =
 export interface ThemeEvolutionMeta {
   label:       string;
   icon:        string;
-  color:       string;   // hex — for inline-style pages
-  bg:          string;   // rgba — for inline-style pages
-  border:      string;   // rgba — for inline-style pages
-  tailwind:    string;   // Tailwind utility string — for CSS-variable pages
+  color:       string;   // hex, for inline-style pages
+  bg:          string;   // rgba, for inline-style pages
+  border:      string;   // rgba, for inline-style pages
+  tailwind:    string;   // Tailwind utility string, for CSS-variable pages
   description: string;   // one phrase explaining the state
 }
 
@@ -60,7 +60,7 @@ export const THEME_EVOLUTION_META: Record<ThemeEvolutionState, ThemeEvolutionMet
     label: "Peaking", icon: "⚑",
     color: "#fbbf24", bg: "rgba(251,191,36,0.10)",   border: "rgba(251,191,36,0.24)",
     tailwind: "text-amber-600 bg-amber-50 border-amber-200",
-    description: "Saturation signals emerging — watch for reversal",
+    description: "Saturation signals emerging, watch for reversal",
   },
   weakening: {
     label: "Weakening", icon: "↓",
@@ -72,7 +72,7 @@ export const THEME_EVOLUTION_META: Record<ThemeEvolutionState, ThemeEvolutionMet
     label: "Reversing", icon: "↓↓",
     color: "#ef4444", bg: "rgba(239,68,68,0.10)",    border: "rgba(239,68,68,0.24)",
     tailwind: "text-red-600 bg-red-50 border-red-200",
-    description: "Prior consensus breaking down — regime shift risk",
+    description: "Prior consensus breaking down, regime shift risk",
   },
 };
 
@@ -88,28 +88,28 @@ export function computeThemeEvolutionState(t: ThemeIntelligence): ThemeEvolution
   const industries = t.related_industries ?? [];
   const quality   = t.signal_quality     ?? "developing";
 
-  // 1. Reversing — strongest negative signal
+  // 1. Reversing, strongest negative signal
   if (label === "reversing") return "reversing";
   if (delta < -8 && persist < 40) return "reversing";
 
-  // 2. Weakening — cooling or meaningful negative delta
+  // 2. Weakening, cooling or meaningful negative delta
   if (label === "cooling" || delta < -3) return "weakening";
 
-  // 3. Peaking — high persistence + volatility spike + stalling delta
+  // 3. Peaking, high persistence + volatility spike + stalling delta
   //    Signals the theme is at a saturation inflection, not yet retreating
   if (persist > 70 && volatil > 50 && delta < 4 && label !== "accelerating") return "peaking";
 
-  // 4. Accelerating — backend confirms or strong positive delta
+  // 4. Accelerating, backend confirms or strong positive delta
   if (label === "accelerating") return "accelerating";
   if (delta > 8 && quality !== "speculative") return "accelerating";
 
-  // 5. Broadening — spreading through new sectors (breadth + cross-category)
+  // 5. Broadening, spreading through new sectors (breadth + cross-category)
   if (confirmed && breadth > 55 && industries.length >= 3) return "broadening";
 
-  // 6. Stabilizing — established, low-volatility holding pattern
+  // 6. Stabilizing, established, low-volatility holding pattern
   if ((label === "stable" || persist > 50) && Math.abs(delta) < 5) return "stabilizing";
 
-  // 7. Strengthening — positive but not yet broadening/accelerating
+  // 7. Strengthening, positive but not yet broadening/accelerating
   if (label === "strengthening" || label === "emerging") return "strengthening";
 
   return "stabilizing";
@@ -119,13 +119,13 @@ export function computeThemeEvolutionState(t: ThemeIntelligence): ThemeEvolution
 
 export function getEvolutionNarrative(name: string, state: ThemeEvolutionState): string {
   switch (state) {
-    case "accelerating":  return `${name} gaining momentum — signal score and source count rising sharply.`;
+    case "accelerating":  return `${name} gaining momentum, signal score and source count rising sharply.`;
     case "strengthening": return `${name} building conviction with growing evidence and cross-source confirmation.`;
-    case "broadening":    return `${name} spreading to new sectors — cross-category confirmation growing.`;
-    case "stabilizing":   return `${name} holding at current significance — established but not advancing.`;
-    case "peaking":       return `${name} showing saturation signals — watch for incoming reversal indicators.`;
-    case "weakening":     return `${name} losing signal strength — fewer sources and declining confidence.`;
-    case "reversing":     return `${name} reversing — prior consensus breaking down rapidly.`;
+    case "broadening":    return `${name} spreading to new sectors, cross-category confirmation growing.`;
+    case "stabilizing":   return `${name} holding at current significance, established but not advancing.`;
+    case "peaking":       return `${name} showing saturation signals, watch for incoming reversal indicators.`;
+    case "weakening":     return `${name} losing signal strength, fewer sources and declining confidence.`;
+    case "reversing":     return `${name} reversing, prior consensus breaking down rapidly.`;
   }
 }
 
@@ -182,7 +182,7 @@ export const THEME_LIFECYCLE_META: Record<ThemeLifecycleStage, ThemeLifecycleMet
   emerging:  {
     label: "Emerging",  color: "#38bdf8",
     bg: "rgba(56,189,248,0.08)",   border: "rgba(56,189,248,0.22)",
-    description: "Newly detected — conviction still forming",
+    description: "Newly detected, conviction still forming",
   },
   building:  {
     label: "Building",  color: "#a78bfa",
@@ -197,12 +197,12 @@ export const THEME_LIFECYCLE_META: Record<ThemeLifecycleStage, ThemeLifecycleMet
   maturing:  {
     label: "Maturing",  color: "#f59e0b",
     bg: "rgba(245,158,11,0.08)",   border: "rgba(245,158,11,0.22)",
-    description: "Past peak — watch for rotation or reversal",
+    description: "Past peak, watch for rotation or reversal",
   },
   retiring:  {
     label: "Retiring",  color: "#94a3b8",
     bg: "rgba(148,163,184,0.06)",  border: "rgba(148,163,184,0.16)",
-    description: "Signal fading — consensus unwinding",
+    description: "Signal fading, consensus unwinding",
   },
 };
 
@@ -226,6 +226,6 @@ export function computeThemeLifecycleStage(t: ThemeIntelligence): ThemeLifecycle
   // Dominant: well-established, active signal
   if (persist >= 55 && strength !== "weak") return "dominant";
 
-  // Building: in between — growing but not yet established
+  // Building: in between, growing but not yet established
   return "building";
 }

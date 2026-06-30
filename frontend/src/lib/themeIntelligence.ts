@@ -1,5 +1,5 @@
 /**
- * themeIntelligence.ts — Argus Intelligence Layer
+ * themeIntelligence.ts, Argus Intelligence Layer
  *
  * Pure deterministic functions over existing ThemeIntelligence data.
  * Zero LLM calls. Zero new API calls. Everything derived from feed response fields.
@@ -10,7 +10,7 @@ import type { ThemeIntelligence, SectorData } from "./types";
 // ── Phase 2: Memory-Aware Intelligence ────────────────────────────────────────
 // Consume the persistent cross-session theme memory (theme.memory, attached
 // server-side from app/theme_memory.py) so conclusions reflect how a theme has
-// evolved across sessions — not just today's snapshot. Every helper no-ops
+// evolved across sessions, not just today's snapshot. Every helper no-ops
 // gracefully when memory is absent (cold start), so behaviour is unchanged until
 // memory accumulates, and every emitted figure traces to a stored observation.
 
@@ -50,8 +50,8 @@ export function memorySentences(t: ThemeIntelligence, maxSectors = 1): string[] 
   const out: string[] = [];
 
   // "First detected 18 days ago and conviction has increased from 58 to 81."
-  // User-facing memory copy uses conviction_first — the persistent first-detection
-  // anchor — so it states the true full-history move, not the recent ~6-cycle
+  // User-facing memory copy uses conviction_first, the persistent first-detection
+  // anchor, so it states the true full-history move, not the recent ~6-cycle
   // window. (conviction_window_start stays on the type/store for internal use.)
   const d = m.first_seen_days_ago;
   const since = d >= 1 ? `${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"} ago`
@@ -71,7 +71,7 @@ export function memorySentences(t: ThemeIntelligence, maxSectors = 1): string[] 
   } else if (m.status === "recurring") {
     out.push(`A recurring theme, observed across ${m.sessions_observed} sessions.`);
   } else if (m.status === "stale") {
-    out.push(`Dormant — last confirmed ${Math.round(m.last_seen_hours_ago)}h ago.`);
+    out.push(`Dormant, last confirmed ${Math.round(m.last_seen_hours_ago)}h ago.`);
   }
 
   // "Semiconductors have confirmed this theme in 6 of 9 sessions."
@@ -188,7 +188,7 @@ export interface ConfidenceComponent {
 export function decomposeConfidence(t: ThemeIntelligence): ConfidenceComponent[] {
   const components: ConfidenceComponent[] = [];
 
-  // Evidence base — evidence_count scaled to 0-100 (10 strong pieces = full)
+  // Evidence base, evidence_count scaled to 0-100 (10 strong pieces = full)
   const evidencePct = Math.min(Math.round((t.evidence_count ?? 0) * 10), 100);
   components.push({
     label: "Evidence",
@@ -197,7 +197,7 @@ export function decomposeConfidence(t: ThemeIntelligence): ConfidenceComponent[]
     description: `${t.evidence_count ?? 0} evidence points`,
   });
 
-  // Persistence — directly from field
+  // Persistence, directly from field
   const persist = t.persistence_score ?? 50;
   components.push({
     label: "Persistence",
@@ -206,7 +206,7 @@ export function decomposeConfidence(t: ThemeIntelligence): ConfidenceComponent[]
     description: `${t.persistence_days ?? 0}d, ${t.persistence_cycles ?? 0} cycles`,
   });
 
-  // Breadth — sector spread
+  // Breadth, sector spread
   const breadth = t.breadth_score ?? 50;
   components.push({
     label: "Breadth",
@@ -215,7 +215,7 @@ export function decomposeConfidence(t: ThemeIntelligence): ConfidenceComponent[]
     description: `${t.related_industries.length} industries`,
   });
 
-  // Competition penalty — shown as a drag (negative component)
+  // Competition penalty, shown as a drag (negative component)
   const penalty = t.competition_penalty ?? 0;
   if (penalty > 0.04) {
     components.push({
@@ -338,7 +338,7 @@ export function detectContradictions(
     }
   }
 
-  // Deduplicate by severity — keep highest severity when multiple conflicts reference same theme
+  // Deduplicate by severity, keep highest severity when multiple conflicts reference same theme
   return result
     .sort((a, b) => {
       const r = { high: 0, moderate: 1, low: 2 } as const;
@@ -355,7 +355,7 @@ export function getConflictedThemeIds(contradictions: Contradiction[]): Set<stri
   return ids;
 }
 
-// ── 4. M&A Intelligence — why deal activity is occurring ─────────────────────
+// ── 4. M&A Intelligence, why deal activity is occurring ─────────────────────
 
 interface DealSummary {
   dealType: string;
@@ -643,7 +643,7 @@ export function generateIntelligenceAlerts(themes: ThemeIntelligence[]): Intelli
 // `CatalystCalendarProvider`, so the dated events can come from a real feed
 // (an economic-calendar API, a backend route, or a config file) without
 // touching any consumer. The shipped default, `placeholderCalendarProvider`,
-// is PLACEHOLDER INFRASTRUCTURE — it derives indicative dates from known
+// is PLACEHOLDER INFRASTRUCTURE, it derives indicative dates from known
 // release cadences so the framework and UI work today. Swap in a real source at
 // app init with `setCatalystCalendarProvider(...)`; nothing downstream changes.
 
@@ -912,7 +912,7 @@ export function generateNextCatalysts(theme: ThemeIntelligence, now: Date = new 
     });
   }
 
-  // Chronological — the soonest catalyst is the most actionable.
+  // Chronological, the soonest catalyst is the most actionable.
   matched.sort((a, b) => a.daysAway - b.daysAway);
 
   // Always datable: fall back to the next rate decision when nothing matched.
@@ -1704,7 +1704,7 @@ export function generateIntelligenceBriefing(theme: ThemeIntelligence): string[]
 
   const sentences: string[] = [];
 
-  // Sentence 1: What is happening — theme state and primary driver
+  // Sentence 1: What is happening, theme state and primary driver
   const stateVerb =
     ml === "accelerating"  ? "continues to accelerate" :
     ml === "strengthening" ? "is strengthening"        :
@@ -1718,7 +1718,7 @@ export function generateIntelligenceBriefing(theme: ThemeIntelligence): string[]
 
   sentences.push(`${name} ${stateVerb}${driverClause}.`);
 
-  // Sentence 2: Why it matters — teach the economic transmission first
+  // Sentence 2: Why it matters, teach the economic transmission first
   const eduMech = explainMechanism(theme);
   if (eduMech) {
     sentences.push(eduMech);

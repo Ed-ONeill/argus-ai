@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { ExternalLink, Play, Bookmark, BookmarkCheck, Clock, Sparkles, FileText, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, timeAgo, sanitizeCopy } from "@/lib/utils";
 import { TOPIC_COLOR } from "./TopicFilterBar";
 import { TickerChip } from "@/components/common/TickerChip";
 import { confColor } from "@/app/markets/marketsShared";
@@ -152,7 +152,7 @@ export function EpisodeCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-2 mb-1">
             <h3 className="flex-1 text-[12.5px] font-semibold text-ink leading-snug line-clamp-2">
-              {episode.title}
+              {sanitizeCopy(episode.title)}
             </h3>
             <button
               onClick={e => { e.stopPropagation(); onSave(); }}
@@ -192,7 +192,7 @@ export function EpisodeCard({
           </div>
 
           <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-1 mb-1.5">
-            {whyListen ?? episode.why_it_matters}
+            {sanitizeCopy(whyListen ?? episode.why_it_matters)}
           </p>
 
           {/* Theme connections + industry pill */}
@@ -290,7 +290,7 @@ export function EpisodeCard({
 
         {/* ── Title — the headline of the note ── */}
         <h3 className="text-[15px] font-bold text-ink leading-[1.25] line-clamp-2 mb-2.5 tracking-[-0.01em] group-hover/card:text-navy transition-colors">
-          {episode.title}
+          {sanitizeCopy(episode.title)}
         </h3>
 
         {/* ── The read — contextual label rotates by the episode's signal ── */}
@@ -299,7 +299,7 @@ export function EpisodeCard({
             <Sparkles size={9} style={{ color: "#52b0c8" }} />
             <span className="text-[7.5px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(82,176,200,0.95)" }}>{intel?.label ?? "Why It Matters"}</span>
           </div>
-          <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-3">{intel?.read ?? whyListen ?? episode.why_it_matters}</p>
+          <p className="text-2xs text-ink-secondary leading-relaxed line-clamp-3">{intel?.read ?? sanitizeCopy(whyListen ?? episode.why_it_matters)}</p>
         </div>
 
         {/* ── Beneficiaries / at-risk — the trade ── */}
@@ -398,7 +398,7 @@ export function EpisodeCard({
                     )}
                   </>
                 ) : (
-                  <p className="text-2xs text-ink-secondary leading-relaxed">{aiSummary}</p>
+                  <p className="text-2xs text-ink-secondary leading-relaxed">{sanitizeCopy(aiSummary)}</p>
                 )}
 
                 {similar.length > 0 && (
@@ -485,7 +485,7 @@ function BriefEpisodes({ label, episodes, onPlay, accent }: { label: string; epi
         {episodes.map(ep => (
           <button key={ep.id} onClick={e => { e.stopPropagation(); onPlay(ep); }} className="w-full flex items-center gap-1.5 text-left group/se">
             <Play size={8} className="shrink-0 opacity-50 group-hover/se:opacity-90" style={{ color: accent }} />
-            <span className="text-[10px] leading-snug truncate flex-1 text-ink-secondary group-hover/se:text-ink transition-colors">{ep.title}</span>
+            <span className="text-[10px] leading-snug truncate flex-1 text-ink-secondary group-hover/se:text-ink transition-colors">{sanitizeCopy(ep.title)}</span>
             <span className="text-[8.5px] shrink-0 text-ink-faint">{ep.show_name}</span>
           </button>
         ))}

@@ -1,9 +1,9 @@
 /**
- * lib/listenSections.ts — derivations for the Listen page's investment questions.
+ * lib/listenSections.ts, derivations for the Listen page's investment questions.
  *
  * The page is organized by the questions an allocator asks, not by podcast
  * category. Each function answers exactly one question from the already-extracted
- * corpus (theme groups + episode entities). Pure & deterministic — same data
+ * corpus (theme groups + episode entities). Pure & deterministic, same data
  * sources, synthesized differently. The section components are thin renderers.
  */
 
@@ -24,32 +24,32 @@ function toStat(g: ThemeEpisodeGroup): ThemeStat {
   return { theme: g.theme, name: cleanName(g.theme.name), conviction: Math.round(g.theme.confidence ?? 0), mentions: g.matchCount, shows: distinctShows(g), direction: dirOf(g.theme), momentum: g.theme.momentum_label ?? "stable" };
 }
 
-// Q1 · What changed this week? — biggest narrative shifts (|Δ conviction vs prior cycle|).
+// Q1 · What changed this week?, biggest narrative shifts (|Δ conviction vs prior cycle|).
 export function whatChanged(groups: ThemeEpisodeGroup[]): ThemeMove[] {
   return groups.map(toMove).filter(m => m.delta !== 0).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 6);
 }
 
-// Q2 · Where is institutional conviction increasing? — themes gaining conviction.
+// Q2 · Where is institutional conviction increasing?, themes gaining conviction.
 export function convictionRising(groups: ThemeEpisodeGroup[]): ThemeMove[] {
   return groups.map(toMove).filter(m => m.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 6);
 }
 
-// Q3 · What are the highest-conviction ideas? — themes ranked by conviction.
+// Q3 · What are the highest-conviction ideas?, themes ranked by conviction.
 export function highestConviction(groups: ThemeEpisodeGroup[]): ThemeStat[] {
   return groups.map(toStat).sort((a, b) => b.conviction - a.conviction).slice(0, 8);
 }
 
-// Q4 · Which narratives are becoming crowded? — most desks aligned on one view.
+// Q4 · Which narratives are becoming crowded?, most desks aligned on one view.
 export function crowdedNarratives(groups: ThemeEpisodeGroup[]): ThemeStat[] {
   return groups.map(toStat).filter(s => s.shows >= 2).sort((a, b) => b.shows - a.shows || b.mentions - a.mentions).slice(0, 5);
 }
 
-// Q5 · What is Wall Street missing? — high conviction the tape is barely discussing.
+// Q5 · What is Wall Street missing?, high conviction the tape is barely discussing.
 export function wallStreetMissing(groups: ThemeEpisodeGroup[]): ThemeStat[] {
   return groups.map(toStat).filter(s => s.conviction >= 58).sort((a, b) => a.mentions - b.mentions || b.conviction - a.conviction).slice(0, 5);
 }
 
-// Q6 · Which companies suddenly entered the conversation? — names surfacing via newly
+// Q6 · Which companies suddenly entered the conversation?, names surfacing via newly
 // emerging narratives (fallback: names concentrated in the freshest episodes).
 export interface CompanyRank { ticker: string; count: number }
 export function companiesEntering(groups: ThemeEpisodeGroup[], episodes: Episode[]): CompanyRank[] {
@@ -63,7 +63,7 @@ export function companiesEntering(groups: ThemeEpisodeGroup[], episodes: Episode
   return [...m.entries()].map(([ticker, count]) => ({ ticker, count })).sort((a, b) => b.count - a.count).slice(0, 8);
 }
 
-// Q7 · Which sectors gained the most discussion? — sector mentions weighted by volume.
+// Q7 · Which sectors gained the most discussion?, sector mentions weighted by volume.
 export interface SectorRank { sector: string; count: number }
 export function sectorsGaining(groups: ThemeEpisodeGroup[]): SectorRank[] {
   const m = new Map<string, number>();
@@ -71,7 +71,7 @@ export function sectorsGaining(groups: ThemeEpisodeGroup[]): SectorRank[] {
   return [...m.entries()].map(([sector, count]) => ({ sector, count })).sort((a, b) => b.count - a.count).slice(0, 6);
 }
 
-// Q8 · Which firms are driving today's conversation? — source influence.
+// Q8 · Which firms are driving today's conversation?, source influence.
 export interface SourceRank { show: string; episodes: number; avgRelevance: number; themes: number }
 export function firmsDriving(episodes: Episode[], episodeThemes: Map<string, ThemeIntelligence[]>): SourceRank[] {
   const m = new Map<string, { eps: Episode[]; themes: Set<string> }>();
@@ -87,7 +87,7 @@ export function firmsDriving(episodes: Episode[], episodeThemes: Map<string, The
     .slice(0, 6);
 }
 
-// ── Narrative rotation — what's rotating into vs out of the conversation ──────
+// ── Narrative rotation, what's rotating into vs out of the conversation ──────
 export function narrativeRotation(groups: ThemeEpisodeGroup[]): { inflow: ThemeMove[]; outflow: ThemeMove[] } {
   const moves = groups.map(toMove);
   return {
@@ -96,7 +96,7 @@ export function narrativeRotation(groups: ThemeEpisodeGroup[]): { inflow: ThemeM
   };
 }
 
-// ── Most discussed companies — entity mention leaderboard ─────────────────────
+// ── Most discussed companies, entity mention leaderboard ─────────────────────
 export interface CompanyRank2 { ticker: string; count: number }
 export function mostDiscussedCompanies(episodes: Episode[]): CompanyRank2[] {
   const m = new Map<string, number>();
@@ -113,7 +113,7 @@ export function mostReferencedPeople(episodes: Episode[]): PersonRank[] {
   return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 6);
 }
 
-// ── Most referenced funds — fund/alt-manager tickers mentioned ────────────────
+// ── Most referenced funds, fund/alt-manager tickers mentioned ────────────────
 const FUND_TICKERS = new Set(["BX", "KKR", "APO", "ARES", "BAM", "BN", "CG", "OWL", "TPG", "BLK", "BEN", "TROW", "ARCC", "OBDC", "STEP"]);
 export function mostReferencedFunds(episodes: Episode[]): CompanyRank2[] {
   const m = new Map<string, number>();
@@ -147,10 +147,10 @@ export function proprietarySignals(groups: ThemeEpisodeGroup[], episodes: Episod
   const vDelta = Math.round(velocity?.theme.momentum_delta ?? 0);
   return [
     { label: "Narrative Crowding Score", value: String(crowding), sub: crowding >= 66 ? "highly concentrated" : crowding >= 45 ? "moderately crowded" : "broad-based", color: crowding >= 66 ? "#F59E0B" : "#52b0c8" },
-    { label: "Theme Velocity Leader", value: velocity ? cleanName(velocity.theme.name) : "—", sub: velocity ? `Δ ${vDelta > 0 ? "+" : ""}${vDelta} / cycle` : undefined, color: "#10B981" },
-    { label: "Theme Persistence Leader", value: persistence ? cleanName(persistence.theme.name) : "—", sub: persistence ? `${Math.round(persistence.theme.persistence_score ?? 0)} persistence` : undefined, color: "#0891B2" },
-    { label: "Highest-Conviction Minority View", value: minority ? cleanName(minority.theme.name) : "—", sub: minority ? `against consensus · conv ${Math.round(minority.theme.confidence ?? 0)}` : "no high-conviction dissent", color: "#8B5CF6" },
-    { label: "Podcast Influence Leader", value: podLeader ? podLeader.show : "—", sub: podLeader ? `${podLeader.episodes} eps · ${podLeader.themes} themes` : undefined },
+    { label: "Theme Velocity Leader", value: velocity ? cleanName(velocity.theme.name) : "-", sub: velocity ? `Δ ${vDelta > 0 ? "+" : ""}${vDelta} / cycle` : undefined, color: "#10B981" },
+    { label: "Theme Persistence Leader", value: persistence ? cleanName(persistence.theme.name) : "-", sub: persistence ? `${Math.round(persistence.theme.persistence_score ?? 0)} persistence` : undefined, color: "#0891B2" },
+    { label: "Highest-Conviction Minority View", value: minority ? cleanName(minority.theme.name) : "-", sub: minority ? `against consensus · conv ${Math.round(minority.theme.confidence ?? 0)}` : "no high-conviction dissent", color: "#8B5CF6" },
+    { label: "Podcast Influence Leader", value: podLeader ? podLeader.show : "-", sub: podLeader ? `${podLeader.episodes} eps · ${podLeader.themes} themes` : undefined },
   ];
 }
 
