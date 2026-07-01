@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { resolveEntity, isSymbolKind, type EntityKind, type EntityInfo } from "@/lib/entity";
+import { setActiveContext, entityKindToIntel, contextMatchesTokens, useActiveContext } from "@/lib/intelligenceContext";
 
 // Every entity tooltip is the SAME width — one Bloomberg-style visual language.
 const TOOLTIP_WIDTH = 208;
@@ -27,13 +28,15 @@ interface Props {
   info?:      EntityInfo;           // explicit override — skips resolution
   size?:      Size;                 // omit to let `className` govern size (drop-in)
   mono?:      boolean;              // default: symbol kinds true, others false
+  activatable?: boolean;            // click sets the shared intelligence context (default true)
   className?: string;
   style?:     React.CSSProperties;
 }
 
-export function EntityChip({ kind, label, color, info, size, mono, className = "", style }: Props) {
+export function EntityChip({ kind, label, color, info, size, mono, activatable = true, className = "", style }: Props) {
   const ref = useRef<HTMLSpanElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const ctx = useActiveContext();
 
   const show = useCallback(() => {
     const r = ref.current?.getBoundingClientRect();
@@ -44,14 +47,34 @@ export function EntityChip({ kind, label, color, info, size, mono, className = "
   const e = info ?? resolveEntity(kind, label, color);
   const symbol = isSymbolKind(e.kind);
   const useMono = mono ?? symbol;
+  const accent = color ?? e.color ?? "#52b0c8";
+
+  // Highlight when this entity is the active cross-page intelligence context.
+  const matched = !!ctx && contextMatchesTokens(ctx, [e.name, label, e.id, symbol ? label.toUpperCase() : null]);
+
+  const activate = useCallback((ev: React.MouseEvent) => {
+    if (!activatable) return;
+    ev.stopPropagation();
+    setActiveContext({
+      kind: entityKindToIntel(e.kind),
+      label: symbol ? label.toUpperCase() : (e.name || label),
+      id: symbol ? label.toUpperCase() : undefined!,
+      color: accent,
+    });
+  }, [activatable, e.kind, e.name, symbol, label, accent]);
 
   return (
     <span
       ref={ref}
       onMouseEnter={show}
       onMouseLeave={hide}
-      className={`${size ? SIZE[size] : ""} ${useMono ? "font-mono font-bold" : ""} ${className}`.trim()}
-      style={{ color, ...style }}
+      onClick={activatable ? activate : undefined}
+      className={`${size ? SIZE[size] : ""} ${useMono ? "font-mono font-bold" : ""} ${activatable ? "cursor-pointer" : ""} ${className}`.trim()}
+      style={{
+        color,
+        ...(matched ? { boxShadow: `0 0 0 1.5px ${accent}, 0 0 8px -1px ${accent}`, borderRadius: 3 } : null),
+        ...style,
+      }}
     >
       {label}
       {typeof document !== "undefined" && createPortal(

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { TopNav } from "@/components/layout/TopNav";
+import { IntelligenceOverlay } from "@/components/common/IntelligenceOverlay";
 
 export const metadata: Metadata = {
   title: "Argus - Market Intelligence",
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="pt-nav min-h-screen">
             {children}
           </main>
+          <IntelligenceOverlay />
         </Providers>
       </body>
     </html>
