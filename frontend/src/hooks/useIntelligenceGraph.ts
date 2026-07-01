@@ -47,29 +47,37 @@ export interface UseIntelligenceGraphResult {
   validate:         () => IntegrityReport;
 }
 
+const EMPTY_SUMMARY: GraphSummary = {
+  totalNodes: 0, totalRelationships: 0, nodesByType: {}, topConnectedNodes: [], strongestRelationships: [],
+};
+const EMPTY_INTEGRITY: IntegrityReport = {
+  ok: true, nodeCount: 0, edgeCount: 0, orphanRelationships: [], duplicateAliases: [],
+  emptyLabels: [], missingEndpoints: [], valueScale: "empty", outOfRangeEdges: [],
+};
+
 export function useIntelligenceGraph(input: UseIntelligenceGraphInput = {}): UseIntelligenceGraphResult {
   const enabled = input.enabled ?? true;
   const { themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots } = input;
 
-  // Rebuild the shared graph from current state. Clearing first keeps it a faithful
-  // projection of the data passed in, and dedupe / merge run inside the adapters.
-  const build = useMemo<BuildResult | null>(() => {
-    if (!enabled) return null;
+  // Rebuild the shared graph from current state, then read summary + integrity in the
+  // same pass. Clearing first keeps the graph a faithful projection of the data passed
+  // in; dedupe / merge run inside the adapters. Deriving summary and integrity here (not
+  // in separate memos keyed on the build result) keeps every dependency honest.
+  const { build, summary, integrity } = useMemo(() => {
+    if (!enabled) return { build: null as BuildResult | null, summary: EMPTY_SUMMARY, integrity: EMPTY_INTEGRITY };
     intelligenceGraph.clear();
-    return buildGraphFromCurrentState({
+    const built = buildGraphFromCurrentState({
       themes, stories, storyThemes: storyThemes ?? themes,
       episodes, matchedThemes, deals, privateSignals, snapshots,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return { build: built, summary: summarizeGraph(), integrity: validateGraphIntegrity() };
   }, [enabled, themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots]);
 
-  const summary   = useMemo<GraphSummary>(() => summarizeGraph(), [build]);
-  const integrity = useMemo<IntegrityReport>(() => validateGraphIntegrity(), [build]);
-
-  // Reports read the live singleton; keyed on `build` so consumers recompute after a rebuild.
-  const getThemeReport   = useCallback((id: string) => getThemeIntelligenceReport(id), [build]);
-  const getCompanyReport = useCallback((id: string) => getCompanyIntelligenceReport(id), [build]);
-  const validate         = useCallback(() => validateGraphIntegrity(), [build]);
+  // Reports and validation read the live singleton at call time, so results always
+  // reflect the current graph regardless of function identity. Stable references.
+  const getThemeReport   = useCallback((id: string) => getThemeIntelligenceReport(id), []);
+  const getCompanyReport = useCallback((id: string) => getCompanyIntelligenceReport(id), []);
+  const validate         = useCallback(() => validateGraphIntegrity(), []);
 
   return {
     ready: build !== null && summary.totalNodes > 0,
