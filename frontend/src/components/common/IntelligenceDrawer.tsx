@@ -10,7 +10,8 @@ import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import { useListenRails } from "@/hooks/useListen";
 import { buildCrossIntel } from "@/lib/crossIntel";
-import { createDailyThemeSnapshots, getThemeMemory, themeKey } from "@/lib/themeSnapshots";
+import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
+import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { confColor } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
@@ -29,6 +30,23 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-1.5" style={{ color: A(0.34) }}>{label}</p>
       {children}
     </div>
+  );
+}
+
+interface GraphRel { source: string; target: string; type: string; strength: number }
+
+function RelList({ rels, accent }: { rels: GraphRel[]; accent: string }) {
+  return (
+    <ul className="space-y-1">
+      {rels.map((r, i) => (
+        <li key={i} className="text-[10.5px] leading-snug flex items-center gap-1.5" style={{ color: A(0.7) }}>
+          <span className="truncate" style={{ color: A(0.9) }}>{r.source}</span>
+          <span className="shrink-0 px-1 py-px rounded text-[8px] font-semibold uppercase tracking-wide" style={{ color: accent, background: `${accent}1f` }}>{r.type.replace(/_/g, " ")}</span>
+          <span className="truncate" style={{ color: A(0.9) }}>{r.target}</span>
+          <span className="ml-auto shrink-0 tabular-nums text-[9px]" style={{ color: A(0.4) }}>{r.strength}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -58,6 +76,25 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     () => (intel.theme ? getThemeMemory(themeKey(intel.theme)) : { hasHistory: false, lines: [] as string[] }),
     [intel.theme],
   );
+
+  // Graph-backed enrichment. The graph is rebuilt from the same loaded data the
+  // drawer already reads, then queried for the active entity's connective picture.
+  const snapshots = useMemo(() => themes.flatMap(t => getThemeHistory(themeKey(t))), [themes]);
+  const graph = useIntelligenceGraph({
+    enabled: true, themes, stories: clusters, storyThemes: themes,
+    episodes, matchedThemes: themes, deals, snapshots,
+  });
+
+  const isCompany = ctx.kind === "company";
+  const companyReport = useMemo(
+    () => (graph.ready && isCompany ? graph.getCompanyReport(ctx.id || ctx.label) : null),
+    [graph, isCompany, ctx.id, ctx.label],
+  );
+  const themeReport = useMemo(
+    () => (graph.ready && !isCompany ? graph.getThemeReport(intel.theme?.name ?? ctx.label) : null),
+    [graph, isCompany, intel.theme, ctx.label],
+  );
+  const strongest = (isCompany ? companyReport?.strongestRelationships : themeReport?.strongestRelationships) ?? [];
 
   const accentColor = ctx.color ?? "#52b0c8";
 
@@ -167,6 +204,35 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
         </div>
 
         <Section label="Next thing to watch"><p className="text-[11px] leading-snug" style={{ color: A(0.72) }}>Watch {intel.nextWatch}.</p></Section>
+
+        {/* Graph-backed enrichment. Renders only when the graph resolved the entity
+            and has something to add, so nothing shows blank. */}
+        {isCompany && companyReport?.found && companyReport.relatedThemes.length > 0 && (
+          <Section label="Connected themes (graph)">
+            <div className="flex flex-wrap gap-1.5">
+              {companyReport.relatedThemes.map(t => (
+                <span key={t.id} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.12)", color: "rgba(124,199,216,0.9)" }}>{t.label}</span>
+              ))}
+            </div>
+          </Section>
+        )}
+        {isCompany && companyReport?.found && companyReport.maRelationships.length > 0 && (
+          <Section label="M&A links (graph)"><RelList rels={companyReport.maRelationships} accent="#a78bfa" /></Section>
+        )}
+        {isCompany && companyReport?.found && companyReport.privateMarketRelationships.length > 0 && (
+          <Section label="Private market links (graph)"><RelList rels={companyReport.privateMarketRelationships} accent="#34d399" /></Section>
+        )}
+        {strongest.length > 0 && (
+          <Section label="Strongest connections (graph)"><RelList rels={strongest} accent={accentColor} /></Section>
+        )}
+
+        {process.env.NODE_ENV !== "production" && graph.ready && (
+          <div className="px-4 py-2 border-t" style={{ borderColor: A(0.06) }}>
+            <p className="text-[8px] font-bold uppercase tracking-[0.14em]" style={{ color: A(0.3) }}>
+              Graph: {graph.integrity.ok ? "healthy" : "issues"} · {graph.summary.totalNodes} nodes · {graph.summary.totalRelationships} relationships
+            </p>
+          </div>
+        )}
         <div className="h-6" />
       </div>
     </div>
