@@ -19,6 +19,7 @@ import { summarizeGraph, type BuildResult } from "./intelligenceGraphAdapters";
 import { validateGraphIntegrity } from "./intelligenceGraphDebug";
 import { inferMarketState } from "./inferenceEngine";
 import { findTransmissionChains } from "./narrativeTransmission";
+import { evaluateEvidenceForNode } from "./evidenceEngine";
 
 const nowMs = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -34,6 +35,14 @@ export interface IntelligenceHealthReport {
   sourceDistribution:   Record<string, number>;   // node contributions by source page
   snapshotCount:        number;          // total stored theme-history points in the graph
   topConnectedNodes:    Array<{ label: string; type: string; degree: number }>;
+  evidence: {
+    averageEvidenceScore:  number;
+    weakEvidenceNodes:     Array<{ label: string; type: string; score: number }>;
+    highContradictionNodes: Array<{ label: string; type: string; contradiction: number }>;
+    averageSourceDiversity: number;
+    staleEvidenceCount:    number;
+    evidenceMs:            number;
+  };
   timings: {
     graphRebuildMs:  number | null;
     inferenceMs:     number;
@@ -89,6 +98,24 @@ export function intelligenceHealthReport(opts: HealthOptions = {}): Intelligence
   const ti = nowMs(); inferMarketState();       const inferenceMs = round2(nowMs() - ti);
   const tn = nowMs(); findTransmissionChains();  const narrativeMs = round2(nowMs() - tn);
 
+  // Evidence metrics over the reasoning-bearing node types.
+  const te = nowMs();
+  const evalNodes = nodes.filter(n => n.type === "Theme" || n.type === "Company" || n.type === "Sector");
+  const evals = evalNodes.map(n => ({ n, ev: evaluateEvidenceForNode(n.id) })).filter(x => x.ev.found);
+  const scored = evals.filter(x => x.ev.verdict !== "insufficient_signal");
+  const averageEvidenceScore = scored.length ? Math.round(scored.reduce((s, x) => s + x.ev.evidenceScore, 0) / scored.length) : 0;
+  const weakEvidenceNodes = scored.filter(x => x.ev.evidenceScore < 45)
+    .map(x => ({ label: x.n.label, type: String(x.n.type), score: x.ev.evidenceScore }))
+    .sort((a, b) => a.score - b.score).slice(0, 10);
+  const highContradictionNodes = scored.filter(x => x.ev.contradictionScore >= 50)
+    .map(x => ({ label: x.n.label, type: String(x.n.type), contradiction: x.ev.contradictionScore }))
+    .sort((a, b) => b.contradiction - a.contradiction).slice(0, 10);
+  const averageSourceDiversity = scored.length
+    ? Math.round((scored.reduce((s, x) => s + new Set(x.ev.supportingEvidence.flatMap(i => i.pages)).size, 0) / scored.length) * 100) / 100
+    : 0;
+  const staleEvidenceCount = evals.filter(x => x.ev.freshnessScore < 50).length;
+  const evidenceMs = round2(nowMs() - te);
+
   return {
     timestamp: new Date().toISOString(),
     totalNodes: summary.totalNodes,
@@ -101,6 +128,7 @@ export function intelligenceHealthReport(opts: HealthOptions = {}): Intelligence
     sourceDistribution,
     snapshotCount,
     topConnectedNodes: summary.topConnectedNodes.map(n => ({ label: n.label, type: n.type, degree: n.degree })),
+    evidence: { averageEvidenceScore, weakEvidenceNodes, highContradictionNodes, averageSourceDiversity, staleEvidenceCount, evidenceMs },
     timings: { graphRebuildMs, inferenceMs, narrativeMs },
   };
 }
@@ -124,6 +152,11 @@ export function printIntelligenceHealth(opts: HealthOptions = {}): IntelligenceH
   line("graphRebuildMs", r.timings.graphRebuildMs ?? "n/a");
   line("inferenceMs", r.timings.inferenceMs);
   line("narrativeMs", r.timings.narrativeMs);
+  line("avgEvidenceScore", r.evidence.averageEvidenceScore);
+  line("weakEvidenceNodes", r.evidence.weakEvidenceNodes.map(n => `${n.label}(${n.score})`).join(", ") || "none");
+  line("highContradiction", r.evidence.highContradictionNodes.map(n => `${n.label}(${n.contradiction})`).join(", ") || "none");
+  line("avgSourceDiversity", r.evidence.averageSourceDiversity);
+  line("staleEvidenceCount", r.evidence.staleEvidenceCount);
   line("topConnected", r.topConnectedNodes.map(n => `${n.label}(${n.degree})`).join(", "));
   return r;
 }

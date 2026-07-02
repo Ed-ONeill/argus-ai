@@ -10,10 +10,14 @@
  * handling. Focused on the intelligence layer, not UI. No em/en dashes.
  */
 
-import { IntelligenceGraph } from "./intelligenceGraph";
+import { IntelligenceGraph, intelligenceGraph } from "./intelligenceGraph";
 import { createDebugGraphFromSampleData, validateGraphIntegrity } from "./intelligenceGraphDebug";
 import { scoreInference, inferTheme } from "./inferenceEngine";
 import { buildNarrativePath, explainNarrative } from "./narrativeTransmission";
+import {
+  rankEvidenceSources, scoreEvidence, detectContradictions, evaluateEvidenceForNode,
+  evaluateEvidenceForInference,
+} from "./evidenceEngine";
 
 export interface TestResult { name: string; ok: boolean; detail?: string }
 export interface TestSummary { total: number; passed: number; failed: number; results: TestResult[] }
@@ -102,6 +106,66 @@ export function runIntelligenceTests(): TestSummary {
     const ex = explainNarrative("Definitely Not A Real Theme");
     assert(ex.found === false, "unknown narrative should not be found");
     assert(ex.currentState === "insufficient_signal", "narrative state should be insufficient_signal");
+  });
+
+  // 8. Source reliability weighting: transparent, ordered, primary tier at the top.
+  test("source reliability weighting", () => {
+    const ranks = rankEvidenceSources();
+    assert(ranks[0].weight === 100, `top source should weigh 100, got ${ranks[0].weight}`);
+    const w = (s: string) => ranks.find(r => r.source === s)?.weight ?? -1;
+    assert(w("Bloomberg") === 95, `Bloomberg should weigh 95, got ${w("Bloomberg")}`);
+    assert(w("Social media") < w("Reuters"), "social media should rank below Reuters");
+    for (let i = 1; i < ranks.length; i++) assert(ranks[i - 1].weight >= ranks[i].weight, "ranks must be sorted descending");
+  });
+
+  // 9. Evidence scoring: bounded, monotonic, contradictions reduce the total.
+  test("evidence scoring", () => {
+    const weak = scoreEvidence({ sourceReliability: 15, independentSources: 1, relationshipStrength: 20, relationshipConfidence: 20, evidenceCount: 1, originatingPages: 1, recencyDays: 40, conviction: 20 });
+    const strong = scoreEvidence({ sourceReliability: 95, independentSources: 5, relationshipStrength: 80, relationshipConfidence: 85, evidenceCount: 18, originatingPages: 5, recencyDays: 1, conviction: 85, persistence: 80 });
+    assert(strong.totalScore > weak.totalScore, `strong should outscore weak: ${strong.totalScore} vs ${weak.totalScore}`);
+    assert(strong.totalScore <= 100 && weak.totalScore >= 0, "scores must be in bounds");
+    const clean = scoreEvidence({ sourceReliability: 90, independentSources: 4, relationshipStrength: 70, relationshipConfidence: 70, evidenceCount: 10, originatingPages: 4, recencyDays: 2, conviction: 70 });
+    const contradicted = scoreEvidence({ sourceReliability: 90, independentSources: 4, relationshipStrength: 70, relationshipConfidence: 70, evidenceCount: 10, originatingPages: 4, recencyDays: 2, conviction: 70, contradictionSeverity: 120 });
+    assert(contradicted.totalScore < clean.totalScore, "contradictions must lower the score");
+  });
+
+  // 10. Contradiction detection: a weakens edge is found, and only from graph evidence.
+  test("contradiction detection", () => {
+    // detectContradictions reads the shared singleton.
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "AI Infrastructure", type: "Theme", momentum: 5 });
+    intelligenceGraph.addNode({ label: "Rate Shock", type: "Macro" });
+    intelligenceGraph.addRelationship({ source: "Rate Shock", target: "AI Infrastructure", relationshipType: "weakens", strength: 60, confidence: 60, originatingPages: ["Feed"] });
+    const found = detectContradictions("AI Infrastructure");
+    assert(found.some(c => c.kind === "weakening_relationship"), "should detect the weakening relationship");
+    assert(found.some(c => c.kind === "low_diversity"), "single source type should read as low diversity");
+  });
+
+  // 11. Evidence insufficient-signal handling.
+  test("evidence insufficient signal", () => {
+    const ev = evaluateEvidenceForNode("Definitely Not A Node");
+    assert(ev.verdict === "insufficient_signal", `expected insufficient_signal, got ${ev.verdict}`);
+    assert(ev.evidenceScore === 0 && !ev.found, "unknown node should score 0 and be not found");
+  });
+
+  // 12. Adjusted confidence drops below the original when contradictions exist.
+  test("adjusted confidence with contradictions", () => {
+    createDebugGraphFromSampleData();
+    intelligenceGraph.addNode({ label: "Regulatory Crackdown", type: "Macro" });
+    intelligenceGraph.addRelationship({ source: "Regulatory Crackdown", target: "AI Infrastructure", relationshipType: "weakens", strength: 65, confidence: 65, originatingPages: ["Feed"] });
+    const inf = inferTheme("AI Infrastructure");
+    const ie = evaluateEvidenceForInference(inf);
+    assert(ie.contradictions.length > 0, "should surface contradictions");
+    assert(ie.adjustedConfidence < inf.confidence, `adjusted (${ie.adjustedConfidence}) should be below original (${inf.confidence})`);
+  });
+
+  // 13. Strong evidence when cross-source confirmation is high (clean sample).
+  test("strong evidence on cross-source confirmation", () => {
+    createDebugGraphFromSampleData();
+    const ev = evaluateEvidenceForNode("AI Infrastructure");
+    assert(ev.found, "node should be found");
+    assert(ev.confirmationScore >= 60, `expected high confirmation, got ${ev.confirmationScore}`);
+    assert(ev.verdict === "strong" || ev.verdict === "moderate", `expected strong/moderate, got ${ev.verdict}`);
   });
 
   const passed = results.filter(r => r.ok).length;
