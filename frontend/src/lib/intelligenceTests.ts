@@ -31,6 +31,10 @@ import { ingestProviderObservations } from "./dataAdapters/observationGraphBridg
 import { runProviderIngestion } from "./dataAdapters/providerIngestion";
 import { IngestionScheduler, MemoryHealthStore } from "./dataAdapters/ingestionScheduler";
 import { runIngestionDiagnostic } from "./dataAdapters/diagnostics";
+import {
+  recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns,
+  summarizeEvolution, findHistoricalAnalogs, resetMemory,
+} from "./memoryEngine";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -688,6 +692,76 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(d.report.fetchErrors.length >= 1, "provider failure should be recorded as fetch errors");
     assert(d.report.observationsIngested === 0, "no observations should be ingested on failure");
     assert(typeof d.integrity.ok === "boolean", "integrity should still be evaluated after a failure");
+  });
+
+  // 54. Memory records node snapshots plus inference and prediction history.
+  test("memory records and reads entity history", () => {
+    createDebugGraphFromSampleData();
+    resetMemory();
+    const stats = recordSnapshot({ now: () => Date.parse("2026-01-10") });
+    assert(stats.entitiesRecorded > 0, "should record snapshots for graph nodes");
+    const h = getEntityHistory("AI Infrastructure");
+    assert("found" in h, "history should be found for a recorded theme");
+    if ("found" in h) {
+      assert(h.snapshots.length === 1, `one snapshot expected, got ${h.snapshots.length}`);
+      assert(h.inferences.length === 1 && h.predictions.length === 1, "a theme should store inference and prediction");
+    }
+  });
+
+  // 55. Unknown entities return a structured insufficient_history response.
+  test("memory insufficient history for unknown", () => {
+    resetMemory();
+    const h = getEntityHistory("Nonexistent Entity XYZ");
+    assert("status" in h && h.status === "insufficient_history", "unknown entity should return insufficient_history");
+  });
+
+  // 56. Snapshot comparison computes metric deltas across days.
+  test("memory compares snapshots across days", () => {
+    createDebugGraphFromSampleData();
+    resetMemory();
+    recordSnapshot({ now: () => Date.parse("2026-01-10") });
+    intelligenceGraph.updateNode("AI Infrastructure", { confidence: 90, momentum: 10 });
+    recordSnapshot({ now: () => Date.parse("2026-01-12") });
+    const c = compareSnapshots("AI Infrastructure");
+    assert("found" in c, "comparison should be available with two snapshots");
+    if ("found" in c) {
+      assert(c.days === 2, `expected 2 days, got ${c.days}`);
+      assert(c.deltas.confidence !== 0, "a confidence delta should be captured");
+    }
+    const single = compareSnapshots("Definitely Unknown");
+    assert("status" in single && single.status === "insufficient_history", "no history should be insufficient");
+  });
+
+  // 57. Pattern detection identifies a steady rise.
+  test("memory detects steady rise", () => {
+    createDebugGraphFromSampleData();
+    resetMemory();
+    intelligenceGraph.updateNode("AI Infrastructure", { confidence: 70 });
+    recordSnapshot({ now: () => Date.parse("2026-01-10") });
+    intelligenceGraph.updateNode("AI Infrastructure", { confidence: 80 });
+    recordSnapshot({ now: () => Date.parse("2026-01-11") });
+    intelligenceGraph.updateNode("AI Infrastructure", { confidence: 90 });
+    recordSnapshot({ now: () => Date.parse("2026-01-12") });
+    const p = detectHistoricalPatterns("AI Infrastructure");
+    assert("found" in p, "patterns should be available with three snapshots");
+    if ("found" in p) assert(p.patterns.some(x => x.pattern === "steady_rise"), `should detect steady_rise, got ${p.patterns.map(x => x.pattern).join(", ")}`);
+  });
+
+  // 58. Evolution summary needs two snapshots, and analogs rank by similarity.
+  test("memory summarizes evolution and finds analogs", () => {
+    createDebugGraphFromSampleData();
+    resetMemory();
+    recordSnapshot({ now: () => Date.parse("2026-01-10") });
+    const one = summarizeEvolution("AI Infrastructure");
+    assert("status" in one && one.status === "insufficient_history", "one snapshot is insufficient to summarize");
+    intelligenceGraph.updateNode("AI Infrastructure", { confidence: 90, momentum: 9 });
+    intelligenceGraph.updateNode("Nuclear Energy", { confidence: 74 });
+    recordSnapshot({ now: () => Date.parse("2026-01-13") });
+    const s = summarizeEvolution("AI Infrastructure");
+    assert("found" in s && s.lines.length > 0, "two snapshots should yield an evolution summary");
+    const a = findHistoricalAnalogs("AI Infrastructure");
+    assert("found" in a, "analogs should be available with cross-entity history");
+    if ("found" in a) assert(a.analogs.length > 0 && a.analogs[0].similarity >= 0 && a.analogs[0].similarity <= 100, "analogs should be ranked with a bounded similarity");
   });
 
   for (const [name, fn] of tests) {
