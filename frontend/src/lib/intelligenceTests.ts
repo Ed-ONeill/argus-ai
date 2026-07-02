@@ -28,6 +28,7 @@ import { SecAdapter } from "./dataAdapters/sec";
 import { FredAdapter } from "./dataAdapters/fred";
 import { registerDefaultProviders } from "./dataAdapters/providers";
 import { ingestProviderObservations } from "./dataAdapters/observationGraphBridge";
+import { runProviderIngestion } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
 
 export interface TestResult { name: string; ok: boolean; detail?: string }
@@ -40,6 +41,13 @@ function assert(cond: unknown, message: string): void {
 // A canned Response transport so adapters are tested without real network access.
 const makeTransport = (body: unknown, ok = true): FetchLike =>
   async () => new Response(ok ? JSON.stringify(body) : "error", { status: ok ? 200 : 500 });
+
+// A URL-routing transport: returns the first body whose pattern matches the request URL.
+const routingTransport = (routes: Array<[RegExp, unknown]>): FetchLike =>
+  async (url) => {
+    for (const [re, body] of routes) if (re.test(url)) return new Response(JSON.stringify(body), { status: 200 });
+    return new Response("not found", { status: 404 });
+  };
 
 // Minimal adapter to exercise BaseDataAdapter behaviors (cache, rate limit, retry, quality).
 class TinyAdapter extends BaseDataAdapter {
@@ -471,6 +479,63 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     ingestProviderObservations(sec.normalize(appleFacts, { dataset: "companyfacts", ticker: "AAPL" }));
     ingestProviderObservations([insiderObs]);
     ingestProviderObservations(fred.normalize(fredRaw, { seriesId: "DGS10" }));
+    const rep = validateGraphIntegrity();
+    assert(rep.ok, `graph should stay clean: orphans=${JSON.stringify(rep.orphanRelationships)} dup=${JSON.stringify(rep.duplicateAliases)} empty=${JSON.stringify(rep.emptyLabels)}`);
+  });
+
+  // Shared fixtures for the controlled ingestion tests.
+  const submissionsFix = { cik: 320193, name: "Apple Inc.", filings: { recent: {
+    form: ["4", "10-K"], filingDate: ["2026-01-10", "2025-10-30"], accessionNumber: ["a1", "a2"], primaryDocument: ["d1", "d2"],
+  } } };
+  const secFredTransport = routingTransport([
+    [/companyfacts/, appleFacts],
+    [/submissions/, submissionsFix],
+    [/stlouisfed/, fredRaw],
+  ]);
+  const singleUniverse = [{ ticker: "AAPL", cik: 320193 }];
+
+  // 38. Ingestion skips unavailable providers safely (no FRED key).
+  test("ingestion skips unavailable providers", async () => {
+    intelligenceGraph.clear();
+    const report = await runProviderIngestion({ companies: singleUniverse, fredApiKey: "", transport: secFredTransport, now: () => BRIDGE_NOW });
+    assert(report.providersSkipped.some(p => p.id === "fred"), "FRED should be skipped without an API key");
+    assert(report.providersCalled.includes("sec"), "SEC should still be called");
+    assert(Array.isArray(report.providerHealth), "a report should still be returned");
+  });
+
+  // 39. SEC CompanyFacts result reaches the graph.
+  test("ingestion SEC reaches graph", async () => {
+    intelligenceGraph.clear();
+    const report = await runProviderIngestion({ companies: singleUniverse, includeForm4: true, transport: secFredTransport, now: () => BRIDGE_NOW });
+    assert(report.observationsIngested > 0, "should ingest SEC observations");
+    assert(report.nodesAdded > 0, "should add nodes to the graph");
+    assert(!!intelligenceGraph.getNode("AAPL"), "the Apple company node should exist");
+    assert(report.graphAfter.nodes > report.graphBefore.nodes, "graph should grow");
+  });
+
+  // 40. FRED result reaches the graph when a key is supplied.
+  test("ingestion FRED reaches graph", async () => {
+    intelligenceGraph.clear();
+    const report = await runProviderIngestion({ companies: [], fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW });
+    assert(report.providersCalled.includes("fred"), "FRED should be called with a key");
+    assert(!!intelligenceGraph.getNode("Interest Rates"), "the Interest Rates macro node should exist");
+    assert(!!intelligenceGraph.getNode("10-Year Treasury Yield"), "the macro series node should exist");
+  });
+
+  // 41. Provider health updates after ingestion.
+  test("ingestion updates provider health", async () => {
+    intelligenceGraph.clear();
+    const report = await runProviderIngestion({ companies: singleUniverse, fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW });
+    const sec = report.providerHealth.find(h => h.id === "sec");
+    const fred = report.providerHealth.find(h => h.id === "fred");
+    assert(!!sec && sec.state === "healthy" && sec.observationCount > 0, "SEC health should reflect a successful sync");
+    assert(!!fred && fred.observationCount > 0, "FRED health should reflect a successful sync");
+  });
+
+  // 42. Graph integrity remains clean after controlled ingestion.
+  test("ingestion keeps graph integrity clean", async () => {
+    intelligenceGraph.clear();
+    await runProviderIngestion({ companies: singleUniverse, includeForm4: true, fredSeries: ["DGS10", "BAMLH0A0HYM2"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW });
     const rep = validateGraphIntegrity();
     assert(rep.ok, `graph should stay clean: orphans=${JSON.stringify(rep.orphanRelationships)} dup=${JSON.stringify(rep.duplicateAliases)} empty=${JSON.stringify(rep.emptyLabels)}`);
   });

@@ -15,3 +15,5 @@ export { FredAdapter, FRED_SERIES } from "./fred";
 export { createDefaultProviders, registerDefaultProviders, PLANNED_PROVIDERS } from "./providers";
 export { ingestProviderObservations, buildGraphFromProviderData } from "./observationGraphBridge";
 export type { IngestProviderStats } from "./observationGraphBridge";
+export { runProviderIngestion, runDefaultIngestion, DEFAULT_UNIVERSE, DEFAULT_FRED_SERIES } from "./providerIngestion";
+export type { IngestionConfig, IngestionReport, CompanyRef } from "./providerIngestion";
