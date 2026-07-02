@@ -30,6 +30,7 @@ import { registerDefaultProviders } from "./dataAdapters/providers";
 import { ingestProviderObservations } from "./dataAdapters/observationGraphBridge";
 import { runProviderIngestion } from "./dataAdapters/providerIngestion";
 import { IngestionScheduler, MemoryHealthStore } from "./dataAdapters/ingestionScheduler";
+import { runIngestionDiagnostic } from "./dataAdapters/diagnostics";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -650,6 +651,43 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     now += 86_400_000; // a day later
     const r3 = await s.tick();
     assert(r3.ran === true, "a tick after the interval should run again");
+  });
+
+  // 50. Diagnostic runner calls ingestion exactly once and checks integrity.
+  test("diagnostic runs ingestion once", async () => {
+    intelligenceGraph.clear();
+    let count = 0;
+    const d = await runIngestionDiagnostic({ ingest: async () => { count += 1; return fakeReport(); } });
+    assert(count === 1, `ingestion should be called exactly once, got ${count}`);
+    assert(typeof d.integrity.ok === "boolean", "integrity should be evaluated");
+    assert(typeof d.integrity.nodeCount === "number", "integrity should report node counts");
+  });
+
+  // 51. Missing FRED key skips FRED safely.
+  test("diagnostic skips FRED without key", async () => {
+    intelligenceGraph.clear();
+    const d = await runIngestionDiagnostic({ companies: singleUniverse, fredApiKey: "", transport: secFredTransport, now: () => BRIDGE_NOW });
+    assert(d.report.providersSkipped.some(p => p.id === "fred"), "FRED should be skipped without a key");
+    assert(d.report.providersCalled.includes("sec"), "SEC should still be called");
+  });
+
+  // 52. Diagnostic checks graph integrity after a live-shaped run.
+  test("diagnostic checks integrity", async () => {
+    intelligenceGraph.clear();
+    const d = await runIngestionDiagnostic({ companies: singleUniverse, fredApiKey: "test", fredSeries: ["DGS10"], transport: secFredTransport, now: () => BRIDGE_NOW });
+    assert(d.integrity.ok === true, "integrity should be clean after ingestion");
+    assert(d.integrity.nodeCount > 0, "integrity should count nodes");
+    assert(d.report.observationsIngested > 0, "observations should reach the graph");
+  });
+
+  // 53. A failed provider fetch returns a report instead of throwing.
+  test("diagnostic tolerates provider failure", async () => {
+    intelligenceGraph.clear();
+    const failing: FetchLike = async () => new Response("upstream error", { status: 500 });
+    const d = await runIngestionDiagnostic({ companies: singleUniverse, fredApiKey: "", includeForm4: false, transport: failing, now: () => BRIDGE_NOW, retry: { retries: 0, baseMs: 0 } });
+    assert(d.report.fetchErrors.length >= 1, "provider failure should be recorded as fetch errors");
+    assert(d.report.observationsIngested === 0, "no observations should be ingested on failure");
+    assert(typeof d.integrity.ok === "boolean", "integrity should still be evaluated after a failure");
   });
 
   for (const [name, fn] of tests) {

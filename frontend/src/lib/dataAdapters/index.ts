@@ -19,3 +19,5 @@ export { runProviderIngestion, runDefaultIngestion, isProviderIngestionEnabled, 
 export type { IngestionConfig, IngestionReport, CompanyRef } from "./providerIngestion";
 export { IngestionScheduler, MemoryHealthStore, FileHealthStore, runIngestionOnce } from "./ingestionScheduler";
 export type { SchedulerConfig, SchedulerLogger, HealthStore, HealthRecord, TickResult, TickReason } from "./ingestionScheduler";
+export { runIngestionDiagnostic, formatDiagnostic } from "./diagnostics";
+export type { DiagnosticConfig, DiagnosticResult, DiagnosticIntegrity } from "./diagnostics";
