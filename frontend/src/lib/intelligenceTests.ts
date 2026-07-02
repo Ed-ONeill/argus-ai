@@ -22,6 +22,13 @@ import {
   predictThemeTrajectory, predictCompanyTrajectory, predictMarketEvolution,
   rankFutureOpportunities, rankFutureRisks, detectInflectionPoints,
 } from "./predictionEngine";
+import { BaseDataAdapter } from "./dataAdapters/BaseDataAdapter";
+import { ProviderRegistry, providerRegistry } from "./dataAdapters/registry";
+import { SecAdapter } from "./dataAdapters/sec";
+import { FredAdapter } from "./dataAdapters/fred";
+import { registerDefaultProviders } from "./dataAdapters/providers";
+import { ingestProviderObservations } from "./dataAdapters/observationGraphBridge";
+import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
 
 export interface TestResult { name: string; ok: boolean; detail?: string }
 export interface TestSummary { total: number; passed: number; failed: number; results: TestResult[] }
@@ -30,12 +37,38 @@ function assert(cond: unknown, message: string): void {
   if (!cond) throw new Error(message);
 }
 
-export function runIntelligenceTests(): TestSummary {
+// A canned Response transport so adapters are tested without real network access.
+const makeTransport = (body: unknown, ok = true): FetchLike =>
+  async () => new Response(ok ? JSON.stringify(body) : "error", { status: ok ? 200 : 500 });
+
+// Minimal adapter to exercise BaseDataAdapter behaviors (cache, rate limit, retry, quality).
+class TinyAdapter extends BaseDataAdapter {
+  readonly id = "tiny";
+  private limit: number;
+  private mode: "ok" | "fail";
+  private ts: number;
+  constructor(ctx: AdapterContext = {}, opts: { limit?: number; mode?: "ok" | "fail"; ts?: number } = {}) {
+    super(ctx);
+    this.limit = opts.limit ?? 300;
+    this.mode = opts.mode ?? "ok";
+    this.ts = opts.ts ?? this.now();
+  }
+  metadata(): ProviderMetadata {
+    return { id: "tiny", name: "Tiny", description: "test adapter", reliability: 80, cadence: "daily", ttlMs: 60_000, rateLimitPerMin: this.limit, costTier: "free", requiresApiKey: false, supportsEntities: ["Company"], supportsObservations: ["financials"] };
+  }
+  protected async request(params: FetchParams): Promise<unknown> {
+    if (this.mode === "fail") throw new Error("boom");
+    return { v: 1, params };
+  }
+  normalize(raw: unknown, params: FetchParams = {}): ProviderObservation[] {
+    return [this.buildObservation({ source: "Tiny", providerConfidence: 80, providerTimestamp: this.ts, entityType: "Company", entityId: String(params.id ?? "X"), observationType: "financials", payload: { raw } })];
+  }
+}
+
+export async function runIntelligenceTests(): Promise<TestSummary> {
   const results: TestResult[] = [];
-  const test = (name: string, fn: () => void) => {
-    try { fn(); results.push({ name, ok: true }); }
-    catch (e) { results.push({ name, ok: false, detail: e instanceof Error ? e.message : String(e) }); }
-  };
+  const tests: Array<[string, () => void | Promise<void>]> = [];
+  const test = (name: string, fn: () => void | Promise<void>) => { tests.push([name, fn]); };
 
   // 1. Alias merging: NVDA / Nvidia / NVIDIA collapse into one node.
   test("alias merging", () => {
@@ -252,6 +285,200 @@ export function runIntelligenceTests(): TestSummary {
     assert(m.morningBriefForecast.length > 0, "forecast should still return a safe message");
   });
 
+  // 23. Provider registry lifecycle: register, get, list, health, unregister.
+  test("provider registry lifecycle", () => {
+    const reg = new ProviderRegistry();
+    const a = new TinyAdapter();
+    reg.registerProvider(a);
+    assert(reg.getProvider("tiny") === a, "should retrieve the registered provider");
+    assert(reg.listProviders().length === 1, "should list one provider");
+    assert(reg.healthReport()[0].id === "tiny", "health report should include the provider");
+    assert(reg.metadataReport()[0].name === "Tiny", "metadata report should include the provider");
+    assert(reg.unregisterProvider("tiny") === true, "should unregister");
+    assert(reg.listProviders().length === 0, "should be empty after unregister");
+  });
+
+  // 24. SEC CompanyFacts normalizes into company_profile + financials observations.
+  test("SEC companyfacts normalization", () => {
+    const NOW = Date.parse("2026-01-15");
+    const sec = new SecAdapter({ now: () => NOW });
+    const facts = { cik: 320193, entityName: "Apple Inc.", facts: { "us-gaap": {
+      Revenues: { units: { USD: [{ end: "2025-09-30", val: 391035000000, fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-30" }] } },
+      NetIncomeLoss: { units: { USD: [{ end: "2025-09-30", val: 99803000000, filed: "2025-10-30" }] } },
+    } } };
+    const obs = sec.validate(sec.normalize(facts, { dataset: "companyfacts", ticker: "AAPL" }));
+    assert(obs.length >= 2, `expected profile + financials, got ${obs.length}`);
+    assert(obs.some(o => o.observationType === "company_profile"), "should include company_profile");
+    const rev = obs.find(o => o.observationType === "financials" && o.payload.label === "Revenue");
+    assert(!!rev, "should include a revenue financial");
+    assert(rev!.entityId === "AAPL", "entityId should be the ticker");
+    assert(rev!.quality.providerReliability === 100, "SEC reliability should be 100");
+    assert(rev!.qualityScore >= 0 && rev!.qualityScore <= 100, "qualityScore should be within bounds");
+  });
+
+  // 25. SEC fetch caches identical requests (async).
+  test("SEC fetch caches by params", async () => {
+    const NOW = Date.parse("2026-01-15");
+    const facts = { cik: 320193, entityName: "Apple Inc.", facts: { "us-gaap": { Revenues: { units: { USD: [{ end: "2025-09-30", val: 391035000000, filed: "2025-10-30" }] } } } } };
+    const sec = new SecAdapter({ now: () => NOW, transport: makeTransport(facts), retry: { retries: 0, baseMs: 0 } });
+    const r1 = await sec.fetch({ dataset: "companyfacts", cik: 320193, ticker: "AAPL" });
+    assert(r1.fromCache === false && r1.observations.length > 0, "first fetch should return live observations");
+    const r2 = await sec.fetch({ dataset: "companyfacts", cik: 320193, ticker: "AAPL" });
+    assert(r2.fromCache === true, "second identical fetch should hit cache");
+    assert(sec.health().observationCount === r1.observations.length, "observation count should reflect one live sync");
+  });
+
+  // 26. FRED normalizes a series into a category-typed macro observation.
+  test("FRED series normalization", () => {
+    const NOW = Date.parse("2026-01-15");
+    const fred = new FredAdapter({ now: () => NOW, apiKey: "test" });
+    const raw = { observations: [{ date: "2026-01-01", value: "4.10" }, { date: "2026-01-14", value: "4.25" }] };
+    const obs = fred.validate(fred.normalize(raw, { seriesId: "DGS10" }));
+    assert(obs.length === 1, "should emit one latest observation");
+    assert(obs[0].observationType === "interest_rate", `DGS10 should map to interest_rate, got ${obs[0].observationType}`);
+    assert(obs[0].entityId === "DGS10", "entityId should be the series id");
+    assert(obs[0].payload.value === 4.25, "should use the latest value");
+    assert(obs[0].payload.change === 0.15, `change should be 0.15, got ${obs[0].payload.change}`);
+  });
+
+  // 27. Base validate() filters malformed observations.
+  test("adapter validate filters malformed", () => {
+    const tiny = new TinyAdapter();
+    const good = tiny.normalize({}, { id: "GOOD" });
+    const bad = [{ ...good[0], entityId: "" }, { ...good[0], qualityScore: NaN }] as unknown as ProviderObservation[];
+    const filtered = tiny.validate([...good, ...bad]);
+    assert(filtered.length === 1, `should keep only the valid observation, got ${filtered.length}`);
+  });
+
+  // 28. Rate limiting rejects requests beyond the per-minute budget (async).
+  test("adapter rate limiting", async () => {
+    const NOW = Date.parse("2026-01-15");
+    const tiny = new TinyAdapter({ now: () => NOW, retry: { retries: 0, baseMs: 0 } }, { limit: 1 });
+    await tiny.fetch({ id: "A" });
+    let threw = false;
+    try { await tiny.fetch({ id: "B" }); } catch { threw = true; }
+    assert(threw, "second distinct call within the minute should exceed the rate limit");
+  });
+
+  // 29. Failures are tracked and escalate provider health (async).
+  test("adapter failure health tracking", async () => {
+    const tiny = new TinyAdapter({ retry: { retries: 0, baseMs: 0 } }, { mode: "fail" });
+    for (const id of ["A", "B", "C"]) { try { await tiny.fetch({ id }); } catch { /* expected */ } }
+    const h = tiny.health();
+    assert(h.failureCount === 3, `expected 3 failures, got ${h.failureCount}`);
+    assert(h.state === "down", `expected down after 3 consecutive failures, got ${h.state}`);
+  });
+
+  // 30. Freshness decays with observation age.
+  test("observation freshness decays with age", () => {
+    const NOW = Date.parse("2026-01-15");
+    const fresh = new TinyAdapter({ now: () => NOW }, { ts: NOW }).normalize({}, { id: "F" })[0];
+    const stale = new TinyAdapter({ now: () => NOW }, { ts: NOW - 40 * 86_400_000 }).normalize({}, { id: "S" })[0];
+    assert(fresh.quality.freshness > stale.quality.freshness, `fresh (${fresh.quality.freshness}) should exceed stale (${stale.quality.freshness})`);
+    assert(stale.quality.freshness === 0, "40-day-old daily data should be fully stale");
+  });
+
+  // 31. Default providers (SEC + FRED) register on the shared registry.
+  test("default providers register", () => {
+    providerRegistry.clear();
+    registerDefaultProviders({ apiKey: "test" });
+    const ids = providerRegistry.listProviders().map(p => String(p.id)).sort();
+    assert(ids.includes("sec") && ids.includes("fred"), `should register sec and fred, got ${ids.join(",")}`);
+    assert(providerRegistry.metadataReport().every(m => m.reliability >= 0 && m.reliability <= 100), "metadata reliability should be in bounds");
+    providerRegistry.clear();
+  });
+
+  // Shared fixtures for the observation-graph bridge tests.
+  const BRIDGE_NOW = Date.parse("2026-01-15");
+  const appleFacts = { cik: 320193, entityName: "Apple Inc.", facts: { "us-gaap": {
+    Revenues: { units: { USD: [{ end: "2025-09-30", val: 391035000000, fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-30" }] } },
+    NetIncomeLoss: { units: { USD: [{ end: "2025-09-30", val: 99803000000, filed: "2025-10-30" }] } },
+  } } };
+  const fredRaw = { observations: [{ date: "2026-01-01", value: "4.10" }, { date: "2026-01-14", value: "4.25" }] };
+  const insiderObs: ProviderObservation = {
+    id: "sec:insider_transaction:AAPL:1", source: "SEC EDGAR", provider: "sec", providerConfidence: 97,
+    providerTimestamp: BRIDGE_NOW, entityType: "Company", entityId: "AAPL", entityLabel: "Apple Inc.",
+    observationType: "insider_transaction", payload: { insiderName: "Tim Cook", role: "CEO", direction: "buy", shares: 10000 },
+    qualityScore: 90, quality: { quality: 90, freshness: 100, providerReliability: 100, entityConfidence: 99, collectedAt: BRIDGE_NOW }, metadata: {},
+  };
+
+  // 32. SEC financial observations create/update a Company node with metric links.
+  test("bridge SEC financials to graph", () => {
+    intelligenceGraph.clear();
+    const sec = new SecAdapter({ now: () => BRIDGE_NOW });
+    const stats = ingestProviderObservations(sec.normalize(appleFacts, { dataset: "companyfacts", ticker: "AAPL" }));
+    assert(stats.observationsIngested >= 2, `expected profile + financials, ingested ${stats.observationsIngested}`);
+    const company = intelligenceGraph.getNode("AAPL");
+    assert(!!company && company.type === "Company", "should create a Company node");
+    const metrics = intelligenceGraph.getNeighbors(company!.id).filter(n => n.node.type === "FinancialMetric");
+    assert(metrics.length >= 1, "company should link to financial metric nodes");
+    assert(metrics.some(m => m.edge.relationshipType === "has_financial_metric"), "edge should be has_financial_metric");
+    assert(stats.providersUsed.includes("sec") && stats.averageQualityScore > 0, "stats should reflect the SEC provider");
+  });
+
+  // 33. Form 4 observations create Person and Company links.
+  test("bridge Form 4 to person and company", () => {
+    intelligenceGraph.clear();
+    ingestProviderObservations([insiderObs]);
+    const person = intelligenceGraph.getNode("Tim Cook");
+    const company = intelligenceGraph.getNode("AAPL");
+    assert(!!person && person.type === "Person", "should create a Person node");
+    assert(!!company && company.type === "Company", "should create the issuer Company node");
+    const rels = intelligenceGraph.getRelationships(person!.id).map(e => e.relationshipType);
+    assert(rels.includes("transacted"), "person should have transacted the company");
+    assert(rels.includes("owns") && rels.includes("supports"), "a buy should create owns + supports edges");
+  });
+
+  // 34. FRED interest-rate observations create Macro + MacroSeries nodes.
+  test("bridge FRED interest rate to macro", () => {
+    intelligenceGraph.clear();
+    const fred = new FredAdapter({ now: () => BRIDGE_NOW, apiKey: "test" });
+    ingestProviderObservations(fred.normalize(fredRaw, { seriesId: "DGS10" }));
+    const macro = intelligenceGraph.getNode("Interest Rates");
+    const series = intelligenceGraph.getNode("10-Year Treasury Yield");
+    assert(!!macro && macro.type === "Macro", "should create the Interest Rates macro node");
+    assert(!!series && series.type === "MacroSeries", "should create the macro series node");
+    assert(intelligenceGraph.getRelationships(series!.id).some(e => e.relationshipType === "drives"), "series should drive the macro concept");
+  });
+
+  // 35. Malformed observations are skipped safely.
+  test("bridge skips malformed observations", () => {
+    intelligenceGraph.clear();
+    const stats = ingestProviderObservations([
+      { observationType: "financials" } as unknown as ProviderObservation,
+      null as unknown as ProviderObservation,
+    ]);
+    assert(stats.errorsSkipped >= 2, `malformed observations should be skipped, got ${stats.errorsSkipped}`);
+    assert(stats.observationsIngested === 0, "no valid observations should be ingested");
+  });
+
+  // 36. Provider quality metadata is preserved on the resulting node.
+  test("bridge preserves provider quality metadata", () => {
+    intelligenceGraph.clear();
+    const fred = new FredAdapter({ now: () => BRIDGE_NOW, apiKey: "test" });
+    ingestProviderObservations(fred.normalize(fredRaw, { seriesId: "DGS10" }));
+    const series = intelligenceGraph.getNode("10-Year Treasury Yield");
+    const meta = series!.metadata;
+    assert(typeof meta.providerReliability === "number" && typeof meta.qualityScore === "number" && typeof meta.freshness === "number", "quality metadata should be preserved on the node");
+    assert(meta.provider === "fred" && meta.source === "FRED", "provider and source should be preserved");
+  });
+
+  // 37. Graph integrity remains clean after provider ingestion.
+  test("bridge keeps graph integrity clean", () => {
+    intelligenceGraph.clear();
+    const sec = new SecAdapter({ now: () => BRIDGE_NOW });
+    const fred = new FredAdapter({ now: () => BRIDGE_NOW, apiKey: "test" });
+    ingestProviderObservations(sec.normalize(appleFacts, { dataset: "companyfacts", ticker: "AAPL" }));
+    ingestProviderObservations([insiderObs]);
+    ingestProviderObservations(fred.normalize(fredRaw, { seriesId: "DGS10" }));
+    const rep = validateGraphIntegrity();
+    assert(rep.ok, `graph should stay clean: orphans=${JSON.stringify(rep.orphanRelationships)} dup=${JSON.stringify(rep.duplicateAliases)} empty=${JSON.stringify(rep.emptyLabels)}`);
+  });
+
+  for (const [name, fn] of tests) {
+    try { await fn(); results.push({ name, ok: true }); }
+    catch (e) { results.push({ name, ok: false, detail: e instanceof Error ? e.message : String(e) }); }
+  }
   const passed = results.filter(r => r.ok).length;
   return { total: results.length, passed, failed: results.length - passed, results };
 }
@@ -259,8 +486,9 @@ export function runIntelligenceTests(): TestSummary {
 // Allow direct execution: `npx tsx src/lib/intelligenceTests.ts`
 const proc = (globalThis as { process?: { argv?: string[]; exit?: (code: number) => void } }).process;
 if (proc && Array.isArray(proc.argv) && /intelligenceTests\.(ts|js)$/.test(proc.argv[1] ?? "")) {
-  const summary = runIntelligenceTests();
-  for (const r of summary.results) console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.detail ? "  :: " + r.detail : ""}`);
-  console.log(`\n${summary.passed}/${summary.total} passed`);
-  proc.exit?.(summary.failed ? 1 : 0);
+  runIntelligenceTests().then(summary => {
+    for (const r of summary.results) console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.detail ? "  :: " + r.detail : ""}`);
+    console.log(`\n${summary.passed}/${summary.total} passed`);
+    proc.exit?.(summary.failed ? 1 : 0);
+  });
 }

@@ -20,6 +20,7 @@ import { validateGraphIntegrity } from "./intelligenceGraphDebug";
 import { inferMarketState } from "./inferenceEngine";
 import { findTransmissionChains } from "./narrativeTransmission";
 import { evaluateEvidenceForNode } from "./evidenceEngine";
+import { providerRegistry } from "./dataAdapters/registry";
 
 const nowMs = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -42,6 +43,14 @@ export interface IntelligenceHealthReport {
     averageSourceDiversity: number;
     staleEvidenceCount:    number;
     evidenceMs:            number;
+  };
+  providers: {
+    registered: number;
+    list: Array<{
+      id: string; name: string; state: string;
+      lastSyncAt: number | null; lastSyncDurationMs: number | null;
+      observationCount: number; failureCount: number; cacheEntries: number; cacheAgeMs: number | null;
+    }>;
   };
   timings: {
     graphRebuildMs:  number | null;
@@ -116,6 +125,15 @@ export function intelligenceHealthReport(opts: HealthOptions = {}): Intelligence
   const staleEvidenceCount = evals.filter(x => x.ev.freshnessScore < 50).length;
   const evidenceMs = round2(nowMs() - te);
 
+  // Data-provider registry snapshot (empty until providers are explicitly registered).
+  const providerMeta = new Map(providerRegistry.metadataReport().map(m => [m.id, m.name]));
+  const providerList = providerRegistry.healthReport().map(h => ({
+    id: String(h.id), name: providerMeta.get(h.id) ?? String(h.id), state: h.state,
+    lastSyncAt: h.lastSyncAt, lastSyncDurationMs: h.lastSyncDurationMs,
+    observationCount: h.observationCount, failureCount: h.failureCount,
+    cacheEntries: h.cacheEntries, cacheAgeMs: h.cacheAgeMs,
+  }));
+
   return {
     timestamp: new Date().toISOString(),
     totalNodes: summary.totalNodes,
@@ -129,6 +147,7 @@ export function intelligenceHealthReport(opts: HealthOptions = {}): Intelligence
     snapshotCount,
     topConnectedNodes: summary.topConnectedNodes.map(n => ({ label: n.label, type: n.type, degree: n.degree })),
     evidence: { averageEvidenceScore, weakEvidenceNodes, highContradictionNodes, averageSourceDiversity, staleEvidenceCount, evidenceMs },
+    providers: { registered: providerList.length, list: providerList },
     timings: { graphRebuildMs, inferenceMs, narrativeMs },
   };
 }
@@ -157,6 +176,9 @@ export function printIntelligenceHealth(opts: HealthOptions = {}): IntelligenceH
   line("highContradiction", r.evidence.highContradictionNodes.map(n => `${n.label}(${n.contradiction})`).join(", ") || "none");
   line("avgSourceDiversity", r.evidence.averageSourceDiversity);
   line("staleEvidenceCount", r.evidence.staleEvidenceCount);
+  line("providers", r.providers.registered
+    ? r.providers.list.map(p => `${p.name}[${p.state},obs=${p.observationCount},fail=${p.failureCount}]`).join(", ")
+    : "none registered");
   line("topConnected", r.topConnectedNodes.map(n => `${n.label}(${n.degree})`).join(", "));
   return r;
 }
