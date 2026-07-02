@@ -16,6 +16,7 @@
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
 import type { IntelNode, IntelEdge, NodeType, SourcePage } from "./intelligenceGraph";
+import { num, clamp01, round, avg, uniq, list, plural } from "./intelligenceUtils";
 
 /* ------------------------------------------------------------------ *
  * Shared vocabulary
@@ -49,25 +50,6 @@ const PAGE_SOURCE: Record<string, SourceType> = {
   "Historical Snapshots": "theme",
 };
 
-/* ------------------------------------------------------------------ *
- * Small pure helpers
- * ------------------------------------------------------------------ */
-
-const num = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? n : 0);
-const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
-const round = (n: number): number => Math.round(n);
-const avg = (a: number[]): number => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-const uniq = <T,>(a: T[]): T[] => Array.from(new Set(a));
-
-/** Join a few labels into readable prose without dashes: "a, b and c". */
-function list(items: string[]): string {
-  const f = uniq(items.filter(Boolean));
-  if (f.length === 0) return "";
-  if (f.length === 1) return f[0];
-  if (f.length === 2) return `${f[0]} and ${f[1]}`;
-  return `${f.slice(0, -1).join(", ")} and ${f[f.length - 1]}`;
-}
-const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 

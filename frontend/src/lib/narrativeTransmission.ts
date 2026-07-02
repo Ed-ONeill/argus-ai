@@ -13,24 +13,11 @@
 import { intelligenceGraph as G } from "./intelligenceGraph";
 import type { IntelNode, IntelEdge, NodeType, SourcePage } from "./intelligenceGraph";
 import { inferTheme, scoreInference, type Direction, type ReasoningStep } from "./inferenceEngine";
+import { num, round, avg, uniq, list, plural } from "./intelligenceUtils";
 
 /* ------------------------------------------------------------------ *
  * Helpers (pure, graph-only)
  * ------------------------------------------------------------------ */
-
-const num = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? n : 0);
-const round = (n: number): number => Math.round(n);
-const avg = (a: number[]): number => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-const uniq = <T,>(a: T[]): T[] => Array.from(new Set(a));
-
-function list(items: string[]): string {
-  const f = uniq(items.filter(Boolean));
-  if (f.length === 0) return "";
-  if (f.length === 1) return f[0];
-  if (f.length === 2) return `${f[0]} and ${f[1]}`;
-  return `${f.slice(0, -1).join(", ")} and ${f[f.length - 1]}`;
-}
-const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 export interface NodeRef { id: string; label: string; type: NodeType }
 const ref = (n: IntelNode): NodeRef => ({ id: n.id, label: n.label, type: n.type });
