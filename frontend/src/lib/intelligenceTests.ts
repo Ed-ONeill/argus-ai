@@ -29,6 +29,9 @@ import { FredAdapter } from "./dataAdapters/fred";
 import { registerDefaultProviders } from "./dataAdapters/providers";
 import { ingestProviderObservations } from "./dataAdapters/observationGraphBridge";
 import { runProviderIngestion } from "./dataAdapters/providerIngestion";
+import { IngestionScheduler, MemoryHealthStore } from "./dataAdapters/ingestionScheduler";
+import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
+import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
 
 export interface TestResult { name: string; ok: boolean; detail?: string }
@@ -497,7 +500,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // 38. Ingestion skips unavailable providers safely (no FRED key).
   test("ingestion skips unavailable providers", async () => {
     intelligenceGraph.clear();
-    const report = await runProviderIngestion({ companies: singleUniverse, fredApiKey: "", transport: secFredTransport, now: () => BRIDGE_NOW });
+    const report = await runProviderIngestion({ companies: singleUniverse, fredApiKey: "", transport: secFredTransport, now: () => BRIDGE_NOW, force: true });
     assert(report.providersSkipped.some(p => p.id === "fred"), "FRED should be skipped without an API key");
     assert(report.providersCalled.includes("sec"), "SEC should still be called");
     assert(Array.isArray(report.providerHealth), "a report should still be returned");
@@ -506,7 +509,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // 39. SEC CompanyFacts result reaches the graph.
   test("ingestion SEC reaches graph", async () => {
     intelligenceGraph.clear();
-    const report = await runProviderIngestion({ companies: singleUniverse, includeForm4: true, transport: secFredTransport, now: () => BRIDGE_NOW });
+    const report = await runProviderIngestion({ companies: singleUniverse, includeForm4: true, transport: secFredTransport, now: () => BRIDGE_NOW, force: true });
     assert(report.observationsIngested > 0, "should ingest SEC observations");
     assert(report.nodesAdded > 0, "should add nodes to the graph");
     assert(!!intelligenceGraph.getNode("AAPL"), "the Apple company node should exist");
@@ -516,7 +519,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // 40. FRED result reaches the graph when a key is supplied.
   test("ingestion FRED reaches graph", async () => {
     intelligenceGraph.clear();
-    const report = await runProviderIngestion({ companies: [], fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW });
+    const report = await runProviderIngestion({ companies: [], fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW, force: true });
     assert(report.providersCalled.includes("fred"), "FRED should be called with a key");
     assert(!!intelligenceGraph.getNode("Interest Rates"), "the Interest Rates macro node should exist");
     assert(!!intelligenceGraph.getNode("10-Year Treasury Yield"), "the macro series node should exist");
@@ -525,7 +528,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // 41. Provider health updates after ingestion.
   test("ingestion updates provider health", async () => {
     intelligenceGraph.clear();
-    const report = await runProviderIngestion({ companies: singleUniverse, fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW });
+    const report = await runProviderIngestion({ companies: singleUniverse, fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW, force: true });
     const sec = report.providerHealth.find(h => h.id === "sec");
     const fred = report.providerHealth.find(h => h.id === "fred");
     assert(!!sec && sec.state === "healthy" && sec.observationCount > 0, "SEC health should reflect a successful sync");
@@ -535,9 +538,118 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // 42. Graph integrity remains clean after controlled ingestion.
   test("ingestion keeps graph integrity clean", async () => {
     intelligenceGraph.clear();
-    await runProviderIngestion({ companies: singleUniverse, includeForm4: true, fredSeries: ["DGS10", "BAMLH0A0HYM2"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW });
+    await runProviderIngestion({ companies: singleUniverse, includeForm4: true, fredSeries: ["DGS10", "BAMLH0A0HYM2"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW, force: true });
     const rep = validateGraphIntegrity();
     assert(rep.ok, `graph should stay clean: orphans=${JSON.stringify(rep.orphanRelationships)} dup=${JSON.stringify(rep.duplicateAliases)} empty=${JSON.stringify(rep.emptyLabels)}`);
+  });
+
+  // 43. Ingestion is gated off by default (no flag, no force).
+  test("ingestion gated off by default", async () => {
+    intelligenceGraph.clear();
+    const report = await runProviderIngestion({ companies: singleUniverse, transport: secFredTransport, now: () => BRIDGE_NOW });
+    assert(report.enabled === false, "ingestion should be disabled without the feature flag");
+    assert(report.providersCalled.length === 0, "no providers should be called when gated off");
+    assert(report.graphAfter.nodes === report.graphBefore.nodes, "the graph must be untouched when gated off");
+  });
+
+  // 44. Expanded SEC fundamentals: EPS, capex, buybacks, shares, and derived margins.
+  test("SEC expanded fundamentals and margins", () => {
+    const richFacts = { cik: 320193, entityName: "Apple Inc.", facts: { "us-gaap": {
+      Revenues: { units: { USD: [{ end: "2025-09-30", val: 400000000000, filed: "2025-10-30", form: "10-K" }] } },
+      GrossProfit: { units: { USD: [{ end: "2025-09-30", val: 180000000000, filed: "2025-10-30" }] } },
+      NetIncomeLoss: { units: { USD: [{ end: "2025-09-30", val: 100000000000, filed: "2025-10-30" }] } },
+      EarningsPerShareDiluted: { units: { "USD/shares": [{ end: "2025-09-30", val: 6.5, filed: "2025-10-30" }] } },
+      PaymentsToAcquirePropertyPlantAndEquipment: { units: { USD: [{ end: "2025-09-30", val: 11000000000, filed: "2025-10-30" }] } },
+      PaymentsForRepurchaseOfCommonStock: { units: { USD: [{ end: "2025-09-30", val: 90000000000, filed: "2025-10-30" }] } },
+      CommonStockSharesOutstanding: { units: { shares: [{ end: "2025-09-30", val: 15000000000, filed: "2025-10-30" }] } },
+    } } };
+    const sec = new SecAdapter({ now: () => BRIDGE_NOW });
+    const obs = sec.normalize(richFacts, { dataset: "companyfacts", ticker: "AAPL" });
+    const labels = obs.filter(o => o.observationType === "financials").map(o => String(o.payload.label));
+    for (const want of ["EPS (Diluted)", "Capital Expenditure", "Share Buybacks", "Shares Outstanding", "Gross Margin", "Net Margin"]) {
+      assert(labels.includes(want), `expected a ${want} observation, got ${labels.join(", ")}`);
+    }
+    const eps = obs.find(o => o.payload.label === "EPS (Diluted)");
+    assert(eps!.payload.unit === "USD/shares" && eps!.payload.value === 6.5, "EPS should keep its per-share unit and value");
+    const net = obs.find(o => o.payload.label === "Net Margin");
+    assert(net!.payload.value === 25 && net!.payload.derived === true, `net margin should be 25% derived, got ${net!.payload.value}`);
+  });
+
+  // 45. Ingestion is idempotent: a second identical run adds nothing.
+  test("ingestion is idempotent", async () => {
+    intelligenceGraph.clear();
+    const cfg = { companies: singleUniverse, includeForm4: true, fredSeries: ["DGS10"], fredApiKey: "test", transport: secFredTransport, now: () => BRIDGE_NOW, force: true };
+    const r1 = await runProviderIngestion(cfg);
+    const r2 = await runProviderIngestion(cfg);
+    assert(r1.nodesAdded > 0, "first run should add nodes");
+    assert(r2.nodesAdded === 0 && r2.relationshipsAdded === 0, `second identical run should add nothing, got nodes=${r2.nodesAdded} rels=${r2.relationshipsAdded}`);
+  });
+
+  // Shared helpers for the scheduler tests.
+  const fakeReport = (): IngestionReport => ({
+    enabled: true, providersCalled: ["sec"], providersSkipped: [], observationsFetched: 0, observationsIngested: 0,
+    errorsSkipped: 0, nodesAdded: 0, relationshipsAdded: 0, providerHealth: [], graphBefore: { nodes: 0, edges: 0 },
+    graphAfter: { nodes: 0, edges: 0 }, fetchErrors: [], durationMs: 0,
+  });
+  const captureLogger = (sink: string[]): SchedulerLogger => ({
+    info: (m) => sink.push(`info:${m}`), warn: (m) => sink.push(`warn:${m}`), error: (m) => sink.push(`error:${m}`),
+  });
+
+  // 46. Scheduler is gated off unless enabled.
+  test("scheduler gated off by default", async () => {
+    let called = 0;
+    const s = new IngestionScheduler({ flagOverride: false, ingest: async () => { called += 1; return fakeReport(); } });
+    const r = await s.tick();
+    assert(r.reason === "disabled" && r.ran === false, "tick should be disabled without the flag");
+    assert(called === 0, "ingestion should not run when disabled");
+  });
+
+  // 47. Scheduler runs SEC and FRED when due and persists provider health.
+  test("scheduler runs and persists health", async () => {
+    intelligenceGraph.clear();
+    const NOW = BRIDGE_NOW;
+    const store = new MemoryHealthStore();
+    const logs: string[] = [];
+    const s = new IngestionScheduler({
+      force: true, now: () => NOW, healthStore: store, logger: captureLogger(logs),
+      companies: singleUniverse, fredSeries: ["DGS10"], fredApiKey: "test",
+      ingestionConfig: { transport: secFredTransport },
+    });
+    const r = await s.tick();
+    assert(r.ran === true && r.reason === "ok", "first tick should run");
+    assert(!!r.reports.sec && !!r.reports.fred, "both SEC and FRED should run when both are due");
+    const records = store.load();
+    assert(records.some(x => x.provider === "sec") && records.some(x => x.provider === "fred"), "health should be persisted for both providers");
+    assert(logs.some(l => l.includes("ingestion complete")), "run should be logged");
+  });
+
+  // 48. Overlap prevention: a second tick during an in-flight run is rejected.
+  test("scheduler prevents overlapping runs", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>(res => { release = res; });
+    const s = new IngestionScheduler({ force: true, now: () => BRIDGE_NOW, ingest: async () => { await gate; return fakeReport(); } });
+    const first = s.tick();               // starts, sets running, awaits the gate
+    const second = await s.tick();        // sees running, should be rejected
+    assert(second.reason === "overlap" && second.ran === false, "overlapping tick should be prevented");
+    release();
+    await first;
+  });
+
+  // 49. Cadence: nothing is due again until the interval elapses.
+  test("scheduler respects cadence", async () => {
+    let now = BRIDGE_NOW;
+    let calls = 0;
+    const s = new IngestionScheduler({ force: true, now: () => now, secIntervalMs: 86_400_000, fredIntervalMs: 86_400_000, ingest: async () => { calls += 1; return fakeReport(); } });
+    const r1 = await s.tick();
+    assert(r1.ran === true, "first tick should run");
+    const before = calls;
+    now += 60_000; // one minute later
+    const r2 = await s.tick();
+    assert(r2.ran === false && r2.reason === "not-due", "a tick within the interval should not run");
+    assert(calls === before, "no ingestion should happen when nothing is due");
+    now += 86_400_000; // a day later
+    const r3 = await s.tick();
+    assert(r3.ran === true, "a tick after the interval should run again");
   });
 
   for (const [name, fn] of tests) {

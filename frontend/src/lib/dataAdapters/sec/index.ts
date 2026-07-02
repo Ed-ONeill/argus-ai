@@ -20,15 +20,40 @@ const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const parseDate = (v: unknown): number => { const t = Date.parse(String(v)); return Number.isFinite(t) ? t : Date.now(); };
 
 /** XBRL us-gaap concepts we surface, with friendly labels. */
-const TRACKED_CONCEPTS: Array<{ concept: string; label: string }> = [
-  { concept: "Revenues", label: "Revenue" },
-  { concept: "RevenueFromContractWithCustomerExcludingAssessedTax", label: "Revenue" },
-  { concept: "NetIncomeLoss", label: "Net Income" },
-  { concept: "Assets", label: "Total Assets" },
-  { concept: "Liabilities", label: "Total Liabilities" },
-  { concept: "StockholdersEquity", label: "Shareholders Equity" },
-  { concept: "CashAndCashEquivalentsAtCarryingValue", label: "Cash and Equivalents" },
-  { concept: "ResearchAndDevelopmentExpense", label: "R&D Expense" },
+interface ConceptSpec { concept: string; label: string; unit: string; taxonomy: "us-gaap" | "dei" }
+
+/**
+ * XBRL concepts surfaced as fundamentals. First matching label wins, so synonymous
+ * tags (multiple revenue or debt concepts) collapse to one metric. Units vary: USD
+ * for money, "USD/shares" for EPS, "shares" for share counts.
+ */
+const TRACKED_CONCEPTS: ConceptSpec[] = [
+  { concept: "Revenues", label: "Revenue", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "RevenueFromContractWithCustomerExcludingAssessedTax", label: "Revenue", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "GrossProfit", label: "Gross Profit", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "OperatingIncomeLoss", label: "Operating Income", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "NetIncomeLoss", label: "Net Income", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "EarningsPerShareDiluted", label: "EPS (Diluted)", unit: "USD/shares", taxonomy: "us-gaap" },
+  { concept: "EarningsPerShareBasic", label: "EPS (Basic)", unit: "USD/shares", taxonomy: "us-gaap" },
+  { concept: "Assets", label: "Total Assets", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "Liabilities", label: "Total Liabilities", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "StockholdersEquity", label: "Shareholders Equity", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "CashAndCashEquivalentsAtCarryingValue", label: "Cash and Equivalents", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "LongTermDebtNoncurrent", label: "Long-Term Debt", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "LongTermDebt", label: "Long-Term Debt", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "ResearchAndDevelopmentExpense", label: "R&D Expense", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "PaymentsToAcquirePropertyPlantAndEquipment", label: "Capital Expenditure", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "PaymentsForRepurchaseOfCommonStock", label: "Share Buybacks", unit: "USD", taxonomy: "us-gaap" },
+  { concept: "CommonStockSharesOutstanding", label: "Shares Outstanding", unit: "shares", taxonomy: "us-gaap" },
+  { concept: "EntityCommonStockSharesOutstanding", label: "Shares Outstanding", unit: "shares", taxonomy: "dei" },
+  { concept: "WeightedAverageNumberOfDilutedSharesOutstanding", label: "Diluted Shares", unit: "shares", taxonomy: "us-gaap" },
+];
+
+/** Derived margins: numerator / Revenue, expressed as a percentage. Deterministic arithmetic. */
+const MARGIN_SPECS: Array<{ label: string; numerator: string }> = [
+  { label: "Gross Margin", numerator: "Gross Profit" },
+  { label: "Operating Margin", numerator: "Operating Income" },
+  { label: "Net Margin", numerator: "Net Income" },
 ];
 
 interface XbrlPoint { end?: string; val?: number; fy?: number; fp?: string; form?: string; filed?: string }
@@ -91,22 +116,41 @@ export class SecAdapter extends BaseDataAdapter {
       metadata: { dataset: "companyfacts" },
     }));
 
-    const gaap = asRecord(asRecord(r.facts)["us-gaap"]);
+    const facts = asRecord(r.facts);
     const seen = new Set<string>();
-    for (const { concept, label } of TRACKED_CONCEPTS) {
-      if (seen.has(label)) continue;
-      const units = asRecord(asRecord(gaap[concept]).units);
-      const points = (asArray(units.USD) as XbrlPoint[]).filter(p => Number.isFinite(num(p.val)) && p.end);
+    const values = new Map<string, number>();   // label -> latest reported value (for margins)
+    for (const spec of TRACKED_CONCEPTS) {
+      if (seen.has(spec.label)) continue;
+      const tax = asRecord(facts[spec.taxonomy]);
+      const units = asRecord(asRecord(tax[spec.concept]).units);
+      const points = (asArray(units[spec.unit]) as XbrlPoint[]).filter(p => Number.isFinite(num(p.val)) && p.end);
       if (points.length === 0) continue;
       const latest = points.sort((a, b) => parseDate(b.end) - parseDate(a.end))[0];
-      seen.add(label);
+      seen.add(spec.label);
+      values.set(spec.label, num(latest.val));
       out.push(this.buildObservation({
         source: "SEC EDGAR", providerConfidence: 98, providerTimestamp: parseDate(latest.filed ?? latest.end),
         entityType: "Company", entityId, entityLabel: entityName,
         observationType: "financials", entityConfidence: ticker ? 99 : 85,
-        payload: { concept, label, value: num(latest.val), unit: "USD", periodEnd: latest.end, fiscalYear: latest.fy, fiscalPeriod: latest.fp, form: latest.form },
+        payload: { concept: spec.concept, label: spec.label, value: num(latest.val), unit: spec.unit, periodEnd: latest.end, fiscalYear: latest.fy, fiscalPeriod: latest.fp, form: latest.form },
         metadata: { dataset: "companyfacts" },
       }));
+    }
+
+    // Derived margins from reported facts (arithmetic only, flagged as derived).
+    const revenue = values.get("Revenue");
+    if (revenue && Number.isFinite(revenue) && revenue !== 0) {
+      for (const m of MARGIN_SPECS) {
+        const numerator = values.get(m.numerator);
+        if (numerator == null || !Number.isFinite(numerator)) continue;
+        out.push(this.buildObservation({
+          source: "SEC EDGAR", providerConfidence: 96, providerTimestamp: this.now(),
+          entityType: "Company", entityId, entityLabel: entityName,
+          observationType: "financials", entityConfidence: ticker ? 99 : 85,
+          payload: { concept: m.label.replace(/\s+/g, ""), label: m.label, value: Math.round((numerator / revenue) * 10000) / 100, unit: "%", derived: true, basis: `${m.numerator} / Revenue` },
+          metadata: { dataset: "companyfacts", derived: true },
+        }));
+      }
     }
     return out;
   }

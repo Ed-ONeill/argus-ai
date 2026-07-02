@@ -23,12 +23,15 @@ export interface IngestionConfig {
   fredSeries?:   string[];          // FRED series ids
   fredApiKey?:   string;            // falls back to process.env.FRED_API_KEY
   includeForm4?: boolean;           // also pull Form 4 filings per company
+  enabled?:      boolean;           // explicit gate override (true forces on, false forces off)
+  force?:        boolean;           // dev override: run even when the feature flag is off
   transport?:    FetchLike;         // injectable for tests
   now?:          () => number;
   retry?:        RetryPolicy;
 }
 
 export interface IngestionReport {
+  enabled:              boolean;
   providersCalled:      string[];
   providersSkipped:     Array<{ id: string; reason: string }>;
   observationsFetched:  number;
@@ -53,9 +56,29 @@ export const DEFAULT_UNIVERSE: CompanyRef[] = [
 /** Default FRED series across rates, curve, inflation, employment, credit. */
 export const DEFAULT_FRED_SERIES = ["DGS10", "T10Y2Y", "CPIAUCSL", "UNRATE", "BAMLH0A0HYM2"];
 
-function envFredKey(): string | undefined {
+function envVar(name: string): string | undefined {
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
-  return proc?.env?.FRED_API_KEY;
+  return proc?.env?.[name];
+}
+const envFredKey = (): string | undefined => envVar("FRED_API_KEY");
+
+/**
+ * Feature flag. Provider ingestion stays OFF unless explicitly enabled, so it can be
+ * validated before production rollout. Set ARGUS_ENABLE_PROVIDER_INGESTION=1 (or true)
+ * to turn it on, or pass { force: true } / { enabled: true } to runProviderIngestion.
+ */
+export function isProviderIngestionEnabled(): boolean {
+  const v = (envVar("ARGUS_ENABLE_PROVIDER_INGESTION") ?? envVar("ARGUS_PROVIDER_INGESTION") ?? "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function disabledReport(startedAt: number, now: () => number, graph: { nodes: number; edges: number }): IngestionReport {
+  return {
+    enabled: false,
+    providersCalled: [], providersSkipped: [{ id: "sec", reason: "ingestion disabled" }, { id: "fred", reason: "ingestion disabled" }],
+    observationsFetched: 0, observationsIngested: 0, errorsSkipped: 0, nodesAdded: 0, relationshipsAdded: 0,
+    providerHealth: [], graphBefore: graph, graphAfter: graph, fetchErrors: [], durationMs: Math.max(0, now() - startedAt),
+  };
 }
 
 /**
@@ -65,6 +88,12 @@ function envFredKey(): string | undefined {
 export async function runProviderIngestion(config: IngestionConfig = {}): Promise<IngestionReport> {
   const now = config.now ?? (() => Date.now());
   const startedAt = now();
+
+  // Feature-flag gate: off by default so this can be validated before production.
+  const gateOpen = config.enabled === true || config.force === true ||
+    (config.enabled !== false && isProviderIngestionEnabled());
+  if (!gateOpen) return disabledReport(startedAt, now, statsOf());
+
   const companies = config.companies ?? DEFAULT_UNIVERSE;
   const fredSeries = config.fredSeries ?? DEFAULT_FRED_SERIES;
   const fredApiKey = config.fredApiKey ?? envFredKey();
@@ -105,6 +134,7 @@ export async function runProviderIngestion(config: IngestionConfig = {}): Promis
   const graphAfter = statsOf();
 
   return {
+    enabled: true,
     providersCalled: [...providersCalled],
     providersSkipped,
     observationsFetched: results.reduce((sum, r) => sum + r.observations.length, 0),
