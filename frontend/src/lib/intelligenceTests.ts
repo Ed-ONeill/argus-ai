@@ -18,6 +18,10 @@ import {
   rankEvidenceSources, scoreEvidence, detectContradictions, evaluateEvidenceForNode,
   evaluateEvidenceForInference,
 } from "./evidenceEngine";
+import {
+  predictThemeTrajectory, predictCompanyTrajectory, predictMarketEvolution,
+  rankFutureOpportunities, rankFutureRisks, detectInflectionPoints,
+} from "./predictionEngine";
 
 export interface TestResult { name: string; ok: boolean; detail?: string }
 export interface TestSummary { total: number; passed: number; failed: number; results: TestResult[] }
@@ -166,6 +170,86 @@ export function runIntelligenceTests(): TestSummary {
     assert(ev.found, "node should be found");
     assert(ev.confirmationScore >= 60, `expected high confirmation, got ${ev.confirmationScore}`);
     assert(ev.verdict === "strong" || ev.verdict === "moderate", `expected strong/moderate, got ${ev.verdict}`);
+  });
+
+  // 14. Prediction insufficient-signal for unknown themes.
+  test("prediction insufficient signal", () => {
+    createDebugGraphFromSampleData();
+    const p = predictThemeTrajectory("Totally Unknown Theme");
+    assert(p.predictedDirection === "insufficient_signal", `expected insufficient_signal, got ${p.predictedDirection}`);
+    assert(p.found === false, "unknown theme should not be found");
+    assert(p.probability === 0 && p.confidence === 0, "unknown theme should score 0");
+  });
+
+  // 15. Probability and confidence stay within 0..100.
+  test("prediction score bounds", () => {
+    createDebugGraphFromSampleData();
+    for (const label of ["AI Infrastructure", "Nuclear Energy"]) {
+      const p = predictThemeTrajectory(label);
+      assert(p.probability >= 0 && p.probability <= 100, `probability out of bounds for ${label}: ${p.probability}`);
+      assert(p.confidence >= 0 && p.confidence <= 100, `confidence out of bounds for ${label}: ${p.confidence}`);
+    }
+  });
+
+  // 16. Stronger evidence yields higher probability than weaker evidence.
+  test("stronger evidence higher probability", () => {
+    createDebugGraphFromSampleData();
+    const strong = predictThemeTrajectory("AI Infrastructure");   // 5 sources, high momentum
+    const weak = predictThemeTrajectory("Nuclear Energy");        // fewer sources, lower momentum
+    assert(strong.probability > weak.probability, `expected AI Infrastructure (${strong.probability}) above Nuclear Energy (${weak.probability})`);
+  });
+
+  // 17. Contradictions lower probability or confidence.
+  test("contradictions lower prediction", () => {
+    createDebugGraphFromSampleData();
+    const base = predictThemeTrajectory("AI Infrastructure");
+    intelligenceGraph.addNode({ label: "Regulatory Crackdown", type: "Macro" });
+    intelligenceGraph.addRelationship({ source: "Regulatory Crackdown", target: "AI Infrastructure", relationshipType: "weakens", strength: 65, confidence: 65, originatingPages: ["Feed"] });
+    const after = predictThemeTrajectory("AI Infrastructure");
+    assert(after.probability < base.probability || after.confidence < base.confidence,
+      `contradictions should lower probability or confidence: prob ${base.probability}->${after.probability}, conf ${base.confidence}->${after.confidence}`);
+  });
+
+  // 18. Alias resolution: company predictions for Nvidia and NVDA resolve to one node.
+  test("prediction alias resolution", () => {
+    createDebugGraphFromSampleData();
+    const byName = predictCompanyTrajectory("Nvidia");
+    const byTicker = predictCompanyTrajectory("NVDA");
+    assert(byName.found && byTicker.found, "both company predictions should be found");
+    assert(byName.company?.id === byTicker.company?.id, `Nvidia and NVDA should resolve together: ${byName.company?.id} vs ${byTicker.company?.id}`);
+  });
+
+  // 19. Inflection points only surface themes with sufficient signal.
+  test("inflection points sufficient signal", () => {
+    createDebugGraphFromSampleData();
+    for (const ip of detectInflectionPoints()) {
+      assert(ip.evidenceScore >= 55, `inflection ${ip.theme.label} should have evidence >= 55, got ${ip.evidenceScore}`);
+      assert(predictThemeTrajectory(ip.theme.id).found, `inflection ${ip.theme.label} should be a real forecastable theme`);
+    }
+  });
+
+  // 20. rankFutureOpportunities is sorted descending by score.
+  test("opportunities sorted descending", () => {
+    createDebugGraphFromSampleData();
+    const ranked = rankFutureOpportunities();
+    for (let i = 1; i < ranked.length; i++) assert(ranked[i - 1].score >= ranked[i].score, `opportunities not sorted at ${i}: ${ranked[i - 1].score} < ${ranked[i].score}`);
+  });
+
+  // 21. rankFutureRisks is sorted descending by score.
+  test("risks sorted descending", () => {
+    createDebugGraphFromSampleData();
+    const ranked = rankFutureRisks();
+    for (let i = 1; i < ranked.length; i++) assert(ranked[i - 1].score >= ranked[i].score, `risks not sorted at ${i}: ${ranked[i - 1].score} < ${ranked[i].score}`);
+  });
+
+  // 22. Market evolution degrades to a safe default on an empty graph.
+  test("market evolution empty graph", () => {
+    intelligenceGraph.clear();
+    const m = predictMarketEvolution();
+    assert(m.found === false, "empty graph should report found false");
+    assert(m.mostLikelyStrengthening.length === 0 && m.mostLikelyWeakening.length === 0, "no themes should be predicted");
+    assert(m.topOpportunities.length === 0 && m.largestRisks.length === 0, "no opportunities or risks on empty graph");
+    assert(m.morningBriefForecast.length > 0, "forecast should still return a safe message");
   });
 
   const passed = results.filter(r => r.ok).length;
