@@ -12,6 +12,7 @@ import { useListenRails } from "@/hooks/useListen";
 import { buildCrossIntel } from "@/lib/crossIntel";
 import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
+import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
 import { confColor } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
@@ -34,6 +35,15 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 }
 
 interface GraphRel { source: string; target: string; type: string; strength: number }
+
+interface ForecastVM {
+  direction:    string;
+  probability:  number | null;
+  confidence:   number;
+  timeframe:    string | null;
+  reasons:      string[];
+  invalidation: string | null;
+}
 
 function RelList({ rels, accent }: { rels: GraphRel[]; accent: string }) {
   return (
@@ -97,6 +107,31 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   const strongest = (isCompany ? companyReport?.strongestRelationships : themeReport?.strongestRelationships) ?? [];
 
   const accentColor = ctx.color ?? "#52b0c8";
+
+  // Forward-looking forecast, normalized across theme / company / sector predictions.
+  // Renders only when the prediction resolved and is not insufficient_signal.
+  const forecast = useMemo<ForecastVM | null>(() => {
+    if (!graph.ready) return null;
+    if (ctx.kind === "company") {
+      const p = predictCompanyTrajectory(ctx.id || ctx.label);
+      if (!p.found || p.expectedDirection === "insufficient_signal") return null;
+      return { direction: p.expectedDirection, probability: p.probability, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: p.invalidation || null };
+    }
+    if (ctx.kind === "sector") {
+      const p = predictSectorRotation(ctx.label);
+      if (!p.found || p.currentRotation === "insufficient_signal") return null;
+      const inflow = p.companiesBenefiting.length >= p.companiesAtRisk.length;
+      return { direction: inflow ? "rotating in" : "rotating out", probability: null, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: null };
+    }
+    if (ctx.kind === "theme" || ctx.kind === "driver" || ctx.kind === "narrative") {
+      const p = predictThemeTrajectory(intel.theme?.name ?? ctx.label);
+      if (!p.found || p.predictedDirection === "insufficient_signal") return null;
+      return { direction: p.predictedDirection, probability: p.probability, confidence: p.confidence, timeframe: p.expectedTimeframe, reasons: p.why.slice(0, 3), invalidation: p.invalidationConditions[0] || null };
+    }
+    return null;
+  }, [graph, ctx.kind, ctx.id, ctx.label, intel.theme]);
+
+  const dirColor = (d: string) => /strength|rotating in|accelerat/i.test(d) ? "#34d399" : /weak|revers|rotating out/i.test(d) ? "#f87171" : accentColor;
 
   return (
     <div className="flex flex-col h-full">
@@ -204,6 +239,30 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
         </div>
 
         <Section label="Next thing to watch"><p className="text-[11px] leading-snug" style={{ color: A(0.72) }}>Watch {intel.nextWatch}.</p></Section>
+
+        {/* Forecast. Forward-looking, probabilistic, graph-derived. Renders only when
+            the prediction resolved (never on insufficient_signal). No price targets. */}
+        {forecast && (
+          <Section label="Forecast">
+            <div className="flex items-center gap-4 mb-2">
+              <span className="text-[12.5px] font-black capitalize leading-none" style={{ color: dirColor(forecast.direction) }}>{forecast.direction}</span>
+              {forecast.probability !== null && (
+                <span className="flex items-baseline gap-1"><span className="text-[13px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{forecast.probability}%</span><span className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>probability</span></span>
+              )}
+              <span className="flex items-baseline gap-1"><span className="text-[13px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{forecast.confidence}</span><span className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>confidence</span></span>
+            </div>
+            {forecast.timeframe && <p className="text-[10px] mb-1.5" style={{ color: A(0.55) }}>Expected timeframe: {forecast.timeframe}.</p>}
+            <ul className="space-y-1 mb-1.5">
+              {forecast.reasons.map((r, i) => (
+                <li key={i} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.7) }}>
+                  <span className="shrink-0 mt-0.5" style={{ color: accentColor }}>›</span>{r}
+                </li>
+              ))}
+            </ul>
+            {forecast.invalidation && <p className="text-[10px] leading-snug mb-1.5" style={{ color: A(0.55) }}>Invalidated if: {forecast.invalidation}</p>}
+            <p className="text-[9px] italic leading-snug" style={{ color: A(0.38) }}>Probabilistic estimate derived from current signals, not a certainty and not investment advice.</p>
+          </Section>
+        )}
 
         {/* Graph-backed enrichment. Renders only when the graph resolved the entity
             and has something to add, so nothing shows blank. */}
