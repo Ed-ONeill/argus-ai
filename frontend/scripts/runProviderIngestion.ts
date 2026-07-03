@@ -10,9 +10,11 @@
  *   npx tsx scripts/runProviderIngestion.ts
  *   npx tsx scripts/runProviderIngestion.ts --tickers=AAPL:320193,NVDA:1045810
  *   npx tsx scripts/runProviderIngestion.ts --fred=DGS10,UNRATE --no-form4
+ *   npx tsx scripts/runProviderIngestion.ts --market=AAPL,MSFT,NVDA,SPY,QQQ --etfs=SPY,QQQ
  *
  * Environment:
  *   FRED_API_KEY   optional; when absent FRED is skipped safely.
+ *   FMP_API_KEY    optional; required for market data (--market), skipped safely when absent.
  */
 
 import { runIngestionDiagnostic, formatDiagnostic, type DiagnosticConfig } from "../src/lib/dataAdapters/diagnostics";
@@ -37,17 +39,26 @@ function parseArgs(argv: string[]): DiagnosticConfig {
   const fred = get("fred");
   const fredSeries = fred ? fred.split(",").map(s => s.trim()).filter(Boolean) : undefined;
 
+  const csv = (v: string | undefined): string[] | undefined =>
+    v ? v.split(",").map(s => s.trim().toUpperCase()).filter(Boolean) : undefined;
+  const marketSymbols = csv(get("market"));
+  const marketEtfs = csv(get("etfs"));
+
   return {
     companies,
     fredSeries,
     fredApiKey: process.env.FRED_API_KEY,
     includeForm4: has("no-form4") ? false : undefined,
+    marketSymbols,
+    marketEtfs,
+    fmpApiKey: process.env.FMP_API_KEY,
   };
 }
 
 async function main(): Promise<void> {
   const config = parseArgs(process.argv);
   if (!process.env.FRED_API_KEY) console.log("[diagnostic] FRED_API_KEY not set, FRED will be skipped\n");
+  if (config.marketSymbols?.length && !process.env.FMP_API_KEY) console.log("[diagnostic] FMP_API_KEY not set, market data will be skipped\n");
   const result = await runIngestionDiagnostic(config);
   console.log(formatDiagnostic(result));
   const healthy = result.integrity.ok && result.report.observationsIngested > 0;

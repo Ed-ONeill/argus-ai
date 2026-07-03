@@ -15,14 +15,17 @@ import type { FetchLike, RetryPolicy } from "./types";
 import { validateGraphIntegrity } from "../intelligenceGraphDebug";
 
 export interface DiagnosticConfig {
-  companies?:    CompanyRef[];
-  fredSeries?:   string[];
-  fredApiKey?:   string;
-  includeForm4?: boolean;
-  transport?:    FetchLike;                                            // injectable for tests
-  now?:          () => number;
-  retry?:        RetryPolicy;
-  ingest?:       (config: IngestionConfig) => Promise<IngestionReport>; // injectable for tests
+  companies?:     CompanyRef[];
+  fredSeries?:    string[];
+  fredApiKey?:    string;
+  includeForm4?:  boolean;
+  marketSymbols?: string[];                                            // FMP market data (opt-in)
+  marketEtfs?:    string[];
+  fmpApiKey?:     string;
+  transport?:     FetchLike;                                           // injectable for tests
+  now?:           () => number;
+  retry?:         RetryPolicy;
+  ingest?:        (config: IngestionConfig) => Promise<IngestionReport>; // injectable for tests
 }
 
 export interface DiagnosticIntegrity {
@@ -77,6 +80,9 @@ export async function runIngestionDiagnostic(config: DiagnosticConfig = {}): Pro
       fredSeries: config.fredSeries ?? DEFAULT_FRED_SERIES,
       fredApiKey: config.fredApiKey,
       includeForm4: config.includeForm4 ?? true,
+      marketSymbols: config.marketSymbols ?? [],
+      marketEtfs: config.marketEtfs,
+      fmpApiKey: config.fmpApiKey,
       transport: config.transport,
       now: config.now,
       retry: config.retry,
