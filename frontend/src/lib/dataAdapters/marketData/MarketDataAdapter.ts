@@ -30,7 +30,14 @@ export interface MarketQuote {
   marketCap?:     number;
   bid?:           number;
   ask?:           number;
-  timestamp:      number;   // epoch ms
+  // Extra reference fields, populated by the profile fallback when quotes are unavailable.
+  beta?:          number;
+  range?:         string;
+  exchange?:      string;
+  sector?:        string;
+  industry?:      string;
+  sourceEndpoint?: string;   // e.g. "profile_fallback"
+  timestamp:      number;    // epoch ms
 }
 
 export interface OhlcvBar { t: number; o: number; h: number; l: number; c: number; v: number }
@@ -106,7 +113,9 @@ export abstract class MarketDataAdapter extends BaseDataAdapter {
         price: q.price, open: q.open ?? null, high: q.high ?? null, low: q.low ?? null, previousClose: q.previousClose ?? null,
         changePercent: q.changePercent ?? null, volume: q.volume ?? null, avgVolume: q.avgVolume ?? null,
         relativeVolume: relVol, dollarVolume: dollarVol, vwap: q.vwap ?? null, marketCap: q.marketCap ?? null,
-        bid: q.bid ?? null, ask: q.ask ?? null, timestamp: q.timestamp,
+        bid: q.bid ?? null, ask: q.ask ?? null,
+        beta: q.beta ?? null, range: q.range ?? null, exchange: q.exchange ?? null, sector: q.sector ?? null, industry: q.industry ?? null,
+        timestamp: q.timestamp,
       });
       const stale = price.quality.freshness < 50;
       price.metadata.stale = stale;
@@ -137,10 +146,12 @@ export abstract class MarketDataAdapter extends BaseDataAdapter {
   }
 
   private build(q: MarketQuote, observationType: string, payload: Record<string, unknown>): ProviderObservation {
+    const metadata: Record<string, unknown> = { assetType: q.assetType };
+    if (q.sourceEndpoint) metadata.sourceEndpoint = q.sourceEndpoint;
     return this.buildObservation({
       source: this.metadata().name, providerConfidence: 96, providerTimestamp: q.timestamp,
       entityType: q.assetType, entityId: q.symbol, entityLabel: q.name, observationType, entityConfidence: 98,
-      payload, metadata: { assetType: q.assetType },
+      payload, metadata,
     });
   }
 

@@ -47,11 +47,16 @@ export class FmpAdapter extends MarketDataAdapter {
     const dataset = String(params.dataset ?? "quote");
     const key = encodeURIComponent(this.apiKey);
     if (dataset === "quote") {
-      // Stable batch-quote returns full quotes for both stocks and ETFs by symbol list.
-      // (Stable also offers /stable/batch-etf-quotes for ETF-only pulls; batch-quote covers both.)
-      const symbols = (Array.isArray(params.symbols) ? (params.symbols as unknown[]) : []).map(s => String(s).toUpperCase()).join(",");
-      if (!symbols) throw new Error("[fmp] symbols are required for a quote");
-      return this.getJson(`${FMP_STABLE}/batch-quote?symbols=${symbols}&apikey=${key}`);
+      const symbols = (Array.isArray(params.symbols) ? (params.symbols as unknown[]) : []).map(s => String(s).toUpperCase());
+      if (!symbols.length) throw new Error("[fmp] symbols are required for a quote");
+      // Preferred: stable batch-quote (full quotes for stocks and ETFs by symbol list).
+      const res = await this.transport(`${FMP_STABLE}/batch-quote?symbols=${symbols.join(",")}&apikey=${key}`, { headers: { Accept: "application/json" } });
+      if (res.ok) return { endpoint: "batch", rows: asArray(await res.json()) };
+      // Free-tier plans get 402/403/404 on batch-quote: fall back to per-symbol profile.
+      if (res.status === 402 || res.status === 403 || res.status === 404) {
+        return { endpoint: "profile", rows: await this.fetchProfiles(symbols, key) };
+      }
+      throw new Error(`[fmp] HTTP ${res.status} for batch-quote`);
     }
     if (dataset === "intraday") {
       const symbol = String(params.symbol ?? "").toUpperCase();
@@ -64,15 +69,45 @@ export class FmpAdapter extends MarketDataAdapter {
     throw new Error(`[fmp] unknown dataset: ${dataset}`);
   }
 
+  /** Per-symbol /stable/profile fallback. A failure on one symbol never fails the rest. */
+  private async fetchProfiles(symbols: string[], key: string): Promise<unknown[]> {
+    const rows: unknown[] = [];
+    for (const sym of symbols) {
+      try {
+        const res = await this.transport(`${FMP_STABLE}/profile?symbol=${sym}&apikey=${key}`, { headers: { Accept: "application/json" } });
+        if (res.ok) { const arr = asArray(await res.json()); if (arr.length) rows.push(arr[0]); }
+      } catch { /* skip this symbol */ }
+    }
+    return rows;
+  }
+
   protected parseQuotes(raw: unknown, params: FetchParams): MarketQuote[] {
     const etfs = new Set((Array.isArray(params.etfs) ? (params.etfs as unknown[]) : []).map(s => String(s).toUpperCase()));
-    return asArray(raw).map(asRecord).filter(r => r.symbol).map(r => {
+    // marketRequest wraps quote results as { endpoint, rows }; a bare array is treated as batch.
+    const wrapper = asRecord(raw);
+    const endpoint = typeof wrapper.endpoint === "string" ? wrapper.endpoint : "batch";
+    const rows = Array.isArray(raw) ? raw : (Array.isArray(wrapper.rows) ? wrapper.rows : []);
+    const isProfile = endpoint === "profile";
+
+    return rows.map(asRecord).filter(r => r.symbol).map(r => {
       const symbol = String(r.symbol).toUpperCase();
+      const isEtf = r.isEtf === true || etfs.has(symbol);
+
+      if (isProfile) {
+        // /stable/profile: company-level snapshot. Preserve the fields it provides.
+        return {
+          symbol, name: str(r.companyName) || str(r.name) || undefined, assetType: isEtf ? "ETF" : "Company",
+          price: num(r.price), changePercent: marketNum(r.changePercentage ?? r.changesPercentage),
+          volume: marketNum(r.volume), avgVolume: marketNum(r.averageVolume ?? r.avgVolume),
+          marketCap: marketNum(r.marketCap), beta: marketNum(r.beta), range: str(r.range) || undefined,
+          exchange: str(r.exchange) || str(r.exchangeShortName) || undefined, sector: str(r.sector) || undefined, industry: str(r.industry) || undefined,
+          timestamp: this.now(), sourceEndpoint: "profile_fallback",
+        } as MarketQuote;
+      }
+
       const ts = r.timestamp != null ? Number(r.timestamp) * 1000 : this.now();
       return {
-        symbol,
-        name: str(r.name) || undefined,
-        assetType: (r.isEtf === true || etfs.has(symbol)) ? "ETF" : "Company",
+        symbol, name: str(r.name) || undefined, assetType: isEtf ? "ETF" : "Company",
         price: num(r.price),
         open: marketNum(r.open), high: marketNum(r.dayHigh), low: marketNum(r.dayLow), previousClose: marketNum(r.previousClose),
         // Stable uses changePercentage / averageVolume; legacy used changesPercentage / avgVolume.

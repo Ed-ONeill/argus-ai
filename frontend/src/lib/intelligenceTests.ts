@@ -878,6 +878,66 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(h.staleTickers >= 1 && h.tickerCount >= 1, "provider health should count stale and total tickers");
   });
 
+  // Fallback fixtures: batch-quote returns 402, per-symbol /stable/profile serves data.
+  const profiles: Record<string, Record<string, unknown>> = {
+    AAPL: { symbol: "AAPL", companyName: "Apple Inc.", price: 190.5, changePercentage: 1.2, volume: 50000000, averageVolume: 60000000, marketCap: 3000000000000, beta: 1.25, range: "164-199", exchange: "NASDAQ", sector: "Technology", industry: "Consumer Electronics", isEtf: false },
+    MSFT: { symbol: "MSFT", companyName: "Microsoft", price: 400, changePercentage: 0.5, volume: 20000000, averageVolume: 25000000, marketCap: 2800000000000, beta: 0.9, exchange: "NASDAQ", sector: "Technology", industry: "Software", isEtf: false },
+    SPY:  { symbol: "SPY", companyName: "SPDR S&P 500 ETF", price: 500, changePercentage: 0.4, volume: 70000000, averageVolume: 80000000, isEtf: true },
+  };
+  const fallbackTx = (avail: string[]): FetchLike => async (url) => {
+    const u = String(url);
+    if (u.includes("/batch-quote")) return new Response("Payment Required", { status: 402 });
+    if (u.includes("/profile?symbol=")) {
+      const sym = decodeURIComponent(u.split("symbol=")[1].split("&")[0]).toUpperCase();
+      return avail.includes(sym) ? new Response(JSON.stringify([profiles[sym]]), { status: 200 }) : new Response("Not Found", { status: 404 });
+    }
+    return new Response("not found", { status: 404 });
+  };
+
+  // 68c. Batch-quote success path parses without a fallback marker.
+  test("FMP batch-quote success path", async () => {
+    intelligenceGraph.clear();
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: routingTransport([[/batch-quote/, fmpAAPL]]) });
+    const res = await fmp.fetch({ dataset: "quote", symbols: ["AAPL"] });
+    const price = res.observations.find(o => o.observationType === "market_price");
+    assert(!!price && price.payload.price === 190.5, "batch quote should parse price");
+    assert(price!.metadata.sourceEndpoint === undefined, "batch success should not be marked as a fallback");
+  });
+
+  // 68d. Batch-quote 402 falls back to /stable/profile and preserves profile fields.
+  test("FMP 402 falls back to profile", async () => {
+    intelligenceGraph.clear();
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: fallbackTx(["AAPL"]) });
+    const res = await fmp.fetch({ dataset: "quote", symbols: ["AAPL"] });
+    const price = res.observations.find(o => o.observationType === "market_price");
+    assert(!!price && price.metadata.sourceEndpoint === "profile_fallback", "profile fallback should be marked");
+    assert(price!.payload.price === 190.5 && price!.payload.changePercent === 1.2, "price and change should be preserved");
+    assert(price!.payload.sector === "Technology" && price!.payload.beta === 1.25 && price!.payload.exchange === "NASDAQ", "profile reference fields should be preserved");
+    ingestProviderObservations(res.observations);
+    const node = intelligenceGraph.getNode("AAPL");
+    assert(!!node && (node.metadata.latestMarketData as Record<string, unknown>).sector === "Technology", "profile data should reach the graph");
+  });
+
+  // 68e. Multiple symbols each fall back to their own profile request.
+  test("FMP fallback handles multiple symbols", async () => {
+    intelligenceGraph.clear();
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: fallbackTx(["AAPL", "MSFT"]) });
+    const res = await fmp.fetch({ dataset: "quote", symbols: ["AAPL", "MSFT"] });
+    ingestProviderObservations(res.observations);
+    assert(!!intelligenceGraph.getNode("AAPL") && !!intelligenceGraph.getNode("MSFT"), "both symbols should ingest via the profile fallback");
+    assert(res.observations.filter(o => o.observationType === "market_price").every(o => o.metadata.sourceEndpoint === "profile_fallback"), "all should be fallback-sourced");
+  });
+
+  // 68f. ETF symbols still create an ETF node through the profile fallback.
+  test("FMP fallback keeps ETF support", async () => {
+    intelligenceGraph.clear();
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: fallbackTx(["SPY"]) });
+    const res = await fmp.fetch({ dataset: "quote", symbols: ["SPY"], etfs: ["SPY"] });
+    ingestProviderObservations(res.observations);
+    const spy = intelligenceGraph.getNode("SPY");
+    assert(!!spy && spy.type === "ETF", `SPY should be an ETF node via fallback, got ${spy?.type}`);
+  });
+
   // 68b. FMP calls the current stable batch-quote endpoint, not the legacy one.
   test("FMP uses stable batch-quote endpoint", async () => {
     let capturedUrl = "";
