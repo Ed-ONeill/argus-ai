@@ -17,6 +17,7 @@ import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPat
 import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
 import type { IntelNode, IntelEdge } from "@/lib/intelligenceGraph";
 import { num, round } from "@/lib/intelligenceUtils";
+import { formatRelativeAge, secondsSince } from "@/lib/utils";
 import { confColor } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
@@ -129,6 +130,57 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
     <div>
       <p className="text-[12px] font-black tabular-nums leading-none" style={{ color: accent ? "#7cc7d8" : A(0.9) }}>{value}</p>
       <p className="text-[7px] font-bold uppercase tracking-wider mt-0.5" style={{ color: A(0.4) }}>{label}</p>
+    </div>
+  );
+}
+
+/* ---- Market Structure (reads node.metadata.latestMarketData only, descriptive) ---- */
+
+interface MarketStructureVM {
+  price: number; changePercent: number | null; volume: number | null; avgVolume: number | null;
+  relativeVolume: number | null; dollarVolume: number | null; marketCap: number | null;
+  freshness: string; provider: string; stale: boolean; notes: string[];
+}
+const mnum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+function fmtCompact(n: number | null): string {
+  if (n == null) return "n/a";
+  const a = Math.abs(n);
+  if (a >= 1e12) return (n / 1e12).toFixed(2) + "T";
+  if (a >= 1e9)  return (n / 1e9).toFixed(2) + "B";
+  if (a >= 1e6)  return (n / 1e6).toFixed(2) + "M";
+  if (a >= 1e3)  return (n / 1e3).toFixed(1) + "K";
+  return String(Math.round(n));
+}
+
+/** Build a descriptive market-structure view from a node's latestMarketData. */
+function buildMarketStructure(lmd: Record<string, unknown>): MarketStructureVM | null {
+  const price = mnum(lmd.price);
+  if (price == null) return null;
+  const volume = mnum(lmd.volume);
+  const avgVolume = mnum(lmd.avgVolume);
+  const relativeVolume = volume != null && avgVolume && avgVolume > 0 ? Math.round((volume / avgVolume) * 100) / 100 : mnum(lmd.relativeVolume);
+  const dollarVolume = volume != null ? Math.round(price * volume) : mnum(lmd.dollarVolume);
+  const ts = mnum(lmd.timestamp);
+  const notes: string[] = [];
+  if (relativeVolume != null) {
+    if (relativeVolume > 1.5) notes.push("Participation above normal");
+    else if (relativeVolume < 0.8) notes.push("Participation below normal");
+  }
+  if (dollarVolume != null && dollarVolume >= 5_000_000_000) notes.push("Strong institutional liquidity");
+  return {
+    price, changePercent: mnum(lmd.changePercent), volume, avgVolume, relativeVolume, dollarVolume,
+    marketCap: mnum(lmd.marketCap),
+    freshness: ts != null ? (formatRelativeAge(secondsSince(ts)) || "just now") : "unknown",
+    provider: typeof lmd.provider === "string" ? lmd.provider : "market data",
+    stale: lmd.stale === true, notes,
+  };
+}
+
+function MktRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>{label}</span>
+      <span className="text-[11px] font-semibold tabular-nums" style={{ color: A(0.92) }}>{value}</span>
     </div>
   );
 }
@@ -298,6 +350,15 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, memVersion, isCompany, ctx.id, ctx.label, intel.theme]);
 
+  // Market Structure (reads node.metadata.latestMarketData only; hidden when absent).
+  const marketStructure = useMemo<MarketStructureVM | null>(() => {
+    if (!graph.ready) return null;
+    const key = isCompany ? (ctx.id || ctx.label) : (intel.theme?.name ?? ctx.label);
+    const lmd = G.getNode(key)?.metadata?.latestMarketData;
+    return lmd && typeof lmd === "object" ? buildMarketStructure(lmd as Record<string, unknown>) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isCompany, ctx.id, ctx.label, intel.theme]);
+
   // Relationship Map (Intelligence Graph, read-only). Reuses the graph the hook built.
   const [mapHoverNode, setMapHoverNode] = useState<string | null>(null);
   const [mapHoverEdge, setMapHoverEdge] = useState<string | null>(null);
@@ -348,6 +409,33 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
       </div>
 
       <div className="overflow-y-auto flex-1 scrollbar-hide">
+        {/* Market Structure. Descriptive only, reads latestMarketData. Hidden when absent. */}
+        {marketStructure && (
+          <Section label="Market Structure">
+            <div className="flex items-baseline gap-3 mb-2">
+              <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: A(0.96) }}>{marketStructure.price.toFixed(2)}</span>
+              {marketStructure.changePercent !== null && (
+                <span className="text-[12px] font-bold tabular-nums" style={{ color: A(0.82) }}>{marketStructure.changePercent > 0 ? "+" : ""}{marketStructure.changePercent.toFixed(2)}%</span>
+              )}
+              <span className="ml-auto text-[8px] uppercase tracking-wider" style={{ color: marketStructure.stale ? "#f59e0b" : A(0.4) }}>{marketStructure.freshness}{marketStructure.stale ? " · stale" : ""}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <MktRow label="Volume" value={fmtCompact(marketStructure.volume)} />
+              <MktRow label="Avg Volume" value={fmtCompact(marketStructure.avgVolume)} />
+              <MktRow label="Rel Volume" value={marketStructure.relativeVolume !== null ? marketStructure.relativeVolume.toFixed(2) : "n/a"} />
+              <MktRow label="Dollar Vol" value={fmtCompact(marketStructure.dollarVolume)} />
+              <MktRow label="Market Cap" value={fmtCompact(marketStructure.marketCap)} />
+              <MktRow label="Provider" value={marketStructure.provider} />
+            </div>
+            {marketStructure.notes.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {marketStructure.notes.map(n => (
+                  <span key={n} className="text-[8px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: accentColor, background: `${accentColor}1a` }}>{n}</span>
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
         <Section label="What it is"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.82) }}>{intel.what}</p></Section>
         <Section label="Why it matters now"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.72) }}>{intel.why}</p></Section>
 
