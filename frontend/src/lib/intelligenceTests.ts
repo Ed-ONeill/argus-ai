@@ -35,6 +35,7 @@ import {
   recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns,
   summarizeEvolution, findHistoricalAnalogs, resetMemory,
 } from "./memoryEngine";
+import { orchestrateIntelligence } from "./intelligenceOrchestrator";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -762,6 +763,55 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const a = findHistoricalAnalogs("AI Infrastructure");
     assert("found" in a, "analogs should be available with cross-entity history");
     if ("found" in a) assert(a.analogs.length > 0 && a.analogs[0].similarity >= 0 && a.analogs[0].similarity <= 100, "analogs should be ranked with a bounded similarity");
+  });
+
+  // 59. Successful orchestration runs every stage on a populated graph.
+  test("orchestrator successful run", async () => {
+    createDebugGraphFromSampleData();
+    resetMemory();
+    const report = await orchestrateIntelligence({ skipIngestion: true, now: () => Date.parse("2026-01-10") });
+    assert(report.ok === true, `expected ok run, stageErrors=${JSON.stringify(report.stageErrors)} integrity=${report.integrity.ok}`);
+    assert(report.integrity.ok === true, "integrity should be clean on the sample graph");
+    assert(!!report.inference && report.inference.found, "inference stage should produce a market read");
+    assert(!!report.prediction && report.prediction.found, "prediction stage should produce a forecast");
+    assert(!!report.evidence && typeof report.evidence.trustScore === "number", "evidence stage should grade the inference");
+    assert(!!report.narrative, "narrative stage should run");
+    assert(report.memory.recorded === true && (report.memory.entitiesRecorded ?? 0) > 0, "memory snapshot should be recorded");
+    assert(typeof report.timings.totalMs === "number", "timing statistics should be present");
+  });
+
+  // 60. A failing ingestion stage does not stop the rest of the pipeline.
+  test("orchestrator partial failure continues", async () => {
+    createDebugGraphFromSampleData();
+    resetMemory();
+    const report = await orchestrateIntelligence({ now: () => Date.parse("2026-01-10"), ingest: async () => { throw new Error("provider boom"); } });
+    assert(report.stageErrors.some(s => s.stage === "ingestion"), "ingestion failure should be recorded");
+    assert(report.ok === false, "an ingestion failure should make the run not ok");
+    assert(!!report.inference && !!report.prediction, "downstream engines should still run after a stage failure");
+    assert(report.health.stagesFailed.includes("ingestion"), "health should list the failed stage");
+  });
+
+  // 61. Empty provider run completes cleanly with no observations.
+  test("orchestrator empty provider run", async () => {
+    intelligenceGraph.clear();
+    resetMemory();
+    const report = await orchestrateIntelligence({ now: () => Date.parse("2026-01-10"), ingestion: { companies: [], fredApiKey: "", transport: secFredTransport } });
+    assert(report.observationsIngested === 0, "no observations should be ingested with an empty universe and no FRED key");
+    assert(report.integrity.ok === true, "an empty graph should be integrity clean");
+    assert(report.ok === true, "an empty run with no errors should be ok");
+    assert(!!report.prediction && report.prediction.found === false, "prediction should report no forecast on an empty graph");
+  });
+
+  // 62. Integrity failures are surfaced without aborting the pipeline.
+  test("orchestrator surfaces integrity failure", async () => {
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "   ", type: "Company" });   // blank label -> integrity failure
+    resetMemory();
+    const report = await orchestrateIntelligence({ skipIngestion: true, now: () => Date.parse("2026-01-10") });
+    assert(report.integrity.ok === false, "blank label should fail integrity");
+    assert(report.integrity.emptyLabels >= 1, "the blank-label node should be counted");
+    assert(report.ok === false, "an integrity failure should make the run not ok");
+    assert(typeof report.timings.totalMs === "number", "the pipeline should still complete and report timings");
   });
 
   for (const [name, fn] of tests) {
