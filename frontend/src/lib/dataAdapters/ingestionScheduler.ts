@@ -89,19 +89,23 @@ export class FileHealthStore implements HealthStore {
  * ------------------------------------------------------------------ */
 
 export interface SchedulerConfig {
-  now?:            () => number;
-  secIntervalMs?:  number;          // default 24h
-  fredIntervalMs?: number;          // default 24h
-  companies?:      CompanyRef[];
-  fredSeries?:     string[];
-  fredApiKey?:     string;
-  includeForm4?:   boolean;
-  force?:          boolean;         // run regardless of the env flag
-  flagOverride?:   boolean;         // hard-set enabled/disabled (bypasses env), for tests/deploys
-  logger?:         SchedulerLogger;
-  healthStore?:    HealthStore;
-  ingest?:         (config: IngestionConfig) => Promise<IngestionReport>;   // injectable for tests
-  ingestionConfig?: Partial<IngestionConfig>;   // extra config merged into each run (e.g. transport)
+  now?:              () => number;
+  secIntervalMs?:    number;        // default 24h
+  fredIntervalMs?:   number;        // default 24h
+  marketIntervalMs?: number;        // default 1h (market data is realtime)
+  companies?:        CompanyRef[];
+  fredSeries?:       string[];
+  fredApiKey?:       string;
+  includeForm4?:     boolean;
+  marketSymbols?:    string[];      // tickers / ETFs for FMP market data (empty = no market cadence)
+  marketEtfs?:       string[];
+  fmpApiKey?:        string;
+  force?:            boolean;       // run regardless of the env flag
+  flagOverride?:     boolean;       // hard-set enabled/disabled (bypasses env), for tests/deploys
+  logger?:           SchedulerLogger;
+  healthStore?:      HealthStore;
+  ingest?:           (config: IngestionConfig) => Promise<IngestionReport>;   // injectable for tests
+  ingestionConfig?:  Partial<IngestionConfig>;   // extra config merged into each run (e.g. transport)
 }
 
 export type TickReason = "ok" | "disabled" | "overlap" | "not-due" | "error";
@@ -109,7 +113,7 @@ export type TickReason = "ok" | "disabled" | "overlap" | "not-due" | "error";
 export interface TickResult {
   ran:     boolean;
   reason:  TickReason;
-  reports: { sec?: IngestionReport; fred?: IngestionReport };
+  reports: { sec?: IngestionReport; fred?: IngestionReport; market?: IngestionReport };
   error?:  string;
 }
 
@@ -117,10 +121,14 @@ export class IngestionScheduler {
   private now: () => number;
   private secIntervalMs: number;
   private fredIntervalMs: number;
+  private marketIntervalMs: number;
   private companies: CompanyRef[];
   private fredSeries: string[];
   private fredApiKey?: string;
   private includeForm4: boolean;
+  private marketSymbols: string[];
+  private marketEtfs?: string[];
+  private fmpApiKey?: string;
   private force: boolean;
   private flagOverride?: boolean;
   private logger: SchedulerLogger;
@@ -131,6 +139,7 @@ export class IngestionScheduler {
   private running = false;
   private lastSecRunAt: number | null = null;
   private lastFredRunAt: number | null = null;
+  private lastMarketRunAt: number | null = null;
   private runs = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -138,10 +147,14 @@ export class IngestionScheduler {
     this.now = cfg.now ?? (() => Date.now());
     this.secIntervalMs = cfg.secIntervalMs ?? DAY_MS;
     this.fredIntervalMs = cfg.fredIntervalMs ?? DAY_MS;
+    this.marketIntervalMs = cfg.marketIntervalMs ?? 60 * 60 * 1000;
     this.companies = cfg.companies ?? DEFAULT_UNIVERSE;
     this.fredSeries = cfg.fredSeries ?? DEFAULT_FRED_SERIES;
     this.fredApiKey = cfg.fredApiKey;
     this.includeForm4 = cfg.includeForm4 ?? true;
+    this.marketSymbols = cfg.marketSymbols ?? [];
+    this.marketEtfs = cfg.marketEtfs;
+    this.fmpApiKey = cfg.fmpApiKey;
     this.force = cfg.force ?? false;
     this.flagOverride = cfg.flagOverride;
     this.logger = cfg.logger ?? consoleLogger;
@@ -174,8 +187,9 @@ export class IngestionScheduler {
     try {
       const secDue = this.lastSecRunAt == null || now - this.lastSecRunAt >= this.secIntervalMs;
       const fredDue = this.lastFredRunAt == null || now - this.lastFredRunAt >= this.fredIntervalMs;
-      if (!secDue && !fredDue) {
-        this.logger.info("nothing due", { lastSecRunAt: this.lastSecRunAt, lastFredRunAt: this.lastFredRunAt });
+      const marketDue = this.marketSymbols.length > 0 && (this.lastMarketRunAt == null || now - this.lastMarketRunAt >= this.marketIntervalMs);
+      if (!secDue && !fredDue && !marketDue) {
+        this.logger.info("nothing due", { lastSecRunAt: this.lastSecRunAt, lastFredRunAt: this.lastFredRunAt, lastMarketRunAt: this.lastMarketRunAt });
         return { ran: false, reason: "not-due", reports: {} };
       }
 
@@ -195,6 +209,14 @@ export class IngestionScheduler {
         this.lastFredRunAt = now;
         this.logRun("fred", report);
         records.push(...toHealth("fred", report, now));
+      }
+
+      if (marketDue) {
+        const report = await this.ingest({ companies: [], fredSeries: [], marketSymbols: this.marketSymbols, marketEtfs: this.marketEtfs, fmpApiKey: this.fmpApiKey, force: this.force, now: this.now, ...this.extra });
+        reports.market = report;
+        this.lastMarketRunAt = now;
+        this.logRun("market", report);
+        records.push(...toHealth("fmp", report, now));
       }
 
       this.runs += 1;
@@ -221,8 +243,8 @@ export class IngestionScheduler {
     if (this.timer) { clearInterval(this.timer); this.timer = null; this.logger.info("scheduler stopped"); }
   }
 
-  status(): { running: boolean; runs: number; lastSecRunAt: number | null; lastFredRunAt: number | null } {
-    return { running: this.running, runs: this.runs, lastSecRunAt: this.lastSecRunAt, lastFredRunAt: this.lastFredRunAt };
+  status(): { running: boolean; runs: number; lastSecRunAt: number | null; lastFredRunAt: number | null; lastMarketRunAt: number | null } {
+    return { running: this.running, runs: this.runs, lastSecRunAt: this.lastSecRunAt, lastFredRunAt: this.lastFredRunAt, lastMarketRunAt: this.lastMarketRunAt };
   }
 
   private logRun(provider: string, r: IngestionReport): void {

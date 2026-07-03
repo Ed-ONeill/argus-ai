@@ -21,3 +21,5 @@ export { IngestionScheduler, MemoryHealthStore, FileHealthStore, runIngestionOnc
 export type { SchedulerConfig, SchedulerLogger, HealthStore, HealthRecord, TickResult, TickReason } from "./ingestionScheduler";
 export { runIngestionDiagnostic, formatDiagnostic } from "./diagnostics";
 export type { DiagnosticConfig, DiagnosticResult, DiagnosticIntegrity } from "./diagnostics";
+export { MarketDataAdapter, FmpAdapter } from "./marketData";
+export type { MarketQuote, OhlcvBar, MarketProviderHealth } from "./marketData";

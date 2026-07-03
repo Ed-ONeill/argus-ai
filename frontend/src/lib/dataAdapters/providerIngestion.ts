@@ -12,6 +12,7 @@
 import { intelligenceGraph as G } from "../intelligenceGraph";
 import { SecAdapter } from "./sec";
 import { FredAdapter } from "./fred";
+import { FmpAdapter } from "./marketData";
 import { providerRegistry } from "./registry";
 import { buildGraphFromProviderData } from "./observationGraphBridge";
 import type { FetchLike, FetchResult, ProviderHealth, RetryPolicy } from "./types";
@@ -19,15 +20,18 @@ import type { FetchLike, FetchResult, ProviderHealth, RetryPolicy } from "./type
 export interface CompanyRef { ticker: string; cik: string | number }
 
 export interface IngestionConfig {
-  companies?:    CompanyRef[];      // ticker + CIK universe for SEC
-  fredSeries?:   string[];          // FRED series ids
-  fredApiKey?:   string;            // falls back to process.env.FRED_API_KEY
-  includeForm4?: boolean;           // also pull Form 4 filings per company
-  enabled?:      boolean;           // explicit gate override (true forces on, false forces off)
-  force?:        boolean;           // dev override: run even when the feature flag is off
-  transport?:    FetchLike;         // injectable for tests
-  now?:          () => number;
-  retry?:        RetryPolicy;
+  companies?:     CompanyRef[];      // ticker + CIK universe for SEC
+  fredSeries?:    string[];          // FRED series ids
+  fredApiKey?:    string;            // falls back to process.env.FRED_API_KEY
+  includeForm4?:  boolean;           // also pull Form 4 filings per company
+  marketSymbols?: string[];          // tickers / ETFs for FMP market data (opt-in; empty = no market fetch)
+  marketEtfs?:    string[];          // which market symbols are ETFs
+  fmpApiKey?:     string;            // falls back to process.env.FMP_API_KEY
+  enabled?:       boolean;           // explicit gate override (true forces on, false forces off)
+  force?:         boolean;           // dev override: run even when the feature flag is off
+  transport?:     FetchLike;         // injectable for tests
+  now?:           () => number;
+  retry?:         RetryPolicy;
 }
 
 export interface IngestionReport {
@@ -56,11 +60,15 @@ export const DEFAULT_UNIVERSE: CompanyRef[] = [
 /** Default FRED series across rates, curve, inflation, employment, credit. */
 export const DEFAULT_FRED_SERIES = ["DGS10", "T10Y2Y", "CPIAUCSL", "UNRATE", "BAMLH0A0HYM2"];
 
+/** Default ETFs to treat as ETF entities when market data runs. */
+export const DEFAULT_MARKET_ETFS = ["SPY", "QQQ"];
+
 function envVar(name: string): string | undefined {
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   return proc?.env?.[name];
 }
 const envFredKey = (): string | undefined => envVar("FRED_API_KEY");
+const envFmpKey = (): string | undefined => envVar("FMP_API_KEY");
 
 /**
  * Feature flag. Provider ingestion stays OFF unless explicitly enabled, so it can be
@@ -97,6 +105,9 @@ export async function runProviderIngestion(config: IngestionConfig = {}): Promis
   const companies = config.companies ?? DEFAULT_UNIVERSE;
   const fredSeries = config.fredSeries ?? DEFAULT_FRED_SERIES;
   const fredApiKey = config.fredApiKey ?? envFredKey();
+  const marketSymbols = (config.marketSymbols ?? []).map(s => s.toUpperCase());   // opt-in
+  const marketEtfs = config.marketEtfs ?? DEFAULT_MARKET_ETFS;
+  const fmpApiKey = config.fmpApiKey ?? envFmpKey();
   const ctx = { transport: config.transport, now: config.now, retry: config.retry };
 
   const graphBefore = statsOf();
@@ -107,8 +118,10 @@ export async function runProviderIngestion(config: IngestionConfig = {}): Promis
 
   const sec = new SecAdapter(ctx);
   const fred = new FredAdapter({ ...ctx, apiKey: fredApiKey });
+  const fmp = new FmpAdapter({ ...ctx, apiKey: fmpApiKey });
   providerRegistry.registerProvider(sec);
   providerRegistry.registerProvider(fred);
+  providerRegistry.registerProvider(fmp);
 
   // ----- SEC CompanyFacts (+ optional Form 4) across the universe -----
   await sec.connect();
@@ -129,6 +142,16 @@ export async function runProviderIngestion(config: IngestionConfig = {}): Promis
     }
   }
 
+  // ----- FMP market data (opt-in via marketSymbols, skipped gracefully when no key) -----
+  if (marketSymbols.length > 0) {
+    const fmpAvailable = await fmp.connect();
+    if (!fmpAvailable) {
+      providersSkipped.push({ id: fmp.id, reason: "missing API key" });
+    } else {
+      await safeFetch(fmp.id, { dataset: "quote", symbols: marketSymbols }, () => fmp.fetch({ dataset: "quote", symbols: marketSymbols, etfs: marketEtfs }), results, fetchErrors, providersCalled);
+    }
+  }
+
   // ----- Pipe normalized observations into the graph -----
   const ingest = buildGraphFromProviderData(results);
   const graphAfter = statsOf();
@@ -142,7 +165,7 @@ export async function runProviderIngestion(config: IngestionConfig = {}): Promis
     errorsSkipped: ingest.errorsSkipped + fetchErrors.length,
     nodesAdded: ingest.nodesAdded,
     relationshipsAdded: ingest.relationshipsAdded,
-    providerHealth: [sec.health(), fred.health()],
+    providerHealth: [sec.health(), fred.health(), fmp.health()],
     graphBefore, graphAfter,
     fetchErrors,
     durationMs: Math.max(0, now() - startedAt),

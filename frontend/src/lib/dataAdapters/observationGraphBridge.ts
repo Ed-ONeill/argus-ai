@@ -170,6 +170,31 @@ function handleMacro(o: ProviderObservation): void {
   }
 }
 
+const MARKET_METRIC_LABEL: Record<string, string> = { market_price: "Price", volume: "Volume", liquidity: "Liquidity", ohlcv: "OHLCV" };
+
+/**
+ * Market data (price / volume / liquidity / ohlcv). Enriches the Company or ETF node
+ * with its latest market snapshot and links a MarketMetric node. Purely descriptive:
+ * no bullish or bearish inference from a price move.
+ */
+function handleMarket(o: ProviderObservation): void {
+  const type: NodeType = o.entityType === "ETF" ? "ETF" : "Company";
+  const cid = upsert(o.entityId, o.entityLabel ?? o.entityId, type, o, { assetType: o.entityType, lastProvider: o.provider });
+  const q = qualityOf(o);
+  const label = MARKET_METRIC_LABEL[o.observationType] ?? o.observationType;
+  const mid = G.addNode({
+    id: `mkt:${o.entityId}:${o.observationType}`, label: `${o.entityId} ${label}`, type: "MarketMetric",
+    aliases: [`mkt:${o.entityId}:${o.observationType}`],
+    confidence: q.providerReliability, importance: o.qualityScore,
+    firstSeen: o.providerTimestamp, lastSeen: o.providerTimestamp,
+    sources: [o.source as SourcePage], metadata: { ...o.payload, ...provenance(o), stale: o.metadata.stale === true },
+  }).id;
+  link(cid, "has_market_metric", mid, o);
+  if (o.observationType === "market_price") {
+    G.updateNode(cid, { lastSeen: o.providerTimestamp, metadata: { latestMarketData: { ...o.payload, provider: o.provider, qualityScore: o.qualityScore, providerReliability: q.providerReliability, freshness: q.freshness, stale: o.metadata.stale === true } } });
+  }
+}
+
 function handleGeneric(o: ProviderObservation): void {
   // Unknown observation type: record the entity node, no invented relationship.
   const type = (o.entityType as NodeType) || "Company";
@@ -189,6 +214,10 @@ function dispatch(o: ProviderObservation): void {
     case "gdp":
     case "credit_spread":
     case "macro_series":          return handleMacro(o);
+    case "market_price":
+    case "volume":
+    case "liquidity":
+    case "ohlcv":                 return handleMarket(o);
     default:                      return handleGeneric(o);
   }
 }

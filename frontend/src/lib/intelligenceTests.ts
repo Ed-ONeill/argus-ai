@@ -36,6 +36,7 @@ import {
   summarizeEvolution, findHistoricalAnalogs, resetMemory,
 } from "./memoryEngine";
 import { orchestrateIntelligence } from "./intelligenceOrchestrator";
+import { FmpAdapter, MarketDataAdapter } from "./dataAdapters/marketData";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -812,6 +813,118 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(report.integrity.emptyLabels >= 1, "the blank-label node should be counted");
     assert(report.ok === false, "an integrity failure should make the run not ok");
     assert(typeof report.timings.totalMs === "number", "the pipeline should still complete and report timings");
+  });
+
+  // Shared fixtures for the market-data tests.
+  const MKT_NOW = Date.parse("2026-01-15T15:00:00Z");
+  const fmpAAPL = [{ symbol: "AAPL", name: "Apple Inc.", price: 190.5, changesPercentage: 1.2, dayHigh: 192, dayLow: 188, open: 189, previousClose: 188.2, volume: 50000000, avgVolume: 60000000, marketCap: 3000000000000, timestamp: Math.floor(MKT_NOW / 1000) }];
+  const fmpSPY  = [{ symbol: "SPY", name: "SPDR S&P 500 ETF", price: 500, changesPercentage: 0.5, dayHigh: 502, dayLow: 498, open: 499, previousClose: 497.5, volume: 70000000, avgVolume: 80000000, isEtf: true, timestamp: Math.floor(MKT_NOW / 1000) }];
+  const fmpStale = [{ symbol: "MSFT", name: "Microsoft", price: 400, changesPercentage: 0.1, volume: 20000000, avgVolume: 25000000, timestamp: Math.floor((MKT_NOW - 5 * 86_400_000) / 1000) }];
+  const mkFmp = () => new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 } });
+
+  // 63. Stock quote observations reach the graph and enrich the Company node.
+  test("market quote reaches graph", () => {
+    intelligenceGraph.clear();
+    const obs = mkFmp().normalize(fmpAAPL, { dataset: "quote", symbols: ["AAPL"] });
+    const stats = ingestProviderObservations(obs);
+    assert(stats.observationsIngested >= 3, `expected price + volume + liquidity, got ${stats.observationsIngested}`);
+    const node = intelligenceGraph.getNode("AAPL");
+    assert(!!node && node.type === "Company", "AAPL company node should exist");
+    const lmd = node!.metadata.latestMarketData as Record<string, unknown> | undefined;
+    assert(!!lmd && lmd.price === 190.5 && lmd.changePercent === 1.2, "latestMarketData should be enriched on the node");
+    const metrics = intelligenceGraph.getNeighbors(node!.id).filter(n => n.node.type === "MarketMetric");
+    assert(metrics.length >= 3 && metrics.every(m => m.edge.relationshipType === "has_market_metric"), "market metrics should link via has_market_metric");
+  });
+
+  // 64. ETF quotes create an ETF node.
+  test("market ETF quote reaches graph", () => {
+    intelligenceGraph.clear();
+    ingestProviderObservations(mkFmp().normalize(fmpSPY, { dataset: "quote", symbols: ["SPY"] }));
+    const spy = intelligenceGraph.getNode("SPY");
+    assert(!!spy && spy.type === "ETF", `SPY should be an ETF node, got ${spy?.type}`);
+  });
+
+  // 65. Volume and liquidity are preserved on their metric nodes.
+  test("market volume and liquidity preserved", () => {
+    intelligenceGraph.clear();
+    ingestProviderObservations(mkFmp().normalize(fmpAAPL, { dataset: "quote", symbols: ["AAPL"] }));
+    const vol = intelligenceGraph.getNode("mkt:AAPL:volume");
+    const liq = intelligenceGraph.getNode("mkt:AAPL:liquidity");
+    assert(!!vol && vol.metadata.volume === 50000000 && vol.metadata.avgVolume === 60000000, "volume metric should preserve raw volume");
+    assert(vol!.metadata.relativeVolume === 0.83, `relative volume should be 0.83, got ${vol!.metadata.relativeVolume}`);
+    assert(!!liq && liq.metadata.dollarVolume === 190.5 * 50000000, "liquidity metric should preserve dollar volume");
+  });
+
+  // 66. OHLCV bars reach the graph.
+  test("market ohlcv reaches graph", () => {
+    intelligenceGraph.clear();
+    const bars = { symbol: "AAPL", historical: [{ date: "2026-01-14", open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }, { date: "2026-01-15", open: 1.5, high: 2.5, low: 1, close: 2, volume: 200 }] };
+    ingestProviderObservations(mkFmp().normalize(bars, { dataset: "daily", symbol: "AAPL" }));
+    const oh = intelligenceGraph.getNode("mkt:AAPL:ohlcv");
+    assert(!!oh && Array.isArray(oh.metadata.bars) && (oh.metadata.bars as unknown[]).length === 2, "ohlcv metric should carry the bar series");
+  });
+
+  // 67. Stale data is flagged on the observation, the node, and provider health.
+  test("market stale data flagged", () => {
+    intelligenceGraph.clear();
+    const fmp = mkFmp();
+    const obs = fmp.normalize(fmpStale, { dataset: "quote", symbols: ["MSFT"] });
+    const price = obs.find(o => o.observationType === "market_price");
+    assert(price!.metadata.stale === true, "an old quote should be flagged stale on the observation");
+    ingestProviderObservations(obs);
+    const node = intelligenceGraph.getNode("MSFT");
+    assert((node!.metadata.latestMarketData as Record<string, unknown>).stale === true, "stale flag should reach the node");
+    const h = fmp.health() as unknown as { staleTickers: number; tickerCount: number };
+    assert(h.staleTickers >= 1 && h.tickerCount >= 1, "provider health should count stale and total tickers");
+  });
+
+  // 68. Market provider is a separate, generic path (Yahoo route untouched).
+  test("market provider separate and generic", () => {
+    const fmp = mkFmp();
+    const md = fmp.metadata();
+    assert(md.id === "fmp" && md.cadence === "realtime", "FMP should be a distinct realtime provider");
+    assert(["market_price", "volume", "liquidity", "ohlcv"].every(t => md.supportsObservations.includes(t)), "FMP should support the market observation types");
+    assert(fmp instanceof MarketDataAdapter, "FMP should extend the generic MarketDataAdapter for future providers");
+    intelligenceGraph.clear();
+    ingestProviderObservations(mkFmp().normalize(fmpAAPL, { dataset: "quote", symbols: ["AAPL"] }));
+    ingestProviderObservations(mkFmp().normalize(fmpSPY, { dataset: "quote", symbols: ["SPY"] }));
+    const rep = validateGraphIntegrity();
+    assert(rep.ok, `graph should stay clean after market ingestion: ${JSON.stringify(rep.emptyLabels)}`);
+  });
+
+  // 69. runProviderIngestion fetches market data (opt-in) and it reaches the graph.
+  test("ingestion wires FMP market data", async () => {
+    intelligenceGraph.clear();
+    const tx = routingTransport([[/financialmodelingprep.*\/quote\//, [...fmpAAPL, ...fmpSPY]]]);
+    const report = await runProviderIngestion({ force: true, companies: [], fredApiKey: "", marketSymbols: ["AAPL", "SPY"], marketEtfs: ["SPY"], fmpApiKey: "test", transport: tx, now: () => MKT_NOW });
+    assert(report.providersCalled.includes("fmp"), "FMP should be called when marketSymbols are provided");
+    assert(report.providerHealth.some(h => String(h.id) === "fmp"), "FMP health should be in the report");
+    const node = intelligenceGraph.getNode("AAPL");
+    assert(!!node && (node.metadata.latestMarketData as Record<string, unknown> | undefined)?.price === 190.5, "market data should reach the graph through ingestion");
+    const spy = intelligenceGraph.getNode("SPY");
+    assert(!!spy && spy.type === "ETF", "ETF symbol should ingest as an ETF node");
+  });
+
+  // 70. The scheduler runs the market cadence alongside SEC and FRED, gated by the flag.
+  test("scheduler runs market cadence", async () => {
+    const calls: string[] = [];
+    const ingestSpy = async (cfg: import("./dataAdapters/providerIngestion").IngestionConfig) => {
+      if (cfg.marketSymbols?.length) calls.push("market");
+      else if (cfg.companies?.length) calls.push("sec");
+      else if (cfg.fredSeries?.length) calls.push("fred");
+      return fakeReport();
+    };
+    const s = new IngestionScheduler({
+      force: true, now: () => MKT_NOW, ingest: ingestSpy,
+      companies: [{ ticker: "AAPL", cik: 1 }], fredSeries: ["DGS10"], marketSymbols: ["AAPL", "SPY"],
+      secIntervalMs: 86_400_000, fredIntervalMs: 86_400_000, marketIntervalMs: 3_600_000,
+    });
+    const r1 = await s.tick();
+    assert(r1.ran && r1.reason === "ok", "first tick should run");
+    assert(calls.includes("sec") && calls.includes("fred") && calls.includes("market"), `all three cadences should run first, got ${calls.join(",")}`);
+    assert(!!r1.reports.market, "the market report should be present");
+    const r2 = await s.tick();
+    assert(r2.ran === false && r2.reason === "not-due", "a second tick within every interval should do nothing");
   });
 
   for (const [name, fn] of tests) {
