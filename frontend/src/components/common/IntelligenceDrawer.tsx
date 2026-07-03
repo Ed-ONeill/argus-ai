@@ -14,6 +14,9 @@ import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } 
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
 import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns, summarizeEvolution, findHistoricalAnalogs } from "@/lib/memoryEngine";
+import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
+import type { IntelNode, IntelEdge } from "@/lib/intelligenceGraph";
+import { num, round } from "@/lib/intelligenceUtils";
 import { confColor } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
@@ -130,6 +133,66 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+/* ---- Relationship Map (Intelligence Graph, read-only, deterministic radial layout) ---- */
+
+const MAP_W = 300, MAP_H = 210, MAP_CX = MAP_W / 2, MAP_CY = MAP_H / 2, MAP_R1 = 66, MAP_R2 = 100;
+const MAP_MAX_FIRST = 10, MAP_SECOND_STRENGTH = 70, MAP_MAX_SECOND = 4;
+
+interface MapNode { id: string; label: string; type: string; confidence: number; importance: number; relCount: number; x: number; y: number; r: number; degree: 0 | 1 | 2; angle: number }
+interface MapEdge { id: string; a: string; b: string; from: MapNode; to: MapNode; type: string; strength: number; confidence: number; evidenceCount: number; sources: number }
+interface MapVM { available: boolean; nodes: MapNode[]; edges: MapEdge[]; width: number; height: number }
+const EMPTY_MAP: MapVM = { available: false, nodes: [], edges: [], width: MAP_W, height: MAP_H };
+
+function mapNode(node: IntelNode, degree: 0 | 1 | 2, x: number, y: number, angle: number): MapNode {
+  const importance = Math.max(0, Math.min(100, round(num(node.importance))));
+  const r = degree === 0 ? 11 : degree === 2 ? 5 : 6 + importance / 100 * 6;
+  return { id: node.id, label: node.label, type: String(node.type), confidence: round(num(node.confidence)), importance, relCount: G.getRelationships(node.id).length, x, y, r, degree, angle };
+}
+function mapEdge(edge: IntelEdge, from: MapNode, to: MapNode): MapEdge {
+  return { id: edge.id, a: from.id, b: to.id, from, to, type: edge.relationshipType, strength: round(num(edge.strength)), confidence: round(num(edge.confidence)), evidenceCount: num(edge.evidenceCount), sources: edge.originatingPages.length };
+}
+
+/** Read the existing graph singleton and lay out a stable radial map around one entity. */
+function buildRelationshipMap(key: string): MapVM {
+  const center = G.getNode(key);
+  if (!center) return EMPTY_MAP;
+  const neigh = G.getNeighbors(center.id);
+  if (neigh.length === 0) return EMPTY_MAP;
+
+  const first = [...neigh].sort((a, b) => b.edge.strength - a.edge.strength).slice(0, MAP_MAX_FIRST);
+  const nodes: MapNode[] = [];
+  const edges: MapEdge[] = [];
+  const centerNode = mapNode(center, 0, MAP_CX, MAP_CY, 0);
+  nodes.push(centerNode);
+  const byId = new Map<string, MapNode>([[center.id, centerNode]]);
+
+  const n = first.length;
+  first.forEach((x, i) => {
+    const ang = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    const mn = mapNode(x.node, 1, MAP_CX + Math.cos(ang) * MAP_R1, MAP_CY + Math.sin(ang) * MAP_R1, ang);
+    nodes.push(mn); byId.set(x.node.id, mn);
+    edges.push(mapEdge(x.edge, centerNode, mn));
+  });
+
+  // Second-degree: only for strong first-degree links, one strong neighbor each.
+  let added = 0;
+  for (const x of first) {
+    if (added >= MAP_MAX_SECOND) break;
+    if (x.edge.strength < MAP_SECOND_STRENGTH) continue;
+    const parent = byId.get(x.node.id)!;
+    const outer = G.getNeighbors(x.node.id).filter(y => !byId.has(y.node.id) && y.node.id !== center.id).sort((a, b) => b.edge.strength - a.edge.strength)[0];
+    if (!outer) continue;
+    const mn = mapNode(outer.node, 2, MAP_CX + Math.cos(parent.angle) * MAP_R2, MAP_CY + Math.sin(parent.angle) * MAP_R2, parent.angle);
+    nodes.push(mn); byId.set(outer.node.id, mn);
+    edges.push(mapEdge(outer.edge, parent, mn));
+    added += 1;
+  }
+
+  return { available: true, nodes, edges, width: MAP_W, height: MAP_H };
+}
+
+const trunc = (s: string, n = 14) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
 function RelList({ rels, accent }: { rels: GraphRel[]; accent: string }) {
   return (
     <ul className="space-y-1">
@@ -234,6 +297,24 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     return buildTimeline(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, memVersion, isCompany, ctx.id, ctx.label, intel.theme]);
+
+  // Relationship Map (Intelligence Graph, read-only). Reuses the graph the hook built.
+  const [mapHoverNode, setMapHoverNode] = useState<string | null>(null);
+  const [mapHoverEdge, setMapHoverEdge] = useState<string | null>(null);
+  const [mapSelected, setMapSelected] = useState<string | null>(null);
+  const relMap = useMemo<MapVM>(() => {
+    if (!graph.ready) return EMPTY_MAP;
+    const key = isCompany ? (ctx.id || ctx.label) : (intel.theme?.name ?? ctx.label);
+    return buildRelationshipMap(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isCompany, ctx.id, ctx.label, intel.theme]);
+  const mapActive = mapSelected ?? mapHoverNode;
+  const mapDetail = useMemo(() => {
+    if (mapHoverEdge) { const e = relMap.edges.find(x => x.id === mapHoverEdge); if (e) return `${e.from.label} ${e.type.replace(/_/g, " ")} ${e.to.label}  ·  strength ${e.strength}  ·  evidence ${e.evidenceCount}  ·  ${e.sources} source${e.sources === 1 ? "" : "s"}`; }
+    const id = mapHoverNode ?? mapSelected;
+    if (id) { const nd = relMap.nodes.find(x => x.id === id); if (nd) return `${nd.label}  ·  ${nd.type}  ·  confidence ${nd.confidence}  ·  ${nd.relCount} relationship${nd.relCount === 1 ? "" : "s"}`; }
+    return "Hover a node or edge for details. Click a node to pin it.";
+  }, [mapHoverEdge, mapHoverNode, mapSelected, relMap]);
 
   return (
     <div className="flex flex-col h-full">
@@ -428,6 +509,51 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
                   ))}</ul>
                 </div>
               )}
+            </>
+          )}
+        </Section>
+
+        {/* Relationship Map. Reads the existing graph singleton, deterministic radial
+            layout, read-only. Graceful fallback when nothing is connected. */}
+        <Section label="Relationship Map">
+          {!relMap.available ? (
+            <p className="text-[10.5px] italic leading-snug" style={{ color: A(0.4) }}>No connected intelligence has been identified yet.</p>
+          ) : (
+            <>
+              <motion.svg initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}
+                viewBox={`0 0 ${relMap.width} ${relMap.height}`} className="w-full select-none" style={{ height: 200 }}>
+                {relMap.edges.map(e => {
+                  const on = !mapActive || e.a === mapActive || e.b === mapActive;
+                  const mx = (e.from.x + e.to.x) / 2, my = (e.from.y + e.to.y) / 2;
+                  return (
+                    <g key={e.id} onMouseEnter={() => setMapHoverEdge(e.id)} onMouseLeave={() => setMapHoverEdge(null)}>
+                      <line x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y}
+                        stroke={mapHoverEdge === e.id ? accentColor : "#ffffff"}
+                        strokeWidth={0.5 + e.strength / 100 * 1.5}
+                        strokeOpacity={on ? 0.18 + e.strength / 100 * 0.5 : 0.06} />
+                      {e.evidenceCount > 1 && <circle cx={mx} cy={my} r={Math.min(2.4, 0.8 + e.evidenceCount * 0.3)} fill="#ffffff" fillOpacity={on ? 0.35 : 0.08} />}
+                    </g>
+                  );
+                })}
+                {relMap.nodes.map(node => {
+                  const connected = !mapActive || node.id === mapActive || relMap.edges.some(e => (e.a === mapActive && e.b === node.id) || (e.b === mapActive && e.a === node.id));
+                  const col = confColor(node.confidence);
+                  return (
+                    <g key={node.id} style={{ cursor: "pointer" }}
+                      onMouseEnter={() => setMapHoverNode(node.id)} onMouseLeave={() => setMapHoverNode(null)}
+                      onClick={() => setMapSelected(s => (s === node.id ? null : node.id))}>
+                      <circle cx={node.x} cy={node.y} r={node.r} fill="#0b0f18" stroke={col}
+                        strokeWidth={node.id === mapSelected ? 2.4 : node.degree === 0 ? 2 : 1.25}
+                        opacity={connected ? 1 : 0.28} />
+                      {node.degree !== 2 && (
+                        <text x={node.x} y={node.y + node.r + 7} textAnchor="middle" fontSize={node.degree === 0 ? 8 : 6.5}
+                          fill="#ffffff" fillOpacity={connected ? 0.78 : 0.22}>{trunc(node.label)}</text>
+                      )}
+                    </g>
+                  );
+                })}
+              </motion.svg>
+              <p className="mt-1 text-[9.5px] leading-snug tabular-nums" style={{ color: A(0.55), minHeight: 24 }}>{mapDetail}</p>
             </>
           )}
         </Section>
