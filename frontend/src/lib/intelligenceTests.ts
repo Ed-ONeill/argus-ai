@@ -878,6 +878,16 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(h.staleTickers >= 1 && h.tickerCount >= 1, "provider health should count stale and total tickers");
   });
 
+  // 68b. FMP calls the current stable batch-quote endpoint, not the legacy one.
+  test("FMP uses stable batch-quote endpoint", async () => {
+    let capturedUrl = "";
+    const captureTx: FetchLike = async (url) => { capturedUrl = String(url); return new Response(JSON.stringify([...fmpAAPL]), { status: 200 }); };
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: captureTx });
+    await fmp.fetch({ dataset: "quote", symbols: ["AAPL"] });
+    assert(capturedUrl.includes("/stable/batch-quote?symbols=AAPL"), `should call the stable batch-quote endpoint, got ${capturedUrl}`);
+    assert(!capturedUrl.includes("/api/v3/quote/"), "should not call the legacy /api/v3/quote endpoint");
+  });
+
   // 68. Market provider is a separate, generic path (Yahoo route untouched).
   test("market provider separate and generic", () => {
     const fmp = mkFmp();
@@ -895,7 +905,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // 69. runProviderIngestion fetches market data (opt-in) and it reaches the graph.
   test("ingestion wires FMP market data", async () => {
     intelligenceGraph.clear();
-    const tx = routingTransport([[/financialmodelingprep.*\/quote\//, [...fmpAAPL, ...fmpSPY]]]);
+    const tx = routingTransport([[/financialmodelingprep.*batch-quote/, [...fmpAAPL, ...fmpSPY]]]);
     const report = await runProviderIngestion({ force: true, companies: [], fredApiKey: "", marketSymbols: ["AAPL", "SPY"], marketEtfs: ["SPY"], fmpApiKey: "test", transport: tx, now: () => MKT_NOW });
     assert(report.providersCalled.includes("fmp"), "FMP should be called when marketSymbols are provided");
     assert(report.providerHealth.some(h => String(h.id) === "fmp"), "FMP health should be in the report");

@@ -15,7 +15,8 @@ const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number => { const n = marketNum(v); return n ?? 0; };
 
-const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+// Current stable API base. The legacy /api/v3 endpoints are no longer supported.
+const FMP_STABLE = "https://financialmodelingprep.com/stable";
 
 export class FmpAdapter extends MarketDataAdapter {
   readonly id: ProviderId = "fmp";
@@ -46,17 +47,19 @@ export class FmpAdapter extends MarketDataAdapter {
     const dataset = String(params.dataset ?? "quote");
     const key = encodeURIComponent(this.apiKey);
     if (dataset === "quote") {
+      // Stable batch-quote returns full quotes for both stocks and ETFs by symbol list.
+      // (Stable also offers /stable/batch-etf-quotes for ETF-only pulls; batch-quote covers both.)
       const symbols = (Array.isArray(params.symbols) ? (params.symbols as unknown[]) : []).map(s => String(s).toUpperCase()).join(",");
       if (!symbols) throw new Error("[fmp] symbols are required for a quote");
-      return this.getJson(`${FMP_BASE}/quote/${symbols}?apikey=${key}`);
+      return this.getJson(`${FMP_STABLE}/batch-quote?symbols=${symbols}&apikey=${key}`);
     }
     if (dataset === "intraday") {
       const symbol = String(params.symbol ?? "").toUpperCase();
-      return this.getJson(`${FMP_BASE}/historical-chart/5min/${symbol}?apikey=${key}`);
+      return this.getJson(`${FMP_STABLE}/historical-chart/5min?symbol=${symbol}&apikey=${key}`);
     }
     if (dataset === "daily") {
       const symbol = String(params.symbol ?? "").toUpperCase();
-      return this.getJson(`${FMP_BASE}/historical-price-full/${symbol}?apikey=${key}`);
+      return this.getJson(`${FMP_STABLE}/historical-price-eod/full?symbol=${symbol}&apikey=${key}`);
     }
     throw new Error(`[fmp] unknown dataset: ${dataset}`);
   }
@@ -72,8 +75,9 @@ export class FmpAdapter extends MarketDataAdapter {
         assetType: (r.isEtf === true || etfs.has(symbol)) ? "ETF" : "Company",
         price: num(r.price),
         open: marketNum(r.open), high: marketNum(r.dayHigh), low: marketNum(r.dayLow), previousClose: marketNum(r.previousClose),
-        changePercent: marketNum(r.changesPercentage),
-        volume: marketNum(r.volume), avgVolume: marketNum(r.avgVolume),
+        // Stable uses changePercentage / averageVolume; legacy used changesPercentage / avgVolume.
+        changePercent: marketNum(r.changePercentage ?? r.changesPercentage),
+        volume: marketNum(r.volume), avgVolume: marketNum(r.avgVolume ?? r.averageVolume),
         vwap: marketNum(r.vwap), marketCap: marketNum(r.marketCap), bid: marketNum(r.bid), ask: marketNum(r.ask),
         timestamp: Number.isFinite(ts) ? ts : this.now(),
       } as MarketQuote;
