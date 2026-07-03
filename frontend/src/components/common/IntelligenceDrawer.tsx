@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import { buildCrossIntel } from "@/lib/crossIntel";
 import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
+import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns, summarizeEvolution, findHistoricalAnalogs } from "@/lib/memoryEngine";
 import { confColor } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
@@ -43,6 +44,90 @@ interface ForecastVM {
   timeframe:    string | null;
   reasons:      string[];
   invalidation: string | null;
+}
+
+/* ---- Intelligence Timeline (Memory Engine, read-only) ---- */
+
+interface TimelineEvent { date: string; type: string; title: string; detail: string; confidence?: number }
+interface TimelineVM {
+  available:        boolean;
+  firstSeen?:       string;
+  snapshots?:       number;
+  streak?:          number;
+  conviction?:      number;
+  confidenceGained?: number;
+  analogsCount?:    number;
+  patterns:         string[];
+  events:           TimelineEvent[];
+  evolution:        string[];
+  analogs:          Array<{ label: string; similarity: number }>;
+}
+
+const EMPTY_TIMELINE: TimelineVM = { available: false, patterns: [], events: [], evolution: [], analogs: [] };
+
+const EVENT_COLOR: Record<string, string> = {
+  first_detected: "#7cc7d8", conviction_up: "#34d399", momentum_up: "#22d3ee", evidence_up: "#2dd4bf",
+  relationships: "#a78bfa", prediction: "#fbbf24", analog: "#c084fc",
+};
+const evColor = (t: string) => EVENT_COLOR[t] ?? "#7cc7d8";
+
+const fmtDate = (iso: string): string => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : iso; };
+const fmtDay  = (iso: string): string => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : iso; };
+
+/** Assemble a read-only intelligence timeline from the Memory Engine. Deterministic. */
+function buildTimeline(key: string): TimelineVM {
+  const h = getEntityHistory(key);
+  if (!("found" in h)) return EMPTY_TIMELINE;
+
+  const snaps = h.snapshots, preds = h.predictions;
+  const first = snaps[0], last = snaps[snaps.length - 1];
+
+  let streak = 1;
+  for (let i = snaps.length - 1; i > 0; i--) {
+    if (Math.round((Date.parse(snaps[i].date) - Date.parse(snaps[i - 1].date)) / 86_400_000) === 1) streak += 1; else break;
+  }
+
+  const events: TimelineEvent[] = [{ date: first.date, type: "first_detected", title: "First detected", detail: "Argus began tracking this entity.", confidence: first.confidence }];
+  for (let i = 1; i < snaps.length; i++) {
+    const a = snaps[i - 1], b = snaps[i];
+    if (b.conviction - a.conviction >= 3) events.push({ date: b.date, type: "conviction_up", title: "Conviction increased", detail: `Conviction rose from ${a.conviction} to ${b.conviction}.`, confidence: b.conviction });
+    if (b.momentum - a.momentum >= 3) events.push({ date: b.date, type: "momentum_up", title: "Momentum accelerated", detail: `Momentum moved from ${a.momentum} to ${b.momentum}.` });
+    if (b.evidenceCount - a.evidenceCount >= 1) events.push({ date: b.date, type: "evidence_up", title: "Evidence strengthened", detail: `Evidence rose from ${a.evidenceCount} to ${b.evidenceCount}.` });
+    if (b.relationshipCount - a.relationshipCount >= 1) events.push({ date: b.date, type: "relationships", title: "New relationships discovered", detail: `Connections grew from ${a.relationshipCount} to ${b.relationshipCount}.` });
+  }
+  for (let i = 1; i < preds.length; i++) {
+    if (preds[i].found && preds[i].predictedDirection !== preds[i - 1].predictedDirection)
+      events.push({ date: preds[i].date, type: "prediction", title: "Prediction changed", detail: `Forecast shifted to ${preds[i].predictedDirection}.`, confidence: preds[i].confidence });
+  }
+
+  const an = findHistoricalAnalogs(key);
+  const analogs = "found" in an ? an.analogs.map(a => ({ label: a.label, similarity: a.similarity })) : [];
+  if (analogs.length) events.push({ date: last.date, type: "analog", title: "Historical analog found", detail: `Resembles ${analogs[0].label} (similarity ${analogs[0].similarity}%).`, confidence: analogs[0].similarity });
+
+  const ev = summarizeEvolution(key);
+  const evolution = "found" in ev ? ev.lines : [];
+  const pat = detectHistoricalPatterns(key);
+  const patterns = "found" in pat ? pat.patterns.map(p => p.pattern) : [];
+  const cmp = compareSnapshots(key);
+  const confidenceGained = "found" in cmp ? cmp.deltas.confidence : undefined;
+
+  events.sort((a, b) => b.date.localeCompare(a.date));
+  return {
+    available: true, firstSeen: first.date, snapshots: snaps.length, streak, conviction: last.conviction,
+    confidenceGained, analogsCount: analogs.length, patterns, events: events.slice(0, 10), evolution, analogs,
+  };
+}
+
+// Record at most one Memory Engine snapshot per day per session (idempotent per day in the engine too).
+let memoryRecordedOn: string | null = null;
+
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <p className="text-[12px] font-black tabular-nums leading-none" style={{ color: accent ? "#7cc7d8" : A(0.9) }}>{value}</p>
+      <p className="text-[7px] font-bold uppercase tracking-wider mt-0.5" style={{ color: A(0.4) }}>{label}</p>
+    </div>
+  );
 }
 
 function RelList({ rels, accent }: { rels: GraphRel[]; accent: string }) {
@@ -132,6 +217,23 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   }, [graph, ctx.kind, ctx.id, ctx.label, intel.theme]);
 
   const dirColor = (d: string) => /strength|rotating in|accelerat/i.test(d) ? "#34d399" : /weak|revers|rotating out/i.test(d) ? "#f87171" : accentColor;
+
+  // Intelligence Timeline (Memory Engine, read-only). Record one snapshot per day per
+  // session so history accrues, then read it back for the focused entity.
+  const [memVersion, setMemVersion] = useState(0);
+  useEffect(() => {
+    if (!graph.ready) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (memoryRecordedOn === today) return;
+    try { recordSnapshot(); memoryRecordedOn = today; setMemVersion(v => v + 1); } catch { /* memory is best-effort */ }
+  }, [graph.ready]);
+
+  const timeline = useMemo<TimelineVM>(() => {
+    if (!graph.ready) return EMPTY_TIMELINE;
+    const key = isCompany ? (ctx.id || ctx.label) : (intel.theme?.name ?? ctx.label);
+    return buildTimeline(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, memVersion, isCompany, ctx.id, ctx.label, intel.theme]);
 
   return (
     <div className="flex flex-col h-full">
@@ -263,6 +365,72 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
             <p className="text-[9px] italic leading-snug" style={{ color: A(0.38) }}>Probabilistic estimate derived from current signals, not a certainty and not investment advice.</p>
           </Section>
         )}
+
+        {/* Intelligence Timeline. Memory Engine only, read-only. Graceful fallback when
+            history is thin, never a blank card. */}
+        <Section label="Intelligence Timeline">
+          {!timeline.available ? (
+            <p className="text-[10.5px] italic leading-snug" style={{ color: A(0.4) }}>Argus is still building historical intelligence for this entity.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-y-2.5 gap-x-3 mb-3">
+                <Stat label="First Seen" value={fmtDate(timeline.firstSeen!)} />
+                <Stat label="Snapshots" value={String(timeline.snapshots)} />
+                <Stat label="Current Streak" value={`${timeline.streak} session${timeline.streak === 1 ? "" : "s"}`} />
+                <Stat label="Conviction" value={String(timeline.conviction)} accent />
+                <Stat label="Analogs" value={String(timeline.analogsCount)} />
+                {timeline.confidenceGained !== undefined && <Stat label="Conf. Gained" value={`${timeline.confidenceGained > 0 ? "+" : ""}${timeline.confidenceGained}`} />}
+              </div>
+
+              {timeline.patterns.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {timeline.patterns.map(p => (
+                    <span key={p} className="text-[8px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: accentColor, background: `${accentColor}1a` }}>{p.replace(/_/g, " ")}</span>
+                  ))}
+                </div>
+              )}
+
+              <ul className="space-y-2">
+                {timeline.events.map((e, i) => (
+                  <li key={i} className="flex gap-2">
+                    <div className="flex flex-col items-center pt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: evColor(e.type) }} />
+                      {i < timeline.events.length - 1 && <span className="w-px flex-1 mt-1" style={{ background: A(0.08) }} />}
+                    </div>
+                    <div className="min-w-0 flex-1 pb-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10.5px] font-bold" style={{ color: A(0.9) }}>{e.title}</span>
+                        {e.confidence !== undefined && <span className="text-[8px] tabular-nums" style={{ color: A(0.4) }}>{e.confidence}</span>}
+                        <span className="ml-auto text-[8px] tabular-nums shrink-0" style={{ color: A(0.35) }}>{fmtDay(e.date)}</span>
+                      </div>
+                      <p className="text-[10px] leading-snug mt-0.5" style={{ color: A(0.6) }}>{e.detail}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {timeline.evolution.length > 0 && (
+                <div className="mt-3 pt-2.5 border-t" style={{ borderColor: A(0.06) }}>
+                  <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-1.5" style={{ color: A(0.34) }}>Evolution</p>
+                  <ul className="space-y-1">{timeline.evolution.map((l, i) => <li key={i} className="text-[10px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}><span className="shrink-0 mt-0.5" style={{ color: accentColor }}>›</span>{l}</li>)}</ul>
+                </div>
+              )}
+
+              {timeline.analogs.length > 0 && (
+                <div className="mt-3 pt-2.5 border-t" style={{ borderColor: A(0.06) }}>
+                  <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-1.5" style={{ color: A(0.34) }}>Similar Historical Patterns</p>
+                  <ul className="space-y-1.5">{timeline.analogs.map((a, i) => (
+                    <li key={i} className="flex items-center gap-2 text-[10.5px]" style={{ color: A(0.8) }}>
+                      <span className="w-1 h-1 rounded-full shrink-0" style={{ background: accentColor }} />
+                      <span className="truncate">{a.label}</span>
+                      <span className="ml-auto tabular-nums text-[9px] shrink-0" style={{ color: A(0.45) }}>Similarity {a.similarity}%</span>
+                    </li>
+                  ))}</ul>
+                </div>
+              )}
+            </>
+          )}
+        </Section>
 
         {/* Graph-backed enrichment. Renders only when the graph resolved the entity
             and has something to add, so nothing shows blank. */}
