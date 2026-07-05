@@ -13,6 +13,7 @@ import { buildCrossIntel } from "@/lib/crossIntel";
 import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
+import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns, summarizeEvolution, findHistoricalAnalogs } from "@/lib/memoryEngine";
 import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
 import type { IntelNode, IntelEdge } from "@/lib/intelligenceGraph";
@@ -20,7 +21,7 @@ import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import { num, round } from "@/lib/intelligenceUtils";
 import { formatRelativeAge, secondsSince } from "@/lib/utils";
 import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
-import { setActiveTheme } from "@/lib/intelligenceContext";
+import { setActiveTheme, setActiveDriver } from "@/lib/intelligenceContext";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
 /**
@@ -31,6 +32,7 @@ import type { IntelContext } from "@/lib/intelligenceContext";
  */
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
+const verdictColor = (v: string) => v === "strong" ? "#34d399" : v === "moderate" ? "#7cc7d8" : v === "weak" ? "#f59e0b" : A(0.4);
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -351,6 +353,19 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     return out.slice(0, 6);
   }, [isSymbol, intel.theme, companyReport]);
 
+  // Evidence read for the company view (existing engine, read-only). Powers the
+  // Signal Confidence header number and the Evidence panel; hidden on thin signal.
+  const evidence = useMemo(() => {
+    if (!graph.ready || !isSymbol) return null;
+    const ev = evaluateEvidenceForNode(entity.graphKey);
+    return ev.found && ev.verdict !== "insufficient_signal" ? ev : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isSymbol, entity.graphKey]);
+
+  // Peer tickers: the theme's related assets minus the focused symbol itself.
+  const focusTicker = (ctx.id || ctx.label).toUpperCase();
+  const peers = intel.companies.filter(c => c.toUpperCase() !== focusTicker);
+
   const accentColor = ctx.color ?? "#52b0c8";
 
   // Forward-looking forecast, normalized across theme / company / sector predictions.
@@ -428,6 +443,87 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
       </div>
     </div>
   );
+
+  // Shared sections, ordered differently by the company and theme layouts below.
+  const relatedPagesSec = (
+    <Section label="Related pages">
+      <div className="flex flex-wrap gap-1.5">
+        {intel.relatedPages.map(p => (
+          <Link key={p.label} href={p.href} onClick={onClose}
+            className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-md transition-colors hover:bg-white/10"
+            style={{ color: A(0.8), border: `1px solid ${A(0.12)}`, background: A(0.03) }}>
+            {p.label} <span style={{ color: A(0.4) }}>{p.note}</span> <ArrowUpRight size={9} style={{ color: A(0.4) }} />
+          </Link>
+        ))}
+      </div>
+    </Section>
+  );
+  const sectorsSec = intel.sectors.length > 0 && (
+    <Section label="Related sectors">
+      <div className="flex flex-wrap gap-1.5">{intel.sectors.map(s => <span key={s} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.12)", color: "rgba(124,199,216,0.9)" }}>{s}</span>)}</div>
+    </Section>
+  );
+  const storiesSec = intel.stories.length > 0 && (
+    <Section label="Related stories">
+      <ul className="space-y-1.5">{intel.stories.map(c => (
+        <li key={c.id} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
+          <span className="shrink-0 mt-0.5" style={{ color: accentColor }}>•</span>{c.primary.title}
+        </li>
+      ))}</ul>
+    </Section>
+  );
+  const dealsSec = intel.deals.length > 0 && (
+    <Section label="Related M&A deals">
+      <ul className="space-y-1.5">{intel.deals.map(d => (
+        <li key={d.id} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
+          <span className="shrink-0 mt-0.5" style={{ color: "#a78bfa" }}>•</span>{d.title}
+        </li>
+      ))}</ul>
+    </Section>
+  );
+  const listenSec = intel.listen.length > 0 && (
+    <Section label="Related Listen conversations">
+      <ul className="space-y-1.5">{intel.listen.map(ep => (
+        <li key={ep.id} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
+          <span className="shrink-0 mt-0.5" style={{ color: "#2563eb" }}>•</span>{ep.title}
+        </li>
+      ))}</ul>
+    </Section>
+  );
+  const privateReadSec = (
+    <Section label="Private capital read"><p className="text-[11px] leading-snug" style={{ color: A(0.7) }}>{intel.privateRead}</p></Section>
+  );
+  const recentChangeSec = (
+    <Section label="Recent change">
+      {memory.hasHistory
+        ? <ul className="space-y-1">{memory.lines.map((l, i) => <li key={i} className="text-[11px] leading-snug flex gap-1.5" style={{ color: A(0.72) }}><span className="shrink-0" style={{ color: "#34d399" }}>+</span>{l}</li>)}</ul>
+        : <p className="text-[10.5px] italic" style={{ color: A(0.42) }}>Historical memory begins tracking from today.</p>}
+    </Section>
+  );
+  const nextWatchSec = (
+    <Section label="Next thing to watch"><p className="text-[11px] leading-snug" style={{ color: A(0.72) }}>Watch {intel.nextWatch}.</p></Section>
+  );
+  const forecastSec = forecast && (
+    <Section label={isSymbol ? "Forward View" : "Forecast"}>
+      <div className="flex items-center gap-4 mb-2">
+        <span className="text-[12.5px] font-black capitalize leading-none" style={{ color: dirColor(forecast.direction) }}>{forecast.direction}</span>
+        {forecast.probability !== null && (
+          <span className="flex items-baseline gap-1"><span className="text-[13px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{forecast.probability}%</span><span className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>probability</span></span>
+        )}
+        <span className="flex items-baseline gap-1"><span className="text-[13px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{forecast.confidence}</span><span className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>confidence</span></span>
+      </div>
+      {forecast.timeframe && <p className="text-[10px] mb-1.5" style={{ color: A(0.55) }}>Expected timeframe: {forecast.timeframe}.</p>}
+      <ul className="space-y-1 mb-1.5">
+        {forecast.reasons.map((r, i) => (
+          <li key={i} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.7) }}>
+            <span className="shrink-0 mt-0.5" style={{ color: accentColor }}>›</span>{r}
+          </li>
+        ))}
+      </ul>
+      {forecast.invalidation && <p className="text-[10px] leading-snug mb-1.5" style={{ color: A(0.55) }}>Invalidated if: {forecast.invalidation}</p>}
+      <p className="text-[9px] italic leading-snug" style={{ color: A(0.38) }}>Probabilistic estimate derived from current signals, not a certainty and not investment advice.</p>
+    </Section>
+  );
   const mapDetail = useMemo(() => {
     if (mapHoverEdge) { const e = relMap.edges.find(x => x.id === mapHoverEdge); if (e) return `${e.from.label} ${e.type.replace(/_/g, " ")} ${e.to.label}  ·  strength ${e.strength}  ·  evidence ${e.evidenceCount}  ·  ${e.sources} source${e.sources === 1 ? "" : "s"}`; }
     const id = mapHoverNode ?? mapSelected;
@@ -455,6 +551,12 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
             <div className="text-right shrink-0">
               <p className="text-[20px] font-black tabular-nums leading-none" style={{ color: confColor(intel.conviction) }}>{intel.conviction}</p>
               <p className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>Conviction</p>
+            </div>
+          )}
+          {isSymbol && evidence && (
+            <div className="text-right shrink-0">
+              <p className="text-[20px] font-black tabular-nums leading-none" style={{ color: confColor(evidence.overallTrust) }}>{evidence.overallTrust}</p>
+              <p className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>Signal</p>
             </div>
           )}
           <button onClick={onClose} className="shrink-0 p-1 rounded transition-colors hover:bg-white/10" style={{ color: A(0.5) }}><X size={15} /></button>
@@ -511,114 +613,108 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
             )}
           </Section>
         )}
-        <Section label={isSymbol ? "Current Market Read" : "What it is"}><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.82) }}>{intel.what}</p></Section>
+        {isSymbol ? (
+          /* Company view: thesis, confidence, prediction, drivers and evidence in the
+             first screenful. Discovery content is demoted below the graph sections. */
+          <>
+            <Section label="Thesis">
+              <p className="text-[11.5px] leading-relaxed" style={{ color: A(0.85) }}>{intel.what}</p>
+              <p className="text-[10.5px] leading-relaxed mt-1" style={{ color: A(0.6) }}>{intel.why}</p>
+            </Section>
 
-        {/* Current Themes. Active theme exposure as compact clickable chips; clicking
-            refocuses the shared context on that theme (existing routing, no new logic). */}
-        {isSymbol && currentThemes.length > 0 && (
-          <Section label="Current Themes">
-            <div className="flex flex-wrap gap-1.5">
-              {currentThemes.map(t => (
-                <button key={t} onClick={() => setActiveTheme(t, accentColor)}
-                  className="text-[9.5px] font-semibold px-2 py-0.5 rounded transition-colors hover:bg-white/10"
-                  style={{ color: "rgba(124,199,216,0.92)", background: "rgba(82,176,200,0.10)", border: "1px solid rgba(82,176,200,0.25)" }}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </Section>
-        )}
+            {evidence && (
+              <Section label="Signal Confidence">
+                <div className="flex items-center gap-4">
+                  <Stat label="Evidence" value={String(evidence.evidenceScore)} accent />
+                  <Stat label="Trust" value={String(evidence.overallTrust)} />
+                  <Stat label="Freshness" value={String(evidence.freshnessScore)} />
+                  <Stat label="Sources" value={String(evidence.sourceBreakdown.length)} />
+                  <span className="ml-auto text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                    style={{ color: verdictColor(evidence.verdict), background: `${verdictColor(evidence.verdict)}1a` }}>
+                    {evidence.verdict.replace(/_/g, " ")}
+                  </span>
+                </div>
+              </Section>
+            )}
 
-        <Section label="Why it matters now"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.72) }}>{intel.why}</p></Section>
+            {forecastSec}
 
-        <Section label="Related pages">
-          <div className="flex flex-wrap gap-1.5">
-            {intel.relatedPages.map(p => (
-              <Link key={p.label} href={p.href} onClick={onClose}
-                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-md transition-colors hover:bg-white/10"
-                style={{ color: A(0.8), border: `1px solid ${A(0.12)}`, background: A(0.03) }}>
-                {p.label} <span style={{ color: A(0.4) }}>{p.note}</span> <ArrowUpRight size={9} style={{ color: A(0.4) }} />
-              </Link>
-            ))}
-          </div>
-        </Section>
+            {(currentThemes.length > 0 || intel.drivers.length > 0) && (
+              <Section label="Drivers & Themes">
+                {currentThemes.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {currentThemes.map(t => (
+                      <button key={t} onClick={() => setActiveTheme(t, accentColor)}
+                        className="text-[9.5px] font-semibold px-2 py-0.5 rounded transition-colors hover:bg-white/10"
+                        style={{ color: "rgba(124,199,216,0.92)", background: "rgba(82,176,200,0.10)", border: "1px solid rgba(82,176,200,0.25)" }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {intel.drivers.length > 0 && (
+                  <div className={`flex flex-wrap gap-1.5 ${currentThemes.length > 0 ? "mt-1.5" : ""}`}>
+                    {intel.drivers.map(d => (
+                      <button key={d} onClick={() => setActiveDriver(d, accentColor)}
+                        className="text-[9.5px] font-semibold px-2 py-0.5 rounded transition-colors hover:bg-white/10"
+                        style={{ color: A(0.72), background: A(0.04), border: `1px solid ${A(0.14)}` }}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            )}
 
-        {intel.companies.length > 0 && (
-          <Section label="Related companies">
-            <div className="flex flex-wrap gap-x-2.5 gap-y-1">{intel.companies.map(c => <TickerChip key={c} ticker={c} size="md" color="#7cc7d8" />)}</div>
-          </Section>
-        )}
-        {intel.sectors.length > 0 && (
-          <Section label="Related sectors">
-            <div className="flex flex-wrap gap-1.5">{intel.sectors.map(s => <span key={s} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.12)", color: "rgba(124,199,216,0.9)" }}>{s}</span>)}</div>
-          </Section>
-        )}
+            {evidence && evidence.supportingEvidence.length > 0 && (
+              <Section label="Evidence">
+                <ul className="space-y-1">
+                  {evidence.supportingEvidence.slice(0, 4).map((ev, i) => (
+                    <li key={i} className="text-[10.5px] leading-snug flex items-center gap-1.5" style={{ color: A(0.7) }}>
+                      <span className="truncate" style={{ color: A(0.9) }}>{ev.from}</span>
+                      <span className="shrink-0 px-1 py-px rounded text-[8px] font-semibold uppercase tracking-wide" style={{ color: accentColor, background: `${accentColor}1f` }}>{ev.relationship.replace(/_/g, " ")}</span>
+                      <span className="ml-auto shrink-0 tabular-nums text-[9px]" style={{ color: A(0.4) }}>{ev.strength}</span>
+                    </li>
+                  ))}
+                </ul>
+                {evidence.contradictions.length > 0 && (
+                  <p className="text-[9.5px] leading-snug mt-1.5" style={{ color: "#f59e0b" }}>
+                    {evidence.contradictions.length} contradiction{evidence.contradictions.length === 1 ? "" : "s"}: {evidence.contradictions[0].detail}
+                  </p>
+                )}
+              </Section>
+            )}
 
-        {intel.stories.length > 0 && (
-          <Section label="Related stories">
-            <ul className="space-y-1.5">{intel.stories.map(c => (
-              <li key={c.id} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
-                <span className="shrink-0 mt-0.5" style={{ color: accentColor }}>•</span>{c.primary.title}
-              </li>
-            ))}</ul>
-          </Section>
-        )}
-        {intel.deals.length > 0 && (
-          <Section label="Related M&A deals">
-            <ul className="space-y-1.5">{intel.deals.map(d => (
-              <li key={d.id} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
-                <span className="shrink-0 mt-0.5" style={{ color: "#a78bfa" }}>•</span>{d.title}
-              </li>
-            ))}</ul>
-          </Section>
-        )}
-        {intel.listen.length > 0 && (
-          <Section label="Related Listen conversations">
-            <ul className="space-y-1.5">{intel.listen.map(ep => (
-              <li key={ep.id} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
-                <span className="shrink-0 mt-0.5" style={{ color: "#2563eb" }}>•</span>{ep.title}
-              </li>
-            ))}</ul>
-          </Section>
-        )}
+            {oppRiskGrid}
+            {nextWatchSec}
 
-        <Section label="Private capital read"><p className="text-[11px] leading-snug" style={{ color: A(0.7) }}>{intel.privateRead}</p></Section>
-
-        <Section label="Recent change">
-          {memory.hasHistory
-            ? <ul className="space-y-1">{memory.lines.map((l, i) => <li key={i} className="text-[11px] leading-snug flex gap-1.5" style={{ color: A(0.72) }}><span className="shrink-0" style={{ color: "#34d399" }}>+</span>{l}</li>)}</ul>
-            : <p className="text-[10.5px] italic" style={{ color: A(0.42) }}>Historical memory begins tracking from today.</p>}
-        </Section>
-
-        {!isSymbol && oppRiskGrid}
-
-        <Section label="Next thing to watch"><p className="text-[11px] leading-snug" style={{ color: A(0.72) }}>Watch {intel.nextWatch}.</p></Section>
-
-        {/* For symbol drawers Opportunity / Risk sits directly above Forward View. */}
-        {isSymbol && oppRiskGrid}
-
-        {/* Forward View. Forward-looking, probabilistic, graph-derived. Renders only when
-            the prediction resolved (never on insufficient_signal). No price targets. */}
-        {forecast && (
-          <Section label={isSymbol ? "Forward View" : "Forecast"}>
-            <div className="flex items-center gap-4 mb-2">
-              <span className="text-[12.5px] font-black capitalize leading-none" style={{ color: dirColor(forecast.direction) }}>{forecast.direction}</span>
-              {forecast.probability !== null && (
-                <span className="flex items-baseline gap-1"><span className="text-[13px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{forecast.probability}%</span><span className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>probability</span></span>
-              )}
-              <span className="flex items-baseline gap-1"><span className="text-[13px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{forecast.confidence}</span><span className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>confidence</span></span>
-            </div>
-            {forecast.timeframe && <p className="text-[10px] mb-1.5" style={{ color: A(0.55) }}>Expected timeframe: {forecast.timeframe}.</p>}
-            <ul className="space-y-1 mb-1.5">
-              {forecast.reasons.map((r, i) => (
-                <li key={i} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.7) }}>
-                  <span className="shrink-0 mt-0.5" style={{ color: accentColor }}>›</span>{r}
-                </li>
-              ))}
-            </ul>
-            {forecast.invalidation && <p className="text-[10px] leading-snug mb-1.5" style={{ color: A(0.55) }}>Invalidated if: {forecast.invalidation}</p>}
-            <p className="text-[9px] italic leading-snug" style={{ color: A(0.38) }}>Probabilistic estimate derived from current signals, not a certainty and not investment advice.</p>
-          </Section>
+            {peers.length > 0 && (
+              <Section label="Peer Exposure">
+                <div className="flex flex-wrap gap-x-2.5 gap-y-1">{peers.map(c => <TickerChip key={c} ticker={c} size="md" color="#7cc7d8" />)}</div>
+              </Section>
+            )}
+          </>
+        ) : (
+          /* Theme-shaped view: the established theme drawer flow. */
+          <>
+            <Section label="What it is"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.82) }}>{intel.what}</p></Section>
+            <Section label="Why it matters now"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.72) }}>{intel.why}</p></Section>
+            {relatedPagesSec}
+            {intel.companies.length > 0 && (
+              <Section label="Related companies">
+                <div className="flex flex-wrap gap-x-2.5 gap-y-1">{intel.companies.map(c => <TickerChip key={c} ticker={c} size="md" color="#7cc7d8" />)}</div>
+              </Section>
+            )}
+            {sectorsSec}
+            {storiesSec}
+            {dealsSec}
+            {listenSec}
+            {privateReadSec}
+            {recentChangeSec}
+            {oppRiskGrid}
+            {nextWatchSec}
+            {forecastSec}
+          </>
         )}
 
         {/* Intelligence Timeline. Memory Engine only, read-only. Graceful fallback when
@@ -742,6 +838,20 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
         )}
         {strongest.length > 0 && (
           <Section label="Strongest connections (graph)"><RelList rels={strongest} accent={accentColor} /></Section>
+        )}
+
+        {/* Demoted discovery content for the company view: context that is useful
+            but never competes with the live intelligence above. */}
+        {isSymbol && (
+          <>
+            {privateReadSec}
+            {recentChangeSec}
+            {storiesSec}
+            {dealsSec}
+            {listenSec}
+            {sectorsSec}
+            {relatedPagesSec}
+          </>
         )}
 
         {process.env.NODE_ENV !== "production" && graph.ready && (
