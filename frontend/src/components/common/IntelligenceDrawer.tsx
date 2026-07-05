@@ -14,7 +14,7 @@ import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } 
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
 import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns, summarizeEvolution, findHistoricalAnalogs } from "@/lib/memoryEngine";
-import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
+import { intelligenceGraph as G, normalizeKey } from "@/lib/intelligenceGraph";
 import type { IntelNode, IntelEdge } from "@/lib/intelligenceGraph";
 import { num, round } from "@/lib/intelligenceUtils";
 import { formatRelativeAge, secondsSince } from "@/lib/utils";
@@ -351,13 +351,35 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   }, [graph.ready, memVersion, isCompany, ctx.id, ctx.label, intel.theme]);
 
   // Market Structure (reads node.metadata.latestMarketData only; hidden when absent).
+  // Company contexts resolve the ticker node directly: exact ticker key first (ctx.id,
+  // then ctx.label), then related-company tickers whose node aliases back to the focus.
+  // Never routed through the resolved theme, whose node carries no market data, so a
+  // drawer titled "Power Infrastructure" still renders VST's market structure.
   const marketStructure = useMemo<MarketStructureVM | null>(() => {
     if (!graph.ready) return null;
-    const key = isCompany ? (ctx.id || ctx.label) : (intel.theme?.name ?? ctx.label);
-    const lmd = G.getNode(key)?.metadata?.latestMarketData;
-    return lmd && typeof lmd === "object" ? buildMarketStructure(lmd as Record<string, unknown>) : null;
+    const focusKeys = [ctx.id, ctx.label].filter(Boolean).map(normalizeKey);
+    // Fuzzy only above ticker length, so "vistra" matches "vistra-corp" but a
+    // two-letter ticker cannot substring-match an unrelated company.
+    const matchesFocus = (n: IntelNode) => n.aliases.some(a => {
+      const k = normalizeKey(a);
+      return focusKeys.some(f => f === k || (Math.min(f.length, k.length) >= 4 && (k.includes(f) || f.includes(k))));
+    });
+    const candidates = isCompany
+      ? [ctx.id, ctx.label, ...intel.companies.filter(t => { const n = G.getNode(t); return !!n && matchesFocus(n); })]
+      : [intel.theme?.name ?? ctx.label];
+    for (const key of candidates) {
+      if (!key) continue;
+      const node = G.getNode(key);
+      const lmd = node?.metadata?.latestMarketData;
+      if (lmd && typeof lmd === "object") {
+        if (process.env.NODE_ENV !== "production") console.debug(`[IntelligenceDrawer] Market Structure key "${key}" -> node "${node!.id}"`);
+        return buildMarketStructure(lmd as Record<string, unknown>);
+      }
+    }
+    if (process.env.NODE_ENV !== "production") console.debug(`[IntelligenceDrawer] Market Structure: no latestMarketData under [${candidates.filter(Boolean).join(", ")}]`);
+    return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, isCompany, ctx.id, ctx.label, intel.theme]);
+  }, [graph.ready, isCompany, ctx.id, ctx.label, intel.theme, intel.companies]);
 
   // Relationship Map (Intelligence Graph, read-only). Reuses the graph the hook built.
   const [mapHoverNode, setMapHoverNode] = useState<string | null>(null);
