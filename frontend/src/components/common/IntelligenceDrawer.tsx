@@ -20,6 +20,7 @@ import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import { num, round } from "@/lib/intelligenceUtils";
 import { formatRelativeAge, secondsSince } from "@/lib/utils";
 import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
+import { setActiveTheme } from "@/lib/intelligenceContext";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
 /**
@@ -33,8 +34,8 @@ const A = (n: number) => `rgba(255,255,255,${n})`;
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="px-4 py-3 border-t" style={{ borderColor: A(0.06) }}>
-      <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-1.5" style={{ color: A(0.34) }}>{label}</p>
+    <div className="px-4 py-2.5 border-t" style={{ borderColor: A(0.06) }}>
+      <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-1" style={{ color: A(0.34) }}>{label}</p>
       {children}
     </div>
   );
@@ -140,6 +141,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 interface MarketStructureVM {
   price: number; changePercent: number | null; volume: number | null; avgVolume: number | null;
   relativeVolume: number | null; dollarVolume: number | null; marketCap: number | null;
+  yearLow: number | null; yearHigh: number | null; yearPosition: number | null; // % of 52w range
   freshness: string; provider: string; stale: boolean; notes: string[];
 }
 const mnum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -168,9 +170,19 @@ function buildMarketStructure(lmd: Record<string, unknown>): MarketStructureVM |
     else if (relativeVolume < 0.8) notes.push("Participation below normal");
   }
   if (dollarVolume != null && dollarVolume >= 5_000_000_000) notes.push("Strong institutional liquidity");
+  // 52-week range: numeric fields when a provider supplies them, else the profile
+  // "low-high" range string. Display-only derivation from data already on the node.
+  let yearLow = mnum(lmd.yearLow), yearHigh = mnum(lmd.yearHigh);
+  if ((yearLow == null || yearHigh == null) && typeof lmd.range === "string") {
+    const m = lmd.range.match(/^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
+    if (m) { yearLow = Number(m[1]); yearHigh = Number(m[2]); }
+  }
+  const yearPosition = yearLow != null && yearHigh != null && yearHigh > yearLow
+    ? Math.round(Math.min(100, Math.max(0, ((price - yearLow) / (yearHigh - yearLow)) * 100)))
+    : null;
   return {
     price, changePercent: mnum(lmd.changePercent), volume, avgVolume, relativeVolume, dollarVolume,
-    marketCap: mnum(lmd.marketCap),
+    marketCap: mnum(lmd.marketCap), yearLow, yearHigh, yearPosition,
     freshness: ts != null ? (formatRelativeAge(secondsSince(ts)) || "just now") : "unknown",
     provider: typeof lmd.provider === "string" ? lmd.provider : "market data",
     stale: lmd.stale === true, notes,
@@ -322,6 +334,23 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   );
   const strongest = (isSymbol ? companyReport?.strongestRelationships : themeReport?.strongestRelationships) ?? [];
 
+  // Current theme exposure for symbol drawers: the resolved parent theme plus the
+  // graph's connected themes, deduped. Display-only read of already-computed data.
+  const currentThemes = useMemo<string[]>(() => {
+    if (!isSymbol) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const push = (name?: string | null) => {
+      if (!name) return;
+      const c = cleanThemeName(name);
+      const k = c.toLowerCase();
+      if (c && !seen.has(k)) { seen.add(k); out.push(c); }
+    };
+    push(intel.theme?.name);
+    for (const t of companyReport?.relatedThemes ?? []) push(t.label);
+    return out.slice(0, 6);
+  }, [isSymbol, intel.theme, companyReport]);
+
   const accentColor = ctx.color ?? "#52b0c8";
 
   // Forward-looking forecast, normalized across theme / company / sector predictions.
@@ -384,6 +413,21 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, entity.graphKey]);
   const mapActive = mapSelected ?? mapHoverNode;
+
+  // Opportunity / Risk grid, placed above Forward View for symbols and in the
+  // original position for theme-shaped contexts.
+  const oppRiskGrid = (
+    <div className="grid grid-cols-2 gap-px" style={{ background: A(0.06) }}>
+      <div className="px-4 py-2.5" style={{ background: "#0b0f18" }}>
+        <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(52,211,153,0.7)" }}>Opportunity</p>
+        <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>{intel.opportunity}</p>
+      </div>
+      <div className="px-4 py-2.5" style={{ background: "#0b0f18" }}>
+        <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(248,113,113,0.75)" }}>Risk</p>
+        <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>{intel.risk}</p>
+      </div>
+    </div>
+  );
   const mapDetail = useMemo(() => {
     if (mapHoverEdge) { const e = relMap.edges.find(x => x.id === mapHoverEdge); if (e) return `${e.from.label} ${e.type.replace(/_/g, " ")} ${e.to.label}  ·  strength ${e.strength}  ·  evidence ${e.evidenceCount}  ·  ${e.sources} source${e.sources === 1 ? "" : "s"}`; }
     const id = mapHoverNode ?? mapSelected;
@@ -426,26 +470,40 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
       </div>
 
       <div className="overflow-y-auto flex-1 scrollbar-hide">
-        {/* Market Structure. Descriptive only, reads latestMarketData. Hidden when absent. */}
+        {/* Market Structure. First section below the header. Descriptive only, reads
+            latestMarketData; rows without data are hidden, never shown as n/a. */}
         {marketStructure && (
           <Section label="Market Structure">
-            <div className="flex items-baseline gap-3 mb-2">
-              <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: A(0.96) }}>{marketStructure.price.toFixed(2)}</span>
+            <div className="flex items-baseline gap-2.5 mb-1.5">
+              <span className="text-[21px] font-black tabular-nums leading-none" style={{ color: A(0.96) }}>{marketStructure.price.toFixed(2)}</span>
               {marketStructure.changePercent !== null && (
-                <span className="text-[12px] font-bold tabular-nums" style={{ color: A(0.82) }}>{marketStructure.changePercent > 0 ? "+" : ""}{marketStructure.changePercent.toFixed(2)}%</span>
+                <span className="text-[12px] font-bold tabular-nums" style={{ color: marketStructure.changePercent >= 0 ? "#34d399" : "#f87171" }}>{marketStructure.changePercent > 0 ? "+" : ""}{marketStructure.changePercent.toFixed(2)}%</span>
               )}
-              <span className="ml-auto text-[8px] uppercase tracking-wider" style={{ color: marketStructure.stale ? "#f59e0b" : A(0.4) }}>{marketStructure.freshness}{marketStructure.stale ? " · stale" : ""}</span>
+              <span className="ml-auto text-[8px] uppercase tracking-wider tabular-nums" style={{ color: marketStructure.stale ? "#f59e0b" : A(0.4) }}>{marketStructure.freshness}{marketStructure.stale ? " · stale" : ""}</span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <MktRow label="Volume" value={fmtCompact(marketStructure.volume)} />
-              <MktRow label="Avg Volume" value={fmtCompact(marketStructure.avgVolume)} />
-              <MktRow label="Rel Volume" value={marketStructure.relativeVolume !== null ? marketStructure.relativeVolume.toFixed(2) : "n/a"} />
-              <MktRow label="Dollar Vol" value={fmtCompact(marketStructure.dollarVolume)} />
-              <MktRow label="Market Cap" value={fmtCompact(marketStructure.marketCap)} />
-              <MktRow label="Provider" value={marketStructure.provider} />
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              {marketStructure.volume !== null && <MktRow label="Volume" value={fmtCompact(marketStructure.volume)} />}
+              {marketStructure.avgVolume !== null && <MktRow label="Avg Volume" value={fmtCompact(marketStructure.avgVolume)} />}
+              {marketStructure.relativeVolume !== null && <MktRow label="Rel Volume" value={`${marketStructure.relativeVolume.toFixed(2)}x`} />}
+              {marketStructure.dollarVolume !== null && <MktRow label="Dollar Vol" value={fmtCompact(marketStructure.dollarVolume)} />}
+              {marketStructure.marketCap !== null && <MktRow label="Market Cap" value={fmtCompact(marketStructure.marketCap)} />}
+              {marketStructure.yearPosition !== null && <MktRow label="52W Position" value={`${marketStructure.yearPosition}%`} />}
+              <MktRow label="Provider" value={marketStructure.provider.toUpperCase()} />
+              <MktRow label="Updated" value={marketStructure.freshness} />
             </div>
+            {marketStructure.yearPosition !== null && marketStructure.yearLow !== null && marketStructure.yearHigh !== null && (
+              <div className="mt-1.5">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>52W Range</span>
+                  <span className="text-[10px] font-semibold tabular-nums" style={{ color: A(0.72) }}>{marketStructure.yearLow.toFixed(2)} - {marketStructure.yearHigh.toFixed(2)}</span>
+                </div>
+                <div className="h-[3px] rounded-full mt-1" style={{ background: A(0.08) }}>
+                  <div className="h-full rounded-full" style={{ width: `${marketStructure.yearPosition}%`, background: accentColor }} />
+                </div>
+              </div>
+            )}
             {marketStructure.notes.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
+              <div className="flex flex-wrap gap-1 mt-1.5">
                 {marketStructure.notes.map(n => (
                   <span key={n} className="text-[8px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: accentColor, background: `${accentColor}1a` }}>{n}</span>
                 ))}
@@ -453,7 +511,24 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
             )}
           </Section>
         )}
-        <Section label="What it is"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.82) }}>{intel.what}</p></Section>
+        <Section label={isSymbol ? "Current Market Read" : "What it is"}><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.82) }}>{intel.what}</p></Section>
+
+        {/* Current Themes. Active theme exposure as compact clickable chips; clicking
+            refocuses the shared context on that theme (existing routing, no new logic). */}
+        {isSymbol && currentThemes.length > 0 && (
+          <Section label="Current Themes">
+            <div className="flex flex-wrap gap-1.5">
+              {currentThemes.map(t => (
+                <button key={t} onClick={() => setActiveTheme(t, accentColor)}
+                  className="text-[9.5px] font-semibold px-2 py-0.5 rounded transition-colors hover:bg-white/10"
+                  style={{ color: "rgba(124,199,216,0.92)", background: "rgba(82,176,200,0.10)", border: "1px solid rgba(82,176,200,0.25)" }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </Section>
+        )}
+
         <Section label="Why it matters now"><p className="text-[11.5px] leading-relaxed" style={{ color: A(0.72) }}>{intel.why}</p></Section>
 
         <Section label="Related pages">
@@ -515,23 +590,17 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
             : <p className="text-[10.5px] italic" style={{ color: A(0.42) }}>Historical memory begins tracking from today.</p>}
         </Section>
 
-        <div className="grid grid-cols-2 gap-px" style={{ background: A(0.06) }}>
-          <div className="px-4 py-3" style={{ background: "#0b0f18" }}>
-            <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(52,211,153,0.7)" }}>Opportunity</p>
-            <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>{intel.opportunity}</p>
-          </div>
-          <div className="px-4 py-3" style={{ background: "#0b0f18" }}>
-            <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(248,113,113,0.75)" }}>Risk</p>
-            <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>{intel.risk}</p>
-          </div>
-        </div>
+        {!isSymbol && oppRiskGrid}
 
         <Section label="Next thing to watch"><p className="text-[11px] leading-snug" style={{ color: A(0.72) }}>Watch {intel.nextWatch}.</p></Section>
 
-        {/* Forecast. Forward-looking, probabilistic, graph-derived. Renders only when
+        {/* For symbol drawers Opportunity / Risk sits directly above Forward View. */}
+        {isSymbol && oppRiskGrid}
+
+        {/* Forward View. Forward-looking, probabilistic, graph-derived. Renders only when
             the prediction resolved (never on insufficient_signal). No price targets. */}
         {forecast && (
-          <Section label="Forecast">
+          <Section label={isSymbol ? "Forward View" : "Forecast"}>
             <div className="flex items-center gap-4 mb-2">
               <span className="text-[12.5px] font-black capitalize leading-none" style={{ color: dirColor(forecast.direction) }}>{forecast.direction}</span>
               {forecast.probability !== null && (
@@ -665,15 +734,6 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
 
         {/* Graph-backed enrichment. Renders only when the graph resolved the entity
             and has something to add, so nothing shows blank. */}
-        {isSymbol && companyReport?.found && companyReport.relatedThemes.length > 0 && (
-          <Section label="Connected themes (graph)">
-            <div className="flex flex-wrap gap-1.5">
-              {companyReport.relatedThemes.map(t => (
-                <span key={t.id} className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "rgba(82,176,200,0.12)", color: "rgba(124,199,216,0.9)" }}>{t.label}</span>
-              ))}
-            </div>
-          </Section>
-        )}
         {isSymbol && companyReport?.found && companyReport.maRelationships.length > 0 && (
           <Section label="M&A links (graph)"><RelList rels={companyReport.maRelationships} accent="#a78bfa" /></Section>
         )}
