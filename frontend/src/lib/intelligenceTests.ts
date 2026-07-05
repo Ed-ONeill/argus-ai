@@ -27,7 +27,7 @@ import { ProviderRegistry, providerRegistry } from "./dataAdapters/registry";
 import { SecAdapter } from "./dataAdapters/sec";
 import { FredAdapter } from "./dataAdapters/fred";
 import { registerDefaultProviders } from "./dataAdapters/providers";
-import { ingestProviderObservations } from "./dataAdapters/observationGraphBridge";
+import { ingestProviderObservations, reingestCachedMarketObservations, clearMarketObservationCache, marketObservationCacheSize } from "./dataAdapters/observationGraphBridge";
 import { runProviderIngestion } from "./dataAdapters/providerIngestion";
 import { IngestionScheduler, MemoryHealthStore } from "./dataAdapters/ingestionScheduler";
 import { runIngestionDiagnostic } from "./dataAdapters/diagnostics";
@@ -37,6 +37,7 @@ import {
 } from "./memoryEngine";
 import { orchestrateIntelligence } from "./intelligenceOrchestrator";
 import { FmpAdapter, MarketDataAdapter } from "./dataAdapters/marketData";
+import { resolveDrawerEntity, buildCompanyContext, buildSymbolContext } from "./drawerEntity";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -938,6 +939,31 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(!!spy && spy.type === "ETF", `SPY should be an ETF node via fallback, got ${spy?.type}`);
   });
 
+  // 68g. Market observations survive a graph clear/rebuild (drawer wiring).
+  test("market observations survive graph rebuild", () => {
+    intelligenceGraph.clear();
+    clearMarketObservationCache();
+    ingestProviderObservations(mkFmp().normalize(fmpAAPL, { dataset: "quote", symbols: ["AAPL"] }));
+    assert(!!intelligenceGraph.getNode("AAPL")?.metadata.latestMarketData, "market data should be present after ingest");
+    assert(marketObservationCacheSize() > 0, "market observations should be cached");
+    // Simulate useIntelligenceGraph clearing and rebuilding the graph.
+    intelligenceGraph.clear();
+    assert(!intelligenceGraph.getNode("AAPL"), "the clear should wipe the node");
+    const applied = reingestCachedMarketObservations();
+    assert(applied > 0, "cached market observations should re-apply on rebuild");
+    const node = intelligenceGraph.getNode("AAPL");
+    assert(!!node && (node.metadata.latestMarketData as Record<string, unknown>).price === 190.5, "latestMarketData should be restored after rebuild");
+  });
+
+  // 68h. Non-market observations are not cached by the market wiring.
+  test("non-market observations are not cached", () => {
+    clearMarketObservationCache();
+    const sec = new SecAdapter({ now: () => MKT_NOW });
+    ingestProviderObservations(sec.normalize(appleFacts, { dataset: "companyfacts", ticker: "AAPL" }));
+    assert(marketObservationCacheSize() === 0, "SEC financials should not populate the market cache");
+    clearMarketObservationCache();
+  });
+
   // 68b. FMP calls the current stable batch-quote endpoint, not the legacy one.
   test("FMP uses stable batch-quote endpoint", async () => {
     let capturedUrl = "";
@@ -995,6 +1021,50 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(!!r1.reports.market, "the market report should be present");
     const r2 = await s.tick();
     assert(r2.ran === false && r2.reason === "not-due", "a second tick within every interval should do nothing");
+  });
+
+  // 71. Phase 16: entity-aware drawer routing. Symbols resolve to their own ticker
+  // node, never through the parent theme; themes never show market structure.
+  test("drawer routes ARES to ARES not Private Credit", () => {
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "Private Credit", type: "Theme" });
+    intelligenceGraph.addNode({ label: "ARES", type: "Company", metadata: { latestMarketData: { price: 141.3, changePercent: 0.6, provider: "fmp" } } });
+    const e = resolveDrawerEntity(buildCompanyContext("ARES"), { themeName: "Private Credit", relatedCompanies: ["ARES", "BX", "APO"] });
+    assert(e.entityType === "company", "an ARES click should stay a company drawer");
+    assert(e.title === "ARES", `title should be ARES, got ${e.title}`);
+    assert(e.subtitle === "Private Credit", "the parent theme should be the subtitle, not the title");
+    assert(!!e.node && e.node.id === intelligenceGraph.getNode("ARES")!.id, "the graph key should resolve the ARES ticker node");
+    assert(e.showMarketStructure, "market structure should show for a company with latestMarketData");
+  });
+
+  test("drawer routes NVDA to NVDA not AI Infrastructure", () => {
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "AI Infrastructure", type: "Theme" });
+    intelligenceGraph.addNode({ label: "NVDA", type: "Company", aliases: ["Nvidia"] });
+    const e = resolveDrawerEntity({ kind: "company", id: "NVDA", label: "NVDA" }, { themeName: "AI Infrastructure", relatedCompanies: ["NVDA", "VST"] });
+    assert(e.entityType === "company" && e.title === "NVDA", "an NVDA click should stay a company drawer titled NVDA");
+    assert(!!e.node && e.node.id === intelligenceGraph.getNode("NVDA")!.id, "the graph key should resolve the NVDA node, not the theme");
+    assert(!e.showMarketStructure, "market structure should hide when the company has no latestMarketData");
+  });
+
+  test("drawer routes theme to theme entity", () => {
+    intelligenceGraph.clear();
+    // Even a theme node that (wrongly) carried market data must not show the block.
+    intelligenceGraph.addNode({ label: "Private Credit", type: "Theme", metadata: { latestMarketData: { price: 1 } } });
+    const e = resolveDrawerEntity({ kind: "theme", id: "private-credit", label: "Private Credit" }, { themeName: "Private Credit" });
+    assert(e.entityType === "theme" && e.title === "Private Credit", "a theme click should stay a theme drawer");
+    assert(!e.showMarketStructure, "market structure must stay hidden for themes");
+  });
+
+  test("drawer routes ETF with market structure", () => {
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "SPY", type: "ETF", metadata: { latestMarketData: { price: 512.4, provider: "fmp" } } });
+    const e = resolveDrawerEntity(buildSymbolContext("etf", "spy"), {});
+    assert(e.entityType === "etf" && e.title === "SPY", "an ETF click should open an ETF drawer titled by ticker");
+    assert(e.showMarketStructure, "market structure should show for an ETF with latestMarketData");
+    // Graceful fallback: an unknown ETF still resolves, with no node and no market block.
+    const g = resolveDrawerEntity(buildSymbolContext("etf", "XYZQ"), {});
+    assert(g.title === "XYZQ" && g.node === null && !g.showMarketStructure, "an unknown ETF should fall back gracefully");
   });
 
   for (const [name, fn] of tests) {

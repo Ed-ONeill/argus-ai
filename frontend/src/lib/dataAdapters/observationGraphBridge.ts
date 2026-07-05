@@ -226,6 +226,26 @@ function dispatch(o: ProviderObservation): void {
  * Public API
  * ------------------------------------------------------------------ */
 
+/**
+ * Market observations survive a graph rebuild. The graph the drawer reads is cleared
+ * and rebuilt from feed data on every open (see useIntelligenceGraph), which would
+ * wipe provider market data. We keep the latest market observation per entity/type
+ * here and re-apply it after each rebuild so node.metadata.latestMarketData persists.
+ */
+const MARKET_OBS_TYPES = new Set(["market_price", "volume", "liquidity", "ohlcv"]);
+const marketObservationCache = new Map<string, ProviderObservation>();
+
+/** Re-apply cached market observations onto the current graph. Returns how many. */
+export function reingestCachedMarketObservations(): number {
+  let applied = 0;
+  for (const o of marketObservationCache.values()) {
+    try { dispatch(o); applied += 1; } catch { /* skip */ }
+  }
+  return applied;
+}
+export function clearMarketObservationCache(): void { marketObservationCache.clear(); }
+export function marketObservationCacheSize(): number { return marketObservationCache.size; }
+
 /** Ingest normalized observations into the shared graph. Tolerant of malformed input. */
 export function ingestProviderObservations(observations: ProviderObservation[]): IngestProviderStats {
   const before = G.stats();
@@ -236,6 +256,7 @@ export function ingestProviderObservations(observations: ProviderObservation[]):
     if (!isValidObs(o)) { errorsSkipped += 1; continue; }
     try {
       dispatch(o);
+      if (MARKET_OBS_TYPES.has(o.observationType)) marketObservationCache.set(`${o.entityId}:${o.observationType}`, o);
       observationsIngested += 1;
       qualitySum += o.qualityScore;
       providersUsed.add(String(o.provider));

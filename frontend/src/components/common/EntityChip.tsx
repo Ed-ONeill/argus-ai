@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { resolveEntity, isSymbolKind, type EntityKind, type EntityInfo } from "@/lib/entity";
 import { setActiveContext, entityKindToIntel, contextMatchesTokens, useActiveContext } from "@/lib/intelligenceContext";
+import { buildSymbolContext } from "@/lib/drawerEntity";
 
 // Every entity tooltip is the SAME width — one Bloomberg-style visual language.
 const TOOLTIP_WIDTH = 208;
@@ -55,13 +56,14 @@ export function EntityChip({ kind, label, color, info, size, mono, activatable =
   const activate = useCallback((ev: React.MouseEvent) => {
     if (!activatable) return;
     ev.stopPropagation();
-    setActiveContext({
-      kind: entityKindToIntel(e.kind),
-      label: symbol ? label.toUpperCase() : (e.name || label),
-      id: symbol ? label.toUpperCase() : undefined!,
-      color: accent,
-    });
-  }, [activatable, e.kind, e.name, symbol, label, accent]);
+    const k = entityKindToIntel(e.kind);
+    // Symbols always focus as their own ticker (company / ETF context), never a theme.
+    setActiveContext(
+      k === "company" || k === "etf"
+        ? buildSymbolContext(k, label, { color: accent })
+        : { kind: k, label: e.name || label, id: undefined!, color: accent },
+    );
+  }, [activatable, e.kind, e.name, label, accent]);
 
   return (
     <span

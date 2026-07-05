@@ -14,11 +14,12 @@ import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } 
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
 import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns, summarizeEvolution, findHistoricalAnalogs } from "@/lib/memoryEngine";
-import { intelligenceGraph as G, normalizeKey } from "@/lib/intelligenceGraph";
+import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
 import type { IntelNode, IntelEdge } from "@/lib/intelligenceGraph";
+import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import { num, round } from "@/lib/intelligenceUtils";
 import { formatRelativeAge, secondsSince } from "@/lib/utils";
-import { confColor } from "@/app/markets/marketsShared";
+import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 
 /**
@@ -295,16 +296,31 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     episodes, matchedThemes: themes, deals, snapshots,
   });
 
-  const isCompany = ctx.kind === "company";
+  // Entity-aware routing (Phase 16): resolve which entity the drawer renders and
+  // which graph key every graph-backed section reads. Companies and ETFs resolve
+  // by ticker, never through the parent theme.
+  const isSymbol = ctx.kind === "company" || ctx.kind === "etf";
+  const entity = useMemo<DrawerEntity>(
+    () => resolveDrawerEntity(ctx, { themeName: intel.theme?.name ?? null, relatedCompanies: intel.companies }),
+    // graph.ready re-resolves once the graph singleton is built
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [graph.ready, ctx, intel.theme, intel.companies],
+  );
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && graph.ready) {
+      console.debug(`[IntelligenceDrawer] routed ${ctx.kind} "${ctx.label}" -> graphKey "${entity.graphKey}" (node: ${entity.node?.id ?? "none"}, marketStructure: ${entity.showMarketStructure})`);
+    }
+  }, [graph.ready, ctx.kind, ctx.label, entity]);
+
   const companyReport = useMemo(
-    () => (graph.ready && isCompany ? graph.getCompanyReport(ctx.id || ctx.label) : null),
-    [graph, isCompany, ctx.id, ctx.label],
+    () => (graph.ready && isSymbol ? graph.getCompanyReport(entity.graphKey) : null),
+    [graph, isSymbol, entity.graphKey],
   );
   const themeReport = useMemo(
-    () => (graph.ready && !isCompany ? graph.getThemeReport(intel.theme?.name ?? ctx.label) : null),
-    [graph, isCompany, intel.theme, ctx.label],
+    () => (graph.ready && !isSymbol ? graph.getThemeReport(entity.graphKey) : null),
+    [graph, isSymbol, entity.graphKey],
   );
-  const strongest = (isCompany ? companyReport?.strongestRelationships : themeReport?.strongestRelationships) ?? [];
+  const strongest = (isSymbol ? companyReport?.strongestRelationships : themeReport?.strongestRelationships) ?? [];
 
   const accentColor = ctx.color ?? "#52b0c8";
 
@@ -312,8 +328,8 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   // Renders only when the prediction resolved and is not insufficient_signal.
   const forecast = useMemo<ForecastVM | null>(() => {
     if (!graph.ready) return null;
-    if (ctx.kind === "company") {
-      const p = predictCompanyTrajectory(ctx.id || ctx.label);
+    if (ctx.kind === "company" || ctx.kind === "etf") {
+      const p = predictCompanyTrajectory(entity.graphKey);
       if (!p.found || p.expectedDirection === "insufficient_signal") return null;
       return { direction: p.expectedDirection, probability: p.probability, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: p.invalidation || null };
     }
@@ -324,12 +340,12 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
       return { direction: inflow ? "rotating in" : "rotating out", probability: null, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: null };
     }
     if (ctx.kind === "theme" || ctx.kind === "driver" || ctx.kind === "narrative") {
-      const p = predictThemeTrajectory(intel.theme?.name ?? ctx.label);
+      const p = predictThemeTrajectory(entity.graphKey);
       if (!p.found || p.predictedDirection === "insufficient_signal") return null;
       return { direction: p.predictedDirection, probability: p.probability, confidence: p.confidence, timeframe: p.expectedTimeframe, reasons: p.why.slice(0, 3), invalidation: p.invalidationConditions[0] || null };
     }
     return null;
-  }, [graph, ctx.kind, ctx.id, ctx.label, intel.theme]);
+  }, [graph, ctx.kind, ctx.label, entity.graphKey]);
 
   const dirColor = (d: string) => /strength|rotating in|accelerat/i.test(d) ? "#34d399" : /weak|revers|rotating out/i.test(d) ? "#f87171" : accentColor;
 
@@ -345,41 +361,18 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
 
   const timeline = useMemo<TimelineVM>(() => {
     if (!graph.ready) return EMPTY_TIMELINE;
-    const key = isCompany ? (ctx.id || ctx.label) : (intel.theme?.name ?? ctx.label);
-    return buildTimeline(key);
+    return buildTimeline(entity.graphKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, memVersion, isCompany, ctx.id, ctx.label, intel.theme]);
+  }, [graph.ready, memVersion, entity.graphKey]);
 
-  // Market Structure (reads node.metadata.latestMarketData only; hidden when absent).
-  // Company contexts resolve the ticker node directly: exact ticker key first (ctx.id,
-  // then ctx.label), then related-company tickers whose node aliases back to the focus.
-  // Never routed through the resolved theme, whose node carries no market data, so a
-  // drawer titled "Power Infrastructure" still renders VST's market structure.
+  // Market Structure (symbols only; reads latestMarketData from the routed node).
+  // The candidate walk (exact ticker first, then aliases and related tickers) lives
+  // in resolveDrawerEntity; themes never show market structure.
   const marketStructure = useMemo<MarketStructureVM | null>(() => {
-    if (!graph.ready) return null;
-    const focusKeys = [ctx.id, ctx.label].filter(Boolean).map(normalizeKey);
-    // Fuzzy only above ticker length, so "vistra" matches "vistra-corp" but a
-    // two-letter ticker cannot substring-match an unrelated company.
-    const matchesFocus = (n: IntelNode) => n.aliases.some(a => {
-      const k = normalizeKey(a);
-      return focusKeys.some(f => f === k || (Math.min(f.length, k.length) >= 4 && (k.includes(f) || f.includes(k))));
-    });
-    const candidates = isCompany
-      ? [ctx.id, ctx.label, ...intel.companies.filter(t => { const n = G.getNode(t); return !!n && matchesFocus(n); })]
-      : [intel.theme?.name ?? ctx.label];
-    for (const key of candidates) {
-      if (!key) continue;
-      const node = G.getNode(key);
-      const lmd = node?.metadata?.latestMarketData;
-      if (lmd && typeof lmd === "object") {
-        if (process.env.NODE_ENV !== "production") console.debug(`[IntelligenceDrawer] Market Structure key "${key}" -> node "${node!.id}"`);
-        return buildMarketStructure(lmd as Record<string, unknown>);
-      }
-    }
-    if (process.env.NODE_ENV !== "production") console.debug(`[IntelligenceDrawer] Market Structure: no latestMarketData under [${candidates.filter(Boolean).join(", ")}]`);
-    return null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, isCompany, ctx.id, ctx.label, intel.theme, intel.companies]);
+    if (!graph.ready || !entity.showMarketStructure) return null;
+    const lmd = entity.node?.metadata?.latestMarketData;
+    return lmd && typeof lmd === "object" ? buildMarketStructure(lmd as Record<string, unknown>) : null;
+  }, [graph.ready, entity]);
 
   // Relationship Map (Intelligence Graph, read-only). Reuses the graph the hook built.
   const [mapHoverNode, setMapHoverNode] = useState<string | null>(null);
@@ -387,10 +380,9 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   const [mapSelected, setMapSelected] = useState<string | null>(null);
   const relMap = useMemo<MapVM>(() => {
     if (!graph.ready) return EMPTY_MAP;
-    const key = isCompany ? (ctx.id || ctx.label) : (intel.theme?.name ?? ctx.label);
-    return buildRelationshipMap(key);
+    return buildRelationshipMap(entity.graphKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, isCompany, ctx.id, ctx.label, intel.theme]);
+  }, [graph.ready, entity.graphKey]);
   const mapActive = mapSelected ?? mapHoverNode;
   const mapDetail = useMemo(() => {
     if (mapHoverEdge) { const e = relMap.edges.find(x => x.id === mapHoverEdge); if (e) return `${e.from.label} ${e.type.replace(/_/g, " ")} ${e.to.label}  ·  strength ${e.strength}  ·  evidence ${e.evidenceCount}  ·  ${e.sources} source${e.sources === 1 ? "" : "s"}`; }
@@ -410,9 +402,12 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
               <span className="text-[8px] font-bold uppercase tracking-[0.16em]" style={{ color: accentColor }}>{intel.kindLabel}</span>
               <span className="text-[8px] font-bold uppercase tracking-wide" style={{ color: A(0.35) }}>Intelligence</span>
             </div>
-            <h2 className="text-[17px] font-black leading-tight" style={{ color: A(0.96) }}>{intel.title}</h2>
+            <h2 className="text-[17px] font-black leading-tight" style={{ color: A(0.96) }}>{isSymbol ? entity.title : intel.title}</h2>
+            {isSymbol && entity.subtitle && (
+              <p className="text-[9.5px] font-semibold mt-0.5" style={{ color: A(0.48) }}>Exposed to {cleanThemeName(entity.subtitle)}</p>
+            )}
           </div>
-          {intel.conviction !== null && (
+          {!isSymbol && intel.conviction !== null && (
             <div className="text-right shrink-0">
               <p className="text-[20px] font-black tabular-nums leading-none" style={{ color: confColor(intel.conviction) }}>{intel.conviction}</p>
               <p className="text-[7px] font-bold uppercase tracking-wider" style={{ color: A(0.4) }}>Conviction</p>
@@ -420,8 +415,8 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
           )}
           <button onClick={onClose} className="shrink-0 p-1 rounded transition-colors hover:bg-white/10" style={{ color: A(0.5) }}><X size={15} /></button>
         </div>
-        {/* metrics row */}
-        {intel.theme && (
+        {/* metrics row: theme metrics belong to theme-shaped contexts, not to a ticker header */}
+        {!isSymbol && intel.theme && (
           <div className="flex items-center gap-4 mt-3">
             {intel.momentum && <Metric label="Momentum" value={intel.momentum} />}
             {intel.persistence !== null && <Metric label="Persistence" value={String(intel.persistence)} />}
@@ -670,7 +665,7 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
 
         {/* Graph-backed enrichment. Renders only when the graph resolved the entity
             and has something to add, so nothing shows blank. */}
-        {isCompany && companyReport?.found && companyReport.relatedThemes.length > 0 && (
+        {isSymbol && companyReport?.found && companyReport.relatedThemes.length > 0 && (
           <Section label="Connected themes (graph)">
             <div className="flex flex-wrap gap-1.5">
               {companyReport.relatedThemes.map(t => (
@@ -679,10 +674,10 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
             </div>
           </Section>
         )}
-        {isCompany && companyReport?.found && companyReport.maRelationships.length > 0 && (
+        {isSymbol && companyReport?.found && companyReport.maRelationships.length > 0 && (
           <Section label="M&A links (graph)"><RelList rels={companyReport.maRelationships} accent="#a78bfa" /></Section>
         )}
-        {isCompany && companyReport?.found && companyReport.privateMarketRelationships.length > 0 && (
+        {isSymbol && companyReport?.found && companyReport.privateMarketRelationships.length > 0 && (
           <Section label="Private market links (graph)"><RelList rels={companyReport.privateMarketRelationships} accent="#34d399" /></Section>
         )}
         {strongest.length > 0 && (

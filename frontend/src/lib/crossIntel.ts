@@ -58,7 +58,7 @@ function resolveTheme(ctx: IntelContext, themes: ThemeIntelligence[]): ThemeInte
     return themes.filter(t => (t.related_industries ?? []).some(s => lc(s) === name) || lc(deriveSector(t) ?? "") === name).sort(byConf)[0] ?? null;
   if (ctx.kind === "driver")
     return themes.filter(t => (t.related_macro_factors ?? []).some(m => lc(m) === name) || lc(deriveDriver(t)) === name).sort(byConf)[0] ?? null;
-  if (ctx.kind === "company") {
+  if (ctx.kind === "company" || ctx.kind === "etf") {
     const tk = ctx.id.toUpperCase();
     return themes.filter(t => (t.related_assets ?? []).map(a => a.toUpperCase()).includes(tk)).sort(byConf)[0] ?? null;
   }
@@ -75,13 +75,16 @@ export interface CrossInputs {
 export function buildCrossIntel(ctx: IntelContext, { themes, clusters, deals, episodes }: CrossInputs): CrossIntel {
   const theme = resolveTheme(ctx, themes);
   const KIND_LABEL: Record<IntelContext["kind"], string> = {
-    theme: "Theme", company: "Company", sector: "Sector", driver: "Macro Driver", deal: "M&A Deal", narrative: "Narrative",
+    theme: "Theme", company: "Company", etf: "ETF", sector: "Sector", driver: "Macro Driver", deal: "M&A Deal", narrative: "Narrative",
   };
+  // Symbol contexts (company / ETF) keep their own identity: the resolved theme
+  // enriches the picture but never replaces the entity in the title or the read.
+  const symbolCtx = ctx.kind === "company" || ctx.kind === "etf";
 
   const sector = theme ? deriveSector(theme) : (ctx.kind === "sector" ? ctx.label : null);
   const dir = theme ? dirOf(theme) : "neutral";
   const companies = theme ? (theme.related_assets ?? []).filter(isTicker).slice(0, 6)
-    : ctx.kind === "company" ? [ctx.label.toUpperCase()] : [];
+    : symbolCtx ? [ctx.label.toUpperCase()] : [];
   const sectors = theme ? (theme.related_industries ?? []).slice(0, 4) : (sector ? [sector] : []);
   const drivers = theme ? (theme.related_macro_factors ?? []).slice(0, 3) : (ctx.kind === "driver" ? [ctx.label] : []);
 
@@ -134,9 +137,13 @@ export function buildCrossIntel(ctx: IntelContext, { themes, clusters, deals, ep
   return {
     theme,
     themeKey: theme ? cleanThemeName(theme.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : ctx.id,
-    title: theme ? cleanThemeName(theme.name) : ctx.label,
+    title: symbolCtx ? (ctx.label || ctx.id) : theme ? cleanThemeName(theme.name) : ctx.label,
     kindLabel: KIND_LABEL[ctx.kind],
-    what: theme
+    what: symbolCtx
+      ? theme
+        ? `${ctx.label} is a tracked ${KIND_LABEL[ctx.kind].toLowerCase()} exposed to ${cleanThemeName(theme.name)}, ${sector ? `a ${dir} read on ${sector}` : `a ${dir} market narrative`}.`
+        : `${ctx.label} is being tracked as a ${KIND_LABEL[ctx.kind].toLowerCase()}.`
+      : theme
       ? `${cleanThemeName(theme.name)}: ${sector ? `a ${dir} read on ${sector}` : `a ${dir} market narrative`}, driven by ${drivers[0] ?? "the macro backdrop"}.`
       : `${ctx.label} is being tracked as a ${KIND_LABEL[ctx.kind].toLowerCase()}.`,
     why: theme ? (firstSentence(theme.causal_narrative) || privateRead) : "Select where it appears to see how the read firms up.",

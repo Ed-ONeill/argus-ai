@@ -20,6 +20,7 @@ import {
   validateGraphIntegrity, getThemeIntelligenceReport, getCompanyIntelligenceReport,
   type IntegrityReport, type ThemeIntelligenceReport, type CompanyIntelligenceReport,
 } from "@/lib/intelligenceGraphDebug";
+import { reingestCachedMarketObservations } from "@/lib/dataAdapters/observationGraphBridge";
 import type { ThemeIntelligence, StoryCluster, FeedItem, Episode } from "@/lib/types";
 import type { MADeal } from "@/hooks/useMAIntelligence";
 import type { ThemeSnapshot } from "@/lib/themeSnapshots";
@@ -70,6 +71,9 @@ export function useIntelligenceGraph(input: UseIntelligenceGraphInput = {}): Use
       themes, stories, storyThemes: storyThemes ?? themes,
       episodes, matchedThemes, deals, privateSignals, snapshots,
     });
+    // Re-apply provider market observations wiped by the clear, so the drawer's graph
+    // carries node.metadata.latestMarketData when market ingestion has run.
+    reingestCachedMarketObservations();
     return { build: built, summary: summarizeGraph(), integrity: validateGraphIntegrity() };
   }, [enabled, themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots]);
 

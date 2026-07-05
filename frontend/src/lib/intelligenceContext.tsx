@@ -13,13 +13,14 @@
 import { useSyncExternalStore } from "react";
 import type { EntityKind } from "./entity";
 
-export type IntelKind = "theme" | "company" | "sector" | "driver" | "deal" | "narrative";
+export type IntelKind = "theme" | "company" | "etf" | "sector" | "driver" | "deal" | "narrative";
 
 export interface IntelContext {
   kind:   IntelKind;
-  id:     string;    // stable normalized key
+  id:     string;    // stable normalized key (uppercase ticker for company / etf)
   label:  string;    // display text
   color?: string;
+  sourceTheme?: string; // optional parent-theme hint for company / etf contexts
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -29,7 +30,8 @@ export function entityKindToIntel(k: EntityKind): IntelKind {
   if (k === "sector") return "sector";
   if (k === "theme") return "theme";
   if (k === "macro") return "driver";
-  return "company"; // ticker / company / etf / asset
+  if (k === "etf") return "etf";
+  return "company"; // ticker / company / asset
 }
 
 let active: IntelContext | null = null;
@@ -53,6 +55,7 @@ export function useActiveContext(): IntelContext | null {
 // Named convenience setters (mirror the requested activeTheme / activeCompany / ...).
 export const setActiveTheme    = (label: string, color?: string, id?: string) => setActiveContext({ kind: "theme",    label, color, id: id ?? norm(label) });
 export const setActiveCompany  = (label: string, color?: string) => setActiveContext({ kind: "company",  label, color, id: label.toUpperCase() });
+export const setActiveEtf      = (label: string, color?: string) => setActiveContext({ kind: "etf",      label, color, id: label.toUpperCase() });
 export const setActiveSector   = (label: string, color?: string) => setActiveContext({ kind: "sector",   label, color, id: norm(label) });
 export const setActiveDriver   = (label: string, color?: string) => setActiveContext({ kind: "driver",   label, color, id: norm(label) });
 export const setActiveDeal     = (label: string, id: string)     => setActiveContext({ kind: "deal",     label, id });
@@ -62,7 +65,7 @@ export const setActiveNarrative= (label: string, color?: string) => setActiveCon
 export function contextMatchesTokens(ctx: IntelContext, tokens: (string | null | undefined)[]): boolean {
   const set = new Set(tokens.filter(Boolean).map(t => norm(t as string)));
   if (set.has(ctx.id) || set.has(norm(ctx.label))) return true;
-  // company id is an uppercase ticker; also test the lowercased ticker
-  if (ctx.kind === "company" && set.has(norm(ctx.id))) return true;
+  // company / etf id is an uppercase ticker; also test the lowercased ticker
+  if ((ctx.kind === "company" || ctx.kind === "etf") && set.has(norm(ctx.id))) return true;
   return false;
 }

@@ -13,7 +13,7 @@ import { IntelligenceDrawer } from "./IntelligenceDrawer";
  */
 
 const KIND_LABEL: Record<string, string> = {
-  theme: "Theme", company: "Company", sector: "Sector", driver: "Macro Driver", deal: "Deal", narrative: "Narrative",
+  theme: "Theme", company: "Company", etf: "ETF", sector: "Sector", driver: "Macro Driver", deal: "Deal", narrative: "Narrative",
 };
 
 export function IntelligenceOverlay() {
