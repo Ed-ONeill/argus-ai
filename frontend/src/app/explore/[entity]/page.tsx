@@ -38,6 +38,7 @@ import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 import { ExplorerGraph } from "@/components/explore/ExplorerGraph";
 import { MarketView } from "@/components/explore/MarketView";
+import { useExplorerMarketData } from "@/hooks/useExplorerMarketData";
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
 
@@ -98,11 +99,18 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
   });
 
   const isSymbol = ctx.kind === "company" || ctx.kind === "etf";
+
+  // Live market pipeline: fetch server-normalized FMP observations for the focused
+  // symbol and ingest them into the graph this page reads. market.version bumps
+  // after each ingest so graph-reading memos below re-resolve.
+  const market = useExplorerMarketData({ enabled: isSymbol, ticker: ctx.id, isEtf: ctx.kind === "etf" });
+
   const entity = useMemo<DrawerEntity>(
     () => resolveDrawerEntity(ctx, { themeName: intel.theme?.name ?? null, relatedCompanies: intel.companies }),
-    // graph.ready re-resolves once the graph singleton is built
+    // graph.ready re-resolves once the graph singleton is built; market.version
+    // re-resolves once ingested market data lands on the ticker node
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [graph.ready, ctx, intel.theme, intel.companies],
+    [graph.ready, market.version, ctx, intel.theme, intel.companies],
   );
 
   const companyReport = useMemo(
@@ -147,23 +155,25 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
 
   // The large network map: same builder as the drawer, explorer-sized.
   const map = useMemo<MapVM>(() => {
-    if (!graph.ready) return EMPTY_MAP;
+    if (!graph.ready && market.version === 0) return EMPTY_MAP;
     return buildRelationshipMap(entity.graphKey, EXPLORER_LAYOUT);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, entity.graphKey]);
+  }, [graph.ready, market.version, entity.graphKey]);
 
   // Market terminal data (symbols only): the latest snapshot on the routed node and
-  // whatever historical OHLCV bars ingestion has recorded. Never fabricated.
+  // whatever OHLCV bars the pipeline has recorded. Reads work as soon as the market
+  // ingest lands, even before the feed-driven graph build finishes.
   const marketStructure = useMemo<MarketStructureVM | null>(() => {
-    if (!graph.ready || !isSymbol) return null;
+    if (!isSymbol) return null;
     const lmd = entity.node?.metadata?.latestMarketData;
     return lmd && typeof lmd === "object" ? buildMarketStructure(lmd as Record<string, unknown>) : null;
-  }, [graph.ready, isSymbol, entity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, market.version, isSymbol, entity]);
   const priceSeries = useMemo<PriceSeriesVM>(() => {
-    if (!graph.ready || !isSymbol) return EMPTY_SERIES;
+    if (!isSymbol) return EMPTY_SERIES;
     return buildPriceSeries(entity.graphKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, isSymbol, entity.graphKey]);
+  }, [graph.ready, market.version, isSymbol, entity.graphKey]);
 
   // Workstation sub-panel data: real Memory Engine history and graph edge strengths
   // when they exist; the panels themselves fall back to badged sample scaffolding.
@@ -361,7 +371,7 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
         </div>
 
         {tab === "market" && isSymbol ? (
-          !graph.ready ? (
+          !graph.ready && market.version === 0 ? (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-[12px]" style={{ color: A(0.45) }}>Loading market intelligence…</p>
             </div>

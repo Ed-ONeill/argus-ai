@@ -460,12 +460,19 @@ export function explorerHrefForNode(node: { type: string; label: string }, color
   return explorerHref({ kind, id, label: node.label, color });
 }
 
-/** Parse the /explore/[entity] segment (kind:id) back into an IntelContext. */
+/** Parse the /explore/[entity] segment (kind:id, or a bare ticker) into an IntelContext. */
 export function parseExplorerEntity(segment: string, search?: { get(name: string): string | null } | null): IntelContext | null {
   let raw = segment;
   try { raw = decodeURIComponent(segment); } catch { /* keep as-is */ }
   const sep = raw.indexOf(":");
-  if (sep <= 0) return null;
+  if (sep <= 0) {
+    // Bare ticker segment (/explore/NVDA) resolves as a company context.
+    if (/^[A-Za-z][A-Za-z0-9.\-]{0,7}$/.test(raw)) {
+      const id = raw.toUpperCase();
+      return { kind: "company", id, label: search?.get("label") ?? id, sourceTheme: search?.get("theme") ?? undefined, color: search?.get("color") ?? undefined };
+    }
+    return null;
+  }
   const kind = raw.slice(0, sep) as IntelKind;
   const id = raw.slice(sep + 1);
   if (!EXPLORER_KINDS.includes(kind) || !id) return null;

@@ -1067,6 +1067,49 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(g.title === "XYZQ" && g.node === null && !g.showMarketStructure, "an unknown ETF should fall back gracefully");
   });
 
+  // 72. Explorer market pipeline: FMP observations fetched server-side and ingested
+  // through the bridge stay readable in the Explorer's entity resolution across the
+  // clear/rebuild cycle useIntelligenceGraph performs (clear + reingest cache).
+  test("explorer context gets latestMarketData for NVDA after rebuild", async () => {
+    intelligenceGraph.clear();
+    clearMarketObservationCache();
+    const fmpNVDA = [{ symbol: "NVDA", name: "NVIDIA Corp", price: 1234.5, changesPercentage: 2.1, dayHigh: 1250, dayLow: 1201, open: 1210, previousClose: 1209.1, volume: 30000000, avgVolume: 42000000, marketCap: 3100000000000, timestamp: Math.floor(MKT_NOW / 1000) }];
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: routingTransport([[/batch-quote/, fmpNVDA]]) });
+    const res = await fmp.fetch({ dataset: "quote", symbols: ["NVDA"] });
+    ingestProviderObservations(res.observations);
+    // Simulate the Explorer page's graph rebuild from app data.
+    intelligenceGraph.clear();
+    reingestCachedMarketObservations();
+    const e = resolveDrawerEntity({ kind: "company", id: "NVDA", label: "NVDA" }, {});
+    assert(!!e.node, "NVDA should resolve to a graph node in Explorer context");
+    const lmd = e.node!.metadata.latestMarketData as Record<string, unknown> | undefined;
+    assert(!!lmd && lmd.price === 1234.5 && lmd.provider === "fmp", `latestMarketData should survive the rebuild, got ${JSON.stringify(lmd ?? null)}`);
+    assert(e.showMarketStructure, "Explorer market structure should show for NVDA after ingest");
+  });
+
+  // 72b. Daily OHLCV bars ingested for a ticker survive the rebuild and carry the
+  // t/c fields the Explorer price chart reads (buildPriceSeries contract).
+  test("explorer ohlcv bars survive rebuild for the price chart", async () => {
+    intelligenceGraph.clear();
+    clearMarketObservationCache();
+    const daily = { symbol: "XOM", historical: [
+      { date: "2026-01-13", open: 100, high: 104, low: 99, close: 103, volume: 10000000 },
+      { date: "2026-01-14", open: 103, high: 106, low: 102, close: 105, volume: 12000000 },
+      { date: "2026-01-15", open: 105, high: 107, low: 104, close: 106, volume: 11000000 },
+    ] };
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: routingTransport([[/historical-price-eod/, daily]]) });
+    const res = await fmp.fetch({ dataset: "daily", symbol: "XOM", assetType: "Company" });
+    ingestProviderObservations(res.observations);
+    intelligenceGraph.clear();
+    reingestCachedMarketObservations();
+    const node = intelligenceGraph.getNode("mkt:XOM:ohlcv");
+    assert(!!node && Array.isArray(node.metadata.bars), "the ohlcv node should survive the rebuild");
+    const bars = node!.metadata.bars as Array<Record<string, unknown>>;
+    assert(bars.length === 3 && typeof bars[0].t === "number" && typeof bars[0].c === "number", "bars should carry numeric t/c for the price series");
+    assert(node!.metadata.interval === "daily", `interval should be daily, got ${node!.metadata.interval}`);
+    assert(!!intelligenceGraph.getNode("XOM"), "the XOM company node should exist from the ohlcv ingest");
+  });
+
   for (const [name, fn] of tests) {
     try { await fn(); results.push({ name, ok: true }); }
     catch (e) { results.push({ name, ok: false, detail: e instanceof Error ? e.message : String(e) }); }
