@@ -171,7 +171,12 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
   }, [graph.ready, market.version, isSymbol, entity]);
   const priceSeries = useMemo<PriceSeriesVM>(() => {
     if (!isSymbol) return EMPTY_SERIES;
-    return buildPriceSeries(entity.graphKey);
+    return buildPriceSeries(entity.graphKey, "daily");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, market.version, isSymbol, entity.graphKey]);
+  const intradaySeries = useMemo<PriceSeriesVM>(() => {
+    if (!isSymbol) return EMPTY_SERIES;
+    return buildPriceSeries(entity.graphKey, "intraday");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, market.version, isSymbol, entity.graphKey]);
 
@@ -376,7 +381,8 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
               <p className="text-[12px]" style={{ color: A(0.45) }}>Loading market intelligence…</p>
             </div>
           ) : (
-            <MarketView structure={marketStructure} series={priceSeries} ticker={entity.title}
+            <MarketView structure={marketStructure} series={priceSeries} intraday={intradaySeries}
+              intradayStatus={market.intradayStatus} ticker={entity.title}
               accent={accent} timeline={timeline} conviction={convictionHistory}
               themeExposure={themeExposure} fallbackThemes={currentThemes} />
           )

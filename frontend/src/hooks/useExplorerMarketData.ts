@@ -19,11 +19,15 @@ import { ingestProviderObservations } from "@/lib/dataAdapters/observationGraphB
 import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
 import type { ProviderObservation } from "@/lib/dataAdapters/types";
 
+export type IntradayStatus = "ok" | "blocked" | "empty" | "error";
+
 interface ExplorerMarketResponse {
   ok:            boolean;
   reason?:       string;
   observations:  ProviderObservation[];
   errors?:       Array<{ dataset: string; symbol?: string; error: string }>;
+  quoteSource?:  string | null;
+  intraday?:     IntradayStatus | null;
 }
 
 export interface UseExplorerMarketDataResult {
@@ -32,6 +36,10 @@ export interface UseExplorerMarketDataResult {
   ok:         boolean;
   reason:     string | null;
   isFetching: boolean;
+  /** Which quote endpoint served: "batch", "quote_profile", "profile_fallback", null while unknown. */
+  quoteSource: string | null;
+  /** Whether intraday bars are served on this plan: null while unknown. */
+  intradayStatus: IntradayStatus | null;
 }
 
 export function useExplorerMarketData({ enabled, ticker, isEtf }: { enabled: boolean; ticker: string; isEtf?: boolean }): UseExplorerMarketDataResult {
@@ -77,5 +85,7 @@ export function useExplorerMarketData({ enabled, ticker, isEtf }: { enabled: boo
     ok: data?.ok ?? false,
     reason: data && !data.ok ? data.reason ?? "unknown" : null,
     isFetching: query.isFetching,
+    quoteSource: data?.quoteSource ?? null,
+    intradayStatus: data?.intraday ?? null,
   };
 }

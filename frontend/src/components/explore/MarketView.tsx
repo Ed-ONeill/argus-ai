@@ -17,7 +17,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fmtCompact, fmtDay, fmtDate, type MarketStructureVM, type PriceSeriesVM, type PricePoint, type TimelineVM, type ConvictionPoint, type ThemeExposureItem } from "@/lib/intelligenceShared";
+import {
+  fmtCompact, fmtDay, fmtDate, selectSeriesForRange, CHART_RANGES, RANGE_MS,
+  type MarketStructureVM, type PriceSeriesVM, type PricePoint, type TimelineVM,
+  type ConvictionPoint, type ThemeExposureItem, type ChartRangeKey,
+} from "@/lib/intelligenceShared";
+import type { IntradayStatus } from "@/hooks/useExplorerMarketData";
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
 const LINE = "#7cc7d8";
@@ -29,10 +34,7 @@ const PLOT_W = W - PAD_L - PAD_R;
 const PRICE_H = 300, VOL_H = 64, AXIS_H = 22, CHART_H = PRICE_H + VOL_H + AXIS_H;
 const CONV_H = 86, CAT_H = 62;
 
-const DAY = 86_400_000;
-type RangeKey = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y";
-const RANGES: RangeKey[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y"];
-const RANGE_MS: Record<RangeKey, number> = { "1D": DAY, "1W": 7 * DAY, "1M": 31 * DAY, "3M": 92 * DAY, "6M": 183 * DAY, "1Y": 366 * DAY, "5Y": 1830 * DAY };
+const fmtTime = (t: number): string => new Date(t).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
 interface TimeWindow { t0: number; t1: number }
 const xOfT = (t: number, w: TimeWindow) => PAD_L + ((t - w.t0) / (w.t1 - w.t0 || 1)) * PLOT_W;
@@ -146,18 +148,20 @@ function MetricGroup({ label, children }: { label: string; children: React.React
 }
 
 export interface MarketViewProps {
-  structure:     MarketStructureVM | null;
-  series:        PriceSeriesVM;
-  ticker:        string;
-  accent:        string;
-  timeline:      TimelineVM;            // real intelligence events when tracked
-  conviction:    ConvictionPoint[];     // real Memory Engine history when tracked
-  themeExposure: ThemeExposureItem[];   // real graph edge strengths when connected
-  fallbackThemes: string[];             // theme names without strengths (sample weights)
+  structure:      MarketStructureVM | null;
+  series:         PriceSeriesVM;         // daily bars
+  intraday:       PriceSeriesVM;         // intraday bars (5min) when the plan serves them
+  intradayStatus: IntradayStatus | null; // provider-plan signal from the route
+  ticker:         string;
+  accent:         string;
+  timeline:       TimelineVM;            // real intelligence events when tracked
+  conviction:     ConvictionPoint[];     // real Memory Engine history when tracked
+  themeExposure:  ThemeExposureItem[];   // real graph edge strengths when connected
+  fallbackThemes: string[];              // theme names without strengths (sample weights)
 }
 
-export function MarketView({ structure, series, ticker, accent, timeline, conviction, themeExposure, fallbackThemes }: MarketViewProps) {
-  const [range, setRange] = useState<RangeKey>("3M");
+export function MarketView({ structure, series, intraday, intradayStatus, ticker, accent, timeline, conviction, themeExposure, fallbackThemes }: MarketViewProps) {
+  const [range, setRange] = useState<ChartRangeKey>("3M");
   const [chartType, setChartType] = useState<"candles" | "line">("candles");
   const [overlayOn, setOverlayOn] = useState(true);
   const [win, setWin] = useState<TimeWindow | null>(null); // zoomed window; null = full range
@@ -168,12 +172,24 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
   const dragRef = useRef<{ x: number; w: TimeWindow } | null>(null);
   const nowRef = useRef(Date.now());
 
-  // Base window follows the selected range; the zoom window lives inside it.
-  const base = useMemo<TimeWindow>(() => ({ t0: nowRef.current - RANGE_MS[range], t1: nowRef.current }), [range]);
+  // Honest series pick per range: 1D intraday-only, 1W intraday-or-daily, wider daily.
+  const selection = useMemo(() => selectSeriesForRange(range, intraday, series, nowRef.current), [range, intraday, series]);
+  const isIntradayChart = selection.interval === "intraday";
+
+  // Base window hugs the selected bars; the zoom window lives inside it. Without
+  // bars it spans the nominal range so overlays and sub-panels still have an axis.
+  const base = useMemo<TimeWindow>(() => {
+    if (selection.points.length >= 2) {
+      const t0 = selection.points[0].t, t1 = selection.points[selection.points.length - 1].t;
+      const pad = Math.max((t1 - t0) * 0.02, 60_000);
+      return { t0: t0 - pad, t1: t1 + pad };
+    }
+    return { t0: nowRef.current - RANGE_MS[range], t1: nowRef.current };
+  }, [selection, range]);
   useEffect(() => { setWin(null); setHoverIdx(null); }, [range]);
   const w = win ?? base;
 
-  const visible = useMemo(() => (series.available ? series.points.filter(p => p.t >= w.t0 && p.t <= w.t1) : []), [series, w]);
+  const visible = useMemo(() => selection.points.filter(p => p.t >= w.t0 && p.t <= w.t1), [selection, w]);
   const hasChart = visible.length >= 2;
   const candlesOk = useMemo(() => visible.filter(p => p.o != null && p.h != null && p.l != null).length >= 2, [visible]);
   const drawCandles = chartType === "candles" && candlesOk;
@@ -250,7 +266,7 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
     const el = chartWrapRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!series.available) return;
+      if (selection.points.length < 2) return;
       e.preventDefault();
       setWin(prev => {
         const cur = prev ?? base;
@@ -267,7 +283,7 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [base, series.available]);
+  }, [base, selection]);
 
   const hover = hoverIdx !== null ? visible[hoverIdx] : null;
   const readout = hover ?? (visible.length ? visible[visible.length - 1] : null);
@@ -281,14 +297,20 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
   const atr = useMemo(() => (series.available ? computeATR(series.points) : null), [series]);
   const rsi = useMemo(() => (series.available ? computeRSI(series.points) : null), [series]);
   const liq = liquidityScore(structure?.dollarVolume ?? null);
+  // VWAP: the quote's value when served, else the latest daily bar's real VWAP.
+  const vwapValue = structure?.vwap ?? (series.available ? series.points[series.points.length - 1].vwap : null);
+  // "plan limited" only when we KNOW the live-quote endpoints are blocked (the quote
+  // came from the profile fallback); "n/a" when a field is genuinely absent.
+  const quoteMissing = structure?.source === "profile_fallback" ? "plan limited" : "n/a";
 
   const xTicks = useMemo(() => {
     const n = 6;
+    const intradayLabels = isIntradayChart && range === "1D";
     return Array.from({ length: n }, (_, i) => {
       const t = w.t0 + ((w.t1 - w.t0) * i) / (n - 1);
-      return { x: xOfT(t, w), label: fmtDay(new Date(t).toISOString()) };
+      return { x: xOfT(t, w), label: intradayLabels ? fmtTime(t) : fmtDay(new Date(t).toISOString()) };
     });
-  }, [w]);
+  }, [w, isIntradayChart, range]);
 
   const yTicks = useMemo(() => {
     if (!scale) return [];
@@ -309,7 +331,7 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
         {/* toolbar: ranges | chart type | overlay | future controls */}
         <div className="flex items-center gap-1 px-3 py-1.5 border-b shrink-0 flex-wrap" style={{ borderColor: A(0.07), background: A(0.015) }}>
           <div className="flex items-center rounded overflow-hidden" style={{ border: `1px solid ${A(0.1)}` }}>
-            {RANGES.map(k => (
+            {CHART_RANGES.map(k => (
               <button key={k} onClick={() => setRange(k)}
                 className="text-[9px] font-bold tabular-nums px-2 py-1 transition-colors"
                 style={range === k ? { color: "#0a0e17", background: LINE } : { color: A(0.55), background: "transparent" }}>
@@ -337,6 +359,12 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
               Reset Zoom
             </button>
           )}
+          {selection.interval && (
+            <span className="text-[8.5px] tabular-nums ml-1" style={{ color: A(0.3) }}>
+              {selection.interval === "intraday" ? `${intraday.resolution ?? "5min"} bars` : "daily bars"}
+              {selection.fallback === "daily" ? " · intraday sparse, daily shown" : ""} · {selection.points.length} in range
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-1">
             <button disabled title="Coming soon" className="text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded cursor-not-allowed" style={{ color: A(0.22), border: `1px solid ${A(0.06)}` }}>Compare</button>
             <button disabled title="Coming soon" className="text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded cursor-not-allowed" style={{ color: A(0.22), border: `1px solid ${A(0.06)}` }}>Indicators</button>
@@ -348,7 +376,7 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
           <span className="text-[10px] font-black tracking-tight" style={{ color: A(0.85) }}>{ticker}</span>
           {readout ? (
             <>
-              <span className="text-[9px] tabular-nums" style={{ color: A(0.45) }}>{fmtDate(new Date(readout.t).toISOString())}</span>
+              <span className="text-[9px] tabular-nums" style={{ color: A(0.45) }}>{fmtDate(new Date(readout.t).toISOString())}{isIntradayChart ? ` ${fmtTime(readout.t)}` : ""}</span>
               {readout.o != null && <span className="text-[9px] tabular-nums" style={{ color: A(0.6) }}>O <b style={{ color: A(0.85) }}>{readout.o.toFixed(2)}</b></span>}
               {readout.h != null && <span className="text-[9px] tabular-nums" style={{ color: A(0.6) }}>H <b style={{ color: A(0.85) }}>{readout.h.toFixed(2)}</b></span>}
               {readout.l != null && <span className="text-[9px] tabular-nums" style={{ color: A(0.6) }}>L <b style={{ color: A(0.85) }}>{readout.l.toFixed(2)}</b></span>}
@@ -478,7 +506,11 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
               </svg>
               <div className="absolute inset-x-0 bottom-8 flex justify-center pointer-events-none">
                 <p className="text-[10px] px-3 py-1.5 rounded" style={{ color: A(0.55), background: "rgba(8,12,20,0.88)", border: `1px solid ${A(0.1)}` }}>
-                  {series.available
+                  {range === "1D" || range === "1W"
+                    ? intradayStatus === "blocked"
+                      ? "Intraday bars unavailable on current provider plan. Showing latest snapshot."
+                      : "Intraday bars not recorded yet. Showing latest snapshot."
+                    : series.available
                     ? `Not enough recorded bars in the ${range} window. Widen the range.`
                     : structure
                     ? "Historical price series not available yet. Current market snapshot is shown."
@@ -586,10 +618,11 @@ export function MarketView({ structure, series, ticker, accent, timeline, convic
         <MetricGroup label="Price">
           <MetricRow label="Last" value={structure ? structure.price.toFixed(2) : "n/a"} muted={!structure} />
           <MetricRow label="Change" value={chg !== null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}%` : "n/a"} color={chg !== null ? (chg >= 0 ? UP : DOWN) : undefined} muted={chg === null} />
-          <MetricRow label="Open" value={structure?.open != null ? structure.open.toFixed(2) : "n/a"} muted={structure?.open == null} />
-          <MetricRow label="Prev Close" value={structure?.previousClose != null ? structure.previousClose.toFixed(2) : "n/a"} muted={structure?.previousClose == null} />
-          <MetricRow label="Day Range" value={structure?.low != null && structure?.high != null ? `${structure.low.toFixed(2)} - ${structure.high.toFixed(2)}` : "n/a"} muted={structure?.low == null} />
-          <MetricRow label="VWAP" value={structure?.vwap != null ? structure.vwap.toFixed(2) : "n/a"} muted={structure?.vwap == null} />
+          <MetricRow label="Open" value={structure?.open != null ? structure.open.toFixed(2) : quoteMissing} muted={structure?.open == null} />
+          <MetricRow label="Prev Close" value={structure?.previousClose != null ? structure.previousClose.toFixed(2) : quoteMissing} muted={structure?.previousClose == null} />
+          <MetricRow label="Day High" value={structure?.high != null ? structure.high.toFixed(2) : quoteMissing} muted={structure?.high == null} />
+          <MetricRow label="Day Low" value={structure?.low != null ? structure.low.toFixed(2) : quoteMissing} muted={structure?.low == null} />
+          <MetricRow label="VWAP" value={vwapValue != null ? vwapValue.toFixed(2) : quoteMissing} muted={vwapValue == null} />
         </MetricGroup>
 
         <MetricGroup label="Volume">

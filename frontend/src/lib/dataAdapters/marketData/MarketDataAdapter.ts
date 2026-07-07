@@ -33,14 +33,16 @@ export interface MarketQuote {
   // Extra reference fields, populated by the profile fallback when quotes are unavailable.
   beta?:          number;
   range?:         string;
+  yearHigh?:      number;
+  yearLow?:       number;
   exchange?:      string;
   sector?:        string;
   industry?:      string;
-  sourceEndpoint?: string;   // e.g. "profile_fallback"
+  sourceEndpoint?: string;   // e.g. "quote_profile", "profile_fallback"
   timestamp:      number;    // epoch ms
 }
 
-export interface OhlcvBar { t: number; o: number; h: number; l: number; c: number; v: number }
+export interface OhlcvBar { t: number; o: number; h: number; l: number; c: number; v: number; vwap?: number }
 
 export interface MarketProviderHealth extends ProviderHealth {
   tickerCount:   number;
@@ -114,7 +116,9 @@ export abstract class MarketDataAdapter extends BaseDataAdapter {
         changePercent: q.changePercent ?? null, volume: q.volume ?? null, avgVolume: q.avgVolume ?? null,
         relativeVolume: relVol, dollarVolume: dollarVol, vwap: q.vwap ?? null, marketCap: q.marketCap ?? null,
         bid: q.bid ?? null, ask: q.ask ?? null,
-        beta: q.beta ?? null, range: q.range ?? null, exchange: q.exchange ?? null, sector: q.sector ?? null, industry: q.industry ?? null,
+        beta: q.beta ?? null, range: q.range ?? null, yearHigh: q.yearHigh ?? null, yearLow: q.yearLow ?? null,
+        exchange: q.exchange ?? null, sector: q.sector ?? null, industry: q.industry ?? null,
+        sourceEndpoint: q.sourceEndpoint ?? null,
         timestamp: q.timestamp,
       });
       const stale = price.quality.freshness < 50;
@@ -135,11 +139,13 @@ export abstract class MarketDataAdapter extends BaseDataAdapter {
     this.mTickers.add(symbol);
     const assetType: EntityType = String(params.assetType ?? "Company") === "ETF" ? "ETF" : "Company";
     const last = bars[bars.length - 1];
+    const resolution = typeof params.interval === "string" ? params.interval : null;
     const obs = this.buildObservation({
       source: this.metadata().name, providerConfidence: 95, providerTimestamp: last.t,
       entityType: assetType, entityId: symbol, entityLabel: undefined, observationType: "ohlcv", entityConfidence: 98,
-      payload: { interval, count: bars.length, latest: last, bars: bars.slice(-100), timestamp: last.t },
-      metadata: { interval },
+      // Intraday keeps more bars (a session is ~78 five-minute bars); daily keeps 100.
+      payload: { interval, resolution, count: bars.length, latest: last, bars: bars.slice(interval === "intraday" ? -800 : -100), timestamp: last.t },
+      metadata: { interval, resolution },
     });
     obs.metadata.stale = obs.quality.freshness < 50;
     return obs;

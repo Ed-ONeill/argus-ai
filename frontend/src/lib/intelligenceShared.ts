@@ -180,6 +180,8 @@ export interface MarketStructureVM {
   open: number | null; high: number | null; low: number | null; previousClose: number | null;
   vwap: number | null; beta: number | null; bid: number | null; ask: number | null; spread: number | null;
   exchange: string | null;
+  /** Which provider endpoint produced the quote: null (batch), "quote_profile", "profile_fallback". */
+  source: string | null;
 }
 
 const mnum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -220,43 +222,14 @@ export function buildMarketStructure(lmd: Record<string, unknown>): MarketStruct
     vwap: mnum(lmd.vwap), beta: mnum(lmd.beta), bid, ask,
     spread: mnum(lmd.spread) ?? (bid != null && ask != null ? Math.round((ask - bid) * 100) / 100 : null),
     exchange: typeof lmd.exchange === "string" && lmd.exchange ? lmd.exchange : null,
+    source: typeof lmd.sourceEndpoint === "string" && lmd.sourceEndpoint ? lmd.sourceEndpoint : null,
   };
 }
 
-/* ---- Price series (reads the mkt:{ticker}:ohlcv MarketMetric node, read-only) ---- */
+/* ---- Price series: lives in lib/marketSeries (pure, testable); re-exported here ---- */
 
-export interface PricePoint { t: number; c: number; o: number | null; h: number | null; l: number | null; v: number | null }
-export interface PriceSeriesVM { available: boolean; interval: string | null; points: PricePoint[]; provider: string | null }
-export const EMPTY_SERIES: PriceSeriesVM = { available: false, interval: null, points: [], provider: null };
-
-/**
- * Read the historical OHLCV bars the market ingestion may have attached to the
- * graph as a `mkt:{ticker}:ohlcv` MarketMetric node. Returns EMPTY_SERIES when no
- * bars exist; callers must show an honest empty state, never a fabricated series.
- */
-export function buildPriceSeries(graphKey: string): PriceSeriesVM {
-  const node = G.getNode(`mkt:${graphKey}:ohlcv`);
-  if (!node) return EMPTY_SERIES;
-  const md = node.metadata as Record<string, unknown>;
-  const bars = Array.isArray(md.bars) ? md.bars : [];
-  const points: PricePoint[] = [];
-  for (const b of bars) {
-    if (!b || typeof b !== "object") continue;
-    const r = b as Record<string, unknown>;
-    const tRaw = mnum(r.t), c = mnum(r.c);
-    if (tRaw == null || c == null) continue;
-    const t = tRaw < 1e12 ? tRaw * 1000 : tRaw; // tolerate second-epoch bars
-    points.push({ t, c, o: mnum(r.o), h: mnum(r.h), l: mnum(r.l), v: mnum(r.v) });
-  }
-  points.sort((a, b) => a.t - b.t);
-  if (points.length < 2) return EMPTY_SERIES;
-  return {
-    available: true,
-    interval: typeof md.interval === "string" ? md.interval : null,
-    points,
-    provider: typeof md.provider === "string" ? md.provider : null,
-  };
-}
+export { buildPriceSeries, selectSeriesForRange, EMPTY_SERIES, CHART_RANGES, RANGE_MS, MIN_INTRADAY_BARS, MIN_WEEK_INTRADAY_BARS } from "./marketSeries";
+export type { PricePoint, PriceSeriesVM, ChartRangeKey, RangeSelection } from "./marketSeries";
 
 /* ---- Relationship Map (Intelligence Graph, read-only, deterministic radial layout) ---- */
 

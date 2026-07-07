@@ -35,8 +35,25 @@ function getAdapter(): FmpAdapter | null {
 }
 
 const ohlcvCache = new Map<string, { at: number; observations: ProviderObservation[] }>();
+const INTRADAY_TTL_MS = 10 * 60 * 1000;
+const intradayCache = new Map<string, { at: number; observations: ProviderObservation[]; status: IntradayStatus }>();
+
+type IntradayStatus = "ok" | "blocked" | "empty" | "error";
 
 interface RouteError { dataset: string; symbol?: string; error: string }
+
+/** Dev-only field coverage audit: which payload fields each dataset actually filled. */
+function logFieldCoverage(observations: ProviderObservation[]): void {
+  if (process.env.NODE_ENV === "production") return;
+  const seen = new Set<string>();
+  for (const o of observations) {
+    const key = `${o.observationType}:${String(o.payload.sourceEndpoint ?? o.payload.interval ?? "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const fields = Object.entries(o.payload).filter(([, v]) => v !== null && v !== undefined).map(([k]) => k);
+    console.log(`[explorer-market:fields] ${key || o.observationType} -> ${fields.join(",")}`);
+  }
+}
 
 function parseSymbols(raw: string | null): string[] {
   return (raw ?? "")
@@ -62,36 +79,67 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const observations: ProviderObservation[] = [];
   const errors: RouteError[] = [];
+  let quoteSource: string | null = "batch";
+  let intraday: IntradayStatus | null = null;
 
-  // Quotes: one batch call (adapter falls back to per-symbol profiles on 402/403).
+  // Quotes: one batch call; the adapter falls back per symbol to single /quote
+  // merged with /profile, then to profile alone.
   try {
     const res = await fmp.fetch({ dataset: "quote", symbols, etfs });
     observations.push(...res.observations);
+    const price = res.observations.find(o => o.observationType === "market_price");
+    const src = price?.payload.sourceEndpoint;
+    quoteSource = typeof src === "string" && src ? src : "batch";
   } catch (err) {
+    quoteSource = null;
     errors.push({ dataset: "quote", error: err instanceof Error ? err.message : String(err) });
   }
 
-  // Daily OHLCV per symbol, when requested. A plan without EOD access fails here
-  // gracefully: the quote observations above still ship.
   if (wantOhlcv) {
     for (const symbol of symbols) {
+      const assetType = etfs.includes(symbol) ? "ETF" : "Company";
+
+      // Daily OHLCV. A plan without EOD access fails gracefully; quotes still ship.
       const cached = ohlcvCache.get(symbol);
       if (cached && Date.now() - cached.at < OHLCV_TTL_MS) {
         observations.push(...cached.observations);
-        continue;
+      } else {
+        try {
+          const res = await fmp.fetch({ dataset: "daily", symbol, assetType });
+          ohlcvCache.set(symbol, { at: Date.now(), observations: res.observations });
+          observations.push(...res.observations);
+        } catch (err) {
+          errors.push({ dataset: "daily", symbol, error: err instanceof Error ? err.message : String(err) });
+        }
       }
-      try {
-        const res = await fmp.fetch({ dataset: "daily", symbol, assetType: etfs.includes(symbol) ? "ETF" : "Company" });
-        ohlcvCache.set(symbol, { at: Date.now(), observations: res.observations });
-        observations.push(...res.observations);
-      } catch (err) {
-        errors.push({ dataset: "daily", symbol, error: err instanceof Error ? err.message : String(err) });
+
+      // Intraday 5min bars for 1D / 1W views. 402/403 marks the plan as blocked so
+      // the client can say "plan limited" instead of guessing; the chart falls back
+      // to daily bars (1W) or the snapshot state (1D).
+      const iCached = intradayCache.get(symbol);
+      if (iCached && Date.now() - iCached.at < INTRADAY_TTL_MS) {
+        observations.push(...iCached.observations);
+        intraday = iCached.status;
+      } else {
+        try {
+          const res = await fmp.fetch({ dataset: "intraday", symbol, interval: "5min", assetType });
+          const status: IntradayStatus = res.observations.length > 0 ? "ok" : "empty";
+          intradayCache.set(symbol, { at: Date.now(), observations: res.observations, status });
+          observations.push(...res.observations);
+          intraday = status;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          intraday = /402|403/.test(msg) ? "blocked" : "error";
+          intradayCache.set(symbol, { at: Date.now(), observations: [], status: intraday });
+          errors.push({ dataset: "intraday", symbol, error: msg });
+        }
       }
     }
   }
 
+  logFieldCoverage(observations);
   if (process.env.NODE_ENV !== "production") {
-    console.log(`[explorer-market] ${symbols.join(",")}: ${observations.length} observations (${errors.length} errors${errors.length ? ": " + errors.map(e => `${e.dataset}${e.symbol ? ":" + e.symbol : ""} ${e.error}`).join("; ") : ""})`);
+    console.log(`[explorer-market] ${symbols.join(",")}: ${observations.length} observations, quoteSource=${quoteSource}, intraday=${intraday ?? "skipped"}${errors.length ? `, errors: ${errors.map(e => `${e.dataset}${e.symbol ? ":" + e.symbol : ""} ${e.error}`).join("; ")}` : ""}`);
   }
 
   return NextResponse.json({
@@ -99,6 +147,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     symbols,
     observations,
     errors,
+    quoteSource,
+    intraday,
     fetchedAt: new Date().toISOString(),
   });
 }

@@ -177,14 +177,26 @@ const MARKET_METRIC_LABEL: Record<string, string> = { market_price: "Price", vol
  * with its latest market snapshot and links a MarketMetric node. Purely descriptive:
  * no bullish or bearish inference from a price move.
  */
+/**
+ * OHLCV observations carry an interval ("daily" | "intraday"); each interval gets its
+ * own metric node and cache slot so an intraday series never overwrites the daily one.
+ * Daily keeps the legacy un-suffixed id for backward compatibility.
+ */
+function marketMetricSuffix(o: ProviderObservation): string {
+  if (o.observationType !== "ohlcv") return "";
+  const interval = typeof o.payload.interval === "string" ? o.payload.interval : "daily";
+  return interval !== "daily" ? `:${interval}` : "";
+}
+
 function handleMarket(o: ProviderObservation): void {
   const type: NodeType = o.entityType === "ETF" ? "ETF" : "Company";
   const cid = upsert(o.entityId, o.entityLabel ?? o.entityId, type, o, { assetType: o.entityType, lastProvider: o.provider });
   const q = qualityOf(o);
-  const label = MARKET_METRIC_LABEL[o.observationType] ?? o.observationType;
+  const suffix = marketMetricSuffix(o);
+  const label = (MARKET_METRIC_LABEL[o.observationType] ?? o.observationType) + (suffix ? ` ${suffix.slice(1)}` : "");
   const mid = G.addNode({
-    id: `mkt:${o.entityId}:${o.observationType}`, label: `${o.entityId} ${label}`, type: "MarketMetric",
-    aliases: [`mkt:${o.entityId}:${o.observationType}`],
+    id: `mkt:${o.entityId}:${o.observationType}${suffix}`, label: `${o.entityId} ${label}`, type: "MarketMetric",
+    aliases: [`mkt:${o.entityId}:${o.observationType}${suffix}`],
     confidence: q.providerReliability, importance: o.qualityScore,
     firstSeen: o.providerTimestamp, lastSeen: o.providerTimestamp,
     sources: [o.source as SourcePage], metadata: { ...o.payload, ...provenance(o), stale: o.metadata.stale === true },
@@ -256,7 +268,7 @@ export function ingestProviderObservations(observations: ProviderObservation[]):
     if (!isValidObs(o)) { errorsSkipped += 1; continue; }
     try {
       dispatch(o);
-      if (MARKET_OBS_TYPES.has(o.observationType)) marketObservationCache.set(`${o.entityId}:${o.observationType}`, o);
+      if (MARKET_OBS_TYPES.has(o.observationType)) marketObservationCache.set(`${o.entityId}:${o.observationType}${marketMetricSuffix(o)}`, o);
       observationsIngested += 1;
       qualitySum += o.qualityScore;
       providersUsed.add(String(o.provider));

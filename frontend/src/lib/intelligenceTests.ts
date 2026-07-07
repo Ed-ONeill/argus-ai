@@ -38,6 +38,7 @@ import {
 import { orchestrateIntelligence } from "./intelligenceOrchestrator";
 import { FmpAdapter, MarketDataAdapter } from "./dataAdapters/marketData";
 import { resolveDrawerEntity, buildCompanyContext, buildSymbolContext } from "./drawerEntity";
+import { selectSeriesForRange, EMPTY_SERIES as EMPTY_PRICE_SERIES, type PriceSeriesVM, type PricePoint } from "./marketSeries";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -1108,6 +1109,95 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(bars.length === 3 && typeof bars[0].t === "number" && typeof bars[0].c === "number", "bars should carry numeric t/c for the price series");
     assert(node!.metadata.interval === "daily", `interval should be daily, got ${node!.metadata.interval}`);
     assert(!!intelligenceGraph.getNode("XOM"), "the XOM company node should exist from the ohlcv ingest");
+  });
+
+  // 73. Phase 2 market pipeline: quote fallback chain, intraday coexistence, and
+  // honest range selection for the Explorer chart.
+  const singleQuoteTx: FetchLike = async (url) => {
+    const u = String(url);
+    if (u.includes("/batch-quote")) return new Response("Payment Required", { status: 402 });
+    if (u.includes("/quote?symbol=NVDA")) return new Response(JSON.stringify([{ symbol: "NVDA", name: "NVIDIA Corporation", price: 196.9, changePercentage: 1.4, volume: 120000000, dayLow: 193.5, dayHigh: 198.2, yearHigh: 212.2, yearLow: 86.6, marketCap: 4800000000000, open: 194.1, previousClose: 194.2, exchange: "NASDAQ", timestamp: Math.floor(MKT_NOW / 1000) }]), { status: 200 });
+    if (u.includes("/profile?symbol=NVDA")) return new Response(JSON.stringify([{ symbol: "NVDA", companyName: "NVIDIA Corporation", beta: 2.12, averageVolume: 180000000, range: "86.62-212.19", sector: "Technology", isEtf: false }]), { status: 200 });
+    return new Response("nf", { status: 404 });
+  };
+
+  test("FMP single-quote fallback fills day fields", async () => {
+    intelligenceGraph.clear();
+    clearMarketObservationCache();
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: singleQuoteTx });
+    const res = await fmp.fetch({ dataset: "quote", symbols: ["NVDA"] });
+    const price = res.observations.find(o => o.observationType === "market_price");
+    assert(!!price && price.metadata.sourceEndpoint === "quote_profile", `single quote should be marked quote_profile, got ${price?.metadata.sourceEndpoint}`);
+    assert(price!.payload.open === 194.1 && price!.payload.previousClose === 194.2, "open and previous close should come from /quote");
+    assert(price!.payload.high === 198.2 && price!.payload.low === 193.5, "day high/low should come from /quote");
+    assert(price!.payload.yearHigh === 212.2 && price!.payload.yearLow === 86.6, "52-week high/low should be numeric from /quote");
+    assert(price!.payload.avgVolume === 180000000 && price!.payload.beta === 2.12, "avg volume and beta should merge in from /profile");
+    ingestProviderObservations(res.observations);
+    const lmd = intelligenceGraph.getNode("NVDA")!.metadata.latestMarketData as Record<string, unknown>;
+    assert(lmd.open === 194.1 && lmd.yearHigh === 212.2 && lmd.sourceEndpoint === "quote_profile", "merged quote fields should reach the node");
+  });
+
+  const dailyBarsNVDA = { symbol: "NVDA", historical: [
+    { date: "2026-01-13", open: 190, high: 195, low: 188, close: 193, volume: 90000000, vwap: 191.4 },
+    { date: "2026-01-14", open: 193, high: 197, low: 192, close: 196, volume: 95000000, vwap: 194.8 },
+    { date: "2026-01-15", open: 196, high: 199, low: 195, close: 197, volume: 88000000, vwap: 197.1 },
+  ] };
+  const intraBarsNVDA = [
+    { date: "2026-01-15 15:45:00", open: 196.4, high: 196.9, low: 196.2, close: 196.8, volume: 400000 },
+    { date: "2026-01-15 15:50:00", open: 196.8, high: 197.2, low: 196.6, close: 197.0, volume: 380000 },
+    { date: "2026-01-15 15:55:00", open: 197.0, high: 197.4, low: 196.9, close: 197.3, volume: 420000 },
+    { date: "2026-01-15 16:00:00", open: 197.3, high: 197.5, low: 197.0, close: 197.1, volume: 500000 },
+  ];
+
+  test("intraday and daily ohlcv coexist and survive rebuild", async () => {
+    intelligenceGraph.clear();
+    clearMarketObservationCache();
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: routingTransport([[/historical-price-eod/, dailyBarsNVDA], [/historical-chart/, intraBarsNVDA]]) });
+    ingestProviderObservations((await fmp.fetch({ dataset: "daily", symbol: "NVDA", assetType: "Company" })).observations);
+    ingestProviderObservations((await fmp.fetch({ dataset: "intraday", symbol: "NVDA", interval: "5min", assetType: "Company" })).observations);
+    intelligenceGraph.clear();
+    reingestCachedMarketObservations();
+    const d = intelligenceGraph.getNode("mkt:NVDA:ohlcv");
+    const i = intelligenceGraph.getNode("mkt:NVDA:ohlcv:intraday");
+    assert(!!d && d.metadata.interval === "daily" && (d.metadata.bars as unknown[]).length === 3, "daily series should survive on its legacy node");
+    assert(!!i && i.metadata.interval === "intraday" && i.metadata.resolution === "5min" && (i.metadata.bars as unknown[]).length === 4, "intraday series should survive on its own node");
+    const dailyVwap = (d!.metadata.bars as Array<Record<string, unknown>>)[2].vwap;
+    assert(dailyVwap === 197.1, `daily bars should carry vwap, got ${dailyVwap}`);
+  });
+
+  test("missing intraday degrades gracefully to daily", async () => {
+    intelligenceGraph.clear();
+    clearMarketObservationCache();
+    const tx: FetchLike = async (url) => String(url).includes("historical-price-eod")
+      ? new Response(JSON.stringify(dailyBarsNVDA), { status: 200 })
+      : new Response("Payment Required", { status: 402 });
+    const fmp = new FmpAdapter({ now: () => MKT_NOW, apiKey: "test", retry: { retries: 0, baseMs: 0 }, transport: tx });
+    ingestProviderObservations((await fmp.fetch({ dataset: "daily", symbol: "NVDA", assetType: "Company" })).observations);
+    let threw = false;
+    try { await fmp.fetch({ dataset: "intraday", symbol: "NVDA", interval: "5min", assetType: "Company" }); } catch { threw = true; }
+    assert(threw, "a blocked intraday endpoint should throw so the route can flag plan-limited");
+    assert(!!intelligenceGraph.getNode("mkt:NVDA:ohlcv"), "daily bars should still be available");
+    assert(!intelligenceGraph.getNode("mkt:NVDA:ohlcv:intraday"), "no intraday node should be fabricated");
+  });
+
+  test("1D never renders daily bars as intraday", () => {
+    const NOW = MKT_NOW;
+    const mkDaily = (): PriceSeriesVM => ({
+      available: true, interval: "daily", resolution: null, provider: "fmp",
+      points: Array.from({ length: 30 }, (_, i): PricePoint => ({ t: NOW - (30 - i) * 86_400_000, c: 100 + i, o: 100 + i, h: 101 + i, l: 99 + i, v: 1000, vwap: null })),
+    });
+    const mkIntra = (): PriceSeriesVM => ({
+      available: true, interval: "intraday", resolution: "5min", provider: "fmp",
+      points: Array.from({ length: 24 }, (_, i): PricePoint => ({ t: NOW - (24 - i) * 300_000, c: 100, o: 100, h: 100.5, l: 99.5, v: 1000, vwap: null })),
+    });
+    const no1d = selectSeriesForRange("1D", EMPTY_PRICE_SERIES, mkDaily(), NOW);
+    assert(no1d.interval === null && no1d.fallback === "snapshot" && no1d.points.length === 0, "1D without intraday must show the snapshot state, never daily bars");
+    const wk = selectSeriesForRange("1W", EMPTY_PRICE_SERIES, mkDaily(), NOW);
+    assert(wk.interval === "daily" && wk.fallback === "daily" && wk.points.length >= 2, "1W without intraday should fall back to daily bars");
+    const yes1d = selectSeriesForRange("1D", mkIntra(), mkDaily(), NOW);
+    assert(yes1d.interval === "intraday" && yes1d.fallback === "none" && yes1d.points.length >= 4, "1D with intraday bars should render them");
+    const m1 = selectSeriesForRange("1M", mkIntra(), mkDaily(), NOW);
+    assert(m1.interval === "daily", "1M and wider render daily bars");
   });
 
   for (const [name, fn] of tests) {
