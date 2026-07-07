@@ -27,10 +27,12 @@ import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
   parseExplorerEntity, explorerHrefForNode, buildForecast, buildTimeline, buildRelationshipMap,
-  buildMarketStructure, buildPriceSeries, collectCurrentThemes, recordDailyMemorySnapshot,
+  buildMarketStructure, buildPriceSeries, buildConvictionHistory, buildThemeExposure,
+  collectCurrentThemes, recordDailyMemorySnapshot,
   dirColor, verdictColor, evColor, fmtDate, fmtDay,
   EMPTY_TIMELINE, EMPTY_MAP, EMPTY_SERIES,
   type ForecastVM, type TimelineVM, type MapVM, type MarketStructureVM, type PriceSeriesVM,
+  type ConvictionPoint, type ThemeExposureItem,
 } from "@/lib/intelligenceShared";
 import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
@@ -160,6 +162,19 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
   const priceSeries = useMemo<PriceSeriesVM>(() => {
     if (!graph.ready || !isSymbol) return EMPTY_SERIES;
     return buildPriceSeries(entity.graphKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isSymbol, entity.graphKey]);
+
+  // Workstation sub-panel data: real Memory Engine history and graph edge strengths
+  // when they exist; the panels themselves fall back to badged sample scaffolding.
+  const convictionHistory = useMemo<ConvictionPoint[]>(() => {
+    if (!graph.ready || !isSymbol) return [];
+    return buildConvictionHistory(entity.graphKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isSymbol, memVersion, entity.graphKey]);
+  const themeExposure = useMemo<ThemeExposureItem[]>(() => {
+    if (!graph.ready || !isSymbol) return [];
+    return buildThemeExposure(entity.graphKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, isSymbol, entity.graphKey]);
 
@@ -351,7 +366,9 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
               <p className="text-[12px]" style={{ color: A(0.45) }}>Loading market intelligence…</p>
             </div>
           ) : (
-            <MarketView structure={marketStructure} series={priceSeries} ticker={entity.title} />
+            <MarketView structure={marketStructure} series={priceSeries} ticker={entity.title}
+              accent={accent} timeline={timeline} conviction={convictionHistory}
+              themeExposure={themeExposure} fallbackThemes={currentThemes} />
           )
         ) : map.available ? (
           <ExplorerGraph map={map} accent={accent} onNavigate={href => router.push(href)} />

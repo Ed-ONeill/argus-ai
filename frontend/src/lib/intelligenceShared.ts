@@ -371,6 +371,41 @@ export function buildRelationshipMap(key: string, opts: MapLayoutOptions = {}): 
   return { available: true, nodes, edges, width: o.width, height: o.height, cx, cy, r1: o.r1, r2: o.r2 };
 }
 
+/* ---- Conviction history (Memory Engine, read-only) ---- */
+
+export interface ConvictionPoint { t: number; conviction: number; confidence: number }
+
+/** Per-day conviction/confidence series from the Memory Engine. Empty when untracked. */
+export function buildConvictionHistory(key: string): ConvictionPoint[] {
+  const h = getEntityHistory(key);
+  if (!("found" in h)) return [];
+  return h.snapshots
+    .map(s => ({ t: Date.parse(s.date), conviction: s.conviction, confidence: s.confidence }))
+    .filter(p => Number.isFinite(p.t))
+    .sort((a, b) => a.t - b.t);
+}
+
+/* ---- Theme exposure (graph edge strengths from the focused entity to themes) ---- */
+
+export interface ThemeExposureItem { label: string; strength: number }
+
+/** Relative theme exposure: edge strength from the entity to each connected theme. */
+export function buildThemeExposure(graphKey: string, limit = 6): ThemeExposureItem[] {
+  const center = G.getNode(graphKey);
+  if (!center) return [];
+  const best = new Map<string, ThemeExposureItem>();
+  for (const x of G.getNeighbors(center.id)) {
+    const t = String(x.node.type);
+    if (t !== "Theme" && t !== "Narrative") continue;
+    const label = cleanThemeName(x.node.label);
+    const k = label.toLowerCase();
+    const strength = Math.max(0, Math.min(100, round(num(x.edge.strength))));
+    const prev = best.get(k);
+    if (!prev || strength > prev.strength) best.set(k, { label, strength });
+  }
+  return [...best.values()].sort((a, b) => b.strength - a.strength).slice(0, limit);
+}
+
 /* ---- Current theme exposure (display-only dedupe of already-computed data) ---- */
 
 /**
