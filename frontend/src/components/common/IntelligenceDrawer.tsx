@@ -4,7 +4,7 @@ import { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { X, ArrowUpRight } from "lucide-react";
+import { X, ArrowUpRight, Maximize2 } from "lucide-react";
 import { TickerChip } from "@/components/common/TickerChip";
 import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
@@ -12,14 +12,15 @@ import { useListenRails } from "@/hooks/useListen";
 import { buildCrossIntel } from "@/lib/crossIntel";
 import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
-import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "@/lib/predictionEngine";
 import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
-import { recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns, summarizeEvolution, findHistoricalAnalogs } from "@/lib/memoryEngine";
-import { intelligenceGraph as G } from "@/lib/intelligenceGraph";
-import type { IntelNode, IntelEdge } from "@/lib/intelligenceGraph";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
-import { num, round } from "@/lib/intelligenceUtils";
-import { formatRelativeAge, secondsSince } from "@/lib/utils";
+import {
+  verdictColor, dirColor as sharedDirColor, nodeColor, NODE_COLOR, evColor, fmtDate, fmtDay, fmtCompact, trunc,
+  buildForecast, buildTimeline, buildMarketStructure, buildRelationshipMap, collectCurrentThemes,
+  recordDailyMemorySnapshot, explorerHref,
+  EMPTY_TIMELINE, EMPTY_MAP,
+  type ForecastVM, type TimelineVM, type MarketStructureVM, type MapNode, type MapVM,
+} from "@/lib/intelligenceShared";
 import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
 import { setActiveTheme, setActiveDriver, setActiveSector, setActiveCompany } from "@/lib/intelligenceContext";
 import type { IntelContext } from "@/lib/intelligenceContext";
@@ -28,11 +29,12 @@ import type { IntelContext } from "@/lib/intelligenceContext";
  * IntelligenceDrawer - the reusable cross-page intelligence panel (Phase 5).
  * Opens from any active context and shows the connected picture across Feed,
  * Markets, Industries, M&A, Private and Listen, plus historical memory. Dark and
- * institutional, self-contained so it overlays cleanly on any page. No em/en dashes.
+ * institutional, self-contained so it overlays cleanly on any page. The shared
+ * view-model builders live in lib/intelligenceShared and are reused by the
+ * Intelligence Explorer (/explore). No em/en dashes.
  */
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
-const verdictColor = (v: string) => v === "strong" ? "#34d399" : v === "moderate" ? "#7cc7d8" : v === "weak" ? "#f59e0b" : A(0.4);
 
 /** Ease a number up from 0 on mount / value change. Subtle, ~600ms, cubic ease-out. */
 function useCountUp(target: number, duration = 600): number {
@@ -83,90 +85,6 @@ function ZoneDivider({ label }: { label: string }) {
 
 interface GraphRel { source: string; target: string; type: string; strength: number }
 
-interface ForecastVM {
-  direction:    string;
-  probability:  number | null;
-  confidence:   number;
-  timeframe:    string | null;
-  reasons:      string[];
-  invalidation: string | null;
-}
-
-/* ---- Intelligence Timeline (Memory Engine, read-only) ---- */
-
-interface TimelineEvent { date: string; type: string; title: string; detail: string; confidence?: number }
-interface TimelineVM {
-  available:        boolean;
-  firstSeen?:       string;
-  snapshots?:       number;
-  streak?:          number;
-  conviction?:      number;
-  confidenceGained?: number;
-  analogsCount?:    number;
-  patterns:         string[];
-  events:           TimelineEvent[];
-  evolution:        string[];
-  analogs:          Array<{ label: string; similarity: number }>;
-}
-
-const EMPTY_TIMELINE: TimelineVM = { available: false, patterns: [], events: [], evolution: [], analogs: [] };
-
-const EVENT_COLOR: Record<string, string> = {
-  first_detected: "#7cc7d8", conviction_up: "#34d399", momentum_up: "#22d3ee", evidence_up: "#2dd4bf",
-  relationships: "#a78bfa", prediction: "#fbbf24", analog: "#c084fc",
-};
-const evColor = (t: string) => EVENT_COLOR[t] ?? "#7cc7d8";
-
-const fmtDate = (iso: string): string => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : iso; };
-const fmtDay  = (iso: string): string => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : iso; };
-
-/** Assemble a read-only intelligence timeline from the Memory Engine. Deterministic. */
-function buildTimeline(key: string): TimelineVM {
-  const h = getEntityHistory(key);
-  if (!("found" in h)) return EMPTY_TIMELINE;
-
-  const snaps = h.snapshots, preds = h.predictions;
-  const first = snaps[0], last = snaps[snaps.length - 1];
-
-  let streak = 1;
-  for (let i = snaps.length - 1; i > 0; i--) {
-    if (Math.round((Date.parse(snaps[i].date) - Date.parse(snaps[i - 1].date)) / 86_400_000) === 1) streak += 1; else break;
-  }
-
-  const events: TimelineEvent[] = [{ date: first.date, type: "first_detected", title: "First detected", detail: "Argus began tracking this entity.", confidence: first.confidence }];
-  for (let i = 1; i < snaps.length; i++) {
-    const a = snaps[i - 1], b = snaps[i];
-    if (b.conviction - a.conviction >= 3) events.push({ date: b.date, type: "conviction_up", title: "Conviction increased", detail: `Conviction rose from ${a.conviction} to ${b.conviction}.`, confidence: b.conviction });
-    if (b.momentum - a.momentum >= 3) events.push({ date: b.date, type: "momentum_up", title: "Momentum accelerated", detail: `Momentum moved from ${a.momentum} to ${b.momentum}.` });
-    if (b.evidenceCount - a.evidenceCount >= 1) events.push({ date: b.date, type: "evidence_up", title: "Evidence strengthened", detail: `Evidence rose from ${a.evidenceCount} to ${b.evidenceCount}.` });
-    if (b.relationshipCount - a.relationshipCount >= 1) events.push({ date: b.date, type: "relationships", title: "New relationships discovered", detail: `Connections grew from ${a.relationshipCount} to ${b.relationshipCount}.` });
-  }
-  for (let i = 1; i < preds.length; i++) {
-    if (preds[i].found && preds[i].predictedDirection !== preds[i - 1].predictedDirection)
-      events.push({ date: preds[i].date, type: "prediction", title: "Prediction changed", detail: `Forecast shifted to ${preds[i].predictedDirection}.`, confidence: preds[i].confidence });
-  }
-
-  const an = findHistoricalAnalogs(key);
-  const analogs = "found" in an ? an.analogs.map(a => ({ label: a.label, similarity: a.similarity })) : [];
-  if (analogs.length) events.push({ date: last.date, type: "analog", title: "Historical analog found", detail: `Resembles ${analogs[0].label} (similarity ${analogs[0].similarity}%).`, confidence: analogs[0].similarity });
-
-  const ev = summarizeEvolution(key);
-  const evolution = "found" in ev ? ev.lines : [];
-  const pat = detectHistoricalPatterns(key);
-  const patterns = "found" in pat ? pat.patterns.map(p => p.pattern) : [];
-  const cmp = compareSnapshots(key);
-  const confidenceGained = "found" in cmp ? cmp.deltas.confidence : undefined;
-
-  events.sort((a, b) => b.date.localeCompare(a.date));
-  return {
-    available: true, firstSeen: first.date, snapshots: snaps.length, streak, conviction: last.conviction,
-    confidenceGained, analogsCount: analogs.length, patterns, events: events.slice(0, 10), evolution, analogs,
-  };
-}
-
-// Record at most one Memory Engine snapshot per day per session (idempotent per day in the engine too).
-let memoryRecordedOn: string | null = null;
-
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
@@ -174,59 +92,6 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       <p className="text-[7px] font-bold uppercase tracking-wider mt-0.5" style={{ color: A(0.4) }}>{label}</p>
     </div>
   );
-}
-
-/* ---- Market Structure (reads node.metadata.latestMarketData only, descriptive) ---- */
-
-interface MarketStructureVM {
-  price: number; changePercent: number | null; volume: number | null; avgVolume: number | null;
-  relativeVolume: number | null; dollarVolume: number | null; marketCap: number | null;
-  yearLow: number | null; yearHigh: number | null; yearPosition: number | null; // % of 52w range
-  freshness: string; provider: string; stale: boolean; notes: string[];
-}
-const mnum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-function fmtCompact(n: number | null): string {
-  if (n == null) return "n/a";
-  const a = Math.abs(n);
-  if (a >= 1e12) return (n / 1e12).toFixed(2) + "T";
-  if (a >= 1e9)  return (n / 1e9).toFixed(2) + "B";
-  if (a >= 1e6)  return (n / 1e6).toFixed(2) + "M";
-  if (a >= 1e3)  return (n / 1e3).toFixed(1) + "K";
-  return String(Math.round(n));
-}
-
-/** Build a descriptive market-structure view from a node's latestMarketData. */
-function buildMarketStructure(lmd: Record<string, unknown>): MarketStructureVM | null {
-  const price = mnum(lmd.price);
-  if (price == null) return null;
-  const volume = mnum(lmd.volume);
-  const avgVolume = mnum(lmd.avgVolume);
-  const relativeVolume = volume != null && avgVolume && avgVolume > 0 ? Math.round((volume / avgVolume) * 100) / 100 : mnum(lmd.relativeVolume);
-  const dollarVolume = volume != null ? Math.round(price * volume) : mnum(lmd.dollarVolume);
-  const ts = mnum(lmd.timestamp);
-  const notes: string[] = [];
-  if (relativeVolume != null) {
-    if (relativeVolume > 1.5) notes.push("Participation above normal");
-    else if (relativeVolume < 0.8) notes.push("Participation below normal");
-  }
-  if (dollarVolume != null && dollarVolume >= 5_000_000_000) notes.push("Strong institutional liquidity");
-  // 52-week range: numeric fields when a provider supplies them, else the profile
-  // "low-high" range string. Display-only derivation from data already on the node.
-  let yearLow = mnum(lmd.yearLow), yearHigh = mnum(lmd.yearHigh);
-  if ((yearLow == null || yearHigh == null) && typeof lmd.range === "string") {
-    const m = lmd.range.match(/^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
-    if (m) { yearLow = Number(m[1]); yearHigh = Number(m[2]); }
-  }
-  const yearPosition = yearLow != null && yearHigh != null && yearHigh > yearLow
-    ? Math.round(Math.min(100, Math.max(0, ((price - yearLow) / (yearHigh - yearLow)) * 100)))
-    : null;
-  return {
-    price, changePercent: mnum(lmd.changePercent), volume, avgVolume, relativeVolume, dollarVolume,
-    marketCap: mnum(lmd.marketCap), yearLow, yearHigh, yearPosition,
-    freshness: ts != null ? (formatRelativeAge(secondsSince(ts)) || "just now") : "unknown",
-    provider: typeof lmd.provider === "string" ? lmd.provider : "market data",
-    stale: lmd.stale === true, notes,
-  };
 }
 
 function MktRow({ label, value }: { label: string; value: string }) {
@@ -237,104 +102,6 @@ function MktRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
-/* ---- Relationship Map (Intelligence Graph, read-only, deterministic radial layout) ---- */
-
-const MAP_W = 300, MAP_H = 224, MAP_CX = MAP_W / 2, MAP_CY = MAP_H / 2, MAP_R1 = 64, MAP_R2 = 98;
-const MAP_MAX_FIRST = 12, MAP_SECOND_STRENGTH = 55, MAP_MAX_SECOND = 8;
-
-// Node identity colors: muted, institutional, one hue per entity class.
-const NODE_COLOR: Record<string, string> = {
-  Company: "#7cc7d8", ETF: "#7cc7d8", Theme: "#a78bfa", Narrative: "#a78bfa",
-  Macro: "#f0b429", MacroSeries: "#f0b429", Sector: "#34d399",
-  Story: "#94a3b8", Podcast: "#94a3b8", Person: "#d8a7e8", Institution: "#8fb8e8",
-};
-const nodeColor = (t: string) => NODE_COLOR[t] ?? "#8ea3b5";
-
-interface MapNode { id: string; label: string; type: string; confidence: number; importance: number; relCount: number; x: number; y: number; r: number; degree: 0 | 1 | 2; angle: number }
-interface MapEdge { id: string; a: string; b: string; from: MapNode; to: MapNode; type: string; strength: number; confidence: number; evidenceCount: number; sources: number }
-interface MapVM { available: boolean; nodes: MapNode[]; edges: MapEdge[]; width: number; height: number }
-const EMPTY_MAP: MapVM = { available: false, nodes: [], edges: [], width: MAP_W, height: MAP_H };
-
-function mapNode(node: IntelNode, degree: 0 | 1 | 2, x: number, y: number, angle: number): MapNode {
-  const importance = Math.max(0, Math.min(100, round(num(node.importance))));
-  const r = degree === 0 ? 11 : degree === 2 ? 5 : 6 + importance / 100 * 6;
-  return { id: node.id, label: node.label, type: String(node.type), confidence: round(num(node.confidence)), importance, relCount: G.getRelationships(node.id).length, x, y, r, degree, angle };
-}
-function mapEdge(edge: IntelEdge, from: MapNode, to: MapNode): MapEdge {
-  return { id: edge.id, a: from.id, b: to.id, from, to, type: edge.relationshipType, strength: round(num(edge.strength)), confidence: round(num(edge.confidence)), evidenceCount: num(edge.evidenceCount), sources: edge.originatingPages.length };
-}
-
-/** Read the existing graph singleton and lay out a stable radial map around one entity. */
-function buildRelationshipMap(key: string): MapVM {
-  const center = G.getNode(key);
-  if (!center) return EMPTY_MAP;
-  const neigh = G.getNeighbors(center.id);
-  if (neigh.length === 0) return EMPTY_MAP;
-
-  const first = [...neigh].sort((a, b) => b.edge.strength - a.edge.strength).slice(0, MAP_MAX_FIRST);
-  const nodes: MapNode[] = [];
-  const edges: MapEdge[] = [];
-  const centerNode = mapNode(center, 0, MAP_CX, MAP_CY, 0);
-  nodes.push(centerNode);
-  const byId = new Map<string, MapNode>([[center.id, centerNode]]);
-
-  const n = first.length;
-  first.forEach((x, i) => {
-    const ang = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    const mn = mapNode(x.node, 1, MAP_CX + Math.cos(ang) * MAP_R1, MAP_CY + Math.sin(ang) * MAP_R1, ang);
-    nodes.push(mn); byId.set(x.node.id, mn);
-    edges.push(mapEdge(x.edge, centerNode, mn));
-  });
-
-  // Second-degree: for strong first-degree links, up to two strong neighbors each,
-  // fanned slightly off the parent angle so clusters read as constellations.
-  let added = 0;
-  for (const x of first) {
-    if (added >= MAP_MAX_SECOND) break;
-    if (x.edge.strength < MAP_SECOND_STRENGTH) continue;
-    const parent = byId.get(x.node.id)!;
-    const outers = G.getNeighbors(x.node.id)
-      .filter(y => !byId.has(y.node.id) && y.node.id !== center.id)
-      .sort((a, b) => b.edge.strength - a.edge.strength)
-      .slice(0, 2);
-    for (let j = 0; j < outers.length && added < MAP_MAX_SECOND; j++) {
-      const outer = outers[j];
-      const ang = parent.angle + (outers.length > 1 ? (j === 0 ? -0.26 : 0.26) : 0);
-      const mn = mapNode(outer.node, 2, MAP_CX + Math.cos(ang) * MAP_R2, MAP_CY + Math.sin(ang) * MAP_R2, ang);
-      nodes.push(mn); byId.set(outer.node.id, mn);
-      edges.push(mapEdge(outer.edge, parent, mn));
-      added += 1;
-    }
-  }
-
-  // Deterministic de-overlap: a few fixed passes nudging ring nodes apart. Not a
-  // physics simulation; same input always yields the same layout.
-  for (let iter = 0; iter < 6; iter++) {
-    for (let i = 1; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const min = a.r + b.r + 11;
-        if (dist < min) {
-          const push = (min - dist) / 2, ux = dx / dist, uy = dy / dist;
-          a.x -= ux * push; a.y -= uy * push;
-          b.x += ux * push; b.y += uy * push;
-        }
-      }
-    }
-  }
-  for (const nd of nodes) {
-    if (nd.degree === 0) continue;
-    nd.x = Math.max(14, Math.min(MAP_W - 14, nd.x));
-    nd.y = Math.max(14, Math.min(MAP_H - 16, nd.y));
-  }
-
-  return { available: true, nodes, edges, width: MAP_W, height: MAP_H };
-}
-
-const trunc = (s: string, n = 14) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 function RelList({ rels, accent }: { rels: GraphRel[]; accent: string }) {
   return (
@@ -414,20 +181,10 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
 
   // Current theme exposure for symbol drawers: the resolved parent theme plus the
   // graph's connected themes, deduped. Display-only read of already-computed data.
-  const currentThemes = useMemo<string[]>(() => {
-    if (!isSymbol) return [];
-    const seen = new Set<string>();
-    const out: string[] = [];
-    const push = (name?: string | null) => {
-      if (!name) return;
-      const c = cleanThemeName(name);
-      const k = c.toLowerCase();
-      if (c && !seen.has(k)) { seen.add(k); out.push(c); }
-    };
-    push(intel.theme?.name);
-    for (const t of companyReport?.relatedThemes ?? []) push(t.label);
-    return out.slice(0, 6);
-  }, [isSymbol, intel.theme, companyReport]);
+  const currentThemes = useMemo<string[]>(
+    () => (isSymbol ? collectCurrentThemes(intel.theme?.name, (companyReport?.relatedThemes ?? []).map(t => t.label)) : []),
+    [isSymbol, intel.theme, companyReport],
+  );
 
   // Evidence read for the company view (existing engine, read-only). Powers the
   // Signal Confidence header number and the Evidence panel; hidden on thin signal.
@@ -449,28 +206,12 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
 
   // Forward-looking forecast, normalized across theme / company / sector predictions.
   // Renders only when the prediction resolved and is not insufficient_signal.
-  const forecast = useMemo<ForecastVM | null>(() => {
-    if (!graph.ready) return null;
-    if (ctx.kind === "company" || ctx.kind === "etf") {
-      const p = predictCompanyTrajectory(entity.graphKey);
-      if (!p.found || p.expectedDirection === "insufficient_signal") return null;
-      return { direction: p.expectedDirection, probability: p.probability, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: p.invalidation || null };
-    }
-    if (ctx.kind === "sector") {
-      const p = predictSectorRotation(ctx.label);
-      if (!p.found || p.currentRotation === "insufficient_signal") return null;
-      const inflow = p.companiesBenefiting.length >= p.companiesAtRisk.length;
-      return { direction: inflow ? "rotating in" : "rotating out", probability: null, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: null };
-    }
-    if (ctx.kind === "theme" || ctx.kind === "driver" || ctx.kind === "narrative") {
-      const p = predictThemeTrajectory(entity.graphKey);
-      if (!p.found || p.predictedDirection === "insufficient_signal") return null;
-      return { direction: p.predictedDirection, probability: p.probability, confidence: p.confidence, timeframe: p.expectedTimeframe, reasons: p.why.slice(0, 3), invalidation: p.invalidationConditions[0] || null };
-    }
-    return null;
-  }, [graph, ctx.kind, ctx.label, entity.graphKey]);
+  const forecast = useMemo<ForecastVM | null>(
+    () => (graph.ready ? buildForecast(ctx.kind, ctx.label, entity.graphKey) : null),
+    [graph, ctx.kind, ctx.label, entity.graphKey],
+  );
 
-  const dirColor = (d: string) => /strength|rotating in|accelerat/i.test(d) ? "#34d399" : /weak|revers|rotating out/i.test(d) ? "#f87171" : accentColor;
+  const dirColor = (d: string) => sharedDirColor(d, accentColor);
 
   // Zone 1 command strip cells. Only real, already-computed values render; a missing
   // signal simply drops its cell instead of showing a fabricated number.
@@ -488,9 +229,7 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
   const [memVersion, setMemVersion] = useState(0);
   useEffect(() => {
     if (!graph.ready) return;
-    const today = new Date().toISOString().slice(0, 10);
-    if (memoryRecordedOn === today) return;
-    try { recordSnapshot(); memoryRecordedOn = today; setMemVersion(v => v + 1); } catch { /* memory is best-effort */ }
+    if (recordDailyMemorySnapshot()) setMemVersion(v => v + 1);
   }, [graph.ready]);
 
   const timeline = useMemo<TimelineVM>(() => {
@@ -748,8 +487,8 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
         <>
           <motion.svg initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, ease: "easeOut" }}
             viewBox={`0 0 ${relMap.width} ${relMap.height}`} className="w-full select-none" style={{ height: 212 }}>
-            <circle cx={MAP_CX} cy={MAP_CY} r={MAP_R1} fill="none" stroke="#ffffff" strokeOpacity={0.05} />
-            <circle cx={MAP_CX} cy={MAP_CY} r={MAP_R2} fill="none" stroke="#ffffff" strokeOpacity={0.03} />
+            <circle cx={relMap.cx} cy={relMap.cy} r={relMap.r1} fill="none" stroke="#ffffff" strokeOpacity={0.05} />
+            <circle cx={relMap.cx} cy={relMap.cy} r={relMap.r2} fill="none" stroke="#ffffff" strokeOpacity={0.03} />
             {relMap.edges.map(e => {
               const on = !mapActive || e.a === mapActive || e.b === mapActive;
               const mx = (e.from.x + e.to.x) / 2, my = (e.from.y + e.to.y) / 2;
@@ -830,6 +569,11 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
               <p className="text-[7px] font-bold uppercase tracking-[0.2em] mt-1" style={{ color: A(0.42) }}>Signal</p>
             </div>
           )}
+          <Link href={explorerHref(ctx)} onClick={onClose} title="Open Explorer"
+            className="shrink-0 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded transition-colors hover:bg-white/10"
+            style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)" }}>
+            <Maximize2 size={9} /> Explorer
+          </Link>
           <button onClick={onClose} className="shrink-0 p-1 rounded transition-colors hover:bg-white/10" style={{ color: A(0.5) }}><X size={15} /></button>
         </div>
         {/* Zone 1 command strip: the live state of the symbol, dense and tabular. */}
