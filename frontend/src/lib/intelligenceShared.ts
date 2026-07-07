@@ -176,6 +176,10 @@ export interface MarketStructureVM {
   relativeVolume: number | null; dollarVolume: number | null; marketCap: number | null;
   yearLow: number | null; yearHigh: number | null; yearPosition: number | null; // % of 52w range
   freshness: string; provider: string; stale: boolean; notes: string[];
+  // Extended descriptive fields (all straight reads of latestMarketData; null when absent).
+  open: number | null; high: number | null; low: number | null; previousClose: number | null;
+  vwap: number | null; beta: number | null; bid: number | null; ask: number | null; spread: number | null;
+  exchange: string | null;
 }
 
 const mnum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -205,12 +209,52 @@ export function buildMarketStructure(lmd: Record<string, unknown>): MarketStruct
   const yearPosition = yearLow != null && yearHigh != null && yearHigh > yearLow
     ? Math.round(Math.min(100, Math.max(0, ((price - yearLow) / (yearHigh - yearLow)) * 100)))
     : null;
+  const bid = mnum(lmd.bid), ask = mnum(lmd.ask);
   return {
     price, changePercent: mnum(lmd.changePercent), volume, avgVolume, relativeVolume, dollarVolume,
     marketCap: mnum(lmd.marketCap), yearLow, yearHigh, yearPosition,
     freshness: ts != null ? (formatRelativeAge(secondsSince(ts)) || "just now") : "unknown",
     provider: typeof lmd.provider === "string" ? lmd.provider : "market data",
     stale: lmd.stale === true, notes,
+    open: mnum(lmd.open), high: mnum(lmd.high), low: mnum(lmd.low), previousClose: mnum(lmd.previousClose),
+    vwap: mnum(lmd.vwap), beta: mnum(lmd.beta), bid, ask,
+    spread: mnum(lmd.spread) ?? (bid != null && ask != null ? Math.round((ask - bid) * 100) / 100 : null),
+    exchange: typeof lmd.exchange === "string" && lmd.exchange ? lmd.exchange : null,
+  };
+}
+
+/* ---- Price series (reads the mkt:{ticker}:ohlcv MarketMetric node, read-only) ---- */
+
+export interface PricePoint { t: number; c: number; o: number | null; h: number | null; l: number | null; v: number | null }
+export interface PriceSeriesVM { available: boolean; interval: string | null; points: PricePoint[]; provider: string | null }
+export const EMPTY_SERIES: PriceSeriesVM = { available: false, interval: null, points: [], provider: null };
+
+/**
+ * Read the historical OHLCV bars the market ingestion may have attached to the
+ * graph as a `mkt:{ticker}:ohlcv` MarketMetric node. Returns EMPTY_SERIES when no
+ * bars exist; callers must show an honest empty state, never a fabricated series.
+ */
+export function buildPriceSeries(graphKey: string): PriceSeriesVM {
+  const node = G.getNode(`mkt:${graphKey}:ohlcv`);
+  if (!node) return EMPTY_SERIES;
+  const md = node.metadata as Record<string, unknown>;
+  const bars = Array.isArray(md.bars) ? md.bars : [];
+  const points: PricePoint[] = [];
+  for (const b of bars) {
+    if (!b || typeof b !== "object") continue;
+    const r = b as Record<string, unknown>;
+    const tRaw = mnum(r.t), c = mnum(r.c);
+    if (tRaw == null || c == null) continue;
+    const t = tRaw < 1e12 ? tRaw * 1000 : tRaw; // tolerate second-epoch bars
+    points.push({ t, c, o: mnum(r.o), h: mnum(r.h), l: mnum(r.l), v: mnum(r.v) });
+  }
+  points.sort((a, b) => a.t - b.t);
+  if (points.length < 2) return EMPTY_SERIES;
+  return {
+    available: true,
+    interval: typeof md.interval === "string" ? md.interval : null,
+    points,
+    provider: typeof md.provider === "string" ? md.provider : null,
   };
 }
 

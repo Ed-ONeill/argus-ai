@@ -16,7 +16,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Network } from "lucide-react";
+import { ArrowUpRight, CandlestickChart, Network } from "lucide-react";
 import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import { useListenRails } from "@/hooks/useListen";
@@ -27,13 +27,15 @@ import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
   parseExplorerEntity, explorerHrefForNode, buildForecast, buildTimeline, buildRelationshipMap,
-  collectCurrentThemes, recordDailyMemorySnapshot, dirColor, verdictColor, evColor, fmtDate, fmtDay,
-  EMPTY_TIMELINE, EMPTY_MAP,
-  type ForecastVM, type TimelineVM, type MapVM,
+  buildMarketStructure, buildPriceSeries, collectCurrentThemes, recordDailyMemorySnapshot,
+  dirColor, verdictColor, evColor, fmtDate, fmtDay,
+  EMPTY_TIMELINE, EMPTY_MAP, EMPTY_SERIES,
+  type ForecastVM, type TimelineVM, type MapVM, type MarketStructureVM, type PriceSeriesVM,
 } from "@/lib/intelligenceShared";
 import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
 import { ExplorerGraph } from "@/components/explore/ExplorerGraph";
+import { MarketView } from "@/components/explore/MarketView";
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
 
@@ -147,6 +149,23 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
     return buildRelationshipMap(entity.graphKey, EXPLORER_LAYOUT);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, entity.graphKey]);
+
+  // Market terminal data (symbols only): the latest snapshot on the routed node and
+  // whatever historical OHLCV bars ingestion has recorded. Never fabricated.
+  const marketStructure = useMemo<MarketStructureVM | null>(() => {
+    if (!graph.ready || !isSymbol) return null;
+    const lmd = entity.node?.metadata?.latestMarketData;
+    return lmd && typeof lmd === "object" ? buildMarketStructure(lmd as Record<string, unknown>) : null;
+  }, [graph.ready, isSymbol, entity]);
+  const priceSeries = useMemo<PriceSeriesVM>(() => {
+    if (!graph.ready || !isSymbol) return EMPTY_SERIES;
+    return buildPriceSeries(entity.graphKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isSymbol, entity.graphKey]);
+
+  // Center workspace tabs: companies and ETFs open on the market terminal;
+  // theme-shaped entities only have the network view.
+  const [tab, setTab] = useState<"market" | "network">(isSymbol ? "market" : "network");
 
   const accent = ctx.color ?? "#52b0c8";
   const parentTheme = isSymbol ? (entity.subtitle ?? intel.theme?.name ?? null) : null;
@@ -294,13 +313,28 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
         <div className="h-6" />
       </aside>
 
-      {/* Center column: the Intelligence Network */}
+      {/* Center column: the tabbed workspace. Market View is the terminal default
+          for symbols; the Intelligence Network is the relationship view. */}
       <section className="flex-1 min-w-0 flex flex-col">
-        <div className="flex items-center gap-3 px-5 py-3 border-b shrink-0" style={{ borderColor: A(0.08) }}>
-          <Network size={13} style={{ color: accent }} />
-          <span className="text-[9.5px] font-black uppercase tracking-[0.2em]" style={{ color: A(0.7) }}>Intelligence Network</span>
-          {map.available && (
-            <span className="text-[9px] tabular-nums" style={{ color: A(0.35) }}>
+        <div className="flex items-center gap-1.5 px-5 py-2.5 border-b shrink-0" style={{ borderColor: A(0.08) }}>
+          {isSymbol && (
+            <button onClick={() => setTab("market")}
+              className="flex items-center gap-1.5 text-[9.5px] font-black uppercase tracking-[0.14em] px-3 py-1.5 rounded-md transition-colors"
+              style={tab === "market"
+                ? { color: "#7cc7d8", background: "rgba(82,176,200,0.14)", border: "1px solid rgba(82,176,200,0.3)" }
+                : { color: A(0.45), background: "transparent", border: `1px solid ${A(0.08)}` }}>
+              <CandlestickChart size={12} /> Market View
+            </button>
+          )}
+          <button onClick={() => setTab("network")}
+            className="flex items-center gap-1.5 text-[9.5px] font-black uppercase tracking-[0.14em] px-3 py-1.5 rounded-md transition-colors"
+            style={tab === "network" || !isSymbol
+              ? { color: "#7cc7d8", background: "rgba(82,176,200,0.14)", border: "1px solid rgba(82,176,200,0.3)" }
+              : { color: A(0.45), background: "transparent", border: `1px solid ${A(0.08)}` }}>
+            <Network size={12} /> Intelligence Network
+          </button>
+          {tab === "network" && map.available && (
+            <span className="ml-2 text-[9px] tabular-nums" style={{ color: A(0.35) }}>
               {map.nodes.length} entities · {map.edges.length} connections
             </span>
           )}
@@ -310,7 +344,16 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
             </span>
           )}
         </div>
-        {map.available ? (
+
+        {tab === "market" && isSymbol ? (
+          !graph.ready ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-[12px]" style={{ color: A(0.45) }}>Loading market intelligence…</p>
+            </div>
+          ) : (
+            <MarketView structure={marketStructure} series={priceSeries} ticker={entity.title} />
+          )
+        ) : map.available ? (
           <ExplorerGraph map={map} accent={accent} onNavigate={href => router.push(href)} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
