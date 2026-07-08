@@ -40,6 +40,7 @@ import { FmpAdapter, MarketDataAdapter } from "./dataAdapters/marketData";
 import { resolveDrawerEntity, buildCompanyContext, buildSymbolContext } from "./drawerEntity";
 import { selectSeriesForRange, EMPTY_SERIES as EMPTY_PRICE_SERIES, type PriceSeriesVM, type PricePoint } from "./marketSeries";
 import { buildRelationshipMap, expandMap, countExpansion, deriveEdgeTrend } from "./causalMap";
+import { buildIntelligenceProfile, PROFILE_VERSION } from "./intelligenceProfile";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -1279,6 +1280,42 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(withSupp.nodes.some(n => n.label === "ASML"), "supplier expansion should reveal ASML via its supplies edge");
     const withMacro = expandMap(base, "macro");
     assert(withMacro.nodes.some(n => n.label === "AI Capex"), "macro expansion should reveal the driver through the visible theme");
+  });
+
+  // 75. System 1: the canonical Intelligence Profile contract (read-only
+  // composition of existing engines; honest section statuses; never throws).
+  test("intelligence profile assembles for a company", () => {
+    seedCausalGraph();
+    const p = buildIntelligenceProfile("NVDA");
+    assert(p.version === PROFILE_VERSION && p.entityKey === "NVDA", "profile carries version and key");
+    assert(p.identity.status === "live" && p.identity.data?.kind === "company", `identity should resolve as company, got ${p.identity.data?.kind}`);
+    assert(p.identity.data!.causalLayer === 3, "companies sit at causal layer 3");
+    assert(p.drivers.status === "live" && (p.drivers.data ?? []).some(d => d.label === "AI Infrastructure"), "the theme should appear as an upstream driver link");
+    assert((p.drivers.data ?? []).some(d => d.label === "AI Capex" && d.via === "AI Infrastructure"), "the two-hop macro driver should carry its via entity");
+    assert(p.transmission.status === "live" && (p.transmission.data?.strongestPath ?? []).includes("NVDA"), "transmission path should include the entity itself");
+    assert(p.confidence.status === "live" && p.confidence.data!.explanation.length > 0, "confidence must always decompose into an explanation");
+    // Sections without underlying data must degrade honestly, never fabricate.
+    for (const s of [p.thesis, p.evidence, p.evolution, p.watch, p.risks]) {
+      assert(s.status !== "live" || s.data !== null, "live sections must carry data");
+      assert(s.status !== "unavailable" || s.data === null, "unavailable sections must carry null");
+    }
+  });
+
+  test("intelligence profile is honest for unknown entities", () => {
+    intelligenceGraph.clear();
+    const p = buildIntelligenceProfile("ZZZQ-DOES-NOT-EXIST");
+    assert(p.identity.status === "unavailable" && p.identity.data === null, "unknown entity yields unavailable identity");
+    assert(p.drivers.status === "unavailable" && p.evidence.status === "unavailable" && p.watch.status === "unavailable", "all sections degrade to unavailable");
+  });
+
+  test("intelligence profile answers for a theme with beneficiaries", () => {
+    seedCausalGraph();
+    const p = buildIntelligenceProfile("AI Infrastructure", { narrative: { headline: "Hyperscaler capex accelerates AI compute demand.", nextWatch: "capex guidance revisions" } });
+    assert(p.identity.data?.kind === "theme" && p.identity.data.causalLayer === 1, "theme identity resolves at layer 1");
+    assert((p.drivers.data ?? []).some(d => d.label === "AI Capex"), "the macro driver is upstream of the theme");
+    assert(p.beneficiaries.status === "live" && (p.beneficiaries.data ?? []).some(b => b.label === "NVDA"), "downstream companies are beneficiaries");
+    assert(p.thesis.data?.headline === "Hyperscaler capex accelerates AI compute demand.", "injected narrative rides on the thesis section");
+    assert((p.watch.data?.items ?? []).some(w => w.includes("capex guidance")), "injected watch item appears in watch next");
   });
 
   for (const [name, fn] of tests) {
