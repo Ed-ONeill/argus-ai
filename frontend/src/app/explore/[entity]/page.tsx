@@ -28,11 +28,11 @@ import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
   parseExplorerEntity, explorerHrefForNode, buildForecast, buildTimeline, buildRelationshipMap,
   buildMarketStructure, buildPriceSeries, buildConvictionHistory, buildThemeExposure,
-  collectCurrentThemes, recordDailyMemorySnapshot,
+  collectCurrentThemes, recordDailyMemorySnapshot, expandMap, countExpansion, EXPANSION_MODES,
   dirColor, verdictColor, evColor, fmtDate, fmtDay,
   EMPTY_TIMELINE, EMPTY_MAP, EMPTY_SERIES,
   type ForecastVM, type TimelineVM, type MapVM, type MarketStructureVM, type PriceSeriesVM,
-  type ConvictionPoint, type ThemeExposureItem,
+  type ConvictionPoint, type ThemeExposureItem, type ExpansionMode,
 } from "@/lib/intelligenceShared";
 import { confColor, cleanThemeName } from "@/app/markets/marketsShared";
 import type { IntelContext } from "@/lib/intelligenceContext";
@@ -155,14 +155,25 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, memVersion, entity.graphKey]);
 
-  // The large network map: same builder as the drawer, explorer-sized. "Expand
-  // Neighbors" re-runs the same builder with wider selection limits (no new data).
+  // The large network map: same builder as the drawer, explorer-sized, with the
+  // causal-chain selection so Driver -> Theme -> Sector -> Company -> Evidence
+  // paths surface. Expansion progressively reveals EXISTING graph relationships:
+  // either by analyst intent (expandMap modes) or by raising the neighbor caps.
   const [mapExpanded, setMapExpanded] = useState(false);
-  const map = useMemo<MapVM>(() => {
+  const [expansionModes, setExpansionModes] = useState<ExpansionMode[]>([]);
+  const baseMap = useMemo<MapVM>(() => {
     if (!graph.ready && market.version === 0) return EMPTY_MAP;
-    return buildRelationshipMap(entity.graphKey, mapExpanded ? EXPANDED_LAYOUT : EXPLORER_LAYOUT);
+    return buildRelationshipMap(entity.graphKey, { ...(mapExpanded ? EXPANDED_LAYOUT : EXPLORER_LAYOUT), causalChains: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, market.version, entity.graphKey, mapExpanded]);
+  const map = useMemo<MapVM>(
+    () => expansionModes.reduce((m, mode) => expandMap(m, mode), baseMap),
+    [baseMap, expansionModes],
+  );
+  const expansionOptions = useMemo(
+    () => (map.available ? EXPANSION_MODES.map(m => ({ ...m, count: countExpansion(map, m.key) })) : []),
+    [map],
+  );
   const canExpandCount = useMemo(() => {
     if (mapExpanded || !map.available) return 0;
     const center = map.nodes.find(n => n.degree === 0);
@@ -398,7 +409,10 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
           )
         ) : map.available ? (
           <ExplorerGraph map={map} accent={accent} onNavigate={href => router.push(href)}
-            onExpand={() => setMapExpanded(true)} canExpandCount={canExpandCount} />
+            onExpand={() => setMapExpanded(true)} canExpandCount={canExpandCount}
+            expansionOptions={expansionOptions} appliedExpansions={expansionModes}
+            onExpandMode={mode => setExpansionModes(prev => (prev.includes(mode) ? prev : [...prev, mode]))}
+            onResetExpansions={() => { setExpansionModes([]); setMapExpanded(false); }} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
             {!graph.ready ? (

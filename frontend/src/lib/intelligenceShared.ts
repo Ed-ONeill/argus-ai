@@ -11,7 +11,6 @@
  */
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
-import type { IntelNode, IntelEdge } from "./intelligenceGraph";
 import { num, round } from "./intelligenceUtils";
 import { formatRelativeAge, secondsSince } from "./utils";
 import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "./predictionEngine";
@@ -231,118 +230,10 @@ export function buildMarketStructure(lmd: Record<string, unknown>): MarketStruct
 export { buildPriceSeries, selectSeriesForRange, EMPTY_SERIES, CHART_RANGES, RANGE_MS, MIN_INTRADAY_BARS, MIN_WEEK_INTRADAY_BARS } from "./marketSeries";
 export type { PricePoint, PriceSeriesVM, ChartRangeKey, RangeSelection } from "./marketSeries";
 
-/* ---- Relationship Map (Intelligence Graph, read-only, deterministic radial layout) ---- */
+/* ---- Relationship / causal map: lives in lib/causalMap (pure, testable) ---- */
 
-export interface MapNode { id: string; label: string; type: string; confidence: number; importance: number; relCount: number; x: number; y: number; r: number; degree: 0 | 1 | 2; angle: number }
-export interface MapEdge { id: string; a: string; b: string; from: MapNode; to: MapNode; type: string; strength: number; confidence: number; evidenceCount: number; sources: number }
-export interface MapVM { available: boolean; nodes: MapNode[]; edges: MapEdge[]; width: number; height: number; cx: number; cy: number; r1: number; r2: number }
-
-/** Layout knobs. Defaults reproduce the drawer's compact 300x224 map exactly. */
-export interface MapLayoutOptions {
-  width?:          number;
-  height?:         number;
-  r1?:             number; // first-degree ring radius
-  r2?:             number; // second-degree ring radius
-  maxFirst?:       number; // max first-degree neighbors
-  secondStrength?: number; // min edge strength to fan out second-degree nodes
-  maxSecond?:      number; // max second-degree nodes overall
-  nodeScale?:      number; // multiplies node radii (and spacing) for larger canvases
-}
-
-const MAP_DEFAULTS: Required<MapLayoutOptions> = {
-  width: 300, height: 224, r1: 64, r2: 98, maxFirst: 12, secondStrength: 55, maxSecond: 8, nodeScale: 1,
-};
-
-export const EMPTY_MAP: MapVM = {
-  available: false, nodes: [], edges: [],
-  width: MAP_DEFAULTS.width, height: MAP_DEFAULTS.height,
-  cx: MAP_DEFAULTS.width / 2, cy: MAP_DEFAULTS.height / 2, r1: MAP_DEFAULTS.r1, r2: MAP_DEFAULTS.r2,
-};
-
-/** Read the existing graph singleton and lay out a stable radial map around one entity. */
-export function buildRelationshipMap(key: string, opts: MapLayoutOptions = {}): MapVM {
-  const o = { ...MAP_DEFAULTS, ...opts };
-  const cx = o.width / 2, cy = o.height / 2;
-  const empty: MapVM = { ...EMPTY_MAP, width: o.width, height: o.height, cx, cy, r1: o.r1, r2: o.r2 };
-
-  const mkNode = (node: IntelNode, degree: 0 | 1 | 2, x: number, y: number, angle: number): MapNode => {
-    const importance = Math.max(0, Math.min(100, round(num(node.importance))));
-    const r = (degree === 0 ? 11 : degree === 2 ? 5 : 6 + importance / 100 * 6) * o.nodeScale;
-    return { id: node.id, label: node.label, type: String(node.type), confidence: round(num(node.confidence)), importance, relCount: G.getRelationships(node.id).length, x, y, r, degree, angle };
-  };
-  const mkEdge = (edge: IntelEdge, from: MapNode, to: MapNode): MapEdge => ({
-    id: edge.id, a: from.id, b: to.id, from, to, type: edge.relationshipType,
-    strength: round(num(edge.strength)), confidence: round(num(edge.confidence)),
-    evidenceCount: num(edge.evidenceCount), sources: edge.originatingPages.length,
-  });
-
-  const center = G.getNode(key);
-  if (!center) return empty;
-  const neigh = G.getNeighbors(center.id);
-  if (neigh.length === 0) return empty;
-
-  const first = [...neigh].sort((a, b) => b.edge.strength - a.edge.strength).slice(0, o.maxFirst);
-  const nodes: MapNode[] = [];
-  const edges: MapEdge[] = [];
-  const centerNode = mkNode(center, 0, cx, cy, 0);
-  nodes.push(centerNode);
-  const byId = new Map<string, MapNode>([[center.id, centerNode]]);
-
-  const n = first.length;
-  first.forEach((x, i) => {
-    const ang = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    const mn = mkNode(x.node, 1, cx + Math.cos(ang) * o.r1, cy + Math.sin(ang) * o.r1, ang);
-    nodes.push(mn); byId.set(x.node.id, mn);
-    edges.push(mkEdge(x.edge, centerNode, mn));
-  });
-
-  // Second-degree: for strong first-degree links, up to two strong neighbors each,
-  // fanned slightly off the parent angle so clusters read as constellations.
-  let added = 0;
-  for (const x of first) {
-    if (added >= o.maxSecond) break;
-    if (x.edge.strength < o.secondStrength) continue;
-    const parent = byId.get(x.node.id)!;
-    const outers = G.getNeighbors(x.node.id)
-      .filter(y => !byId.has(y.node.id) && y.node.id !== center.id)
-      .sort((a, b) => b.edge.strength - a.edge.strength)
-      .slice(0, 2);
-    for (let j = 0; j < outers.length && added < o.maxSecond; j++) {
-      const outer = outers[j];
-      const ang = parent.angle + (outers.length > 1 ? (j === 0 ? -0.26 : 0.26) : 0);
-      const mn = mkNode(outer.node, 2, cx + Math.cos(ang) * o.r2, cy + Math.sin(ang) * o.r2, ang);
-      nodes.push(mn); byId.set(outer.node.id, mn);
-      edges.push(mkEdge(outer.edge, parent, mn));
-      added += 1;
-    }
-  }
-
-  // Deterministic de-overlap: a few fixed passes nudging ring nodes apart. Not a
-  // physics simulation; same input always yields the same layout.
-  for (let iter = 0; iter < 6; iter++) {
-    for (let i = 1; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const min = a.r + b.r + 11 * o.nodeScale;
-        if (dist < min) {
-          const push = (min - dist) / 2, ux = dx / dist, uy = dy / dist;
-          a.x -= ux * push; a.y -= uy * push;
-          b.x += ux * push; b.y += uy * push;
-        }
-      }
-    }
-  }
-  const mx = 14 * o.nodeScale, my = 14 * o.nodeScale, myBottom = 16 * o.nodeScale;
-  for (const nd of nodes) {
-    if (nd.degree === 0) continue;
-    nd.x = Math.max(mx, Math.min(o.width - mx, nd.x));
-    nd.y = Math.max(my, Math.min(o.height - myBottom, nd.y));
-  }
-
-  return { available: true, nodes, edges, width: o.width, height: o.height, cx, cy, r1: o.r1, r2: o.r2 };
-}
+export { buildRelationshipMap, expandMap, countExpansion, findExpansionCandidates, deriveEdgeTrend, causalLayerOfType, EMPTY_MAP, EXPANSION_MODES } from "./causalMap";
+export type { MapNode, MapEdge, MapVM, MapLayoutOptions, ExpansionMode, EdgeTrend } from "./causalMap";
 
 /* ---- Conviction history (Memory Engine, read-only) ---- */
 

@@ -39,6 +39,7 @@ import { orchestrateIntelligence } from "./intelligenceOrchestrator";
 import { FmpAdapter, MarketDataAdapter } from "./dataAdapters/marketData";
 import { resolveDrawerEntity, buildCompanyContext, buildSymbolContext } from "./drawerEntity";
 import { selectSeriesForRange, EMPTY_SERIES as EMPTY_PRICE_SERIES, type PriceSeriesVM, type PricePoint } from "./marketSeries";
+import { buildRelationshipMap, expandMap, countExpansion, deriveEdgeTrend } from "./causalMap";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -1198,6 +1199,86 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(yes1d.interval === "intraday" && yes1d.fallback === "none" && yes1d.points.length >= 4, "1D with intraday bars should render them");
     const m1 = selectSeriesForRange("1M", mkIntra(), mkDaily(), NOW);
     assert(m1.interval === "daily", "1M and wider render daily bars");
+  });
+
+  // 74. Sprint 3B causal engine: multi-hop chains, relationship intelligence,
+  // and progressive expansion of existing relationships.
+  const seedCausalGraph = () => {
+    intelligenceGraph.clear();
+    const add = (label: string, type: string) => intelligenceGraph.addNode({ label, type: type as never });
+    add("AI Capex", "Macro");
+    add("AI Infrastructure", "Theme");
+    add("Semiconductors", "Sector");
+    add("NVDA", "Company");
+    add("AMD", "Company");
+    add("ASML", "Company");
+    add("Blackwell sold out", "Story");
+    const rel = (source: string, relationshipType: string, target: string, strength = 70) =>
+      intelligenceGraph.addRelationship({ source, target, relationshipType: relationshipType as never, strength, confidence: 70 });
+    rel("AI Capex", "drives", "AI Infrastructure", 82);
+    rel("AI Infrastructure", "drives", "Semiconductors", 76);
+    rel("AI Infrastructure", "supports", "NVDA", 88);
+    rel("NVDA", "competes_with", "AMD", 64);
+    rel("ASML", "supplies", "NVDA", 58);
+    rel("Blackwell sold out", "mentions", "NVDA", 45);
+  };
+
+  test("causal chains surface driver and sector at two hops", () => {
+    seedCausalGraph();
+    const m = buildRelationshipMap("NVDA", { causalChains: true, maxFirst: 8, maxSecond: 8 });
+    const labels = new Set(m.nodes.map(n => n.label));
+    assert(labels.has("AI Infrastructure") && labels.has("Blackwell sold out"), "first-degree theme and story should be present");
+    assert(labels.has("AI Capex"), "the macro driver should surface via the theme (Driver -> Theme -> Company chain)");
+    assert(labels.has("Semiconductors"), "the sector should surface via the theme");
+    const driverEdge = m.edges.find(e => e.from.label === "AI Capex" || e.to.label === "AI Capex");
+    assert(!!driverEdge && /driv/.test(driverEdge.type), "the driver should connect through its real drives edge");
+  });
+
+  test("relationship intelligence rides on every map edge", () => {
+    seedCausalGraph();
+    // Re-assert one edge so it reads as strengthening.
+    intelligenceGraph.addRelationship({ source: "AI Infrastructure", target: "NVDA", relationshipType: "supports", strength: 90, confidence: 75 });
+    const m = buildRelationshipMap("NVDA", { causalChains: true, maxFirst: 8, maxSecond: 8 });
+    const supp = m.edges.find(e => e.type === "supports");
+    assert(!!supp, "supports edge should be on the map");
+    assert(supp!.trend === "strengthening", `a re-asserted edge should read strengthening, got ${supp!.trend}`);
+    assert(Number.isFinite(supp!.firstObserved) && supp!.lastObserved >= supp!.firstObserved, "edges should carry their observed lifetime");
+    const single = m.edges.find(e => e.type === "mentions");
+    assert(!!single && single.trend === "stable", "a single observation should read stable");
+  });
+
+  test("edge trend derivation is honest", () => {
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "A", type: "Theme" });
+    intelligenceGraph.addNode({ label: "B", type: "Company" });
+    const e1 = intelligenceGraph.addRelationship({ source: "A", target: "B", relationshipType: "supports", strength: 50, confidence: 50 })!;
+    const a = intelligenceGraph.getNode("A")!, b = intelligenceGraph.getNode("B")!;
+    assert(deriveEdgeTrend(e1, a, b) === "stable", "one observation is stable");
+    const e2 = intelligenceGraph.addRelationship({ source: "A", target: "B", relationshipType: "supports" })!;
+    assert(deriveEdgeTrend(e2, a, b) === "strengthening", "re-assertion is strengthening");
+    // Edge quiet while both endpoints stayed active well past it -> weakening.
+    const stale = { ...e2, evidenceCount: 1, lastObserved: e2.firstObserved };
+    const activeA = { ...a, lastSeen: e2.firstObserved + 48 * 3_600_000 };
+    const activeB = { ...b, lastSeen: e2.firstObserved + 48 * 3_600_000 };
+    assert(deriveEdgeTrend(stale, activeA, activeB) === "weakening", "a quiet edge between active nodes weakens");
+  });
+
+  test("expansion reveals existing relationships by intent, idempotently", () => {
+    seedCausalGraph();
+    // Small base map that leaves AMD and ASML hidden.
+    const base = buildRelationshipMap("NVDA", { maxFirst: 1, maxSecond: 0 });
+    assert(!base.nodes.some(n => n.label === "AMD"), "AMD should start hidden");
+    assert(countExpansion(base, "competitors") === 1, "competitor expansion should count AMD");
+    const withComp = expandMap(base, "competitors");
+    assert(withComp.nodes.some(n => n.label === "AMD"), "competitor expansion should reveal AMD");
+    assert(withComp.edges.some(e => e.type === "competes_with"), "only the real competes_with edge is added");
+    assert(!withComp.nodes.some(n => n.label === "ASML"), "competitor expansion must not drag in suppliers");
+    const again = expandMap(withComp, "competitors");
+    assert(again.nodes.length === withComp.nodes.length, "expansion is idempotent");
+    const withSupp = expandMap(withComp, "suppliers");
+    assert(withSupp.nodes.some(n => n.label === "ASML"), "supplier expansion should reveal ASML via its supplies edge");
+    const withMacro = expandMap(base, "macro");
+    assert(withMacro.nodes.some(n => n.label === "AI Capex"), "macro expansion should reveal the driver through the visible theme");
   });
 
   for (const [name, fn] of tests) {

@@ -28,8 +28,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Search, X } from "lucide-react";
-import { trunc, explorerHrefForNode, type MapNode, type MapEdge, type MapVM } from "@/lib/intelligenceShared";
+import { ArrowUpRight, ChevronDown, Search, X } from "lucide-react";
+import { trunc, fmtDay, explorerHrefForNode, type MapNode, type MapEdge, type MapVM, type ExpansionMode, type EdgeTrend } from "@/lib/intelligenceShared";
+
+const TREND_META: Record<EdgeTrend, { label: string; color: string }> = {
+  strengthening: { label: "Strengthening", color: "#34d399" },
+  weakening:     { label: "Weakening",     color: "#f87171" },
+  stable:        { label: "Stable",        color: "#8ea3b5" },
+};
+const fmtObs = (t: number): string => (Number.isFinite(t) && t > 0 ? fmtDay(new Date(t).toISOString()) : "n/a");
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
 const BG = "#070b13";
@@ -260,18 +267,24 @@ function LegendGlyph({ cls }: { cls: NodeClass }) {
   );
 }
 
-export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCount }: {
+export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCount, expansionOptions, appliedExpansions, onExpandMode, onResetExpansions }: {
   map: MapVM;
   accent: string;
   onNavigate: (href: string) => void;
   onExpand?: () => void;
   canExpandCount?: number;
+  /** Progressive-disclosure modes with how many hidden relationships each would reveal. */
+  expansionOptions?: Array<{ key: ExpansionMode; label: string; count: number }>;
+  appliedExpansions?: ExpansionMode[];
+  onExpandMode?: (mode: ExpansionMode) => void;
+  onResetExpansions?: () => void;
 }) {
   const [hidden, setHidden] = useState<Set<NodeClass>>(new Set());
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [expandOpen, setExpandOpen] = useState(false);
 
   const { placed, height, stages } = useMemo(() => layeredLayout(map, hidden), [map, hidden]);
   const edges = useMemo(() => map.edges.filter(e => placed.has(e.a) && placed.has(e.b)), [map, placed]);
@@ -337,8 +350,9 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
     return m;
   }, [map]);
 
-  const dirty = hidden.size > 0 || pinned !== null || q.length > 0;
-  const resetView = () => { setHidden(new Set()); setPinned(null); setQuery(""); setHoverId(null); setHoverEdge(null); };
+  const dirty = hidden.size > 0 || pinned !== null || q.length > 0 || (appliedExpansions?.length ?? 0) > 0;
+  const resetView = () => { setHidden(new Set()); setPinned(null); setQuery(""); setHoverId(null); setHoverEdge(null); setExpandOpen(false); onResetExpansions?.(); };
+  const expandable = (expansionOptions ?? []).some(o => o.count > 0) || (canExpandCount ?? 0) > 0;
   const focusHref = focus && focus.n.degree !== 0 ? explorerHrefForNode(focus.n, CLASS_META[focus.cls].color) : null;
 
   const labelFor = (p: Placed): { x: number; anchor: "start" | "end" } =>
@@ -387,11 +401,41 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
             </button>
           );
         })}
-        {(canExpandCount ?? 0) > 0 && onExpand && (
-          <button onClick={onExpand} className="text-[8.5px] font-bold uppercase tracking-wide px-2 py-[3px] rounded-sm transition-colors hover:bg-white/10"
-            style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)" }}>
-            Expand Neighbors +{canExpandCount}
-          </button>
+        {expandable && (
+          <div className="relative">
+            <button onClick={() => setExpandOpen(o => !o)}
+              className="flex items-center gap-1 text-[8.5px] font-bold uppercase tracking-wide px-2 py-[3px] rounded-sm transition-colors hover:bg-white/10"
+              style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)", background: expandOpen ? "rgba(82,176,200,0.12)" : "transparent" }}>
+              Expand <ChevronDown size={9} style={{ transform: expandOpen ? "rotate(180deg)" : undefined }} />
+            </button>
+            {expandOpen && (
+              <div className="absolute left-0 top-full mt-1 z-30 w-[196px] rounded-sm border py-1"
+                style={{ background: "rgba(7,11,19,0.98)", borderColor: A(0.14), boxShadow: "0 10px 30px rgba(0,0,0,0.6)" }}>
+                {(expansionOptions ?? []).map(o => {
+                  const applied = appliedExpansions?.includes(o.key);
+                  const enabled = o.count > 0 && !applied && !!onExpandMode;
+                  return (
+                    <button key={o.key} disabled={!enabled}
+                      onClick={() => { onExpandMode?.(o.key); setExpandOpen(false); }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-white/5"
+                      style={{ cursor: enabled ? "pointer" : "default" }}>
+                      <span className="text-[9px] font-semibold" style={{ color: applied ? "#7cc7d8" : enabled ? A(0.8) : A(0.26) }}>{o.label}</span>
+                      <span className="ml-auto text-[8.5px] font-bold tabular-nums" style={{ color: applied ? "#7cc7d8" : enabled ? A(0.5) : A(0.2) }}>
+                        {applied ? "shown" : `+${o.count}`}
+                      </span>
+                    </button>
+                  );
+                })}
+                {(canExpandCount ?? 0) > 0 && onExpand && (
+                  <button onClick={() => { onExpand(); setExpandOpen(false); }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1 text-left border-t transition-colors hover:bg-white/5" style={{ borderColor: A(0.07) }}>
+                    <span className="text-[9px] font-semibold" style={{ color: A(0.8) }}>All Neighbors</span>
+                    <span className="ml-auto text-[8.5px] font-bold tabular-nums" style={{ color: A(0.5) }}>+{canExpandCount}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
         {dirty && (
           <button onClick={resetView} className="text-[8.5px] font-bold uppercase tracking-wide px-2 py-[3px] rounded-sm transition-colors hover:bg-white/10" style={{ color: A(0.5), border: `1px solid ${A(0.1)}` }}>
@@ -546,8 +590,16 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
                       <span className="text-[6.5px] font-bold uppercase tracking-wider mt-0.5" style={{ color: A(0.36) }}>{lbl}</span>
                     </span>
                   ))}
+                  <span className="ml-auto text-[7px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-sm"
+                    style={{ color: TREND_META[hoveredEdgeVM.trend].color, background: `${TREND_META[hoveredEdgeVM.trend].color}16`, border: `1px solid ${TREND_META[hoveredEdgeVM.trend].color}40` }}>
+                    {TREND_META[hoveredEdgeVM.trend].label}
+                  </span>
                 </div>
-                <p className="text-[8.5px] leading-snug mt-1.5" style={{ color: A(0.55) }}>{edgeExplanation(hoveredEdgeVM)}</p>
+                <p className="text-[7.5px] tabular-nums mt-1.5" style={{ color: A(0.38) }}>
+                  First observed {fmtObs(hoveredEdgeVM.firstObserved)} · last updated {fmtObs(hoveredEdgeVM.lastObserved)}
+                  {hoveredEdgeVM.pages.length > 0 ? ` · via ${hoveredEdgeVM.pages.slice(0, 3).join(", ")}` : ""}
+                </p>
+                <p className="text-[8.5px] leading-snug mt-1" style={{ color: A(0.55) }}>{edgeExplanation(hoveredEdgeVM)}</p>
               </div>
             </div>
           </div>
