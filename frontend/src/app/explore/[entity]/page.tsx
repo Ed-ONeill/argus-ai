@@ -5,10 +5,13 @@
  *
  * The Intelligence Drawer stays the quick-read surface; this page is the deep
  * surface: a full-screen, three-column institutional workspace around any entity
- * in the Intelligence Graph. It creates no new engines: it reads the exact same
- * data flow as the drawer (crossIntel, useIntelligenceGraph, drawerEntity routing,
- * evidence / prediction / memory engines) through the shared view-model builders
- * in lib/intelligenceShared. Sections with no real data are hidden, never faked.
+ * in the Intelligence Graph. It creates no new engines: it is the first
+ * production consumer of the canonical Intelligence Profile (System 1,
+ * lib/intelligenceProfile.ts via useIntelligenceProfile), reading profile
+ * sections first and keeping the pre-profile derivations (crossIntel,
+ * useIntelligenceGraph, drawerEntity routing, evidence / prediction / memory
+ * engines through lib/intelligenceShared) as fallbacks whenever a section is
+ * unavailable. Sections with no real data are hidden, never faked.
  * Dark, dense, Bloomberg / Palantir inspired. No em/en dashes.
  */
 
@@ -23,6 +26,7 @@ import { useListenRails } from "@/hooks/useListen";
 import { buildCrossIntel } from "@/lib/crossIntel";
 import { createDailyThemeSnapshots, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
+import { useIntelligenceProfile, profileKindOfIntelKind } from "@/hooks/useIntelligenceProfile";
 import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
@@ -125,30 +129,74 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
   );
   const strongest = (isSymbol ? companyReport?.strongestRelationships : themeReport?.strongestRelationships) ?? [];
 
-  const currentThemes = useMemo<string[]>(
-    () => (isSymbol ? collectCurrentThemes(intel.theme?.name, (companyReport?.relatedThemes ?? []).map(t => t.label)) : []),
-    [isSymbol, intel.theme, companyReport],
-  );
-
-  // Evidence (existing engine, read-only); hidden on thin signal, like the drawer.
-  const evidence = useMemo(() => {
-    if (!graph.ready || !isSymbol) return null;
-    const ev = evaluateEvidenceForNode(entity.graphKey);
-    return ev.found && ev.verdict !== "insufficient_signal" ? ev : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, isSymbol, entity.graphKey]);
-
-  const forecast = useMemo<ForecastVM | null>(
-    () => (graph.ready ? buildForecast(ctx.kind, ctx.label, entity.graphKey) : null),
-    [graph, ctx.kind, ctx.label, entity.graphKey],
-  );
-
-  // Memory Engine timeline (read-only; one snapshot accrued per day per session).
+  // Memory Engine accrual (read-only; one snapshot accrued per day per session).
   const [memVersion, setMemVersion] = useState(0);
   useEffect(() => {
     if (!graph.ready) return;
     if (recordDailyMemorySnapshot()) setMemVersion(v => v + 1);
   }, [graph.ready]);
+
+  // System 1: the canonical Intelligence Profile. Explorer is its first
+  // production consumer: one assembly over the same graph and engines the
+  // legacy memos read, re-run on the graph's invalidation ticks. The page
+  // injects its crossIntel narrative (the assembler never fetches page data).
+  // Every consumer below branches on section status and falls back to the
+  // pre-profile derivation, so the rendered output is unchanged.
+  const profile = useIntelligenceProfile(
+    entity.graphKey,
+    { kindHint: profileKindOfIntelKind(ctx.kind), narrative: { headline: intel.what || null, nextWatch: intel.nextWatch || null } },
+    [graph.ready, market.version, memVersion],
+  );
+
+  const currentThemes = useMemo<string[]>(() => {
+    if (!isSymbol) return [];
+    // Theme exposure: the profile's upstream theme links first; the graph report
+    // keeps contributing labels the trimmed profile selection may not carry.
+    const profileThemes = (profile.drivers.data ?? [])
+      .filter(l => l.nodeType === "Theme" || l.nodeType === "Narrative")
+      .map(l => l.label);
+    return collectCurrentThemes(intel.theme?.name, [...profileThemes, ...(companyReport?.relatedThemes ?? []).map(t => t.label)]);
+  }, [isSymbol, intel.theme, profile.drivers.data, companyReport]);
+
+  // Evidence read (profile section first, direct engine read as fallback);
+  // hidden on thin signal and symbols-only, exactly like before.
+  const evidence = useMemo(() => {
+    if (!isSymbol) return null;
+    if (profile.evidence.status === "live" && profile.evidence.data) {
+      const d = profile.evidence.data;
+      return { overallTrust: d.overallTrust, verdict: d.verdict, supporting: d.supporting, contradictions: profile.risks.data?.contradictions ?? [] };
+    }
+    if (!graph.ready) return null;
+    const ev = evaluateEvidenceForNode(entity.graphKey);
+    if (!ev.found || ev.verdict === "insufficient_signal") return null;
+    return {
+      overallTrust: ev.overallTrust, verdict: ev.verdict,
+      supporting: [...ev.supportingEvidence].sort((a, b) => (b.strength - a.strength) || (b.confidence - a.confidence)).slice(0, 8),
+      contradictions: ev.contradictions,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.ready, isSymbol, entity.graphKey, profile.evidence, profile.risks.data]);
+
+  // Forward view: the profile's thesis section first (the same prediction
+  // engine reads, assembled centrally), the legacy normalizer as fallback.
+  const forecast = useMemo<ForecastVM | null>(() => {
+    const f = profile.thesis.data?.forward;
+    if (f) {
+      return {
+        direction: f.direction, probability: f.probability, confidence: f.confidence,
+        timeframe: f.timeframe, reasons: f.reasons,
+        invalidation: profile.risks.data?.invalidation ?? null,
+      };
+    }
+    return graph.ready ? buildForecast(ctx.kind, ctx.label, entity.graphKey) : null;
+  }, [profile.thesis.data, profile.risks.data, graph, ctx.kind, ctx.label, entity.graphKey]);
+
+  // Watch next: the profile carries the injected crossIntel watch item verbatim
+  // (derived falsifiers arrive prefixed); fall back to the direct read.
+  const nextWatch = useMemo(() => {
+    const injected = (profile.watch.data?.items ?? []).find(i => !i.startsWith("Invalidation: ") && !i.startsWith("Weakening link: "));
+    return injected ?? intel.nextWatch;
+  }, [profile.watch.data, intel.nextWatch]);
   const timeline = useMemo<TimelineVM>(() => {
     if (!graph.ready) return EMPTY_TIMELINE;
     return buildTimeline(entity.graphKey);
@@ -223,10 +271,10 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
   const dCol = (d: string) => dirColor(d, accent);
   const chipHref = (type: string, label: string) => explorerHrefForNode({ type, label }, accent);
 
-  const sortedEvidence = useMemo(
-    () => (evidence ? [...evidence.supportingEvidence].sort((a, b) => (b.strength - a.strength) || (b.confidence - a.confidence)).slice(0, 8) : []),
-    [evidence],
-  );
+  // Evolution summary and analogs: profile evolution section first, timeline
+  // fallback (same memory engine underneath; labels and similarity match).
+  const evolutionLines = profile.evolution.data?.lines.length ? profile.evolution.data.lines : timeline.evolution;
+  const analogs = profile.evolution.data?.analogs.length ? profile.evolution.data.analogs : timeline.analogs;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden" style={{ background: "#05080f" }}>
@@ -271,7 +319,7 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
         </div>
 
         <Section label="Current Thesis">
-          <p className="text-[13px] font-medium leading-relaxed" style={{ color: A(0.9) }}>{intel.what}</p>
+          <p className="text-[13px] font-medium leading-relaxed" style={{ color: A(0.9) }}>{profile.thesis.data?.headline ?? intel.what}</p>
           {intel.why && <p className="text-[11px] leading-relaxed mt-1.5" style={{ color: A(0.58) }}>{intel.why}</p>}
         </Section>
 
@@ -359,7 +407,7 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
         </div>
 
         <Section label="Next Thing to Watch">
-          <p className="text-[11.5px] leading-snug" style={{ color: A(0.72) }}>Watch {intel.nextWatch}.</p>
+          <p className="text-[11.5px] leading-snug" style={{ color: A(0.72) }}>Watch {nextWatch}.</p>
         </Section>
         <div className="h-6" />
       </aside>
@@ -444,10 +492,10 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
 
       {/* Right column: evidence, memory, discovery */}
       <aside className="w-[360px] shrink-0 border-l overflow-y-auto scrollbar-hide" style={{ borderColor: A(0.08), background: "#070b13" }}>
-        {evidence && sortedEvidence.length > 0 && (
+        {evidence && evidence.supporting.length > 0 && (
           <Section label="Evidence Stack">
             <ul className="space-y-1.5">
-              {sortedEvidence.map((ev, i) => (
+              {evidence.supporting.map((ev, i) => (
                 <li key={i} className="text-[11px] leading-snug flex items-center gap-1.5" style={{ color: A(0.7) }}>
                   <span className="truncate" style={{ color: A(0.9) }}>{ev.from}</span>
                   <span className="shrink-0 px-1 py-px rounded-sm text-[8.5px] font-semibold uppercase tracking-wide" style={{ color: accent, background: `${accent}1f` }}>{ev.relationship.replace(/_/g, " ")}</span>
@@ -502,10 +550,10 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
           </Section>
         )}
 
-        {timeline.evolution.length > 0 && (
+        {evolutionLines.length > 0 && (
           <Section label="Evolution">
             <ul className="space-y-1.5">
-              {timeline.evolution.map((l, i) => (
+              {evolutionLines.map((l, i) => (
                 <li key={i} className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.66) }}>
                   <span className="shrink-0 mt-0.5" style={{ color: accent }}>›</span>{l}
                 </li>
@@ -514,10 +562,10 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
           </Section>
         )}
 
-        {timeline.analogs.length > 0 && (
+        {analogs.length > 0 && (
           <Section label="Historical Analogs">
             <ul className="space-y-2">
-              {timeline.analogs.map((a, i) => (
+              {analogs.map((a, i) => (
                 <li key={i} className="flex items-center gap-2 text-[11px]" style={{ color: A(0.8) }}>
                   <span className="w-1 h-1 rounded-full shrink-0" style={{ background: accent }} />
                   <span className="truncate">{a.label}</span>

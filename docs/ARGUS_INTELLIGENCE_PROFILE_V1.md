@@ -1,8 +1,8 @@
 # Argus Intelligence Profile v1
 
-**Status:** Canonical contract, v1 (System 1 sprint, 2026-07)
+**Status:** Canonical contract, v1 (System 1 sprint, 2026-07; Explorer integration, 2026-07)
 **Parent:** `docs/ARGUS_INTELLIGENCE_MODEL_V1.md` (section 9 defined the nine intelligence questions; this document specifies the object that answers them)
-**Code:** `frontend/src/lib/intelligenceProfile.ts` - the TypeScript contract plus a v0 assembler. Additive only; **not wired into any surface**. Exercised by `intelligenceTests.ts` (tests 75.x).
+**Code:** `frontend/src/lib/intelligenceProfile.ts` - the TypeScript contract plus a v0 assembler. **First production consumer: the Intelligence Explorer** (`explore/[entity]/page.tsx` via `hooks/useIntelligenceProfile.ts`), which reads profile sections first and falls back to its pre-profile derivations when a section is unavailable. Exercised by `intelligenceTests.ts` (tests 75.x contract, 76.x Explorer integration).
 
 ---
 
@@ -116,15 +116,15 @@ Key differences: `identity.kind = "theme"`, `causalLayer = 1`; `drivers` = macro
 
 ## 5. Overlap with existing Explorer logic (consolidation plan)
 
-The v0 assembler deliberately duplicates derivations that currently live inside surfaces. This is the inventory to consolidate - **the surfaces were not modified in this sprint**:
+The v0 assembler deliberately duplicated derivations that lived inside surfaces. The System 1 integration sprint made the Explorer page (`explore/[entity]/page.tsx`) profile-first: it assembles one profile per entity (via `useIntelligenceProfile`, injecting its crossIntel narrative) and reads `thesis` (headline + forward view), `drivers` (theme-exposure chips), `risks` (invalidation, contradictions), `evidence` (header signal/verdict + evidence stack), `watch` (next-watch line), and `evolution` (evolution lines + analogs) from it. Pre-profile derivations remain as explicit fallbacks for unavailable sections, so degradation behavior is unchanged. Remaining inventory:
 
 | Existing logic | Where | Overlapping profile section | Consolidation |
 |---|---|---|---|
-| Forward-view normalization (`buildForecast`) | `intelligenceShared.ts` | `thesis.forward` | Next sprint: `buildForecast` becomes a thin wrapper over the profile's thesis section, or is deleted once drawer/Explorer read profiles |
-| "Why it matters" panel grouping (drivers/themes/benefiting/risks) | `ExplorerGraph.tsx` (`why` memo) | `drivers`, `beneficiaries`, `risks` | Explorer's pinned panel should render `profile.drivers/risks` for the pinned node instead of regrouping edges locally |
+| Forward-view normalization (`buildForecast`) | `intelligenceShared.ts` | `thesis.forward` | Explorer now reads `thesis.forward` first; `buildForecast` remains its fallback and the drawer's read - collapse once the drawer consumes profiles |
+| "Why it matters" panel grouping (drivers/themes/benefiting/risks) | `ExplorerGraph.tsx` (`why` memo) | `drivers`, `beneficiaries`, `risks` | Explorer's pinned panel should render `profile.drivers/risks` for the pinned node instead of regrouping edges locally (pinned nodes are not the page entity; needs the profile cache, step 2) |
 | Confidence read sentence | `ExplorerGraph.tsx` (`confidenceRead`) | `confidence.explanation` | Same consolidation |
-| Evidence stack assembly | `explore/[entity]/page.tsx` (sorted `evaluateEvidenceForNode` read) | `evidence` | Page right column reads `profile.evidence` |
-| Timeline/evolution assembly (`buildTimeline`) | `intelligenceShared.ts` | `evolution` | `buildTimeline` stays (it is event-shaped for the timeline UI); `evolution` covers the summary fields; merge when the Profile Engine lands |
+| Evidence stack assembly | `explore/[entity]/page.tsx` | `evidence` | **Done:** page reads `profile.evidence` first; direct `evaluateEvidenceForNode` read kept as fallback |
+| Timeline/evolution assembly (`buildTimeline`) | `intelligenceShared.ts` | `evolution` | `buildTimeline` stays (it is event-shaped for the timeline UI); Explorer reads `evolution` lines/analogs profile-first with the timeline as fallback |
 | Per-page intelligence libs (`maIntelligence`, `sectorIntelligence`, `listenIntelligence`, ...) | various | several | Migrate one page per sprint (model doc conflict #2); do not big-bang |
 
 Rule until consolidation: any change to these derivations must be mirrored in the assembler (they are covered by the same test suite, which makes drift visible).
@@ -133,7 +133,7 @@ Rule until consolidation: any change to these derivations must be mirrored in th
 
 v0 (this sprint) is a stateless assembler: every call re-reads the graph and engines. The Profile Engine turns it into infrastructure:
 
-1. **`useIntelligenceProfile(entityKey)` hook** - memoizes assembly against the existing invalidation signals (`graph.ready`, `market.version`, `memVersion`), injects `crossIntel` narrative from page data, returns the profile. First consumers: Explorer left column and the drawer's simplified company view (both currently hand-assemble the same reads). Acceptance: zero visual change.
+1. **`useIntelligenceProfile(entityKey)` hook** - **done (System 1 integration sprint):** `hooks/useIntelligenceProfile.ts` memoizes assembly against caller-supplied invalidation signals (`graph.ready`, `market.version`, `memVersion`) and takes the injected `crossIntel` narrative. First consumer: the Explorer (left column thesis/forward/drivers/risks/watch, right column evidence stack and evolution/analogs), with pre-profile fallbacks intact and zero intended visual change. Next consumer: the drawer's simplified company view.
 2. **Profile cache keyed by canonical id** - one assembly per entity per graph build, shared across drawer/Explorer/FocusBar within a session.
 3. **Section-level subscriptions** - expose "what changed between two profiles" (`diffProfiles(a, b)`) as the primitive Alerts will consume; deltas of `confidence`, `risks`, `drivers`, `thesis.forward.direction` are the alertable surface.
 4. **Server-side profile snapshots** - once the evidence log and market memory land (model doc sequencing steps 3-4), persist a daily profile snapshot per tracked entity; `evolution` upgrades from `partial` to `live` and velocity/lifecycle fields unlock.

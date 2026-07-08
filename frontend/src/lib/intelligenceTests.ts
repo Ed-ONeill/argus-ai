@@ -1318,6 +1318,68 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert((p.watch.data?.items ?? []).some(w => w.includes("capex guidance")), "injected watch item appears in watch next");
   });
 
+  // 76. System 1 integration: Explorer consumes the profile. These pin the
+  // contract the Explorer page relies on: stability, honest degradation, no
+  // fabrication, and that the profile's forward view mirrors the prediction
+  // engine reads the page used to make directly (drift guard, profile doc
+  // section 5).
+  const allSections = (p: ReturnType<typeof buildIntelligenceProfile>) =>
+    [p.identity, p.thesis, p.drivers, p.transmission, p.beneficiaries, p.risks, p.evidence, p.confidence, p.evolution, p.watch];
+
+  test("intelligence profile is stable for a fixed graph", () => {
+    seedCausalGraph();
+    const strip = (p: ReturnType<typeof buildIntelligenceProfile>) => JSON.stringify({ ...p, generatedAt: 0 });
+    assert(strip(buildIntelligenceProfile("NVDA")) === strip(buildIntelligenceProfile("NVDA")), "same graph must yield the same profile");
+    assert(strip(buildIntelligenceProfile("AI Infrastructure")) === strip(buildIntelligenceProfile("AI Infrastructure")), "stability holds for themes too");
+  });
+
+  test("profile forward view mirrors the prediction engine (Explorer drift guard)", () => {
+    seedCausalGraph();
+    const p = buildIntelligenceProfile("NVDA");
+    const eng = predictCompanyTrajectory("NVDA");
+    if (eng.found && eng.expectedDirection !== "insufficient_signal") {
+      const f = p.thesis.data?.forward;
+      assert(!!f, "profile must carry a forward view when the engine resolves");
+      assert(f!.direction === eng.expectedDirection && f!.probability === eng.probability && f!.confidence === eng.confidence,
+        "the forward view must be the engine read, unmodified");
+      assert(p.risks.data?.invalidation === (eng.invalidation || null), "invalidation must be the engine falsifier, unmodified");
+    } else {
+      assert(!p.thesis.data?.forward, "no engine signal must mean no fabricated forward view");
+    }
+  });
+
+  test("explorer-facing sections degrade honestly on a sparse graph", () => {
+    intelligenceGraph.clear();
+    intelligenceGraph.addNode({ label: "LONE", type: "Company" as never });
+    const p = buildIntelligenceProfile("LONE");
+    assert(p.identity.status === "live", "identity is live for any known node");
+    for (const s of allSections(p)) {
+      assert(s.status !== "unavailable" || s.data === null, "unavailable sections must carry null data");
+      assert(s.status === "unavailable" || s.data !== null, "live/partial sections must carry data");
+    }
+    assert(p.transmission.status === "unavailable", "no neighbors must mean no transmission story");
+    assert((p.drivers.data ?? []).length === 0 && (p.beneficiaries.data ?? []).length === 0, "no edges must mean no fabricated links");
+    assert(p.confidence.status === "live" && p.confidence.data!.explanation.length > 0, "confidence still decomposes for a lone node");
+  });
+
+  test("unknown entities never throw or fabricate, even with injected narrative", () => {
+    intelligenceGraph.clear();
+    const p = buildIntelligenceProfile("GHOST-TICKER", { kindHint: "company", narrative: { headline: "Should not surface.", nextWatch: "nothing" } });
+    for (const s of allSections(p))
+      assert(s.status === "unavailable" && s.data === null, "an unknown entity must come back fully unavailable, narrative or not");
+  });
+
+  test("injected narrative rides the profile verbatim and changes nothing else", () => {
+    seedCausalGraph();
+    const bare = buildIntelligenceProfile("NVDA");
+    const p = buildIntelligenceProfile("NVDA", { narrative: { headline: "NVDA supplies the AI buildout.", nextWatch: "Blackwell shipment pace" } });
+    assert(p.thesis.data?.headline === "NVDA supplies the AI buildout.", "headline is carried verbatim");
+    assert((p.watch.data?.items ?? []).includes("Blackwell shipment pace"), "the injected watch item is carried verbatim, unprefixed");
+    const strip = (x: ReturnType<typeof buildIntelligenceProfile>) =>
+      JSON.stringify({ drivers: x.drivers, beneficiaries: x.beneficiaries, transmission: x.transmission, evidence: x.evidence, confidence: x.confidence, risks: x.risks });
+    assert(strip(bare) === strip(p), "injection must not alter data-derived sections");
+  });
+
   for (const [name, fn] of tests) {
     try { await fn(); results.push({ name, ok: true }); }
     catch (e) { results.push({ name, ok: false, detail: e instanceof Error ? e.message : String(e) }); }

@@ -15,9 +15,11 @@
  * consumers can render honestly. Sections that cannot be derived return
  * status "unavailable" with data null - never a fabricated value (invariant I1).
  *
- * NOT wired into any surface yet (System 1 is architecture + contract only).
- * Pure module, relative imports only, exercised by intelligenceTests.ts.
- * No em/en dashes.
+ * First production consumer: the Intelligence Explorer (System 1 integration
+ * sprint), via hooks/useIntelligenceProfile; the page keeps its pre-profile
+ * derivations as fallbacks for unavailable sections. Pure module, relative
+ * imports only, exercised by intelligenceTests.ts (75.x contract, 76.x
+ * Explorer integration). No em/en dashes.
  */
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
