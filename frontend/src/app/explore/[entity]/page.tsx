@@ -42,8 +42,10 @@ import { useExplorerMarketData } from "@/hooks/useExplorerMarketData";
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
 
-// Large-canvas layout for the same deterministic radial map the drawer renders small.
+// Large-canvas selection limits for the shared map builder (the network component
+// computes its own layered layout from the nodes and edges).
 const EXPLORER_LAYOUT = { width: 1000, height: 720, r1: 230, r2: 340, maxFirst: 16, secondStrength: 55, maxSecond: 14, nodeScale: 2 };
+const EXPANDED_LAYOUT = { ...EXPLORER_LAYOUT, maxFirst: 30, maxSecond: 26 };
 
 const KIND_LABEL: Record<string, string> = {
   theme: "Theme", company: "Company", etf: "ETF", sector: "Sector", driver: "Macro Driver", deal: "M&A Deal", narrative: "Narrative",
@@ -153,12 +155,20 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.ready, memVersion, entity.graphKey]);
 
-  // The large network map: same builder as the drawer, explorer-sized.
+  // The large network map: same builder as the drawer, explorer-sized. "Expand
+  // Neighbors" re-runs the same builder with wider selection limits (no new data).
+  const [mapExpanded, setMapExpanded] = useState(false);
   const map = useMemo<MapVM>(() => {
     if (!graph.ready && market.version === 0) return EMPTY_MAP;
-    return buildRelationshipMap(entity.graphKey, EXPLORER_LAYOUT);
+    return buildRelationshipMap(entity.graphKey, mapExpanded ? EXPANDED_LAYOUT : EXPLORER_LAYOUT);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph.ready, market.version, entity.graphKey]);
+  }, [graph.ready, market.version, entity.graphKey, mapExpanded]);
+  const canExpandCount = useMemo(() => {
+    if (mapExpanded || !map.available) return 0;
+    const center = map.nodes.find(n => n.degree === 0);
+    if (!center) return 0;
+    return Math.max(0, center.relCount - map.nodes.filter(n => n.degree === 1).length);
+  }, [map, mapExpanded]);
 
   // Market terminal data (symbols only): the latest snapshot on the routed node and
   // whatever OHLCV bars the pipeline has recorded. Reads work as soon as the market
@@ -387,7 +397,8 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
               themeExposure={themeExposure} fallbackThemes={currentThemes} />
           )
         ) : map.available ? (
-          <ExplorerGraph map={map} accent={accent} onNavigate={href => router.push(href)} />
+          <ExplorerGraph map={map} accent={accent} onNavigate={href => router.push(href)}
+            onExpand={() => setMapExpanded(true)} canExpandCount={canExpandCount} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
             {!graph.ready ? (

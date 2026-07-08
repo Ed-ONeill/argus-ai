@@ -1,199 +1,214 @@
 "use client";
 
 /**
- * components/explore/ExplorerGraph.tsx - Intelligence Network 2.0.
+ * components/explore/ExplorerGraph.tsx - Intelligence Network 2.0 (Sprint 2):
+ * a layered causal market map.
  *
- * Presentation-only redesign of the Explorer's relationship view. The data is
- * still the shared buildRelationshipMap read (no graph-logic changes); this
- * component re-projects it as an institutional relationship map:
+ * Presentation only: it consumes the same shared MapVM (buildRelationshipMap)
+ * and re-projects it as market transmission read left to right:
  *
- * - type-clustered radial layout: neighbors group into angular sectors by entity
- *   class, stronger relationships sit closer to the focus, so the constellation
- *   reads as structure instead of a decorative ring
- * - small, precise nodes (importance-scaled), a reticle-marked focus node,
- *   radially placed labels with dark halos instead of cartoon pills
- * - edges: curved, thickness = relationship strength, color = relationship type
- * - hover dims everything unrelated; click pins and opens the detail card
- * - filter rail (Companies / Themes / Drivers / Sectors / Stories), mini legend
- *   for node classes and present edge types
+ *   Drivers -> Themes -> Sectors -> Companies -> Evidence (stories + metrics)
  *
- * MarketMetric evidence nodes render under the Stories class so a market-only
- * graph still reads as a map. Dark, dense, precise. No em/en dashes.
+ * - deterministic layered layout (no physics): nodes are assigned a causal
+ *   column by entity class, then ordered inside each column with barycenter
+ *   sweeps so edges cross as little as possible
+ * - edges are horizontal transmission curves: thickness = strength, opacity =
+ *   confidence + source count, color = relationship type, with subtle arrows
+ *   pointing downstream along the causal order
+ * - hover dims everything unrelated and explains the relationship; click pins
+ *   the detail panel (type, confidence, importance, strongest connections,
+ *   evidence count, related stories)
+ * - filter rail (six entity classes), search-in-graph, Reset View, and Expand
+ *   Neighbors when the underlying graph holds more connections than shown
+ *
+ * Nothing here invents relationships; sparse graphs collapse naturally into a
+ * compact transmission chain. Dark, dense, institutional. No em/en dashes.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, X } from "lucide-react";
-import { nodeColor, trunc, explorerHrefForNode, type MapNode, type MapVM } from "@/lib/intelligenceShared";
+import { ArrowUpRight, Search, X } from "lucide-react";
+import { trunc, explorerHrefForNode, type MapNode, type MapEdge, type MapVM } from "@/lib/intelligenceShared";
 
 const A = (n: number) => `rgba(255,255,255,${n})`;
 const BG = "#070b13";
 
-/* ---- entity classes: filters, clustering order, legend ---- */
-type NodeClass = "company" | "theme" | "driver" | "sector" | "story";
+/* ---- entity classes -> causal layers ---- */
+type NodeClass = "driver" | "theme" | "sector" | "company" | "story" | "metric";
 const CLASS_OF: Record<string, NodeClass> = {
-  Company: "company", ETF: "company",
-  Theme: "theme", Narrative: "theme",
   Macro: "driver", MacroSeries: "driver",
+  Theme: "theme", Narrative: "theme",
   Sector: "sector",
-  Story: "story", Podcast: "story", Person: "story", Institution: "story", MarketMetric: "story",
+  Company: "company", ETF: "company",
+  Story: "story", Podcast: "story", Person: "story", Institution: "story",
+  MarketMetric: "metric",
 };
 const classOf = (t: string): NodeClass => CLASS_OF[t] ?? "story";
-const CLASS_ORDER: NodeClass[] = ["company", "theme", "driver", "sector", "story"];
+const CLASS_ORDER: NodeClass[] = ["driver", "theme", "sector", "company", "story", "metric"];
 const CLASS_META: Record<NodeClass, { label: string; color: string }> = {
-  company: { label: "Companies", color: "#7cc7d8" },
-  theme:   { label: "Themes",    color: "#a78bfa" },
-  driver:  { label: "Drivers",   color: "#f0b429" },
-  sector:  { label: "Sectors",   color: "#34d399" },
-  story:   { label: "Stories",   color: "#8ea3b5" },
+  driver:  { label: "Drivers",        color: "#f0b429" },
+  theme:   { label: "Themes",         color: "#a78bfa" },
+  sector:  { label: "Sectors",        color: "#34d399" },
+  company: { label: "Companies",      color: "#7cc7d8" },
+  story:   { label: "Stories",        color: "#8ea3b5" },
+  metric:  { label: "Market Metrics", color: "#64748b" },
 };
+// Causal column per class; stories and metrics share the evidence column.
+const LAYER_OF: Record<NodeClass, number> = { driver: 0, theme: 1, sector: 2, company: 3, story: 4, metric: 4 };
 const TYPE_LABEL: Record<string, string> = {
   Company: "Company", ETF: "ETF", Theme: "Theme", Narrative: "Narrative",
   Macro: "Macro Driver", MacroSeries: "Macro Series", Sector: "Sector",
   Story: "Story", Podcast: "Podcast", Person: "Person", Institution: "Institution",
+  MarketMetric: "Market Metric",
 };
 
-/* ---- edge color by relationship type (grouped hues, deterministic) ---- */
-const EDGE_COLOR_RULES: Array<[RegExp, string]> = [
-  [/driv|impact|caus|lead|transmit/i,          "#f0b429"], // causal
-  [/expos|benefit|express|track|belong|has_theme|theme/i, "#52b0c8"], // exposure
-  [/compet|disrupt|pressur|risk/i,             "#f87171"], // competitive
-  [/correlat|similar|analog|cluster/i,         "#a78bfa"], // statistical
-  [/acquir|merg|invest|own|stake|capital/i,    "#c084fc"], // deals / capital
-  [/mention|discuss|report|cover|story|episode/i, "#8ea3b5"], // narrative
+/* ---- edge color by relationship type ---- */
+const EDGE_COLORS: Array<{ key: string; re: RegExp; color: string }> = [
+  { key: "drives",   re: /driv|impact|caus|lead|transmit/i,             color: "#f0b429" },
+  { key: "supports", re: /support|confirm|strengthen|validat/i,         color: "#34d399" },
+  { key: "weakens",  re: /weaken|contradict|revers|disrupt|pressur/i,   color: "#f87171" },
+  { key: "exposed",  re: /expos|benefit|express|track|belong|theme/i,   color: "#52b0c8" },
+  { key: "mentions", re: /mention|discuss|report|cover|story|episode/i, color: "#8ea3b5" },
+  { key: "stat",     re: /correlat|similar|analog|cluster/i,            color: "#a78bfa" },
+  { key: "metric",   re: /market_metric/i,                              color: "#64748b" },
 ];
-const edgeColor = (type: string): string => {
-  for (const [re, c] of EDGE_COLOR_RULES) if (re.test(type)) return c;
-  return "#7f95a8";
+const DEFAULT_EDGE = { key: "other", color: "#7f95a8" };
+const edgeMeta = (type: string): { key: string; color: string } => {
+  for (const e of EDGE_COLORS) if (e.re.test(type)) return e;
+  return DEFAULT_EDGE;
 };
 
-/* ---- deterministic layout: type-clustered radial, strength-weighted radius ---- */
-const R_NEAR = 150, R_FAR = 265, R_CHILD = 96, SECTOR_GAP = 0.16;
+/* ---- deterministic layered layout ---- */
+const LAY_W = 960, PAD_L = 96, PAD_R = 170, PAD_T = 34, PAD_B = 30;
+const MIN_H = 380, MAX_H = 660;
 
-function hashFrac(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return ((h >>> 0) % 1000) / 1000;
-}
+interface Placed { n: MapNode; x: number; y: number; r: number; cls: NodeClass; layer: number }
+interface Laid { placed: Map<string, Placed>; height: number }
 
-interface Placed { n: MapNode; x: number; y: number; r: number; angle: number; cls: NodeClass; strength: number }
-
-function layout(map: MapVM, hidden: Set<NodeClass>): { placed: Map<string, Placed>; center: MapNode | null } {
+function layeredLayout(map: MapVM, hidden: Set<NodeClass>): Laid {
   const center = map.nodes.find(n => n.degree === 0) ?? null;
   const placed = new Map<string, Placed>();
-  if (!center) return { placed, center };
-  placed.set(center.id, { n: center, x: 0, y: 0, r: 9, angle: 0, cls: classOf(center.type), strength: 100 });
+  if (!center) return { placed, height: MIN_H };
 
-  const strengthTo = (id: string): number => {
-    let s = 0;
-    for (const e of map.edges) { if (e.a === id || e.b === id) s = Math.max(s, e.strength); }
-    return s;
-  };
-
-  // First degree, grouped by class, strongest first inside each sector.
-  const firsts = map.nodes.filter(n => n.degree === 1 && !hidden.has(classOf(n.type)));
-  const groups = CLASS_ORDER
-    .map(cls => ({ cls, items: firsts.filter(n => classOf(n.type) === cls).sort((a, b) => strengthTo(b.id) - strengthTo(a.id)) }))
-    .filter(g => g.items.length > 0);
-
-  const totalWeight = groups.reduce((s, g) => s + g.items.length, 0);
-  const usable = Math.PI * 2 - SECTOR_GAP * groups.length;
-  let cursor = -Math.PI / 2;
-  for (const g of groups) {
-    const span = (g.items.length / totalWeight) * usable;
-    g.items.forEach((n, i) => {
-      const frac = g.items.length === 1 ? 0.5 : (i + 0.5) / g.items.length;
-      const angle = cursor + span * frac + (hashFrac(n.id) - 0.5) * 0.05;
-      const s = strengthTo(n.id);
-      const radius = R_NEAR + (1 - s / 100) * (R_FAR - R_NEAR) + (hashFrac(n.id + "r") - 0.5) * 22;
-      placed.set(n.id, {
-        n, angle, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius,
-        r: 3.6 + (n.importance / 100) * 4.2, cls: g.cls, strength: s,
-      });
-    });
-    cursor += span + SECTOR_GAP;
-  }
-
-  // Second degree: fan out past the parent, along the parent's bearing.
-  const seconds = map.nodes.filter(n => n.degree === 2);
-  for (const n of seconds) {
-    const link = map.edges.find(e => e.a === n.id || e.b === n.id);
-    if (!link) continue;
-    const parentId = link.a === n.id ? link.b : link.a;
-    const parent = placed.get(parentId);
-    if (!parent) continue; // parent filtered out -> child hidden too
-    const off = (hashFrac(n.id) - 0.5) * 0.5;
-    const angle = parent.angle + off;
-    const radius = Math.hypot(parent.x, parent.y) + R_CHILD + (hashFrac(n.id + "r") - 0.5) * 26;
-    placed.set(n.id, { n, angle, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, r: 2.8, cls: classOf(n.type), strength: link.strength });
-  }
-
-  // Deterministic de-overlap: fixed passes nudging non-center nodes apart.
-  const list = [...placed.values()].filter(p => p.n.degree !== 0);
-  for (let iter = 0; iter < 8; iter++) {
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const a = list[i], b = list[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const min = a.r + b.r + 26; // label clearance
-        if (dist < min) {
-          const push = (min - dist) / 2, ux = dx / dist, uy = dy / dist;
-          a.x -= ux * push; a.y -= uy * push;
-          b.x += ux * push; b.y += uy * push;
-        }
-      }
+  // Visible nodes: center always; others when their class is not filtered and they
+  // still connect to something visible (no floating orphans).
+  const candidates = map.nodes.filter(n => n.degree !== 0 && !hidden.has(classOf(n.type)));
+  const candidateIds = new Set([center.id, ...candidates.map(n => n.id)]);
+  const connected = new Set<string>([center.id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const e of map.edges) {
+      if (!candidateIds.has(e.a) || !candidateIds.has(e.b)) continue;
+      if (connected.has(e.a) && !connected.has(e.b)) { connected.add(e.b); grew = true; }
+      if (connected.has(e.b) && !connected.has(e.a)) { connected.add(e.a); grew = true; }
     }
   }
-  for (const p of list) p.angle = Math.atan2(p.y, p.x);
-  return { placed, center };
+  const nodes = [center, ...candidates.filter(n => connected.has(n.id))];
+
+  // Group into causal columns (only present columns take horizontal space).
+  const byLayer = new Map<number, MapNode[]>();
+  for (const n of nodes) {
+    const l = LAYER_OF[classOf(n.type)];
+    (byLayer.get(l) ?? byLayer.set(l, []).get(l)!).push(n);
+  }
+  const layers = [...byLayer.keys()].sort((a, b) => a - b);
+  const xOfLayer = new Map<number, number>();
+  layers.forEach((l, i) => {
+    xOfLayer.set(l, layers.length === 1 ? LAY_W / 2 : PAD_L + (i * (LAY_W - PAD_L - PAD_R)) / (layers.length - 1));
+  });
+
+  // Neighbor map for barycenter ordering.
+  const neigh = new Map<string, string[]>();
+  for (const e of map.edges) {
+    if (!connected.has(e.a) || !connected.has(e.b)) continue;
+    (neigh.get(e.a) ?? neigh.set(e.a, []).get(e.a)!).push(e.b);
+    (neigh.get(e.b) ?? neigh.set(e.b, []).get(e.b)!).push(e.a);
+  }
+
+  // Initial order: importance desc, stable by id. Then barycenter sweeps: order
+  // each column by the mean position of its neighbors so edges cross less.
+  const order = new Map<number, MapNode[]>();
+  for (const l of layers) {
+    order.set(l, [...byLayer.get(l)!].sort((a, b) => (b.importance - a.importance) || a.id.localeCompare(b.id)));
+  }
+  const posOf = (): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const l of layers) order.get(l)!.forEach((n, i) => m.set(n.id, i));
+    return m;
+  };
+  for (let sweep = 0; sweep < 3; sweep++) {
+    const dirs = sweep % 2 === 0 ? layers : [...layers].reverse();
+    for (const l of dirs) {
+      const pos = posOf();
+      const col = order.get(l)!;
+      const bary = (n: MapNode): number => {
+        const ns = (neigh.get(n.id) ?? []).map(id => pos.get(id)).filter((v): v is number => v !== undefined);
+        return ns.length ? ns.reduce((s, v) => s + v, 0) / ns.length : pos.get(n.id) ?? 0;
+      };
+      col.sort((a, b) => (bary(a) - bary(b)) || a.id.localeCompare(b.id));
+    }
+  }
+  // Keep the focused entity vertically centered inside its column.
+  const centerLayer = LAYER_OF[classOf(center.type)];
+  const centerCol = order.get(centerLayer)!;
+  const ci = centerCol.findIndex(n => n.id === center.id);
+  if (ci >= 0) { centerCol.splice(ci, 1); centerCol.splice(Math.floor(centerCol.length / 2), 0, center); }
+
+  // Vertical spacing per column; the tallest column sets the canvas height.
+  const maxCount = Math.max(...layers.map(l => order.get(l)!.length));
+  const gap = Math.max(26, Math.min(46, (MAX_H - PAD_T - PAD_B) / Math.max(1, maxCount - 1 || 1)));
+  const height = Math.max(MIN_H, Math.min(MAX_H, PAD_T + PAD_B + gap * Math.max(1, maxCount - 1) + 60));
+
+  for (const l of layers) {
+    const col = order.get(l)!;
+    const colH = gap * (col.length - 1);
+    col.forEach((n, i) => {
+      const cls = classOf(n.type);
+      const isCenter = n.id === center.id;
+      const r = isCenter ? 8
+        : cls === "metric" ? 2.6
+        : 3 + (n.importance / 100) * 3.6 + (n.confidence / 100) * 1.4;
+      placed.set(n.id, { n, cls, layer: l, r, x: xOfLayer.get(l)!, y: height / 2 - colH / 2 + i * gap });
+    });
+  }
+  return { placed, height };
 }
 
-/** Curved edge path with a small perpendicular bow. */
-function edgePath(ax: number, ay: number, bx: number, by: number): string {
-  const dx = bx - ax, dy = by - ay;
-  const dist = Math.hypot(dx, dy) || 1;
-  const bow = Math.min(14, dist * 0.06);
-  const mx = (ax + bx) / 2 - (dy / dist) * bow;
-  const my = (ay + by) / 2 + (dx / dist) * bow;
-  return `M${ax.toFixed(1)},${ay.toFixed(1)}Q${mx.toFixed(1)},${my.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}`;
+/** Transmission curve between columns; vertical arc inside a column. */
+function edgePath(pa: Placed, pb: Placed): string {
+  if (pa.layer === pb.layer) {
+    const bow = pa.layer >= 3 ? 26 : -26; // arc outward, away from the middle
+    const mx = pa.x + bow;
+    return `M${pa.x},${pa.y}C${mx},${pa.y} ${mx},${pb.y} ${pb.x},${pb.y}`;
+  }
+  const [f, t] = pa.x <= pb.x ? [pa, pb] : [pb, pa];
+  const dx = (t.x - f.x) * 0.42;
+  return `M${f.x},${f.y}C${f.x + dx},${f.y} ${t.x - dx},${t.y} ${t.x},${t.y}`;
 }
 
-export function ExplorerGraph({ map, accent, onNavigate }: {
+export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCount }: {
   map: MapVM;
   accent: string;
   onNavigate: (href: string) => void;
+  /** Re-layout with more neighbors (page widens the map limits). */
+  onExpand?: () => void;
+  /** How many additional connections the graph holds beyond what is shown. */
+  canExpandCount?: number;
 }) {
   const [hidden, setHidden] = useState<Set<NodeClass>>(new Set());
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
-  const { placed } = useMemo(() => layout(map, hidden), [map, hidden]);
-
-  // Edges whose both endpoints are visible.
+  const { placed, height } = useMemo(() => layeredLayout(map, hidden), [map, hidden]);
   const edges = useMemo(() => map.edges.filter(e => placed.has(e.a) && placed.has(e.b)), [map, placed]);
 
-  // Unpin when the pinned node is filtered away.
   useEffect(() => { if (pinned && !placed.has(pinned)) setPinned(null); }, [placed, pinned]);
 
-  // Auto-fit viewport around the placed constellation, with label headroom and a
-  // minimum span so sparse graphs stay dense and precise instead of blowing up.
-  const view = useMemo(() => {
-    const pts = [...placed.values()];
-    if (pts.length === 0) return { x: -320, y: -210, w: 640, h: 420 };
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const p of pts) {
-      x0 = Math.min(x0, p.x - p.r); y0 = Math.min(y0, p.y - p.r);
-      x1 = Math.max(x1, p.x + p.r); y1 = Math.max(y1, p.y + p.r);
-    }
-    const padX = 118, padY = 40;
-    let x = x0 - padX, y = y0 - padY, w = x1 - x0 + padX * 2, h = y1 - y0 + padY * 2;
-    const MIN_W = 620, MIN_H = 400;
-    if (w < MIN_W) { x -= (MIN_W - w) / 2; w = MIN_W; }
-    if (h < MIN_H) { y -= (MIN_H - h) / 2; h = MIN_H; }
-    return { x, y, w, h };
-  }, [placed]);
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(() => (q ? new Set([...placed.keys()].filter(id => placed.get(id)!.n.label.toLowerCase().includes(q))) : null), [q, placed]);
 
   const activeId = hoverId ?? pinned;
   const neighborsOf = useMemo(() => {
@@ -204,47 +219,69 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
     }
     return m;
   }, [edges]);
-  const isLit = (id: string) => !activeId || id === activeId || (neighborsOf.get(activeId)?.has(id) ?? false);
+  const isLit = (id: string): boolean => {
+    if (matches) return matches.has(id);
+    if (!activeId) return true;
+    return id === activeId || (neighborsOf.get(activeId)?.has(id) ?? false);
+  };
 
   const focus = activeId ? placed.get(activeId) ?? null : null;
   const focusEdges = useMemo(() => {
-    if (!focus) return [];
+    if (!focus) return [] as Array<{ edge: MapEdge; other: MapNode }>;
     return edges
       .filter(e => e.a === focus.n.id || e.b === focus.n.id)
       .sort((a, b) => b.strength - a.strength)
-      .slice(0, 7);
+      .map(e => ({ edge: e, other: e.a === focus.n.id ? e.to : e.from }));
   }, [focus, edges]);
+  // "Reason": the strongest upstream link explains why this node is on the map.
+  const focusReason = useMemo(() => {
+    if (!focus || focus.n.degree === 0) return null;
+    const upstream = focusEdges.find(x => (placed.get(x.other.id)?.layer ?? 99) < focus.layer) ?? focusEdges[0];
+    return upstream ? { other: upstream.other, type: upstream.edge.type, strength: upstream.edge.strength } : null;
+  }, [focus, focusEdges, placed]);
+  const focusStories = useMemo(() => focusEdges.filter(x => classOf(x.other.type) === "story").slice(0, 3), [focusEdges]);
+  const focusEvidence = useMemo(() => focusEdges.reduce((s, x) => s + x.edge.evidenceCount, 0), [focusEdges]);
   const hoveredEdgeVM = hoverEdge ? edges.find(e => e.id === hoverEdge) ?? null : null;
 
-  // Filter chips with counts (counted over the unfiltered map).
   const classCounts = useMemo(() => {
     const m = new Map<NodeClass, number>();
     for (const n of map.nodes) {
-      if (n.degree !== 1) continue;
+      if (n.degree === 0) continue;
       const c = classOf(n.type);
       m.set(c, (m.get(c) ?? 0) + 1);
     }
     return m;
   }, [map]);
-
-  const presentEdgeTypes = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const e of edges) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
-    return [...counts.keys()].sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0)).slice(0, 5);
+  const presentEdgeKeys = useMemo(() => {
+    const seen = new Map<string, { key: string; color: string; label: string }>();
+    for (const e of edges) {
+      const meta = edgeMeta(e.type);
+      if (!seen.has(meta.key)) seen.set(meta.key, { ...meta, label: e.type.replace(/_/g, " ") });
+    }
+    return [...seen.values()].slice(0, 6);
   }, [edges]);
 
-  const focusHref = focus && focus.n.degree !== 0 ? explorerHrefForNode(focus.n, nodeColor(focus.n.type)) : null;
+  const dirty = hidden.size > 0 || pinned !== null || q.length > 0;
+  const resetView = () => { setHidden(new Set()); setPinned(null); setQuery(""); setHoverId(null); setHoverEdge(null); };
 
-  const labelFor = (p: Placed): { x: number; y: number; anchor: "start" | "middle" | "end" } => {
-    const c = Math.cos(p.angle), s = Math.sin(p.angle);
-    const d = p.r + 7;
-    if (Math.abs(c) < 0.25) return { x: p.x, y: p.y + (s > 0 ? d + 8 : -d - 4), anchor: "middle" };
-    return { x: p.x + c * d + (c > 0 ? 2 : -2), y: p.y + s * d * 0.4 + 3, anchor: c > 0 ? "start" : "end" };
+  const focusHref = focus && focus.n.degree !== 0 ? explorerHrefForNode(focus.n, CLASS_META[focus.cls].color) : null;
+
+  // Label anchoring: evidence column reads right-to-left, everything else leftward.
+  const labelFor = (p: Placed): { x: number; anchor: "start" | "end" } =>
+    p.layer >= 4 ? { x: p.x + p.r + 6, anchor: "start" } : p.layer === 0 ? { x: p.x - p.r - 6, anchor: "end" } : { x: p.x + p.r + 6, anchor: "start" };
+
+  const arrowFor = (e: MapEdge): { d: string; color: string } | null => {
+    const pa = placed.get(e.a)!, pb = placed.get(e.b)!;
+    if (pa.layer === pb.layer) return null;
+    const [, t] = pa.x <= pb.x ? [pa, pb] : [pb, pa];
+    // small chevron just before the downstream node
+    const dx = -(t.r + 4);
+    return { d: `M${t.x + dx - 4},${t.y - 3.4}L${t.x + dx},${t.y}L${t.x + dx - 4},${t.y + 3.4}`, color: edgeMeta(e.type).color };
   };
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      {/* filter rail */}
+      {/* control rail: filters, search, reset, expand */}
       <div className="flex items-center gap-1 px-3 py-1.5 border-b shrink-0 flex-wrap" style={{ borderColor: A(0.07), background: A(0.012) }}>
         <span className="text-[8px] font-black uppercase tracking-[0.18em] mr-1" style={{ color: A(0.3) }}>Filter</span>
         {CLASS_ORDER.filter(c => (classCounts.get(c) ?? 0) > 0).map(c => {
@@ -262,55 +299,78 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
             </button>
           );
         })}
-        {hidden.size > 0 && (
-          <button onClick={() => setHidden(new Set())} className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded-sm transition-colors hover:bg-white/10" style={{ color: A(0.45) }}>
-            Reset
+        {(canExpandCount ?? 0) > 0 && onExpand && (
+          <button onClick={onExpand} className="text-[8.5px] font-bold uppercase tracking-wide px-2 py-[3px] rounded-sm transition-colors hover:bg-white/10"
+            style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)" }}>
+            Expand Neighbors +{canExpandCount}
           </button>
         )}
-        <span className="ml-auto text-[8px]" style={{ color: A(0.26) }}>hover to trace · click to pin</span>
+        {dirty && (
+          <button onClick={resetView} className="text-[8.5px] font-bold uppercase tracking-wide px-2 py-[3px] rounded-sm transition-colors hover:bg-white/10" style={{ color: A(0.5), border: `1px solid ${A(0.1)}` }}>
+            Reset View
+          </button>
+        )}
+        <div className="relative ml-auto">
+          <Search size={10} className="absolute left-1.5 top-1/2 -translate-y-1/2" style={{ color: A(0.3) }} />
+          <input value={query} onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && matches && matches.size > 0) setPinned([...matches][0]); if (e.key === "Escape") setQuery(""); }}
+            placeholder="Search graph…"
+            className="w-32 text-[9.5px] rounded-sm pl-5.5 pr-1.5 py-[3px] outline-none focus:w-40 transition-all"
+            style={{ background: A(0.04), border: `1px solid ${A(0.1)}`, color: A(0.85), paddingLeft: 18 }} />
+        </div>
       </div>
 
+      {/* causal column headers */}
       <div className="relative flex-1 min-h-0">
         <motion.svg initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, ease: "easeOut" }}
-          viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} className="w-full h-full select-none block" preserveAspectRatio="xMidYMid meet"
+          viewBox={`0 0 ${LAY_W} ${height}`} className="w-full h-full select-none block" preserveAspectRatio="xMidYMid meet"
           onClick={() => setPinned(null)}>
           <defs>
-            <radialGradient id="ig2-field" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={accent} stopOpacity={0.05} />
-              <stop offset="70%" stopColor={accent} stopOpacity={0.012} />
-              <stop offset="100%" stopColor={accent} stopOpacity={0} />
-            </radialGradient>
-            <pattern id="ig2-grid" width="26" height="26" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="0.7" fill="#ffffff" fillOpacity="0.05" />
+            <pattern id="ig3-grid" width="26" height="26" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="0.7" fill="#ffffff" fillOpacity="0.045" />
             </pattern>
           </defs>
+          <rect x={0} y={0} width={LAY_W} height={height} fill="url(#ig3-grid)" />
 
-          {/* field texture + focus glow */}
-          <rect x={view.x} y={view.y} width={view.w} height={view.h} fill="url(#ig2-grid)" />
-          <circle cx={0} cy={0} r={R_FAR * 1.1} fill="url(#ig2-field)" />
-          {/* faint range rings, cropped by the fit */}
-          {[R_NEAR, (R_NEAR + R_FAR) / 2, R_FAR].map(r => (
-            <circle key={r} cx={0} cy={0} r={r} fill="none" stroke="#ffffff" strokeOpacity={0.028} strokeDasharray="1 5" />
-          ))}
+          {/* column guides + captions: the causal order reads left to right */}
+          {(() => {
+            const present = [...new Set([...placed.values()].map(p => p.layer))].sort((a, b) => a - b);
+            const CAPTION: Record<number, string> = { 0: "Drivers", 1: "Themes", 2: "Sectors", 3: "Companies", 4: "Evidence" };
+            return present.map(l => {
+              const x = [...placed.values()].find(p => p.layer === l)!.x;
+              return (
+                <g key={l}>
+                  <line x1={x} x2={x} y1={PAD_T - 12} y2={height - 12} stroke="#ffffff" strokeOpacity={0.03} />
+                  <text x={x} y={PAD_T - 18} textAnchor="middle" fontSize={8.5} fontWeight={800} fill={A(0.3)} style={{ letterSpacing: 2, textTransform: "uppercase" }}>
+                    {CAPTION[l]}
+                  </text>
+                </g>
+              );
+            });
+          })()}
 
-          {/* edges: thickness = strength, color = relationship type */}
+          {/* edges: transmission curves, arrows downstream */}
           {edges.map(e => {
             const pa = placed.get(e.a)!, pb = placed.get(e.b)!;
-            const lit = isLit(e.a) && isLit(e.b) && (!activeId || e.a === activeId || e.b === activeId);
+            const lit = isLit(e.a) && isLit(e.b) && (!activeId || e.a === activeId || e.b === activeId || !!matches);
             const hot = hoverEdge === e.id;
-            const col = edgeColor(e.type);
-            const d = edgePath(pa.x, pa.y, pb.x, pb.y);
+            const meta = edgeMeta(e.type);
+            const d = edgePath(pa, pb);
+            const arrow = arrowFor(e);
+            const baseOp = 0.1 + (e.confidence / 100) * 0.3 + Math.min(0.14, e.sources * 0.045);
+            const op = activeId || matches ? (lit ? Math.min(0.85, baseOp + 0.24) : 0.025) : baseOp;
             return (
               <g key={e.id} onMouseEnter={() => setHoverEdge(e.id)} onMouseLeave={() => setHoverEdge(null)}>
                 <path d={d} fill="none" stroke="transparent" strokeWidth={10} />
                 <path d={d} fill="none"
-                  stroke={hot ? accent : col}
-                  strokeWidth={(0.5 + (e.strength / 100) * 2.1) * (hot ? 1.5 : 1)}
-                  strokeOpacity={activeId ? (lit ? 0.28 + (e.confidence / 100) * 0.5 : 0.03) : 0.1 + (e.confidence / 100) * 0.3}
+                  stroke={hot ? accent : meta.color}
+                  strokeWidth={(0.5 + (e.strength / 100) * 2.2) * (hot ? 1.5 : 1)}
+                  strokeOpacity={hot ? 0.95 : op}
                   strokeLinecap="round"
                   style={{ transition: "stroke-opacity 180ms ease, stroke 180ms ease" }} />
+                {arrow && <path d={arrow.d} fill="none" stroke={hot ? accent : arrow.color} strokeWidth={1.1} strokeOpacity={hot ? 0.95 : Math.min(0.8, op + 0.15)} strokeLinecap="round" strokeLinejoin="round" />}
                 {e.evidenceCount > 1 && (
-                  <circle cx={(pa.x + pb.x) / 2} cy={(pa.y + pb.y) / 2} r={1.6} fill={col} fillOpacity={lit ? 0.7 : 0.12} style={{ transition: "fill-opacity 180ms ease" }} />
+                  <circle cx={(pa.x + pb.x) / 2} cy={(pa.y + pb.y) / 2} r={1.6} fill={meta.color} fillOpacity={lit ? 0.65 : 0.1} />
                 )}
               </g>
             );
@@ -321,45 +381,44 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
             const isCenter = p.n.degree === 0;
             const lit = isLit(p.n.id);
             const hot = hoverId === p.n.id || pinned === p.n.id;
-            const col = isCenter ? accent : nodeColor(p.n.type);
+            const col = isCenter ? accent : CLASS_META[p.cls].color;
             const lp = labelFor(p);
-            const showLabel = isCenter || p.n.degree === 1 || hot || (!!activeId && lit);
+            const maxLen = 26;
+            const showLabel = isCenter || p.cls !== "metric" || hot || !!activeId;
             return (
-              <g key={p.n.id} style={{ cursor: "pointer" }} opacity={lit ? 1 : 0.14}
+              <g key={p.n.id} style={{ cursor: "pointer" }} opacity={lit ? 1 : 0.13}
                 onMouseEnter={() => setHoverId(p.n.id)} onMouseLeave={() => setHoverId(null)}
                 onClick={ev => { ev.stopPropagation(); setPinned(prev => (prev === p.n.id ? null : p.n.id)); }}>
-                {/* hit target */}
                 <circle cx={p.x} cy={p.y} r={Math.max(9, p.r + 5)} fill="transparent" />
                 {isCenter ? (
                   <>
-                    {/* focus reticle */}
-                    <circle cx={p.x} cy={p.y} r={p.r + 7} fill="none" stroke={col} strokeOpacity={0.4} strokeWidth={0.8} strokeDasharray="2.5 4" />
-                    {[0, 90, 180, 270].map(deg => (
-                      <line key={deg} x1={p.x + Math.cos((deg * Math.PI) / 180) * (p.r + 4)} y1={p.y + Math.sin((deg * Math.PI) / 180) * (p.r + 4)}
-                        x2={p.x + Math.cos((deg * Math.PI) / 180) * (p.r + 10)} y2={p.y + Math.sin((deg * Math.PI) / 180) * (p.r + 10)}
-                        stroke={col} strokeOpacity={0.75} strokeWidth={1} />
+                    <circle cx={p.x} cy={p.y} r={p.r + 6.5} fill="none" stroke={col} strokeOpacity={0.4} strokeWidth={0.8} strokeDasharray="2.5 4" />
+                    {[45, 135, 225, 315].map(deg => (
+                      <line key={deg} x1={p.x + Math.cos((deg * Math.PI) / 180) * (p.r + 3.5)} y1={p.y + Math.sin((deg * Math.PI) / 180) * (p.r + 3.5)}
+                        x2={p.x + Math.cos((deg * Math.PI) / 180) * (p.r + 9)} y2={p.y + Math.sin((deg * Math.PI) / 180) * (p.r + 9)}
+                        stroke={col} strokeOpacity={0.7} strokeWidth={1} />
                     ))}
                     <circle cx={p.x} cy={p.y} r={p.r} fill="#0d1420" stroke={col} strokeWidth={1.6} />
-                    <circle cx={p.x} cy={p.y} r={2.4} fill={col} />
+                    <circle cx={p.x} cy={p.y} r={2.2} fill={col} />
                   </>
                 ) : (
                   <>
-                    {hot && <circle cx={p.x} cy={p.y} r={p.r + 5} fill={col} opacity={0.14} />}
+                    {hot && <circle cx={p.x} cy={p.y} r={p.r + 4.5} fill={col} opacity={0.15} />}
                     <circle cx={p.x} cy={p.y} r={hot ? p.r + 0.6 : p.r} fill="#0a0f19" stroke={col}
-                      strokeWidth={pinned === p.n.id ? 1.8 : 1.1}
-                      style={{ transition: "r 140ms ease" }} />
-                    <circle cx={p.x} cy={p.y} r={Math.max(1, p.r * 0.34)} fill={col} opacity={0.85} />
-                    {pinned === p.n.id && <circle cx={p.x} cy={p.y} r={p.r + 4} fill="none" stroke={col} strokeWidth={0.8} strokeDasharray="2 2.5" />}
+                      strokeWidth={pinned === p.n.id ? 1.8 : 1.1} style={{ transition: "r 140ms ease" }} />
+                    <circle cx={p.x} cy={p.y} r={Math.max(0.9, p.r * 0.34)} fill={col} opacity={0.85} />
+                    {pinned === p.n.id && <circle cx={p.x} cy={p.y} r={p.r + 3.6} fill="none" stroke={col} strokeWidth={0.8} strokeDasharray="2 2.5" />}
                   </>
                 )}
                 {showLabel && (
-                  <text x={lp.x} y={isCenter ? p.y - p.r - 12 : lp.y} textAnchor={isCenter ? "middle" : lp.anchor}
-                    fontSize={isCenter ? 13 : p.n.degree === 1 ? 9 : 7.5}
-                    fontWeight={isCenter ? 800 : hot ? 700 : p.n.degree === 1 ? 600 : 500}
-                    fill={isCenter ? accent : hot ? "#ffffff" : A(p.n.degree === 2 ? 0.52 : 0.78)}
+                  <text x={isCenter ? p.x : lp.x} y={isCenter ? p.y - p.r - 11 : p.y + 3}
+                    textAnchor={isCenter ? "middle" : lp.anchor}
+                    fontSize={isCenter ? 12.5 : p.cls === "metric" ? 7.5 : 9}
+                    fontWeight={isCenter ? 800 : hot ? 700 : 600}
+                    fill={isCenter ? accent : hot ? "#ffffff" : A(p.cls === "metric" ? 0.42 : 0.76)}
                     stroke={BG} strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
                     style={{ transition: "fill 140ms ease" }}>
-                    {trunc(p.n.label, isCenter ? 28 : 19)}
+                    {hot ? p.n.label : trunc(p.n.label, isCenter ? 28 : maxLen)}
                   </text>
                 )}
               </g>
@@ -367,16 +426,16 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
           })}
         </motion.svg>
 
-        {/* empty-in-view note (filters removed everything around the focus) */}
+        {/* empty state */}
         {placed.size <= 1 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-[10px] mt-24 px-3 py-1.5 rounded-sm" style={{ color: A(0.45), background: "rgba(8,12,20,0.85)", border: `1px solid ${A(0.08)}` }}>
-              {hidden.size > 0 ? "All connected entities are filtered out. Reset the filter to see the map." : "No connected intelligence identified yet."}
+            <p className="text-[10px] mt-20 px-3 py-1.5 rounded-sm" style={{ color: A(0.45), background: "rgba(8,12,20,0.85)", border: `1px solid ${A(0.08)}` }}>
+              {hidden.size > 0 ? "All connected entities are filtered out. Reset View to see the map." : "No connected intelligence identified yet."}
             </p>
           </div>
         )}
 
-        {/* mini legend: node classes + present edge types */}
+        {/* legend: entity classes + present relationship types */}
         <div className="absolute bottom-2 left-3 pointer-events-none space-y-1">
           <div className="flex items-center gap-3 flex-wrap">
             {CLASS_ORDER.filter(c => (classCounts.get(c) ?? 0) > 0 && !hidden.has(c)).map(c => (
@@ -385,11 +444,11 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
               </span>
             ))}
           </div>
-          {presentEdgeTypes.length > 0 && (
+          {presentEdgeKeys.length > 0 && (
             <div className="flex items-center gap-3 flex-wrap">
-              {presentEdgeTypes.map(t => (
-                <span key={t} className="flex items-center gap-1 text-[7.5px] font-semibold uppercase tracking-wider" style={{ color: A(0.3) }}>
-                  <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: edgeColor(t), opacity: 0.85 }} />{t.replace(/_/g, " ")}
+              {presentEdgeKeys.map(t => (
+                <span key={t.key} className="flex items-center gap-1 text-[7.5px] font-semibold uppercase tracking-wider" style={{ color: A(0.3) }}>
+                  <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: t.color, opacity: 0.85 }} />{t.label}
                 </span>
               ))}
             </div>
@@ -397,39 +456,46 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
         </div>
 
         {/* hovered-edge readout */}
-        {hoveredEdgeVM && !focus && (
+        {hoveredEdgeVM && !pinned && (
           <div className="absolute bottom-2 right-3 px-2.5 py-1 rounded-sm pointer-events-none" style={{ background: "rgba(8,12,20,0.92)", border: `1px solid ${A(0.1)}` }}>
             <p className="text-[9px] tabular-nums" style={{ color: A(0.62) }}>
-              {hoveredEdgeVM.from.label} <span style={{ color: edgeColor(hoveredEdgeVM.type) }}>{hoveredEdgeVM.type.replace(/_/g, " ")}</span> {hoveredEdgeVM.to.label} · strength {hoveredEdgeVM.strength} · {hoveredEdgeVM.sources} src
+              {hoveredEdgeVM.from.label} <span style={{ color: edgeMeta(hoveredEdgeVM.type).color }}>{hoveredEdgeVM.type.replace(/_/g, " ")}</span> {hoveredEdgeVM.to.label}
+              {" · "}strength {hoveredEdgeVM.strength} · {hoveredEdgeVM.sources} source{hoveredEdgeVM.sources === 1 ? "" : "s"}
+              {hoveredEdgeVM.evidenceCount > 0 ? ` · evidence ${hoveredEdgeVM.evidenceCount}` : ""}
             </p>
           </div>
         )}
 
-        {/* detail card: docked right, terminal styling */}
+        {/* pinned / hovered detail panel */}
         {focus && (
           <motion.div initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.16, ease: "easeOut" }}
-            className="absolute top-2 right-2 bottom-2 w-[236px] rounded-sm border flex flex-col overflow-hidden"
+            className="absolute top-2 right-2 w-[238px] max-h-[calc(100%-16px)] rounded-sm border flex flex-col overflow-hidden"
             style={{ background: "rgba(7,11,19,0.97)", borderColor: A(0.12), boxShadow: "0 10px 34px rgba(0,0,0,0.6)" }}>
             <div className="flex" style={{ borderBottom: `1px solid ${A(0.07)}` }}>
-              <div className="w-[3px] shrink-0" style={{ background: focus.n.degree === 0 ? accent : nodeColor(focus.n.type) }} />
+              <div className="w-[3px] shrink-0" style={{ background: focus.n.degree === 0 ? accent : CLASS_META[focus.cls].color }} />
               <div className="flex-1 min-w-0 px-3 pt-2 pb-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[7.5px] font-black uppercase tracking-[0.16em]" style={{ color: focus.n.degree === 0 ? accent : nodeColor(focus.n.type) }}>
+                  <span className="text-[7.5px] font-black uppercase tracking-[0.16em]" style={{ color: focus.n.degree === 0 ? accent : CLASS_META[focus.cls].color }}>
                     {TYPE_LABEL[focus.n.type] ?? focus.n.type}
                   </span>
                   {focus.n.degree === 0 && <span className="text-[7px] font-bold uppercase tracking-wide" style={{ color: A(0.32) }}>Focused</span>}
-                  {pinned === focus.n.id && <span className="text-[7px] font-bold uppercase tracking-wide" style={{ color: A(0.32) }}>Pinned</span>}
                   {pinned === focus.n.id && (
                     <button onClick={() => setPinned(null)} className="ml-auto p-0.5 rounded-sm transition-colors hover:bg-white/10" style={{ color: A(0.4) }}><X size={10} /></button>
                   )}
                 </div>
-                <p className="text-[12.5px] font-black leading-tight mt-0.5" style={{ color: A(0.95) }}>{focus.n.label}</p>
+                <p className="text-[12px] font-black leading-tight mt-0.5" style={{ color: A(0.95) }}>{focus.n.label}</p>
+                {focusReason && (
+                  <p className="text-[8.5px] leading-snug mt-1" style={{ color: A(0.5) }}>
+                    <span style={{ color: CLASS_META[classOf(focusReason.other.type)].color }}>{focusReason.other.label}</span>
+                    {" "}<span style={{ color: edgeMeta(focusReason.type).color }}>{focusReason.type.replace(/_/g, " ")}</span> this · strength {focusReason.strength}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="grid grid-cols-3 border-b" style={{ borderColor: A(0.07) }}>
-              {[["Confidence", focus.n.confidence], ["Importance", focus.n.importance], ["Links", focus.n.relCount]].map(([lbl, v]) => (
-                <div key={lbl} className="px-3 py-1.5 border-r last:border-r-0" style={{ borderColor: A(0.05) }}>
-                  <p className="text-[11.5px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{v}</p>
+            <div className="grid grid-cols-4 border-b" style={{ borderColor: A(0.07) }}>
+              {[["Conf", focus.n.confidence], ["Import", focus.n.importance], ["Links", focus.n.relCount], ["Evidence", focusEvidence]].map(([lbl, v]) => (
+                <div key={lbl} className="px-2 py-1.5 border-r last:border-r-0" style={{ borderColor: A(0.05) }}>
+                  <p className="text-[11px] font-black tabular-nums leading-none" style={{ color: A(0.9) }}>{v}</p>
                   <p className="text-[6.5px] font-bold uppercase tracking-wider mt-0.5" style={{ color: A(0.36) }}>{lbl}</p>
                 </div>
               ))}
@@ -437,19 +503,28 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
             <div className="px-3 py-2 flex-1 overflow-y-auto scrollbar-hide">
               {focusEdges.length > 0 && (
                 <>
-                  <p className="text-[7px] font-black uppercase tracking-[0.16em] mb-1.5" style={{ color: A(0.32) }}>Connections</p>
+                  <p className="text-[7px] font-black uppercase tracking-[0.16em] mb-1.5" style={{ color: A(0.32) }}>Strongest Connections</p>
                   <ul className="space-y-1">
-                    {focusEdges.map(e => {
-                      const other = e.a === focus.n.id ? e.to : e.from;
-                      return (
-                        <li key={e.id} className="flex items-center gap-1.5 text-[9.5px]" style={{ color: A(0.72) }}>
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: nodeColor(other.type), opacity: 0.9 }} />
-                          <span className="truncate" style={{ color: A(0.86) }}>{other.label}</span>
-                          <span className="shrink-0 text-[7px] font-semibold uppercase tracking-wide" style={{ color: edgeColor(e.type) }}>{e.type.replace(/_/g, " ")}</span>
-                          <span className="ml-auto shrink-0 tabular-nums text-[8.5px] font-bold" style={{ color: A(0.48) }}>{e.strength}</span>
-                        </li>
-                      );
-                    })}
+                    {focusEdges.slice(0, 6).map(({ edge, other }) => (
+                      <li key={edge.id} className="flex items-center gap-1.5 text-[9.5px]" style={{ color: A(0.72) }}>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: CLASS_META[classOf(other.type)].color, opacity: 0.9 }} />
+                        <span className="truncate" style={{ color: A(0.86) }}>{other.label}</span>
+                        <span className="shrink-0 text-[7px] font-semibold uppercase tracking-wide" style={{ color: edgeMeta(edge.type).color }}>{edge.type.replace(/_/g, " ")}</span>
+                        <span className="ml-auto shrink-0 tabular-nums text-[8.5px] font-bold" style={{ color: A(0.48) }}>{edge.strength}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {focusStories.length > 0 && (
+                <>
+                  <p className="text-[7px] font-black uppercase tracking-[0.16em] mt-2.5 mb-1.5" style={{ color: A(0.32) }}>Related Stories</p>
+                  <ul className="space-y-1">
+                    {focusStories.map(({ edge, other }) => (
+                      <li key={edge.id} className="text-[9px] leading-snug flex gap-1.5" style={{ color: A(0.62) }}>
+                        <span className="shrink-0 mt-0.5" style={{ color: CLASS_META.story.color }}>•</span>{other.label}
+                      </li>
+                    ))}
                   </ul>
                 </>
               )}
@@ -464,6 +539,13 @@ export function ExplorerGraph({ map, accent, onNavigate }: {
               </div>
             )}
           </motion.div>
+        )}
+
+        {/* idle hint */}
+        {!focus && !hoveredEdgeVM && placed.size > 1 && (
+          <div className="absolute bottom-2 right-3 pointer-events-none">
+            <p className="text-[9px]" style={{ color: A(0.28) }}>transmission reads left to right · hover to trace · click to pin</p>
+          </div>
         )}
       </div>
     </div>
