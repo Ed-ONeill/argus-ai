@@ -455,6 +455,9 @@ function BriefOpen({
   const chainHops = read.chain.data ?? [];
   const falsifiers = read.falsifiers.data;
   const readWatch = read.watch.data ?? [];
+  const priorities = read.priorities.data ?? [];
+  const catalysts = read.catalysts.data ?? [];
+  const queue = read.queue.data ?? [];
 
   const sv = {
     hidden:  { opacity: 0 },
@@ -808,6 +811,88 @@ function BriefOpen({
                   </span>
                 </div>
               ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* B4 - research priority: where to spend attention next. A ranked,
+            decomposed prioritization over recorded factors; followed-theme
+            boosts are ordering-only and badged YOURS. */}
+        {priorities.length > 0 && (
+          <motion.div custom={8} variants={sv} initial="hidden" animate="visible">
+            <ZoneLabel label="Research Priority" engine="Memory · Prediction · Profiles" />
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              {priorities.map((p, idx) => {
+                const href = explorerHrefForNode({ type: p.entity.nodeType, label: p.entity.label });
+                const name = <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.68)" }}>{p.entity.label}</span>;
+                return (
+                  <div key={p.entity.label} title={p.reasons.join(" · ")} style={{
+                    display: "grid", gridTemplateColumns: "auto auto 1fr auto", alignItems: "baseline", gap: "10px",
+                    padding: "6px 0", borderBottom: idx < priorities.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                  }}>
+                    <span className="tabular-nums" style={{ fontSize: "10px", fontWeight: 700, color: "#7cc7d8", opacity: 0.8, minWidth: 18 }}>{p.score}</span>
+                    {href ? <Link href={href} className="hover:opacity-80 transition-opacity">{name}</Link> : name}
+                    <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.reasons[0] ?? ""}{p.reasons.length > 1 ? ` (+${p.reasons.length - 1} more)` : ""}
+                    </span>
+                    {p.personal && (
+                      <span style={{ fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em", color: "#3ab880", opacity: 0.82, border: "1px solid #3ab88040", borderRadius: "3px", padding: "2px 5px" }}>
+                        YOURS
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* B4 - catalysts: verified event material only (dateless until the
+            Event provider lands); absent entirely when nothing is recorded. */}
+        {catalysts.length > 0 && (
+          <motion.div custom={9} variants={sv} initial="hidden" animate="visible">
+            <ZoneLabel label="Catalysts" engine="Providers · Graph (dateless)" />
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              {catalysts.map((c, idx) => (
+                <div key={c.label} title={c.detail} style={{
+                  display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: "10px",
+                  padding: "6px 0", borderBottom: idx < catalysts.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                }}>
+                  <span style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)" }}>{c.label}</span>
+                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)" }}>feeds {c.feeds}</span>
+                  <span style={{ fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em", color: "#c8a040", opacity: 0.82, border: "1px solid #c8a04040", borderRadius: "3px", padding: "2px 5px" }}>
+                    VERIFIED · NO DATE
+                  </span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* B4 - investigation queue: The Read's exit ramp into Explorer. */}
+        {queue.length > 0 && (
+          <motion.div custom={10} variants={sv} initial="hidden" animate="visible">
+            <ZoneLabel label="Continue in Explorer" engine="Investigation Queue" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {queue.map(q => {
+                const href = explorerHrefForNode({ type: q.entity.nodeType, label: q.entity.label });
+                const body = (
+                  <div style={{
+                    border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)",
+                    borderRadius: "5px", padding: "9px 12px",
+                  }}>
+                    <div className="flex items-center justify-between" style={{ marginBottom: "3px" }}>
+                      <span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.16em", color: "#7cc7d8", textTransform: "uppercase" }}>{q.action}</span>
+                      <ArrowRight size={10} style={{ opacity: 0.4 }} />
+                    </div>
+                    <p style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>{q.entity.label}</p>
+                    <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.32)", lineHeight: 1.4, marginTop: "2px" }}>{q.reason}</p>
+                  </div>
+                );
+                return href
+                  ? <Link key={`${q.action}-${q.entity.label}`} href={href} className="hover:opacity-85 transition-opacity">{body}</Link>
+                  : <div key={`${q.action}-${q.entity.label}`}>{body}</div>;
+              })}
             </div>
           </motion.div>
         )}

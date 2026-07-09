@@ -73,7 +73,7 @@ An overlay on Z2/Z4/Z5, not a content zone: relevance chips computed from the in
 
 ## 4. Which engine powers every section
 
-> **Implementation status (B3, 2026-07-09):** Z1-Z7 are live in production via `lib/theRead.ts` (zones Z2-Z7, composed into the Morning Brief VM) and `lib/intelligenceDeltas.ts` (Z1). Deferred to B4+: Z5's ghost hop (opportunity ranking), Z6 real dates (Event provider), Z4 consumer/flows classes, and the Relevance Rail (R). Personalization is not yet rendered.
+> **Implementation status (B3+B4, 2026-07-09):** Z1-Z7 are live in production via `lib/theRead.ts` (zones Z2-Z7, composed into the Morning Brief VM) and `lib/intelligenceDeltas.ts` (Z1). B4 added Research Priority (ranked attention, decomposed; first consumer of `rankFutureOpportunities`), verified-dateless Catalysts, the Investigation Queue (Explorer exit ramp), and the first slice of the Relevance Rail (followed-theme priority boosts, badged YOURS, ordering-only). Still future: Z6 real dates (Event provider), Z4 consumer/flows classes, richer relevance signals (research history, portfolio).
 
 | Zone | Engine(s) | Status today |
 |---|---|---|

@@ -32,10 +32,10 @@ import { intelligenceGraph as G } from "./intelligenceGraph";
 import type { IntelNode } from "./intelligenceGraph";
 import { causalLayerOfType, deriveEdgeTrend, type EdgeTrend } from "./causalMap";
 import { evaluateEvidenceForNode } from "./evidenceEngine";
-import { predictThemeTrajectory } from "./predictionEngine";
+import { predictThemeTrajectory, rankFutureOpportunities } from "./predictionEngine";
 import { deriveNarratives, type DerivedNarrative } from "./narrativeDerivation";
-import type { ProfileSection, ProfileStatus } from "./intelligenceProfile";
-import { watchLineOf } from "./intelligenceDeltas";
+import { buildIntelligenceProfile, type ProfileSection, type ProfileStatus } from "./intelligenceProfile";
+import { watchLineOf, type MorningBriefDelta } from "./intelligenceDeltas";
 import type { ThemeIntelligence } from "./types";
 
 /* ------------------------------------------------------------------ *
@@ -90,6 +90,32 @@ export interface ReadFalsifiers {
   noneNote:       string | null;
 }
 
+/* -- Sprint B4: research prioritization, catalysts, investigation queue -- */
+
+export interface ReadEntityRef { label: string; nodeType: string }
+
+export interface ResearchPriority {
+  entity:   ReadEntityRef;
+  /** Deterministic prioritization score, 0..100. A research-attention ranking
+      composed of real recorded factors - decomposed in `reasons`, item by
+      item. Explicitly NOT a confidence and NOT a trade signal. */
+  score:    number;
+  reasons:  string[];
+  /** True when a followed-theme boost was applied (prioritization only,
+      always badged; the underlying facts are identical for every user). */
+  personal: boolean;
+}
+
+export interface CatalystItem {
+  label:    string;   // the recorded series/release entity
+  nodeType: string;
+  detail:   string;   // what is verified (dateless until the Event provider)
+  feeds:    string;   // the driver/theme it is recorded against
+}
+
+export type QueueAction = "Open Narrative" | "View Transmission" | "Inspect Evidence" | "Trace Relationships";
+export interface QueueItem { action: QueueAction; entity: ReadEntityRef; reason: string }
+
 export interface ReadVM {
   thesis:     ProfileSection<ReadThesis>;
   evidence:   ProfileSection<ReadEvidenceRow[]>;
@@ -97,15 +123,27 @@ export interface ReadVM {
   chain:      ProfileSection<ReadChainHop[]>;
   watch:      ProfileSection<ReadWatchItem[]>;
   falsifiers: ProfileSection<ReadFalsifiers>;
+  /** B4: where the investor should spend research attention next. */
+  priorities: ProfileSection<ResearchPriority[]>;
+  /** B4: verified upcoming-event material only; degrades honestly. */
+  catalysts:  ProfileSection<CatalystItem[]>;
+  /** B4: The Read's exit ramp into Explorer. */
+  queue:      ProfileSection<QueueItem[]>;
 }
 
 /** Minimal injected story-cluster shape (the page maps StoryCluster to this). */
 export interface ReadClusterInput { id: string; title: string; source?: string | null }
 
 export interface ReadInputs {
-  themes?:     ThemeIntelligence[];
-  clusters?:   ReadClusterInput[];
-  graphReady?: boolean;
+  themes?:             ThemeIntelligence[];
+  clusters?:           ReadClusterInput[];
+  /** Today's change ledger (lib/intelligenceDeltas), injected by the brief VM
+      so the priority ranking never re-derives it. */
+  deltas?:             MorningBriefDelta[];
+  /** Followed-theme names: personalization input. Adjusts ordering/emphasis
+      only, never facts (surfaces doc: prioritize, never personalize truth). */
+  followedThemeNames?: string[];
+  graphReady?:         boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -170,6 +208,7 @@ export function buildTheRead(inputs: ReadInputs = {}): ReadVM {
     return {
       thesis: unavailable(missing), evidence: unavailable(missing), exposure: unavailable(missing),
       chain: unavailable(missing), watch: unavailable(missing), falsifiers: unavailable(missing),
+      priorities: unavailable(missing), catalysts: unavailable(missing), queue: unavailable(missing),
     };
   }
 
@@ -393,5 +432,123 @@ export function buildTheRead(inputs: ReadInputs = {}): ReadVM {
     ? section<ReadWatchItem[]>("partial", watchItems.slice(0, 4), "Derived, dateless watch items; a real catalyst calendar requires the Event provider (v2 doc 4.6).")
     : unavailable<ReadWatchItem[]>("No watch items derivable.");
 
-  return { thesis, evidence, exposure, chain, watch, falsifiers };
+  /* -- B4: research priority - where to spend attention next. A deterministic
+        ranking over REAL recorded factors, decomposed reason by reason.
+        Personalization adds a fixed, badged ordering boost for followed
+        themes; it never touches the underlying factors (prioritization, never
+        truth). Marked "partial" by design: it is a heuristic ranking, not a
+        measured quantity. -- */
+  const followed = new Set((inputs.followedThemeNames ?? []).map(s => s.toLowerCase()));
+  const deltas = inputs.deltas ?? [];
+  const memberNameSet = new Set(memberThemes.map(t => t.name.toLowerCase()));
+  const DELTA_WEIGHT: Record<MorningBriefDelta["kind"], number> = {
+    BROKEN: 26, CONTRADICTED: 24, NEW: 18, WEAKENED: 15, STRENGTHENED: 12, EXPANDED: 9, REMOVED: 6,
+  };
+  const oppRank = graphReady ? rankFutureOpportunities(10) : [];
+
+  const scoreTarget = (entity: ReadEntityRef, theme: ThemeIntelligence | null, extraReasons: Array<[number, string]>): ResearchPriority => {
+    const parts: Array<[number, string]> = [...extraReasons];
+    if (theme) {
+      const conv = Math.round(theme.confidence ?? 0);
+      if (conv > 0) parts.push([Math.round(conv * 0.3), `conviction ${conv} (theme pipeline)`]);
+      const mem = theme.memory ?? null;
+      if (mem && mem.confirmations_today > 0) parts.push([Math.min(12, mem.confirmations_today * 3), `${mem.confirmations_today} confirming stor${mem.confirmations_today === 1 ? "y" : "ies"} this cycle (memory)`]);
+      if (mem && mem.contradictions_today > 0) parts.push([Math.min(15, mem.contradictions_today * 5), `${mem.contradictions_today} unresolved contradiction${mem.contradictions_today === 1 ? "" : "s"} (memory)`]);
+      if (memberNameSet.has(theme.name.toLowerCase()) && thesis.data?.mode === "narrative") parts.push([10, "member of the dominant narrative"]);
+      const opp = oppRank.findIndex(o => o.theme.label.toLowerCase() === theme.name.toLowerCase());
+      if (opp >= 0) parts.push([Math.max(2, 10 - opp * 2), `prediction engine ranks it #${opp + 1} future opportunity${oppRank[opp].why[0] ? ` (${oppRank[opp].why[0]})` : ""}`]);
+    }
+    for (const d of deltas) {
+      if (d.entity.toLowerCase() !== entity.label.toLowerCase()) continue;
+      parts.push([DELTA_WEIGHT[d.kind], `${d.kind.toLowerCase()} this cycle: ${d.what}`]);
+    }
+    if (graphReady) {
+      const p = buildIntelligenceProfile(entity.label);
+      if (p.identity.status !== "unavailable") {
+        const thin = [p.thesis, p.drivers, p.transmission, p.beneficiaries, p.risks, p.evidence, p.evolution, p.watch]
+          .filter(s => s.status === "unavailable").length;
+        if (thin >= 3) parts.push([Math.min(10, thin * 2), `${thin} profile sections unresolved: signal without depth`]);
+      }
+    }
+    const personal = followed.has(entity.label.toLowerCase());
+    const base = parts.reduce((s, [w]) => s + w, 0);
+    const reasons = parts.map(([, r]) => r);
+    if (personal) reasons.push("you follow this theme (ordering boost only)");
+    return { entity, score: Math.min(100, base + (personal ? 8 : 0)), reasons, personal };
+  };
+
+  const priorityItems: ResearchPriority[] = [];
+  for (const t of themes.slice(0, 6)) priorityItems.push(scoreTarget({ label: t.name, nodeType: "Theme" }, t, []));
+  const anchorHop = chain.data?.[0] ?? null;
+  if (anchorHop) priorityItems.push(scoreTarget({ label: anchorHop.label, nodeType: anchorHop.nodeType }, null, [[12, "anchors the dominant narrative's transmission"]]));
+  for (const c of (exposure.data?.companies ?? []).slice(0, 2)) {
+    priorityItems.push(scoreTarget({ label: c.label, nodeType: c.nodeType }, null,
+      [[Math.min(12, c.memberCount * 4), `exposed through ${c.memberCount} member theme${c.memberCount === 1 ? "" : "s"}`]]));
+  }
+  priorityItems.sort((a, b) => (b.score - a.score) || a.entity.label.localeCompare(b.entity.label));
+  const rankedPriorities = priorityItems.filter(p => p.reasons.length > 0).slice(0, 4);
+  const priorities = rankedPriorities.length > 0
+    ? section<ResearchPriority[]>("partial", rankedPriorities,
+        "Heuristic research prioritization over recorded factors; every reason names its source. Not a confidence, not a trade signal.")
+    : unavailable<ResearchPriority[]>("No prioritization factors recorded yet.");
+
+  /* -- B4: catalysts - verified event material only. Today that means macro
+        series/releases actually recorded in the graph against this thesis's
+        drivers and members. They are real and linked but DATELESS: no dated
+        event source is ingested yet, so no dates are shown, ever. -- */
+  let catalysts: ProfileSection<CatalystItem[]>;
+  if (!graphReady) {
+    catalysts = unavailable<CatalystItem[]>("Catalyst reads need the intelligence graph.");
+  } else {
+    const items: CatalystItem[] = [];
+    const seenCat = new Set<string>();
+    const hosts: IntelNode[] = [];
+    if (anchorHop) { const n = G.getNode(anchorHop.label); if (n) hosts.push(n); }
+    for (const t of memberThemes) { const n = G.getNode(t.name); if (n) hosts.push(n); }
+    for (const host of hosts) {
+      for (const { node } of G.getNeighbors(host.id)) {
+        const ty = String(node.type);
+        if (ty !== "MacroSeries" && ty !== "EconomicRelease") continue;
+        if (seenCat.has(node.id)) continue;
+        seenCat.add(node.id);
+        items.push({
+          label: node.label, nodeType: ty, feeds: host.label,
+          detail: `Recorded ${ty === "EconomicRelease" ? "economic release" : "macro series"} linked to ${host.label}; prints on a known provider cadence. No dated calendar is ingested, so no date is shown.`,
+        });
+      }
+    }
+    catalysts = items.length > 0
+      ? section<CatalystItem[]>("partial", items.slice(0, 4), "Verified, dateless: series exist and are linked, but the Event provider (dated calendar) is future work. Nothing is simulated.")
+      : unavailable<CatalystItem[]>("No verified upcoming catalysts: no dated event source is ingested yet (Event provider is future work).");
+  }
+
+  /* -- B4: the investigation queue - The Read's exit ramp into Explorer.
+        Recommendations derive from the zones above; each names its reason. -- */
+  const queueItems: QueueItem[] = [];
+  const queued = new Set<string>();
+  const enqueue = (action: QueueAction, entity: ReadEntityRef, reason: string) => {
+    const k = entity.label.toLowerCase();
+    if (queued.has(k)) return;
+    queued.add(k);
+    queueItems.push({ action, entity, reason });
+  };
+  if (thesis.data) {
+    if (anchorHop) enqueue("Open Narrative", { label: anchorHop.label, nodeType: anchorHop.nodeType }, "the driver anchoring today's dominant narrative");
+    else enqueue("Open Narrative", { label: thesis.data.label, nodeType: "Theme" }, "today's strongest theme");
+  }
+  const midHop = (chain.data ?? []).find(h => h.edge !== null);
+  if (midHop) enqueue("View Transmission", { label: midHop.label, nodeType: midHop.nodeType }, "the strongest recorded transmission path runs through it");
+  const evidenceTarget = thesis.data?.contradiction
+    ? { label: thesis.data.contradiction.entity, nodeType: "Theme", reason: "carries the standing contradiction against the thesis" }
+    : rankedPriorities[0]
+      ? { label: rankedPriorities[0].entity.label, nodeType: rankedPriorities[0].entity.nodeType, reason: "highest research priority this morning" }
+      : null;
+  if (evidenceTarget) enqueue("Inspect Evidence", { label: evidenceTarget.label, nodeType: evidenceTarget.nodeType }, evidenceTarget.reason);
+  const topCo = (exposure.data?.companies ?? [])[0];
+  if (topCo) enqueue("Trace Relationships", { label: topCo.label, nodeType: topCo.nodeType }, `the most exposed tradeable${topCo.memberCount > 1 ? ` (${topCo.memberCount} member themes)` : ""}`);
+  const queue = queueItems.length > 0
+    ? section<QueueItem[]>("live", queueItems.slice(0, 4))
+    : unavailable<QueueItem[]>("Nothing to investigate yet.");
+
+  return { thesis, evidence, exposure, chain, watch, falsifiers, priorities, catalysts, queue };
 }

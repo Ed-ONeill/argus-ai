@@ -100,6 +100,8 @@ export interface MorningBriefInputs {
   /** Device-local snapshot index (themeSnapshots.getTrackedThemes), for the
       change ledger's absence detection only. */
   previouslyTracked?:  TrackedTheme[];
+  /** Followed-theme names (personalization: prioritization only, never truth). */
+  followedThemeNames?: string[];
   /** True when the caller has built the intelligence graph singleton this
       session; gates the evidence/prediction engine reads. */
   graphReady?:         boolean;
@@ -236,8 +238,13 @@ export function buildMorningBrief(inputs: MorningBriefInputs = {}): MorningBrief
     ? section<WatchItemVM[]>("partial", watchItems, "Derived from stored theme drivers and direction; not a calendar. A real catalyst calendar requires the Event provider (v2 doc 4.6).")
     : unavailable<WatchItemVM[]>("No themes available to derive watch items from.");
 
-  /* -- The Read (Sprint B3): zones Z2-Z7, assembled by lib/theRead.ts -- */
-  const read = buildTheRead({ themes, clusters: inputs.clusters, graphReady });
+  /* -- The Read (Sprints B3/B4): zones Z2-Z7 plus research priorities,
+        catalysts, and the investigation queue (lib/theRead.ts). The change
+        ledger is injected so it is derived exactly once. -- */
+  const read = buildTheRead({
+    themes, clusters: inputs.clusters, graphReady,
+    deltas: deltaResult.deltas, followedThemeNames: inputs.followedThemeNames,
+  });
 
   return {
     generatedAt: Date.now(),

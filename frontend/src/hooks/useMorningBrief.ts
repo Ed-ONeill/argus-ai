@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { useFeed } from "@/hooks/useFeed";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
+import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { buildMorningBrief, type MorningBriefVM, type RegimeChange } from "@/lib/morningBrief";
 
@@ -45,6 +46,11 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
   // themes that vanished). SSR-safe: returns [] without a window.
   const previouslyTracked = useMemo(() => getTrackedThemes(), []);
 
+  // Personalization signal: followed themes reorder/badge research priorities
+  // only - the underlying intelligence is identical for every user.
+  const { followed } = useFollowedThemes();
+  const followedThemeNames = useMemo(() => followed.map(f => f.name), [followed]);
+
   const vm = useMemo(
     () => buildMorningBrief({
       marketBrief: data?.market_brief ?? null,
@@ -54,10 +60,11 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
       regimeStatus: opts.regimeStatus ?? null,
       fallbackRegimeLabel: opts.fallbackRegimeLabel ?? null,
       previouslyTracked,
+      followedThemeNames,
       graphReady: graph.ready,
     }),
     // graph.ready is the invalidation tick for the engine-backed reads
-    [data?.market_brief, themes, clusters, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, graph.ready],
+    [data?.market_brief, themes, clusters, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, followedThemeNames, graph.ready],
   );
 
   return { vm, isLoading, graphReady: graph.ready };

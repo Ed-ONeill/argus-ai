@@ -1737,6 +1737,70 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(rows.some(r => r.sourceClass === "story" && r.assertion.includes("Grid operator")), "cited stories join the spine under their theme");
   });
 
+  // 81. Sprint B4: research priority, catalysts, investigation queue. Ranked
+  // attention from recorded factors only; personalization reorders, never
+  // rewrites; catalysts are verified-or-absent; the queue routes to Explorer.
+  test("research priority ranks from recorded factors with full decomposition", () => {
+    seedNarrativeGraph();
+    const themes = readThemes();
+    const { deltas } = deriveMorningBriefDeltas({ themes });
+    const read = buildTheRead({ themes, deltas, graphReady: true });
+    const items = read.priorities.data ?? [];
+    assert(read.priorities.status === "partial" && !!read.priorities.note, "priority is a heuristic ranking, marked partial with a note");
+    assert(items.length > 0 && items.length <= 4, "the queue of attention is short");
+    for (let i = 1; i < items.length; i++) assert(items[i - 1].score >= items[i].score, "ranking is descending");
+    for (const p of items) {
+      assert(p.score > 0 && p.score <= 100, "scores are bounded");
+      assert(p.reasons.length > 0, "every recommendation explains itself");
+      assert(p.reasons.some(r => /\(|conviction|cycle|narrative|exposed|anchors/.test(r)), "reasons name their sources");
+    }
+    assert(items.some(p => p.entity.label === "AI Infrastructure"), "the narrative's strengthening member ranks");
+  });
+
+  test("personalization boosts ordering only, never the underlying facts", () => {
+    seedNarrativeGraph();
+    const themes = readThemes();
+    const { deltas } = deriveMorningBriefDeltas({ themes });
+    const base = buildTheRead({ themes, deltas, graphReady: true }).priorities.data ?? [];
+    const boosted = buildTheRead({ themes, deltas, graphReady: true, followedThemeNames: ["Datacenter Power"] }).priorities.data ?? [];
+    const b0 = base.find(p => p.entity.label === "Datacenter Power");
+    const b1 = boosted.find(p => p.entity.label === "Datacenter Power");
+    assert(!!b0 && !b0.personal && !!b1 && b1.personal, "the followed theme is badged personal");
+    assert(b1!.score === b0!.score + 8, "the boost is a fixed, visible ordering nudge");
+    assert(JSON.stringify(b1!.reasons.filter(r => !r.includes("follow"))) === JSON.stringify(b0!.reasons), "the factual reasons are identical for every user");
+    const others = (xs: typeof base) => JSON.stringify(xs.filter(p => p.entity.label !== "Datacenter Power"));
+    assert(others(base) === others(boosted), "every other item is untouched by personalization");
+  });
+
+  test("catalysts are verified-or-absent, never dated, never hardcoded", () => {
+    seedNarrativeGraph();
+    const cold = buildTheRead({ themes: readThemes(), graphReady: true });
+    assert(cold.catalysts.status === "unavailable" && cold.catalysts.data === null, "no recorded event material means an honest empty state");
+    assert((cold.catalysts.note ?? "").includes("Event provider"), "the absence note names the missing provider");
+    intelligenceGraph.addNode({ label: "CPI (FRED series)", type: "MacroSeries" as never });
+    intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Capex", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
+    const warm = buildTheRead({ themes: readThemes(), graphReady: true });
+    const items = warm.catalysts.data ?? [];
+    assert(warm.catalysts.status === "partial" && items.length === 1, "a recorded series linked to the thesis surfaces as a catalyst");
+    assert(items[0].feeds === "AI Capex" && items[0].detail.includes("No dated calendar"), "the catalyst names its link and admits it is dateless");
+    const keys = Object.keys(items[0]).sort().join(",");
+    assert(keys === "detail,feeds,label,nodeType", `catalyst items carry no date or countdown fields, got ${keys}`);
+  });
+
+  test("the investigation queue routes The Read into Explorer with reasons", () => {
+    seedNarrativeGraph();
+    const themes = readThemes();
+    const { deltas } = deriveMorningBriefDeltas({ themes });
+    const read = buildTheRead({ themes, deltas, graphReady: true });
+    const q = read.queue.data ?? [];
+    assert(read.queue.status === "live" && q.length >= 3, "the Read ends with somewhere to go");
+    assert(q.some(x => x.action === "Open Narrative" && x.entity.label === "AI Capex"), "the narrative anchor opens the queue");
+    assert(q.some(x => x.action === "Trace Relationships" && x.entity.label === "NVDA"), "the most exposed tradeable is traceable");
+    const labels = q.map(x => x.entity.label.toLowerCase());
+    assert(new Set(labels).size === labels.length, "queue entities are deduped");
+    for (const x of q) assert(x.reason.length > 0 && x.entity.nodeType.length > 0, "every recommendation carries its reason and a routable entity");
+  });
+
   for (const [name, fn] of tests) {
     try { await fn(); results.push({ name, ok: true }); }
     catch (e) { results.push({ name, ok: false, detail: e instanceof Error ? e.message : String(e) }); }
