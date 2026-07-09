@@ -42,6 +42,8 @@ import { selectSeriesForRange, EMPTY_SERIES as EMPTY_PRICE_SERIES, type PriceSer
 import { buildRelationshipMap, expandMap, countExpansion, deriveEdgeTrend } from "./causalMap";
 import { buildIntelligenceProfile, PROFILE_VERSION } from "./intelligenceProfile";
 import { deriveNarratives, findNarrativeForTheme, narrativeKeyOfDrivers, DERIVED_NARRATIVE_VERSION } from "./narrativeDerivation";
+import { buildMorningBrief } from "./morningBrief";
+import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -1485,6 +1487,98 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
       assert(s.status !== "unavailable" || s.data === null, "unavailable sections must carry null data");
       assert(s.status === "unavailable" || s.data !== null, "live/partial sections must carry data");
     }
+  });
+
+  // 78. Sprint B1: the canonical Morning Brief view model
+  // (docs/ARGUS_MORNING_BRIEF_V2.md section 8). Pure builder over injected
+  // data; no fabricated catalysts, no summarizer confidence, honest sections.
+  const mkTheme = (over: Partial<ThemeIntelligence> = {}): ThemeIntelligence => ({
+    id: "th-ai", name: "AI Infrastructure", description: "", signal_strength: "strong",
+    confidence: 74, momentum_direction: "bullish", related_industries: ["Semiconductors"],
+    related_assets: ["NVDA"], related_macro_factors: ["AI Capex"], contributing_cluster_ids: [],
+    contributing_story_count: 5, second_order_effects: ["Power demand"], podcast_topics: [],
+    last_updated: "", relationship_weights: {}, confidence_label: "Elevated",
+    signal_quality: "confirmed", evidence_count: 9, persistence_score: 60, volatility_score: 0.3,
+    cross_category_confirmed: true, momentum_label: "strengthening", momentum_delta: 3,
+    persistence_cycles: 4, competition_penalty: 0, causal_narrative: "AI Capex → semis",
+    breadth_score: 50, persistence_days: 6,
+    ...over,
+  } as ThemeIntelligence);
+  const mkBrief = (over: Partial<MarketBrief> = {}): MarketBrief => ({
+    primary_driver: "AI capex is the tape's spine.", market_regime: "Risk-On",
+    assets_impacted: ["NVDA", "SMH"], narrative_shift: "Capex guidance moved the read.",
+    trade_implication: "Stay with the leaders.", risk_scenario: "Guidance rolls over.",
+    confidence: 93, ...over,
+  });
+  const briefSections = (vm: ReturnType<typeof buildMorningBrief>) =>
+    [vm.regime, vm.conviction, vm.whyToday, vm.primaryNarrative, vm.opportunities, vm.risks, vm.tradeImplication, vm.activeThemes, vm.watch];
+
+  test("morning brief view model is deterministic and degrades honestly", () => {
+    const empty = buildMorningBrief({});
+    for (const s of briefSections(empty))
+      assert(s.status === "unavailable" && s.data === null, "with no inputs every section must be unavailable, never defaulted");
+    assert(empty.counts.activeThemes === 0 && empty.counts.storyClusters === 0, "counts are zero, not invented");
+
+    const inputs = { marketBrief: mkBrief(), themes: [mkTheme(), mkTheme({ id: "th-2", name: "Oil Shock", confidence: 55, momentum_direction: "bearish" as const, volatility_score: 0.8 })], storyClusterCount: 7 };
+    const strip = (vm: ReturnType<typeof buildMorningBrief>) => JSON.stringify({ ...vm, generatedAt: 0 });
+    assert(strip(buildMorningBrief(inputs)) === strip(buildMorningBrief(inputs)), "same inputs must yield the same view model");
+    const vm = buildMorningBrief(inputs);
+    for (const s of briefSections(vm)) {
+      assert(s.status !== "unavailable" || s.data === null, "unavailable sections must carry null data");
+      assert(s.status === "unavailable" || s.data !== null, "live/partial sections must carry data");
+    }
+    assert((vm.opportunities.data ?? []).every(o => o.name !== "Oil Shock"), "bearish themes are never opportunities");
+    assert((vm.risks.data ?? []).some(r => r.kind === "theme" && r.text === "Oil Shock"), "bearish themes surface as data-derived risks");
+  });
+
+  test("morning brief conviction decomposes and never uses the summarizer confidence", () => {
+    const mem = {
+      conviction_trend: "rising", conviction_window_start: 58, conviction_current: 74,
+      confirmations_today: 2, contradictions_today: 0,
+    } as never as ThemeIntelligence["memory"];
+    const vm = buildMorningBrief({ marketBrief: mkBrief({ confidence: 93 }), themes: [mkTheme({ memory: mem })], graphReady: false });
+    const c = vm.conviction.data;
+    assert(!!c && c.value === 74, `conviction must be the leading theme's backend conviction (74), got ${c?.value}`);
+    assert(c!.value !== 93, "the summarizer's self-assessed confidence must never surface");
+    assert(c!.themeName === "AI Infrastructure" && c!.explanation.includes("AI Infrastructure"), "conviction names its source theme");
+    assert(c!.trend === "rising" && c!.explanation.includes("58 to 74"), "cross-session memory decomposition rides in the explanation");
+    assert(c!.explanation.includes("9 evidence items"), "the explanation cites real evidence counts");
+  });
+
+  test("morning brief watch items are derived and dateless (no fabricated catalysts)", () => {
+    const vm = buildMorningBrief({ themes: [mkTheme()] });
+    assert(vm.watch.status === "partial" && !!vm.watch.note, "watch is honest partial with a note, not a calendar");
+    const items = vm.watch.data ?? [];
+    assert(items.length > 0 && items.every(w => w.derived === true), "every watch item is marked derived");
+    for (const w of items) {
+      const keys = Object.keys(w).sort().join(",");
+      assert(keys === "derived,text,theme", `watch items carry no dates or countdowns, got keys ${keys}`);
+    }
+    assert(items[0].text.includes("follow-through"), "watch text derives from stored direction fields");
+    assert(buildMorningBrief({}).watch.status === "unavailable", "no themes means no watch items, not placeholders");
+  });
+
+  test("morning brief marks summarizer prose as voice, never live", () => {
+    const vm = buildMorningBrief({ marketBrief: mkBrief(), themes: [mkTheme()] });
+    for (const s of [vm.whyToday, vm.primaryNarrative, vm.tradeImplication]) {
+      assert(s.status === "partial" && !!s.data, "summarizer prose renders but is never marked live");
+      assert((s.note ?? "").includes("voice"), "the voice note must ride on summarizer sections");
+    }
+    const bare = buildMorningBrief({ themes: [mkTheme()] });
+    assert(bare.whyToday.status === "unavailable" && bare.tradeImplication.status === "unavailable", "absent prose degrades honestly");
+  });
+
+  test("morning brief risks include the engine falsifier only when the graph resolves it", () => {
+    seedNarrativeGraph();   // seeds a Theme node named "AI Infrastructure"
+    const themes = [mkTheme()];
+    const cold = buildMorningBrief({ themes, graphReady: false });
+    assert(!(cold.risks.data ?? []).some(r => r.kind === "invalidation"), "no graph means no engine falsifier, never a substitute");
+    const warm = buildMorningBrief({ themes, graphReady: true });
+    const eng = predictThemeTrajectory("AI Infrastructure");
+    const inv = eng.found ? eng.invalidationConditions[0] : undefined;
+    const got = (warm.risks.data ?? []).find(r => r.kind === "invalidation");
+    if (inv) assert(!!got && got.text === inv && got.source === "AI Infrastructure", "the falsifier must be the engine read, unmodified");
+    else assert(!got, "no engine falsifier must mean none rendered");
   });
 
   for (const [name, fn] of tests) {

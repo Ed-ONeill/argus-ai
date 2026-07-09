@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, X } from "lucide-react";
@@ -11,7 +11,8 @@ import { useProfile } from "@/hooks/useProfile";
 import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { useSaved } from "@/hooks/useSaved";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
-import type { MarketBrief, ThemeIntelligence } from "@/lib/types";
+import { useMorningBrief } from "@/hooks/useMorningBrief";
+import type { MorningBriefVM } from "@/lib/morningBrief";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -55,14 +56,6 @@ const fadeUp = {
     transition: { delay: i * 0.08, duration: 0.50, ease: [0.25, 0, 0.25, 1] as const },
   }),
 };
-
-const UPCOMING_CATALYSTS = [
-  { label: "CPI Release",           importance: "HIGH",   timing: "Tomorrow",   why: "Core inflation data will reprice rate expectations and sovereign yields." },
-  { label: "Non-Farm Payrolls",     importance: "HIGH",   timing: "In 3 Days",  why: "Labor market strength signals Fed trajectory and consumption durability." },
-  { label: "FOMC Decision",         importance: "HIGH",   timing: "In 4 Days",  why: "Rate guidance sets the tone for equity valuations and credit spreads."    },
-  { label: "Treasury Auction",      importance: "MEDIUM", timing: "Next Week",  why: "Demand for duration reveals institutional appetite for sovereign risk."   },
-  { label: "Major Earnings Season", importance: "MEDIUM", timing: "In 14 Days", why: "Forward guidance from large-caps will drive near-term sector rotation."   },
-] as const;
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -247,14 +240,17 @@ function regimeStatusBg(s: RegimeStatus) {
 }
 
 function BriefSealed({
-  isLoading, themeCount, regimeLabel, regimeColor, pulseDotColor, confidence, regimeStatus, onOpen,
+  isLoading, themeCount, storyClusters, regimeLabel, regimeColor, pulseDotColor, conviction, regimeStatus, onOpen,
 }: {
   isLoading: boolean;
   themeCount: number;
+  storyClusters: number;
   regimeLabel: string;
   regimeColor: string;
   pulseDotColor: string;
-  confidence?: number;
+  /** Leading-theme conviction from the Morning Brief view model (decomposable),
+      never the summarizer's self-assessed confidence. */
+  conviction?: number;
   regimeStatus?: RegimeStatus | null;
   onOpen: () => void;
 }) {
@@ -342,11 +338,11 @@ function BriefSealed({
                 : (
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.68)" }}>
-                      {confidence ? `${Math.round(confidence)}%` : "-"}
+                      {conviction ? `${Math.round(conviction)}` : "-"}
                     </span>
-                    {confidence && (
+                    {conviction && (
                       <div style={{ flex: 1, height: "2px", background: "rgba(255,255,255,0.08)", borderRadius: "1px" }}>
-                        <div style={{ height: "100%", width: `${Math.round(confidence)}%`, background: regimeColor, opacity: 0.55, borderRadius: "1px" }} />
+                        <div style={{ height: "100%", width: `${Math.round(conviction)}%`, background: regimeColor, opacity: 0.55, borderRadius: "1px" }} />
                       </div>
                     )}
                   </div>
@@ -363,10 +359,10 @@ function BriefSealed({
             </div>
 
             <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px", borderTop: "1px solid rgba(255,255,255,0.055)" }}>
-              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>UPCOMING CATALYSTS</p>
+              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>STORY CLUSTERS</p>
               {isLoading
                 ? <div className="h-2.5 rounded animate-pulse" style={{ width: "35%", background: "rgba(255,255,255,0.07)" }} />
-                : <p style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.65)" }}>{UPCOMING_CATALYSTS.length}</p>
+                : <p style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.65)" }}>{storyClusters}</p>
               }
             </div>
           </div>
@@ -424,10 +420,9 @@ function BriefSealed({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BriefOpen({
-  brief, themes, regimeColor, regimeStatus, onClose,
+  vm, regimeColor, regimeStatus, onClose,
 }: {
-  brief: MarketBrief | null | undefined;
-  themes: ThemeIntelligence[];
+  vm: MorningBriefVM;
   regimeColor: string;
   regimeStatus?: RegimeStatus | null;
   onClose: () => void;
@@ -436,24 +431,14 @@ function BriefOpen({
     month: "short", day: "numeric", year: "numeric",
   }).toUpperCase();
 
-  const opportunities = useMemo(() =>
-    themes
-      .filter(t => t.momentum_direction !== "bearish")
-      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
-      .slice(0, 3),
-    [themes],
-  );
-
-  const risks = useMemo(() =>
-    themes
-      .filter(t => t.momentum_direction === "bearish" || (t.volatility_score ?? 0) > 0.55)
-      .sort((a, b) => (b.volatility_score ?? 0) - (a.volatility_score ?? 0))
-      .slice(0, 3),
-    [themes],
-  );
-
-  const activeThemes = useMemo(() => themes.slice(0, 6), [themes]);
-  const confPct = brief?.confidence ? `${Math.round(brief.confidence)}%` : null;
+  // Every section below reads the canonical view model (lib/morningBrief.ts);
+  // sections whose status is "unavailable" render nothing (honest absence).
+  const regime = vm.regime.data;
+  const conviction = vm.conviction.data;
+  const opportunities = vm.opportunities.data ?? [];
+  const risks = vm.risks.data ?? [];
+  const activeThemes = vm.activeThemes.data ?? [];
+  const watchItems = vm.watch.data ?? [];
 
   const sv = {
     hidden:  { opacity: 0 },
@@ -500,7 +485,7 @@ function BriefOpen({
         </button>
       </motion.div>
 
-      {brief?.market_regime && (
+      {regime && (
         <motion.div custom={1} variants={sv} initial="hidden" animate="visible"
           className="flex items-center justify-between px-6 py-3"
           style={{
@@ -510,7 +495,7 @@ function BriefOpen({
           }}>
           <div className="flex items-center gap-3">
             <span style={{ fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.12em", color: regimeColor, opacity: 0.92 }}>
-              {brief.market_regime.toUpperCase()}
+              {regime.label.toUpperCase()}
             </span>
             {regimeStatus && (
               <span style={{
@@ -523,19 +508,19 @@ function BriefOpen({
                 {regimeStatusLabel(regimeStatus)}
               </span>
             )}
-            {brief.assets_impacted?.length > 0 && (
+            {regime.assetsImpacted.length > 0 && (
               <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.28)" }}>
-                {brief.assets_impacted.slice(0, 4).join(" · ")}
+                {regime.assetsImpacted.join(" · ")}
               </span>
             )}
           </div>
-          {confPct && brief?.confidence && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {conviction && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }} title={conviction.explanation}>
               <div style={{ width: "44px", height: "2px", background: "rgba(255,255,255,0.10)", borderRadius: "1px", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${Math.round(brief.confidence)}%`, background: regimeColor, opacity: 0.65 }} />
+                <div style={{ height: "100%", width: `${conviction.value}%`, background: regimeColor, opacity: 0.65 }} />
               </div>
               <span style={{ fontSize: "9px", letterSpacing: "0.10em", fontWeight: 600, color: "rgba(255,255,255,0.35)" }}>
-                {confPct}
+                {conviction.value}
               </span>
             </div>
           )}
@@ -543,7 +528,7 @@ function BriefOpen({
       )}
 
       <div className="px-6 py-4 space-y-4">
-        {brief?.narrative_shift && (
+        {vm.whyToday.data && (
           <motion.div custom={2} variants={sv} initial="hidden" animate="visible"
             style={{
               background: `${regimeColor}08`,
@@ -554,37 +539,37 @@ function BriefOpen({
             }}>
             <SectionLabel>Why Today Matters</SectionLabel>
             <p style={{ fontSize: "12px", lineHeight: "1.58", color: "rgba(255,255,255,0.60)" }}>
-              {brief.narrative_shift}
+              {vm.whyToday.data.text}
             </p>
           </motion.div>
         )}
 
-        {brief?.primary_driver && (
+        {vm.primaryNarrative.data && (
           <motion.div custom={3} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Primary Narrative</SectionLabel>
             <p style={{
               fontSize: "12.5px", lineHeight: "1.62", color: "rgba(255,255,255,0.58)",
               borderLeft: "2px solid rgba(255,255,255,0.10)", paddingLeft: "14px",
             }}>
-              {brief.primary_driver}
+              {vm.primaryNarrative.data.text}
             </p>
           </motion.div>
         )}
 
-        {(opportunities.length > 0 || brief?.risk_scenario) && (
+        {(vm.opportunities.data !== null || risks.length > 0) && (
           <motion.div custom={4} variants={sv} initial="hidden" animate="visible"
             className="grid grid-cols-2 gap-4">
             <div>
               <SectionLabel>Opportunities</SectionLabel>
               {opportunities.length > 0 ? (
                 <div className="space-y-2">
-                  {opportunities.map((t, i) => (
-                    <div key={t.id} className="flex items-start gap-2">
+                  {opportunities.map((o, i) => (
+                    <div key={o.name} className="flex items-start gap-2">
                       <span style={{ fontSize: "10px", fontWeight: 600, color: "#3ab880", opacity: 0.60, minWidth: 14, marginTop: 1 }}>
                         {i + 1}
                       </span>
                       <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.52)", lineHeight: 1.45 }}>
-                        {t.name}
+                        {o.name}
                       </p>
                     </div>
                   ))}
@@ -597,23 +582,24 @@ function BriefOpen({
             <div>
               <SectionLabel>Key Risks</SectionLabel>
               <div className="space-y-2">
-                {brief?.risk_scenario && (
-                  <div className="flex items-start gap-2">
-                    <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.65, marginTop: 1 }}>⚠</span>
-                    <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.52)", lineHeight: 1.45 }}>
-                      {brief.risk_scenario}
-                    </p>
-                  </div>
-                )}
-                {risks.map((t) => (
-                  <div key={t.id} className="flex items-start gap-2">
-                    <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.22)", marginTop: 1 }}>◦</span>
-                    <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.40)", lineHeight: 1.45 }}>
-                      {t.name}
-                    </p>
-                  </div>
+                {risks.map((r, i) => (
+                  r.kind === "theme" ? (
+                    <div key={`${r.kind}-${i}`} className="flex items-start gap-2">
+                      <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.22)", marginTop: 1 }}>◦</span>
+                      <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.40)", lineHeight: 1.45 }}>
+                        {r.text}
+                      </p>
+                    </div>
+                  ) : (
+                    <div key={`${r.kind}-${i}`} className="flex items-start gap-2" title={r.kind === "invalidation" && r.source ? `Invalidation condition for ${r.source} (prediction engine)` : undefined}>
+                      <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.65, marginTop: 1 }}>⚠</span>
+                      <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.52)", lineHeight: 1.45 }}>
+                        {r.text}
+                      </p>
+                    </div>
+                  )
                 ))}
-                {!brief?.risk_scenario && risks.length === 0 && (
+                {risks.length === 0 && (
                   <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)" }}>No elevated risk signals.</p>
                 )}
               </div>
@@ -621,7 +607,7 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {brief?.trade_implication && (
+        {vm.tradeImplication.data && (
           <motion.div custom={5} variants={sv} initial="hidden" animate="visible"
             style={{
               background: "rgba(255,255,255,0.022)",
@@ -631,7 +617,7 @@ function BriefOpen({
             }}>
             <SectionLabel>Trade Implication</SectionLabel>
             <p style={{ fontSize: "12px", lineHeight: "1.58", color: "rgba(255,255,255,0.52)" }}>
-              {brief.trade_implication}
+              {vm.tradeImplication.data.text}
             </p>
           </motion.div>
         )}
@@ -640,54 +626,54 @@ function BriefOpen({
           <motion.div custom={6} variants={sv} initial="hidden" animate="visible">
             <SectionLabel>Active Themes</SectionLabel>
             <div className="flex flex-wrap gap-1.5">
-              {activeThemes.map((t) => (
-                <span key={t.id} style={{
+              {activeThemes.map((name) => (
+                <span key={name} style={{
                   fontSize: "10px", letterSpacing: "0.04em", color: "rgba(255,255,255,0.48)",
                   background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
                   borderRadius: "4px", padding: "3px 9px",
                 }}>
-                  {t.name}
+                  {name}
                 </span>
               ))}
             </div>
           </motion.div>
         )}
 
-        <motion.div custom={7} variants={sv} initial="hidden" animate="visible">
-          <SectionLabel>Upcoming Catalysts</SectionLabel>
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-            {UPCOMING_CATALYSTS.map((c, idx) => {
-              const impColor =
-                c.importance === "HIGH"   ? "#c8a040" :
-                c.importance === "MEDIUM" ? "#5390c8" : "rgba(255,255,255,0.28)";
-              return (
-                <div key={c.label} style={{
+        {/* Honest replacement for the deleted hardcoded catalyst list: dateless
+            watch lines derived from stored theme fields (v2 doc section 4.6).
+            No dates, no countdowns, no importance theater. */}
+        {watchItems.length > 0 && (
+          <motion.div custom={7} variants={sv} initial="hidden" animate="visible">
+            <SectionLabel>What to Watch</SectionLabel>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              {watchItems.map((w, idx) => (
+                <div key={`${w.theme}-${idx}`} style={{
                   display: "grid",
-                  gridTemplateColumns: "82px 1fr auto",
+                  gridTemplateColumns: "1fr auto auto",
                   alignItems: "center",
                   gap: "10px",
                   padding: "6px 0",
-                  borderBottom: idx < UPCOMING_CATALYSTS.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                  borderBottom: idx < watchItems.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
                 }}>
-                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.02em" }}>
-                    {c.timing}
-                  </span>
                   <span style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)" }}>
-                    {c.label}
+                    Watch {w.text}
+                  </span>
+                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.02em" }}>
+                    {w.theme}
                   </span>
                   <span style={{
                     fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
-                    color: impColor, opacity: 0.82,
-                    border: `1px solid ${impColor}40`,
+                    color: "#5390c8", opacity: 0.82,
+                    border: "1px solid #5390c840",
                     borderRadius: "3px", padding: "2px 5px",
                   }}>
-                    {c.importance === "MEDIUM" ? "MED" : c.importance}
+                    DERIVED
                   </span>
                 </div>
-              );
-            })}
-          </div>
-        </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         <motion.div custom={8} variants={sv} initial="hidden" animate="visible"
           className="flex justify-end pt-1"
@@ -735,8 +721,7 @@ export default function LandingPage() {
   const { savedIds } = useSaved();
   const { data: feedData, isLoading: feedLoading } = useFeed();
 
-  const brief  = feedData?.market_brief;
-  const themes = useMemo(() => feedData?.theme_intelligence ?? [], [feedData?.theme_intelligence]);
+  const brief = feedData?.market_brief;
 
   // Persist yesterday's regime in localStorage to derive change indicators.
   useEffect(() => {
@@ -799,6 +784,10 @@ export default function LandingPage() {
   const regimeLabel =
     ms.riskRegime === "risk-on"  ? "Risk On" :
     ms.riskRegime === "risk-off" ? "Risk Off" : "Neutral";
+
+  // Canonical Morning Brief view model (lib/morningBrief.ts): the page renders
+  // this object instead of assembling brief sections inline (Sprint B1).
+  const { vm } = useMorningBrief({ regimeStatus, fallbackRegimeLabel: regimeLabel });
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
@@ -1121,8 +1110,7 @@ export default function LandingPage() {
               briefOpen ? (
                 <BriefOpen
                   key="open"
-                  brief={brief}
-                  themes={themes}
+                  vm={vm}
                   regimeColor={regimeColor}
                   regimeStatus={regimeStatus}
                   onClose={() => setBriefOpen(false)}
@@ -1131,11 +1119,12 @@ export default function LandingPage() {
                 <BriefSealed
                   key="sealed"
                   isLoading={feedLoading}
-                  themeCount={themes.length}
-                  regimeLabel={brief?.market_regime ?? regimeLabel}
+                  themeCount={vm.counts.activeThemes}
+                  storyClusters={vm.counts.storyClusters}
+                  regimeLabel={vm.regime.data?.label ?? regimeLabel}
                   regimeColor={regimeColor}
                   pulseDotColor={pulseDotColor}
-                  confidence={brief?.confidence}
+                  conviction={vm.conviction.data?.value}
                   regimeStatus={regimeStatus}
                   onOpen={() => setBriefOpen(true)}
                 />
