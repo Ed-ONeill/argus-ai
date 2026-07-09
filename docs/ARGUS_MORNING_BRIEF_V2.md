@@ -47,6 +47,8 @@ Inherited: I1 no fabrication, I2 descriptive market data, I3 determinism, I4 eve
 
 ## 4. The v2 information hierarchy
 
+> **Supersession note (2026-07-09):** sections 4.2-4.5 are now specified in detail by `docs/ARGUS_NARRATIVE_CENTERPIECE_V1.md` ("The Read"), which merges them into one flagship experience (thesis + evidence spine + exposure map + transmission chain + falsifiers, with the B2 change ledger as its opening zone and a personalization rail governed by prioritization-never-truth). Where that document and these sections differ, it wins. Sections 4.1, 4.6, and 4.7 remain governed here.
+
 Seven sections, in priority order. "Powered by" names the exact existing system; **Status** is live / partial / future *for the data*, independent of wiring effort.
 
 ---
