@@ -49,6 +49,7 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
     () => buildMorningBrief({
       marketBrief: data?.market_brief ?? null,
       themes,
+      clusters: clusters.map(c => ({ id: c.id, title: c.primary.title, source: c.primary.source ?? null })),
       storyClusterCount: clusters.length,
       regimeStatus: opts.regimeStatus ?? null,
       fallbackRegimeLabel: opts.fallbackRegimeLabel ?? null,
@@ -56,7 +57,7 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
       graphReady: graph.ready,
     }),
     // graph.ready is the invalidation tick for the engine-backed reads
-    [data?.market_brief, themes, clusters.length, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, graph.ready],
+    [data?.market_brief, themes, clusters, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, graph.ready],
   );
 
   return { vm, isLoading, graphReady: graph.ready };

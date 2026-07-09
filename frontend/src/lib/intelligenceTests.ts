@@ -44,6 +44,7 @@ import { buildIntelligenceProfile, PROFILE_VERSION } from "./intelligenceProfile
 import { deriveNarratives, findNarrativeForTheme, narrativeKeyOfDrivers, DERIVED_NARRATIVE_VERSION } from "./narrativeDerivation";
 import { buildMorningBrief } from "./morningBrief";
 import { deriveMorningBriefDeltas } from "./intelligenceDeltas";
+import { buildTheRead } from "./theRead";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -1661,6 +1662,79 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(!deltas.some(d => d.entity === "Ancient Theme"), "stale disappearances are not news");
     const vm = buildMorningBrief({ themes: [mkTheme()], previouslyTracked: tracked });
     assert(vm.changes.status === "partial" && !!vm.changes.note, "a device-only ledger is marked partial with a note");
+  });
+
+  // 80. Sprint B3: "The Read" (lib/theRead.ts, docs/ARGUS_NARRATIVE_CENTERPIECE_V1.md).
+  // Zones assemble from existing engines only; every claim traces; sparse
+  // inputs shrink the Read instead of inflating it.
+  const readThemes = () => [
+    mkTheme({ contributing_cluster_ids: ["c1"], memory: mkMem() }),
+    mkTheme({ id: "th-dc", name: "Datacenter Power", confidence: 61, contributing_cluster_ids: ["c2"], memory: mkMem({ name: "Datacenter Power", conviction_current: 61, conviction_window_start: 55, conviction_change: 6 }) }),
+  ];
+
+  test("the read assembles a derived-narrative thesis with chain and falsifiers", () => {
+    seedNarrativeGraph();
+    const read = buildTheRead({ themes: readThemes(), graphReady: true });
+    const t = read.thesis.data;
+    assert(read.thesis.status === "live" && t?.mode === "narrative", "a shared-driver graph yields a narrative-mode thesis");
+    assert(t!.label === "AI Capex" && t!.thesisLine.includes("AI Capex"), "the thesis is anchored on the real driver");
+    assert(t!.members.length === 2 && t!.members.every(m => m.conviction > 0), "members carry their backend convictions");
+    assert(t!.members.find(m => m.name === "AI Infrastructure")?.trend === "rising", "member trends come from attached ThemeMemory");
+    assert(t!.whyDominant.includes("2 member theme"), "dominance is decomposed, not asserted");
+    const hops = read.chain.data ?? [];
+    assert(read.chain.status === "live" && hops.length >= 3, `the chain walks a real path, got ${hops.length} hops`);
+    assert(hops[0].label === "AI Capex" && hops[0].edge === null, "the anchor driver opens the chain");
+    assert(hops.slice(1).every(h => h.edge !== null && h.edge.strength > 0), "every subsequent hop carries its real edge");
+    assert(hops.some(h => h.label === "NVDA"), "the chain reaches the recorded tradeable");
+    const f = read.falsifiers.data;
+    assert(!!f, "falsifiers always resolve to data when the graph is built (Z2 never renders without Z7)");
+    const anyFalsifier = f!.invalidations.length + f!.contradictions.length + f!.breakers.length > 0;
+    assert(anyFalsifier ? f!.noneNote === null : typeof f!.noneNote === "string", "absence of a falsifier surfaces as an explicit warning");
+    assert((read.watch.data ?? []).every(w => w.derived === true && w.binding.length > 0), "watch items are derived and bound to a zone");
+  });
+
+  test("the read degrades honestly without a graph", () => {
+    intelligenceGraph.clear();
+    const read = buildTheRead({
+      themes: readThemes(),
+      clusters: [{ id: "c1", title: "Hyperscalers raise capex guidance again" }, { id: "zz", title: "Unrelated story" }],
+      graphReady: false,
+    });
+    assert(read.thesis.status === "partial" && read.thesis.data?.mode === "theme", "no graph means a single-theme read, labeled a theme");
+    assert(!!read.thesis.note && read.thesis.note.includes("not a narrative"), "the fallback names itself honestly");
+    assert(read.chain.status === "unavailable" && read.chain.data === null, "no graph means no chain, never a drawn one");
+    assert(read.falsifiers.status === "unavailable", "falsifier reads are graph-gated");
+    const rows = read.evidence.data ?? [];
+    assert(read.evidence.status === "partial" && rows.length === 1, "only cluster citations render without the graph");
+    assert(rows[0].assertion.includes("capex guidance") && rows[0].strength === null, "cluster rows carry the story title and no invented strength");
+    assert(!rows.some(r => r.assertion.includes("Unrelated")), "clusters outside the thesis's contributing ids are excluded");
+    assert((read.exposure.data?.sectors ?? []).some(s => s.label === "Semiconductors"), "exposure falls back to stored pipeline fields");
+  });
+
+  test("the read never fabricates on empty input and stays deterministic", () => {
+    intelligenceGraph.clear();
+    const empty = buildTheRead({});
+    for (const s of [empty.thesis, empty.evidence, empty.exposure, empty.chain, empty.watch, empty.falsifiers])
+      assert(s.status === "unavailable" && s.data === null, "no themes means every zone is unavailable");
+    seedNarrativeGraph();
+    const inputs = { themes: readThemes(), clusters: [{ id: "c1", title: "Capex story" }], graphReady: true };
+    assert(JSON.stringify(buildTheRead(inputs)) === JSON.stringify(buildTheRead(inputs)), "same inputs, same Read");
+    // The Read rides on the Morning Brief view model.
+    const vm = buildMorningBrief({ themes: readThemes(), graphReady: true });
+    assert(vm.read.thesis.data?.label === "AI Capex", "the brief view model carries The Read");
+  });
+
+  test("the read's evidence spine traces every row to the graph or a cited story", () => {
+    seedNarrativeGraph();
+    const read = buildTheRead({ themes: readThemes(), clusters: [{ id: "c2", title: "Grid operator flags datacenter load" }], graphReady: true });
+    const rows = read.evidence.data ?? [];
+    assert(rows.length > 0 && read.evidence.status === "live", "graph-backed rows resolve");
+    for (const r of rows) {
+      assert(r.assertion.length > 0 && r.entity.length > 0, "every row states its assertion and subject");
+      if (r.strength !== null) assert(r.strength > 0 && r.reliability !== null, "graph rows carry real edge strength and source reliability");
+      else assert(r.sourceClass === "story", "strength-less rows are story citations only");
+    }
+    assert(rows.some(r => r.sourceClass === "story" && r.assertion.includes("Grid operator")), "cited stories join the spine under their theme");
   });
 
   for (const [name, fn] of tests) {

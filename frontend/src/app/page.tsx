@@ -12,6 +12,7 @@ import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { useSaved } from "@/hooks/useSaved";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { useMorningBrief } from "@/hooks/useMorningBrief";
+import { explorerHrefForNode, nodeColor } from "@/lib/intelligenceShared";
 import type { MorningBriefVM } from "@/lib/morningBrief";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +87,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     }}>
       {children}
     </p>
+  );
+}
+
+/** Zone header for The Read: section label + the engine powering it
+    (centerpiece doc requirement: every zone identifies its engine). */
+function ZoneLabel({ label, engine }: { label: string; engine: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "6px" }}>
+      <p style={{ fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", textTransform: "uppercase" }}>{label}</p>
+      <span style={{ fontSize: "7px", letterSpacing: "0.12em", fontWeight: 600, color: "rgba(255,255,255,0.16)", textTransform: "uppercase" }}>{engine}</span>
+    </div>
   );
 }
 
@@ -436,10 +448,13 @@ function BriefOpen({
   const regime = vm.regime.data;
   const changes = vm.changes.data ?? [];
   const conviction = vm.conviction.data;
-  const opportunities = vm.opportunities.data ?? [];
-  const risks = vm.risks.data ?? [];
-  const activeThemes = vm.activeThemes.data ?? [];
-  const watchItems = vm.watch.data ?? [];
+  const read = vm.read;
+  const thesis = read.thesis.data;
+  const evidenceRows = read.evidence.data ?? [];
+  const exposureMap = read.exposure.data;
+  const chainHops = read.chain.data ?? [];
+  const falsifiers = read.falsifiers.data;
+  const readWatch = read.watch.data ?? [];
 
   const sv = {
     hidden:  { opacity: 0 },
@@ -579,135 +594,206 @@ function BriefOpen({
           </motion.div>
         )}
 
-        {vm.whyToday.data && (
-          <motion.div custom={2} variants={sv} initial="hidden" animate="visible"
-            style={{
-              background: `${regimeColor}08`,
-              border: "1px solid rgba(255,255,255,0.055)",
-              borderLeft: `2px solid ${regimeColor}44`,
-              borderRadius: "5px",
-              padding: "10px 14px",
-            }}>
-            <SectionLabel>Why Today Matters</SectionLabel>
-            <p style={{ fontSize: "12px", lineHeight: "1.58", color: "rgba(255,255,255,0.60)" }}>
-              {vm.whyToday.data.text}
-            </p>
-          </motion.div>
-        )}
-
-        {vm.primaryNarrative.data && (
-          <motion.div custom={3} variants={sv} initial="hidden" animate="visible">
-            <SectionLabel>Primary Narrative</SectionLabel>
-            <p style={{
-              fontSize: "12.5px", lineHeight: "1.62", color: "rgba(255,255,255,0.58)",
-              borderLeft: "2px solid rgba(255,255,255,0.10)", paddingLeft: "14px",
-            }}>
-              {vm.primaryNarrative.data.text}
-            </p>
-          </motion.div>
-        )}
-
-        {(vm.opportunities.data !== null || risks.length > 0) && (
-          <motion.div custom={4} variants={sv} initial="hidden" animate="visible"
-            className="grid grid-cols-2 gap-4">
-            <div>
-              <SectionLabel>Opportunities</SectionLabel>
-              {opportunities.length > 0 ? (
-                <div className="space-y-2">
-                  {opportunities.map((o, i) => (
-                    <div key={o.name} className="flex items-start gap-2">
-                      <span style={{ fontSize: "10px", fontWeight: 600, color: "#3ab880", opacity: 0.60, minWidth: 14, marginTop: 1 }}>
-                        {i + 1}
-                      </span>
-                      <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.52)", lineHeight: 1.45 }}>
-                        {o.name}
-                      </p>
-                    </div>
-                  ))}
+        {/* THE READ (Sprint B3, docs/ARGUS_NARRATIVE_CENTERPIECE_V1.md):
+            Z2 thesis + Z3 evidence + Z4 exposure on the left; Z5 transmission
+            chain + Z7 falsifiers as the persistent right rail. Z1 is the
+            ledger above; Z6 follows full-width. Every zone names its engine. */}
+        {thesis && (
+          <motion.div custom={3} variants={sv} initial="hidden" animate="visible"
+            className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="md:col-span-3 space-y-4">
+              {/* Z2 - the dominant narrative, argued */}
+              <div style={{ background: `${regimeColor}08`, border: "1px solid rgba(255,255,255,0.055)", borderLeft: `2px solid ${regimeColor}44`, borderRadius: "5px", padding: "10px 14px" }}>
+                <ZoneLabel label="Dominant Narrative" engine="Narrative Derivation" />
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <span style={{
+                    fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
+                    color: thesis.mode === "narrative" ? "#a78bfa" : "rgba(255,255,255,0.34)",
+                    border: `1px solid ${thesis.mode === "narrative" ? "#a78bfa40" : "rgba(255,255,255,0.14)"}`,
+                    borderRadius: "3px", padding: "2px 5px",
+                  }}>
+                    {thesis.mode === "narrative" ? "DERIVED NARRATIVE" : "THEME"}
+                  </span>
+                  <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.04em", color: "rgba(255,255,255,0.82)" }}>{thesis.label}</span>
                 </div>
-              ) : (
-                <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)" }}>No directional opportunities identified.</p>
+                <p style={{ fontSize: "12.5px", lineHeight: "1.62", color: "rgba(255,255,255,0.62)" }}>{thesis.thesisLine}</p>
+                {vm.whyToday.data && (
+                  <p style={{ fontSize: "10.5px", fontStyle: "italic", lineHeight: 1.5, color: "rgba(255,255,255,0.32)", marginTop: "6px" }}>
+                    &ldquo;{vm.whyToday.data.text}&rdquo;{" "}
+                    <span style={{ fontStyle: "normal", fontSize: "7px", fontWeight: 700, letterSpacing: "0.12em", color: "rgba(255,255,255,0.20)" }}>VOICE</span>
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-1.5" style={{ marginTop: "8px" }}>
+                  {thesis.members.map(m => {
+                    const href = explorerHrefForNode({ type: "Theme", label: m.name });
+                    const chip = (
+                      <span style={{
+                        fontSize: "10px", letterSpacing: "0.04em", color: "rgba(255,255,255,0.55)",
+                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "4px", padding: "3px 9px", display: "inline-flex", gap: "6px", alignItems: "baseline",
+                      }}>
+                        {m.name}
+                        <span style={{ fontSize: "9px", fontWeight: 700, color: m.trend === "rising" ? "#3ab880" : m.trend === "falling" ? "#e05555" : "rgba(255,255,255,0.35)" }}>
+                          {m.conviction}{m.trend === "rising" ? " ↑" : m.trend === "falling" ? " ↓" : ""}
+                        </span>
+                      </span>
+                    );
+                    return href
+                      ? <Link key={m.name} href={href} className="hover:opacity-80 transition-opacity">{chip}</Link>
+                      : <span key={m.name}>{chip}</span>;
+                  })}
+                </div>
+                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", lineHeight: 1.5, marginTop: "8px" }} title={thesis.coherence?.explanation}>
+                  {thesis.whyDominant}
+                </p>
+                {thesis.contradiction && (
+                  <div className="flex items-start gap-2" style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                    <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.65, marginTop: 1 }}>⚠</span>
+                    <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.48)", lineHeight: 1.45 }}>
+                      Standing contradiction ({thesis.contradiction.entity}, severity {thesis.contradiction.severity}): {thesis.contradiction.detail}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Z3 - evidence spine */}
+              {evidenceRows.length > 0 && (
+                <div>
+                  <ZoneLabel label="Evidence Spine" engine="Evidence Engine" />
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                    {evidenceRows.map((r, i) => (
+                      <div key={i} style={{
+                        display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: "10px",
+                        padding: "5px 0", borderBottom: i < evidenceRows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                      }}>
+                        <span style={{ fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.12em", color: "#5390c8", opacity: 0.8, border: "1px solid #5390c840", borderRadius: "3px", padding: "2px 5px", textTransform: "uppercase" }}>
+                          {r.sourceClass}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.55)", lineHeight: 1.4 }}>{r.assertion}</span>
+                        <span className="tabular-nums" style={{ fontSize: "9px", fontWeight: 600, color: "rgba(255,255,255,0.30)" }}>
+                          {r.strength !== null ? r.strength : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Z4 - exposure map */}
+              {exposureMap && exposureMap.sectors.length + exposureMap.companies.length + exposureMap.other.length > 0 && (
+                <div>
+                  <ZoneLabel label="Exposure Map" engine="Narrative Derivation · Graph" />
+                  <div className="space-y-1.5">
+                    {[
+                      { label: "Sectors", items: exposureMap.sectors },
+                      { label: "Companies", items: exposureMap.companies },
+                      { label: "Cmdty / FX / Ctry", items: exposureMap.other },
+                    ].map(g => g.items.length > 0 && (
+                      <div key={g.label} className="flex flex-wrap items-baseline gap-1.5">
+                        <span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.14em", color: "rgba(255,255,255,0.24)", minWidth: 76, textTransform: "uppercase" }}>{g.label}</span>
+                        {g.items.map(it => {
+                          const href = explorerHrefForNode({ type: it.nodeType, label: it.label });
+                          const chip = (
+                            <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.50)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px", padding: "2px 8px" }}>
+                              {it.label}{it.memberCount > 1 && <span style={{ color: "rgba(255,255,255,0.28)", marginLeft: 4 }}>x{it.memberCount}</span>}
+                            </span>
+                          );
+                          return href
+                            ? <Link key={it.label} href={href} className="hover:opacity-80 transition-opacity">{chip}</Link>
+                            : <span key={it.label}>{chip}</span>;
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
-            <div>
-              <SectionLabel>Key Risks</SectionLabel>
-              <div className="space-y-2">
-                {risks.map((r, i) => (
-                  r.kind === "theme" ? (
-                    <div key={`${r.kind}-${i}`} className="flex items-start gap-2">
-                      <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.22)", marginTop: 1 }}>◦</span>
-                      <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.40)", lineHeight: 1.45 }}>
-                        {r.text}
-                      </p>
-                    </div>
+            {/* Right rail: Z5 transmission chain + Z7 falsifiers */}
+            <div className="md:col-span-2 space-y-4">
+              {chainHops.length >= 2 && (
+                <div>
+                  <ZoneLabel label="Transmission" engine="Causal Graph · Profile" />
+                  <div>
+                    {chainHops.map(h => {
+                      const href = explorerHrefForNode({ type: h.nodeType, label: h.label });
+                      const name = <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>{h.label}</span>;
+                      return (
+                        <div key={h.label}>
+                          {h.edge && (
+                            <div className="flex items-center gap-2" style={{ padding: "2px 0 2px 5px" }}>
+                              <span style={{ width: 1, height: 14, background: "rgba(255,255,255,0.14)" }} />
+                              <span style={{ fontSize: "8.5px", letterSpacing: "0.08em", color: h.edge.trend === "strengthening" ? "#3ab880" : h.edge.trend === "weakening" ? "#e05555" : "rgba(255,255,255,0.34)" }}>
+                                {h.edge.relationship.replace(/_/g, " ")} · {h.edge.strength}{h.edge.trend === "strengthening" ? " ↑" : h.edge.trend === "weakening" ? " ↓" : ""}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: nodeColor(h.nodeType), opacity: 0.8 }} />
+                            {href ? <Link href={href} className="hover:opacity-80 transition-opacity">{name}</Link> : name}
+                            <span style={{ fontSize: "7.5px", letterSpacing: "0.10em", color: "rgba(255,255,255,0.22)", textTransform: "uppercase" }}>{h.nodeType}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {falsifiers && (
+                <div style={{ background: "rgba(255,255,255,0.022)", border: "1px solid rgba(255,255,255,0.055)", borderRadius: "5px", padding: "10px 14px" }}>
+                  <ZoneLabel label="Falsifiers" engine="Prediction · Evidence" />
+                  {falsifiers.noneNote ? (
+                    <p style={{ fontSize: "10.5px", color: "#c8a040", lineHeight: 1.5 }}>{falsifiers.noneNote}</p>
                   ) : (
-                    <div key={`${r.kind}-${i}`} className="flex items-start gap-2" title={r.kind === "invalidation" && r.source ? `Invalidation condition for ${r.source} (prediction engine)` : undefined}>
-                      <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.65, marginTop: 1 }}>⚠</span>
-                      <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.52)", lineHeight: 1.45 }}>
-                        {r.text}
-                      </p>
+                    <div className="space-y-2">
+                      {falsifiers.invalidations.map((f, i) => (
+                        <div key={`inv-${i}`} className="flex items-start gap-2" title={`Invalidation condition for ${f.theme} (prediction engine)`}>
+                          <span style={{ fontSize: "10px", color: "#c8a040", opacity: 0.8, marginTop: 1 }}>⚠</span>
+                          <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)", lineHeight: 1.45 }}>{f.text}</p>
+                        </div>
+                      ))}
+                      {falsifiers.contradictions.map((c, i) => (
+                        <div key={`con-${i}`} className="flex items-start gap-2">
+                          <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.7, marginTop: 1 }}>⚠</span>
+                          <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)", lineHeight: 1.45 }}>
+                            {c.detail} <span style={{ color: "rgba(255,255,255,0.28)" }}>sev {c.severity}</span>
+                          </p>
+                        </div>
+                      ))}
+                      {falsifiers.breakers.map((b, i) => (
+                        <div key={`brk-${i}`} className="flex items-start gap-2">
+                          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", marginTop: 1 }}>◦</span>
+                          <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.42)", lineHeight: 1.45 }}>
+                            {b.from} {b.relationship.replace(/_/g, " ")} {b.target}
+                          </p>
+                        </div>
+                      ))}
                     </div>
-                  )
-                ))}
-                {risks.length === 0 && (
-                  <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)" }}>No elevated risk signals.</p>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         )}
 
-        {vm.tradeImplication.data && (
-          <motion.div custom={5} variants={sv} initial="hidden" animate="visible"
-            style={{
-              background: "rgba(255,255,255,0.022)",
-              border: "1px solid rgba(255,255,255,0.055)",
-              borderRadius: "5px",
-              padding: "10px 14px",
-            }}>
-            <SectionLabel>Trade Implication</SectionLabel>
-            <p style={{ fontSize: "12px", lineHeight: "1.58", color: "rgba(255,255,255,0.52)" }}>
-              {vm.tradeImplication.data.text}
-            </p>
-          </motion.div>
-        )}
-
-        {activeThemes.length > 0 && (
-          <motion.div custom={6} variants={sv} initial="hidden" animate="visible">
-            <SectionLabel>Active Themes</SectionLabel>
-            <div className="flex flex-wrap gap-1.5">
-              {activeThemes.map((name) => (
-                <span key={name} style={{
-                  fontSize: "10px", letterSpacing: "0.04em", color: "rgba(255,255,255,0.48)",
-                  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: "4px", padding: "3px 9px",
-                }}>
-                  {name}
-                </span>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Honest replacement for the deleted hardcoded catalyst list: dateless
-            watch lines derived from stored theme fields (v2 doc section 4.6).
-            No dates, no countdowns, no importance theater. */}
-        {watchItems.length > 0 && (
+        {/* Z6 - watch today: derived, dateless, each item bound to the zone it
+            would move (centerpiece doc). No dates, no countdowns. */}
+        {readWatch.length > 0 && (
           <motion.div custom={7} variants={sv} initial="hidden" animate="visible">
-            <SectionLabel>What to Watch</SectionLabel>
+            <ZoneLabel label="Watch Today" engine="Derived · Dateless" />
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-              {watchItems.map((w, idx) => (
+              {readWatch.map((w, idx) => (
                 <div key={`${w.theme}-${idx}`} style={{
                   display: "grid",
                   gridTemplateColumns: "1fr auto auto",
                   alignItems: "center",
                   gap: "10px",
                   padding: "6px 0",
-                  borderBottom: idx < watchItems.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                  borderBottom: idx < readWatch.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
                 }}>
                   <span style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)" }}>
-                    Watch {w.text}
+                    Watch {w.text} <span style={{ color: "rgba(255,255,255,0.28)" }}>- {w.binding}</span>
                   </span>
                   <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.02em" }}>
                     {w.theme}

@@ -29,6 +29,7 @@ import type { ProfileSection, ProfileStatus } from "./intelligenceProfile";
 import { evaluateEvidenceForNode } from "./evidenceEngine";
 import { predictThemeTrajectory } from "./predictionEngine";
 import { deriveMorningBriefDeltas, watchLineOf, type MorningBriefDelta, type TrackedTheme } from "./intelligenceDeltas";
+import { buildTheRead, type ReadVM, type ReadClusterInput } from "./theRead";
 
 /* ------------------------------------------------------------------ *
  * Contract
@@ -73,6 +74,9 @@ export interface MorningBriefVM {
   /** The change ledger (Sprint B2): what changed since the previous cycle,
       from recorded memory only (lib/intelligenceDeltas.ts). */
   changes:          ProfileSection<MorningBriefDelta[]>;
+  /** The Read (Sprint B3): zones Z2-Z7 of the Narrative Centerpiece
+      (lib/theRead.ts; docs/ARGUS_NARRATIVE_CENTERPIECE_V1.md). */
+  read:             ReadVM;
   conviction:       ProfileSection<ConvictionVM>;
   whyToday:         ProfileSection<VoiceVM>;
   primaryNarrative: ProfileSection<VoiceVM>;
@@ -87,6 +91,8 @@ export interface MorningBriefVM {
 export interface MorningBriefInputs {
   marketBrief?:        MarketBrief | null;
   themes?:             ThemeIntelligence[];
+  /** Minimal story-cluster shapes for The Read's evidence spine (Z3). */
+  clusters?:           ReadClusterInput[];
   storyClusterCount?:  number;
   regimeStatus?:       RegimeChange | null;
   /** Data-derived regime label (useMarketState) used when the brief is absent. */
@@ -230,9 +236,12 @@ export function buildMorningBrief(inputs: MorningBriefInputs = {}): MorningBrief
     ? section<WatchItemVM[]>("partial", watchItems, "Derived from stored theme drivers and direction; not a calendar. A real catalyst calendar requires the Event provider (v2 doc 4.6).")
     : unavailable<WatchItemVM[]>("No themes available to derive watch items from.");
 
+  /* -- The Read (Sprint B3): zones Z2-Z7, assembled by lib/theRead.ts -- */
+  const read = buildTheRead({ themes, clusters: inputs.clusters, graphReady });
+
   return {
     generatedAt: Date.now(),
-    regime, changes, conviction, whyToday, primaryNarrative, opportunities, risks,
+    regime, changes, read, conviction, whyToday, primaryNarrative, opportunities, risks,
     tradeImplication, activeThemes, watch,
     counts: { activeThemes: themes.length, storyClusters: inputs.storyClusterCount ?? 0 },
   };

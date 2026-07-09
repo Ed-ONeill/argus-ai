@@ -73,6 +73,8 @@ An overlay on Z2/Z4/Z5, not a content zone: relevance chips computed from the in
 
 ## 4. Which engine powers every section
 
+> **Implementation status (B3, 2026-07-09):** Z1-Z7 are live in production via `lib/theRead.ts` (zones Z2-Z7, composed into the Morning Brief VM) and `lib/intelligenceDeltas.ts` (Z1). Deferred to B4+: Z5's ghost hop (opportunity ranking), Z6 real dates (Event provider), Z4 consumer/flows classes, and the Relevance Rail (R). Personalization is not yet rendered.
+
 | Zone | Engine(s) | Status today |
 |---|---|---|
 | Z1 Ledger | `intelligenceDeltas` (server ThemeMemory authoritative, device absence-only) | **live** (shipped, B2) |
