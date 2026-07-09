@@ -41,6 +41,7 @@ import { resolveDrawerEntity, buildCompanyContext, buildSymbolContext } from "./
 import { selectSeriesForRange, EMPTY_SERIES as EMPTY_PRICE_SERIES, type PriceSeriesVM, type PricePoint } from "./marketSeries";
 import { buildRelationshipMap, expandMap, countExpansion, deriveEdgeTrend } from "./causalMap";
 import { buildIntelligenceProfile, PROFILE_VERSION } from "./intelligenceProfile";
+import { deriveNarratives, findNarrativeForTheme, narrativeKeyOfDrivers, DERIVED_NARRATIVE_VERSION } from "./narrativeDerivation";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
 import type { AdapterContext, FetchLike, FetchParams, ProviderMetadata, ProviderObservation } from "./dataAdapters/types";
@@ -1378,6 +1379,112 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const strip = (x: ReturnType<typeof buildIntelligenceProfile>) =>
       JSON.stringify({ drivers: x.drivers, beneficiaries: x.beneficiaries, transmission: x.transmission, evidence: x.evidence, confidence: x.confidence, risks: x.risks });
     assert(strip(bare) === strip(p), "injection must not alter data-derived sections");
+  });
+
+  // 77. System 2: the Narrative Derivation Engine. A DerivedNarrative is an
+  // ephemeral grouping of themes sharing a driver set - derived, never stored,
+  // keyed by canonical driver ids so it survives theme renames, and carrying
+  // no narrative-level confidence/lifecycle/velocity (fabrication today).
+  const seedNarrativeGraph = (themeAName = "AI Infrastructure") => {
+    intelligenceGraph.clear();
+    const add = (label: string, type: string) => intelligenceGraph.addNode({ label, type: type as never });
+    add("AI Capex", "Macro");
+    add("GLP-1 Adoption", "Macro");
+    add(themeAName, "Theme");
+    add("Datacenter Power", "Theme");
+    add("Obesity Drugs", "Theme");          // single-theme driver: not a narrative
+    add("Semiconductors", "Sector");
+    add("Utilities", "Sector");
+    add("NVDA", "Company");
+    add("AMD", "Company");
+    add("VST", "Company");
+    const rel = (source: string, relationshipType: string, target: string, strength: number, pages: string[] = []) =>
+      intelligenceGraph.addRelationship({ source, target, relationshipType: relationshipType as never, strength, confidence: 70, originatingPages: pages as never[] });
+    rel("AI Capex", "drives", themeAName, 82, ["Feed"]);
+    rel("AI Capex", "drives", "Datacenter Power", 74, ["Feed"]);   // same page on both driver edges
+    rel("GLP-1 Adoption", "drives", "Obesity Drugs", 70);
+    rel(themeAName, "drives", "Semiconductors", 76);
+    rel("Datacenter Power", "drives", "Utilities", 72);
+    rel(themeAName, "supports", "NVDA", 88, ["Feed"]);
+    rel(themeAName, "supports", "AMD", 64, ["Markets"]);
+    rel("Datacenter Power", "supports", "NVDA", 60, ["Feed"]);     // shared asset, shared page
+    rel("Datacenter Power", "supports", "VST", 78);
+  };
+
+  test("derived narratives cluster themes by shared driver, honestly", () => {
+    seedNarrativeGraph();
+    const out = deriveNarratives();
+    assert(out.length === 1, `one shared-driver grouping expected, got ${out.length}`);
+    const n = out[0];
+    assert(n.version === DERIVED_NARRATIVE_VERSION && n.derived === true, "derived marker and version must ride on the object");
+    assert(n.key === "ai-capex", `key must be the canonical driver id, got ${n.key}`);
+    const memberLabels = (n.members.data ?? []).map(m => m.label);
+    assert(memberLabels.includes("AI Infrastructure") && memberLabels.includes("Datacenter Power"), "both themes on the shared driver are members");
+    assert(!memberLabels.includes("Obesity Drugs"), "a driver with one theme is a theme, not a narrative");
+    const assets = n.exposure.data?.assets ?? [];
+    const nvda = assets.filter(a => a.label === "NVDA");
+    assert(nvda.length === 1 && nvda[0].memberCount === 2, "a shared asset appears once with its member count, never duplicated");
+    assert((n.members.data ?? []).every(m => m.driverLinks.length > 0), "every member carries its real driver edges");
+  });
+
+  test("derived narratives are deterministic and read-only (no stored nodes)", () => {
+    seedNarrativeGraph();
+    const before = intelligenceGraph.stats();
+    const strip = (ns: ReturnType<typeof deriveNarratives>) => JSON.stringify(ns.map(n => ({ ...n, generatedAt: 0 })));
+    assert(strip(deriveNarratives()) === strip(deriveNarratives()), "same graph must yield the same derivation");
+    const after = intelligenceGraph.stats();
+    assert(before.nodes === after.nodes && before.edges === after.edges, "derivation must not create nodes or relationships");
+    assert(intelligenceGraph.nodesOfType("Narrative").length === 0, "no stored Narrative nodes may exist after derivation");
+  });
+
+  test("narrative key is stable across theme renames", () => {
+    seedNarrativeGraph("AI Infrastructure");
+    const a = deriveNarratives()[0];
+    seedNarrativeGraph("AI Compute Buildout");   // same driver set, renamed theme
+    const b = deriveNarratives()[0];
+    assert(!!a && !!b && a.key === b.key, `driver-set key must survive a theme rename (${a?.key} vs ${b?.key})`);
+    assert(narrativeKeyOfDrivers(["power-prices", "ai-capex"]) === "ai-capex+power-prices", "keys are sorted canonical driver ids");
+  });
+
+  test("drivers with identical member sets merge into one driver-set narrative", () => {
+    seedNarrativeGraph();
+    intelligenceGraph.addNode({ label: "Power Prices", type: "Macro" as never });
+    intelligenceGraph.addRelationship({ source: "Power Prices", target: "AI Infrastructure", relationshipType: "drives" as never, strength: 66, confidence: 70 });
+    intelligenceGraph.addRelationship({ source: "Power Prices", target: "Datacenter Power", relationshipType: "drives" as never, strength: 80, confidence: 70 });
+    const out = deriveNarratives();
+    assert(out.length === 1, `identical member sets must merge, got ${out.length} narratives`);
+    assert(out[0].key === "ai-capex+power-prices", `merged key must carry the full driver set, got ${out[0].key}`);
+    assert((out[0].driverSet.data ?? []).length === 2, "both drivers ride on the merged narrative");
+  });
+
+  test("derived narratives never blend a narrative-level confidence or fake temporal fields", () => {
+    seedNarrativeGraph();
+    const n = deriveNarratives()[0];
+    for (const k of ["confidence", "conviction", "lifecycle", "velocity", "acceleration", "probability", "analogs", "history"])
+      assert(!(k in n), `field "${k}" must not exist on a DerivedNarrative in v1`);
+    assert(n.coherence.status === "partial" && !!n.coherence.data?.explanation, "coherence is a decomposed heuristic, marked partial");
+    if (n.evidence.data) {
+      const keys = Object.keys(n.evidence.data).sort().join(",");
+      assert(keys === "distinctPages,perMember", `evidence carries only per-member reads and a distinct-page union, got ${keys}`);
+      assert(n.evidence.data.distinctPages.filter(p => p === "Feed").length === 1, "a page shared by members is counted once, never summed");
+    }
+    if (n.forward.data) assert(n.forward.data.every(f => !!f.themeId), "forward views are member-level reads, never a narrative forecast");
+  });
+
+  test("narrative derivation degrades honestly on sparse and empty graphs", () => {
+    intelligenceGraph.clear();
+    assert(deriveNarratives().length === 0, "an empty graph derives no narratives");
+    intelligenceGraph.addNode({ label: "Lone Theme", type: "Theme" as never });
+    intelligenceGraph.addNode({ label: "Another Theme", type: "Theme" as never });
+    assert(deriveNarratives().length === 0, "themes without shared drivers derive no narratives");
+    assert(findNarrativeForTheme("Lone Theme") === null, "a theme outside every grouping resolves to null, not a fabricated narrative");
+    seedNarrativeGraph();
+    const hit = findNarrativeForTheme("AI Infrastructure");
+    assert(!!hit && hit.key === "ai-capex", "a member theme resolves to its derived narrative");
+    for (const s of [hit!.driverSet, hit!.members, hit!.exposure, hit!.evidence, hit!.forward, hit!.coherence]) {
+      assert(s.status !== "unavailable" || s.data === null, "unavailable sections must carry null data");
+      assert(s.status === "unavailable" || s.data !== null, "live/partial sections must carry data");
+    }
   });
 
   for (const [name, fn] of tests) {

@@ -207,7 +207,7 @@ Narrative            "AI infrastructure supercycle"
 
 Introduce narrative as a **derived grouping**, not a first-class entity:
 
-- Phase 1 (cheap, honest): a pure projection `deriveNarratives(themes, graph)` that clusters themes sharing dominant drivers and overlapping asset sets. Output is labeled as derived ("These 3 themes share a driver"), carries no independent confidence, and is keyed by its driver set so it is stable across theme renames. Consumers: Feed hero, Markets story, Explorer left column.
+- Phase 1 (cheap, honest): a pure projection `deriveNarratives(themes, graph)` that clusters themes sharing dominant drivers and overlapping asset sets. Output is labeled as derived ("These 3 themes share a driver"), carries no independent confidence, and is keyed by its driver set so it is stable across theme renames. Consumers: Feed hero, Markets story, Explorer left column. **Implemented (System 2 sprint, 2026-07):** `frontend/src/lib/narrativeDerivation.ts` (`DerivedNarrative`), specified in `docs/ARGUS_NARRATIVE_ENGINE_V1.md`; contract only, not yet wired into any surface.
 - Phase 2 (only if the backend learns to emit narratives): promote to a stored entity with its own evidence trail, and migrate the derived keys. The migration is additive because phase 1 never persisted anything.
 
 This keeps the hierarchy available to the UI without inventing an authority the data does not have.
