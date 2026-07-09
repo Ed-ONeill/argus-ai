@@ -434,6 +434,7 @@ function BriefOpen({
   // Every section below reads the canonical view model (lib/morningBrief.ts);
   // sections whose status is "unavailable" render nothing (honest absence).
   const regime = vm.regime.data;
+  const changes = vm.changes.data ?? [];
   const conviction = vm.conviction.data;
   const opportunities = vm.opportunities.data ?? [];
   const risks = vm.risks.data ?? [];
@@ -528,6 +529,56 @@ function BriefOpen({
       )}
 
       <div className="px-6 py-4 space-y-4">
+        {/* The change ledger (Sprint B2): what changed since the previous
+            intelligence cycle, from recorded memory only. Each row answers
+            what/why inline; why-it-matters and what-to-watch ride in the
+            tooltip until the v2 layout lands (B3). */}
+        {changes.length > 0 && (
+          <motion.div custom={2} variants={sv} initial="hidden" animate="visible">
+            <SectionLabel>What Changed</SectionLabel>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              {changes.map((d, idx) => {
+                const kColor =
+                  d.kind === "CONTRADICTED" || d.kind === "BROKEN" ? "#e05555" :
+                  d.kind === "WEAKENED" ? "#c8a040" :
+                  d.kind === "STRENGTHENED" ? "#3ab880" :
+                  d.kind === "NEW" ? "#5390c8" :
+                  d.kind === "EXPANDED" ? "#52b0c8" : "rgba(255,255,255,0.34)";
+                return (
+                  <div key={`${d.kind}-${d.entity}-${idx}`}
+                    title={`${d.matters} ${d.watch}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "96px 1fr",
+                      alignItems: "start",
+                      gap: "10px",
+                      padding: "6px 0",
+                      borderBottom: idx < changes.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
+                    }}>
+                    <span style={{
+                      fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
+                      color: kColor, opacity: 0.85,
+                      border: `1px solid ${kColor}40`,
+                      borderRadius: "3px", padding: "2px 5px",
+                      justifySelf: "start", marginTop: 1,
+                    }}>
+                      {d.kind}{d.basis === "device" ? " · LOCAL" : ""}
+                    </span>
+                    <div>
+                      <p style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)", lineHeight: 1.45 }}>
+                        {d.what}
+                      </p>
+                      <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", lineHeight: 1.45, marginTop: "1px" }}>
+                        {d.why}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
         {vm.whyToday.data && (
           <motion.div custom={2} variants={sv} initial="hidden" animate="visible"
             style={{

@@ -43,6 +43,7 @@ import { buildRelationshipMap, expandMap, countExpansion, deriveEdgeTrend } from
 import { buildIntelligenceProfile, PROFILE_VERSION } from "./intelligenceProfile";
 import { deriveNarratives, findNarrativeForTheme, narrativeKeyOfDrivers, DERIVED_NARRATIVE_VERSION } from "./narrativeDerivation";
 import { buildMorningBrief } from "./morningBrief";
+import { deriveMorningBriefDeltas } from "./intelligenceDeltas";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -1511,7 +1512,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     confidence: 93, ...over,
   });
   const briefSections = (vm: ReturnType<typeof buildMorningBrief>) =>
-    [vm.regime, vm.conviction, vm.whyToday, vm.primaryNarrative, vm.opportunities, vm.risks, vm.tradeImplication, vm.activeThemes, vm.watch];
+    [vm.regime, vm.changes, vm.conviction, vm.whyToday, vm.primaryNarrative, vm.opportunities, vm.risks, vm.tradeImplication, vm.activeThemes, vm.watch];
 
   test("morning brief view model is deterministic and degrades honestly", () => {
     const empty = buildMorningBrief({});
@@ -1579,6 +1580,87 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const got = (warm.risks.data ?? []).find(r => r.kind === "invalidation");
     if (inv) assert(!!got && got.text === inv && got.source === "AI Infrastructure", "the falsifier must be the engine read, unmodified");
     else assert(!got, "no engine falsifier must mean none rendered");
+  });
+
+  // 79. Sprint B2: the canonical change-detection layer
+  // (lib/intelligenceDeltas.ts). Deltas derive only from recorded memory;
+  // BROKEN is vocabulary-only in v1; device history covers absence only.
+  const mkMem = (over: Record<string, unknown> = {}) => ({
+    theme_id: "th-ai", name: "AI Infrastructure", status: "strengthening", sessions_in_status: 4,
+    sessions_observed: 6, first_seen: "2026-07-01", first_seen_days_ago: 7, last_seen: "2026-07-08",
+    last_seen_hours_ago: 2, confirmations_today: 3, contradictions_today: 0, confirming_total: 12,
+    contradicting_total: 1, conviction_current: 74, conviction_first: 50, conviction_prev: 70,
+    conviction_window_start: 58, conviction_change: 16, conviction_trend: "rising", conviction_peak: 74,
+    conviction_trough: 50, momentum: "strengthening", lifecycle: "building",
+    historical_tickers: ["NVDA"], historical_sectors: ["Semiconductors"],
+    sector_sessions: { Semiconductors: 6 }, ticker_sessions: { NVDA: 6 },
+    is_new: false, is_one_off: false, is_persistent_pattern: true, is_stale: false,
+    evidence_confirms_prior: true, ...over,
+  } as never as ThemeIntelligence["memory"]);
+
+  test("change ledger derives only from recorded memory", () => {
+    // No memory of any kind: honest first-cycle state, zero deltas.
+    const cold = deriveMorningBriefDeltas({ themes: [mkTheme()] });
+    assert(!cold.hadMemory && cold.deltas.length === 0, "no prior state must mean no deltas, not inferred ones");
+    assert(buildMorningBrief({ themes: [mkTheme()] }).changes.status === "unavailable", "the brief's changes section degrades honestly without memory");
+
+    const themes = [
+      mkTheme({ memory: mkMem() }),
+      mkTheme({ id: "th-oil", name: "Oil Shock", memory: mkMem({ name: "Oil Shock", status: "weakening", conviction_trend: "falling", conviction_change: -9, conviction_window_start: 70, conviction_current: 61, contradictions_today: 2 }) }),
+      mkTheme({ id: "th-new", name: "Grid Buildout", memory: mkMem({ name: "Grid Buildout", is_new: true, status: "new", sessions_observed: 1, confirmations_today: 2, conviction_trend: "stable", conviction_change: 0 }) }),
+      mkTheme({ id: "th-exp", name: "Datacenter Power", memory: mkMem({ name: "Datacenter Power", ticker_sessions: { NVDA: 5, VST: 1 }, conviction_trend: "stable", conviction_change: 0 }) }),
+      mkTheme({ id: "th-stale", name: "Reopening Trade", memory: mkMem({ name: "Reopening Trade", is_stale: true, status: "stale", conviction_trend: "stable", conviction_change: 0, last_seen_hours_ago: 70 }) }),
+    ];
+    const { deltas, hadMemory } = deriveMorningBriefDeltas({ themes });
+    assert(hadMemory, "attached backend memory must register as memory");
+    const kinds = deltas.map(d => `${d.kind}:${d.entity}`);
+    assert(kinds.includes("STRENGTHENED:AI Infrastructure"), `rising trend yields STRENGTHENED, got ${kinds.join(" | ")}`);
+    const s = deltas.find(d => d.kind === "STRENGTHENED")!;
+    assert(s.what.includes("58 to 74") && s.what.includes("+16"), "the headline carries the recorded conviction window");
+    assert(s.why.includes("3 confirming"), "the why cites recorded confirmation counts");
+    assert(kinds.includes("WEAKENED:Oil Shock") && kinds.includes("CONTRADICTED:Oil Shock"), "falling trend and recorded contradictions are separate events");
+    assert(kinds.includes("NEW:Grid Buildout"), "first observation yields NEW");
+    const exp = deltas.find(d => d.kind === "EXPANDED");
+    assert(!!exp && exp.what.includes("VST") && !exp.what.includes("NVDA,"), "EXPANDED names only first-session linkages");
+    assert(kinds.includes("REMOVED:Reopening Trade"), "server staleness yields REMOVED");
+    assert(deltas.length <= 6, "the ledger is capped for the five-minute read");
+  });
+
+  test("change ledger ranks by severity and answers the four questions", () => {
+    const themes = [
+      mkTheme({ memory: mkMem() }),
+      mkTheme({ id: "th-oil", name: "Oil Shock", memory: mkMem({ name: "Oil Shock", contradictions_today: 2, conviction_trend: "stable", conviction_change: 0 }) }),
+    ];
+    const { deltas } = deriveMorningBriefDeltas({ themes });
+    assert(deltas[0].kind === "CONTRADICTED", "contradictions outrank confirmations pre-open");
+    for (const d of deltas) {
+      assert(d.what.length > 0 && d.why.length > 0 && d.matters.length > 0 && d.watch.length > 0, "every delta answers all four questions");
+      assert(/\d/.test(d.why), "the why is traceable: it carries recorded numbers");
+    }
+    const strip = (r: ReturnType<typeof deriveMorningBriefDeltas>) => JSON.stringify(r);
+    assert(strip(deriveMorningBriefDeltas({ themes })) === strip(deriveMorningBriefDeltas({ themes })), "same inputs, same ledger");
+  });
+
+  test("BROKEN is vocabulary only: never emitted from thresholds in v1", () => {
+    const themes = [mkTheme({ memory: mkMem({ contradicting_total: 20, confirming_total: 3, contradictions_today: 5, conviction_trend: "falling", conviction_change: -30, conviction_window_start: 80, conviction_current: 50, status: "weakening" }) })];
+    const { deltas } = deriveMorningBriefDeltas({ themes });
+    assert(deltas.length > 0, "the collapse still registers as WEAKENED + CONTRADICTED");
+    assert(!deltas.some(d => d.kind === "BROKEN"), "no system records a broken-thesis state yet; emitting one would fabricate it");
+  });
+
+  test("device history covers absence only, badged and time-bounded", () => {
+    const now = Date.parse("2026-07-08T12:00:00Z");
+    const tracked = [
+      { themeId: "vanished-theme", themeName: "Vanished Theme", lastDate: "2026-07-07" },
+      { themeId: "ancient-theme", themeName: "Ancient Theme", lastDate: "2026-06-01" },
+    ];
+    const { deltas, hadMemory } = deriveMorningBriefDeltas({ themes: [mkTheme()], previouslyTracked: tracked, now });
+    assert(hadMemory, "device history counts as memory");
+    const removed = deltas.filter(d => d.kind === "REMOVED");
+    assert(removed.length === 1 && removed[0].entity === "Vanished Theme" && removed[0].basis === "device", "recent absence is a device-basis REMOVED");
+    assert(!deltas.some(d => d.entity === "Ancient Theme"), "stale disappearances are not news");
+    const vm = buildMorningBrief({ themes: [mkTheme()], previouslyTracked: tracked });
+    assert(vm.changes.status === "partial" && !!vm.changes.note, "a device-only ledger is marked partial with a note");
   });
 
   for (const [name, fn] of tests) {

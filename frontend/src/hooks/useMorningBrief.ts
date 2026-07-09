@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { useFeed } from "@/hooks/useFeed";
 import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { buildMorningBrief, type MorningBriefVM, type RegimeChange } from "@/lib/morningBrief";
 
 export interface UseMorningBriefOptions {
@@ -39,6 +40,11 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
     themes, stories: clusters, storyThemes: themes, matchedThemes: themes,
   });
 
+  // Device-local snapshot index, read once per mount: absence detection for
+  // the change ledger (server memory rides on present themes and cannot see
+  // themes that vanished). SSR-safe: returns [] without a window.
+  const previouslyTracked = useMemo(() => getTrackedThemes(), []);
+
   const vm = useMemo(
     () => buildMorningBrief({
       marketBrief: data?.market_brief ?? null,
@@ -46,10 +52,11 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
       storyClusterCount: clusters.length,
       regimeStatus: opts.regimeStatus ?? null,
       fallbackRegimeLabel: opts.fallbackRegimeLabel ?? null,
+      previouslyTracked,
       graphReady: graph.ready,
     }),
     // graph.ready is the invalidation tick for the engine-backed reads
-    [data?.market_brief, themes, clusters.length, opts.regimeStatus, opts.fallbackRegimeLabel, graph.ready],
+    [data?.market_brief, themes, clusters.length, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, graph.ready],
   );
 
   return { vm, isLoading, graphReady: graph.ready };

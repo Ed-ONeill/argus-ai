@@ -28,6 +28,7 @@ import type { MarketBrief, ThemeIntelligence } from "./types";
 import type { ProfileSection, ProfileStatus } from "./intelligenceProfile";
 import { evaluateEvidenceForNode } from "./evidenceEngine";
 import { predictThemeTrajectory } from "./predictionEngine";
+import { deriveMorningBriefDeltas, watchLineOf, type MorningBriefDelta, type TrackedTheme } from "./intelligenceDeltas";
 
 /* ------------------------------------------------------------------ *
  * Contract
@@ -69,6 +70,9 @@ export interface WatchItemVM {
 export interface MorningBriefVM {
   generatedAt:      number;
   regime:           ProfileSection<RegimeVM>;
+  /** The change ledger (Sprint B2): what changed since the previous cycle,
+      from recorded memory only (lib/intelligenceDeltas.ts). */
+  changes:          ProfileSection<MorningBriefDelta[]>;
   conviction:       ProfileSection<ConvictionVM>;
   whyToday:         ProfileSection<VoiceVM>;
   primaryNarrative: ProfileSection<VoiceVM>;
@@ -87,6 +91,9 @@ export interface MorningBriefInputs {
   regimeStatus?:       RegimeChange | null;
   /** Data-derived regime label (useMarketState) used when the brief is absent. */
   fallbackRegimeLabel?: string | null;
+  /** Device-local snapshot index (themeSnapshots.getTrackedThemes), for the
+      change ledger's absence detection only. */
+  previouslyTracked?:  TrackedTheme[];
   /** True when the caller has built the intelligence graph singleton this
       session; gates the evidence/prediction engine reads. */
   graphReady?:         boolean;
@@ -105,34 +112,8 @@ const VOICE_NOTE = "Summarizer voice: grounded phrasing only, never a source of 
 const voice = (text: string | null | undefined, missing: string): ProfileSection<VoiceVM> =>
   text && text.trim() ? section<VoiceVM>("partial", { text: text.trim() }, VOICE_NOTE) : unavailable<VoiceVM>(missing);
 
-/** The theme's dominant driver, from its stored fields (no label cosmetics).
-    Mirrors themeTransmission.deriveDriver semantics; keep the two in sync
-    until B4 consolidates the watch derivation (v2 doc section 8). */
-function driverOf(t: ThemeIntelligence): string {
-  const cn = t.causal_narrative ?? "";
-  if (cn.includes("→")) {
-    const head = cn.split("→").map(s => s.trim()).filter(Boolean)[0];
-    if (head && head.length > 2) return head;
-  }
-  return (t.related_macro_factors ?? [])[0] ?? "the macro backdrop";
-}
-
-/** Dateless "what to watch" line from stored driver + direction fields.
-    Mirrors themeTransmission.themeWatch; same sync rule as driverOf. */
-function watchLineOf(t: ThemeIntelligence): string {
-  const d = driverOf(t).toLowerCase();
-  const base = /rate|yield|fed|policy/.test(d) ? "bond yields"
-    : /financ|credit|spread|default/.test(d) ? "credit spreads"
-    : /energy|oil|crude|supply/.test(d) ? "crude and the curve"
-    : /dollar|fx|currenc/.test(d) ? "the dollar"
-    : /inflation|cpi|price/.test(d) ? "the next inflation print"
-    : /power|electr|grid|infra/.test(d) ? "utility and grid orders"
-    : "rates and breadth";
-  const dir = t.momentum_direction;
-  return dir === "bullish" ? `${base} for follow-through`
-    : dir === "bearish" ? `${base} for further pressure`
-    : `${base} for direction`;
-}
+/* watch/driver derivations live in lib/intelligenceDeltas.ts (one logic home,
+   shared with the change ledger); imported above. */
 
 /* ------------------------------------------------------------------ *
  * buildMorningBrief
@@ -155,6 +136,21 @@ export function buildMorningBrief(inputs: MorningBriefInputs = {}): MorningBrief
         assetsImpacted: (brief?.assets_impacted ?? []).slice(0, 4),
       }, brief?.market_regime ? "Regime label phrased by the summarizer; day-over-day status tracked locally." : undefined)
     : unavailable<RegimeVM>("No regime read available yet.");
+
+  /* -- the change ledger (Sprint B2): recorded memory only, never inferred
+        from a single cycle. Server memory (attached ThemeMemory) is
+        authoritative; device snapshots cover absence detection only. -- */
+  const deltaResult = deriveMorningBriefDeltas({
+    themes, previouslyTracked: inputs.previouslyTracked, graphReady,
+  });
+  const changes = !deltaResult.hadMemory
+    ? unavailable<MorningBriefDelta[]>("First cycle: no cross-session memory to compare against yet.")
+    : deltaResult.deltas.length === 0
+      ? section<MorningBriefDelta[]>("partial", [], "Memory exists but recorded no material changes this cycle.")
+      : section<MorningBriefDelta[]>(
+          deltaResult.deltas.some(d => d.basis === "server") ? "live" : "partial",
+          deltaResult.deltas,
+          deltaResult.deltas.some(d => d.basis === "server") ? undefined : "Only device-local history was available for this read.");
 
   /* -- conviction: leading theme, decomposed. The summarizer's confidence
         number (MarketBrief.confidence) is deliberately never read here. -- */
@@ -236,7 +232,7 @@ export function buildMorningBrief(inputs: MorningBriefInputs = {}): MorningBrief
 
   return {
     generatedAt: Date.now(),
-    regime, conviction, whyToday, primaryNarrative, opportunities, risks,
+    regime, changes, conviction, whyToday, primaryNarrative, opportunities, risks,
     tradeImplication, activeThemes, watch,
     counts: { activeThemes: themes.length, storyClusters: inputs.storyClusterCount ?? 0 },
   };

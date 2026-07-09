@@ -107,6 +107,17 @@ export function getThemeHistory(themeId: string): ThemeSnapshot[] {
   return load().filter(s => s.themeId === themeId).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Index of every theme this device has snapshotted, with its latest snapshot
+    date. Powers absence detection in the change ledger (intelligenceDeltas). */
+export function getTrackedThemes(): Array<{ themeId: string; themeName: string; lastDate: string }> {
+  const latest = new Map<string, { themeId: string; themeName: string; lastDate: string }>();
+  for (const s of load()) {
+    const prev = latest.get(s.themeId);
+    if (!prev || s.date > prev.lastDate) latest.set(s.themeId, { themeId: s.themeId, themeName: s.themeName, lastDate: s.date });
+  }
+  return [...latest.values()].sort((a, b) => a.themeId.localeCompare(b.themeId));
+}
+
 export interface ThemeDelta {
   hasHistory:     boolean;
   sessions:       number;   // number of snapshots
