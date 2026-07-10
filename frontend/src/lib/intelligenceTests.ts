@@ -52,6 +52,9 @@ import { deltasToSection, watchLineOf } from "./intelligenceDeltas";
 import { buildRiskRead } from "./riskRead";
 import { memorySentences } from "./themeIntelligence";
 import { buildSavedIntel, type SavedEntityInput } from "./savedIntel";
+import { buildListenIntel } from "./listenIntel";
+import { episodeIntel } from "./episodeIntel";
+import type { Episode } from "./types";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -2187,6 +2190,134 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const { shared, followedAI } = savedFixture();
     const firstCycle = buildSavedIntel({ followedThemes: [followedAI], ...shared, deltas: [], hadMemory: false });
     assert(firstCycle.summary.status === "partial" && (firstCycle.summary.note ?? "").includes("First cycle"), "first-cycle summary is honest");
+  });
+
+  // 87. Phase 2.4 Listen unification: episodes are EVIDENCE attached to shared
+  // intelligence objects. Attachment keys are canonical engine keys; metadata
+  // matches can never become SUPPORTS; why-it-matters is a shared object;
+  // contrarian records are evidence-engine records verbatim; personalization
+  // changes ordering/inclusion only; sparse inputs degrade honestly.
+
+  const mkEpisode = (over: Partial<Episode> = {}): Episode => ({
+    id: "ep-1", title: "AI Infrastructure deep dive", description: "NVDA and the capex cycle. What the buildout means.",
+    show_name: "Test Desk", publisher: "Test", published_at: "2026-07-09T12:00:00Z",
+    duration_seconds: 3600, topics: ["Semiconductors"], entities: ["NVDA"],
+    relevance_score: 70, why_it_matters: "", external_url: "", audio_url: "",
+    ...over,
+  } as never as Episode);
+
+  const listenFixture = () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    const episodes = [mkEpisode(), mkEpisode({ id: "ep-2", title: "Unrelated cooking show", topics: ["Food"], entities: [], description: "Recipes." })];
+    provisionIntelligenceGraph({ themes, episodes });
+    const dr = deriveMorningBriefDeltas({ themes });
+    const read = buildTheRead({ themes, deltas: dr.deltas, graphReady: true });
+    const mkRisks = () => new Map(themes.map(t => [t.name.toLowerCase(), buildRiskRead(t.name, t)]));
+    return { themes, episodes, dr, read, mkRisks };
+  };
+
+  test("listen attaches episodes to canonical shared objects", () => {
+    const { themes, episodes, dr, read, mkRisks } = listenFixture();
+    const vm = buildListenIntel({
+      episodes, themes, read, risks: mkRisks(), deltas: dr.deltas,
+      narrativeOf: (n: string) => findNarrativeForTheme(n),
+      researchPriorities: read.priorities.data ?? [], graphReady: true,
+    });
+    const a = (vm.relevantToRead.data ?? [])[0];
+    assert(!!a, "an episode matching a member theme lands in Relevant to Today's Read");
+    assert(themes.some(t => t.name === a!.primaryTheme), "the primary theme is a canonical engine key (a real theme name)");
+    assert(!!intelligenceGraph.getNode(a!.primaryTheme!), "the entity key resolves in the shared graph, like Explorer");
+    assert(a!.narrative === (findNarrativeForTheme(a!.primaryTheme!)?.label ?? null), "narrative membership equals the shared derivation");
+    assert(a!.whyMatters === read.thesis.data!.thesisLine && a!.whySource === "narrative-thesis",
+      "why-it-matters is the SAME thesis line The Read shows, source named");
+    assert((vm.relevantToRead.data ?? []).every(v => v.episode.id !== "ep-2"), "unmatched content stays out of the intelligence-led sections");
+  });
+
+  test("a mention can never silently become support", () => {
+    const { themes, episodes, dr, read, mkRisks } = listenFixture();
+    const vm = buildListenIntel({ episodes, themes, read, risks: mkRisks(), deltas: dr.deltas, graphReady: true });
+    const all = [vm.relevantToRead, vm.newEvidence, vm.contrarian, vm.forYourWatch].flatMap(s => s.data ?? []);
+    assert(all.length > 0, "fixture produces attached episodes");
+    for (const v of all) {
+      for (const at of v.attachments) {
+        if (at.basis !== "graph")
+          assert(at.relation === "MENTIONS" || at.relation === "CONTEXT", `metadata matches are MENTIONS/CONTEXT only, got ${at.relation}`);
+        if (at.relation === "SUPPORTS")
+          assert(at.basis === "graph" && at.relationship !== null, "SUPPORTS requires a recorded graph relationship");
+      }
+    }
+    // The recorded Podcast->Company edge is a "mentions" edge: recorded tier, MENTIONS relation.
+    const withGraph = all.find(v => v.attachments.some(a => a.basis === "graph"));
+    assert(!!withGraph && withGraph.evidenceTier === "recorded", "graph-backed attachments mark the episode recorded-tier");
+    assert(withGraph!.attachments.filter(a => a.basis === "graph").every(a => a.relation === "MENTIONS"),
+      "podcast mention edges classify as MENTIONS, not support");
+  });
+
+  test("contrarian episodes map to the same evidence-engine records Explorer shows", () => {
+    const { themes, episodes, dr, read } = listenFixture();
+    intelligenceGraph.addNode({ label: "Rate Shock", type: "Macro" as never });
+    intelligenceGraph.addRelationship({ source: "Rate Shock", target: "AI Infrastructure", relationshipType: "weakens" as never, strength: 60, confidence: 65 });
+    const risks = new Map(themes.map(t => [t.name.toLowerCase(), buildRiskRead(t.name, t)]));
+    const vm = buildListenIntel({ episodes, themes, read, risks, deltas: dr.deltas, graphReady: true });
+    const c = vm.contrarian.data ?? [];
+    assert(c.length > 0, "episodes on a contradicted theme surface as contrarian views");
+    const ev = detectContradictions("AI Infrastructure");
+    for (const v of c) {
+      if (v.primaryTheme !== "AI Infrastructure") continue;
+      assert(v.contradictions.length > 0, "contrarian items carry the shared records");
+      for (const rec of v.contradictions)
+        assert(ev.some(e => e.detail === rec.detail && e.severity === rec.severity), "every record is an evidence-engine record, verbatim");
+    }
+  });
+
+  test("listen changes are ledger records; personalization reorders, never reclassifies", () => {
+    const { themes, episodes, dr, read, mkRisks } = listenFixture();
+    const shared = { episodes, themes, read, risks: mkRisks(), deltas: dr.deltas, researchPriorities: read.priorities.data ?? [], graphReady: true };
+    const base = buildListenIntel(shared);
+    for (const v of base.newEvidence.data ?? [])
+      assert(v.changed !== null && dr.deltas.includes(v.changed), "every rendered change IS a canonical ledger record (object identity)");
+    assert(base.forYourWatch.status === "unavailable", "no personalization inputs means an honest empty watch section");
+
+    const pers = buildListenIntel({ ...shared, followedThemeNames: ["AI Infrastructure"], savedEntityIds: ["NVDA"] });
+    const strip = (v: NonNullable<ReturnType<typeof buildListenIntel>["relevantToRead"]["data"]>[number]) =>
+      JSON.stringify({ a: v.attachments, w: v.whyMatters, ws: v.whySource, c: v.contradictions, i: v.invalidation, n: v.narrative, p: v.primaryTheme, t: v.evidenceTier });
+    for (const v of base.relevantToRead.data ?? []) {
+      const match = (pers.relevantToRead.data ?? []).find(x => x.episode.id === v.episode.id);
+      assert(!!match && strip(match!) === strip(v), "personalization never changes attachments, classification, or intelligence values");
+    }
+    assert((pers.forYourWatch.data ?? []).some(v => v.forYou), "personalization adds watch inclusion");
+  });
+
+  test("listen and the episode card degrade honestly without the graph", () => {
+    const empty = buildListenIntel({});
+    for (const s of [empty.relevantToRead, empty.newEvidence, empty.contrarian, empty.forYourWatch])
+      assert(s.status === "unavailable" && s.data === null, "no episodes means every section is unavailable");
+
+    intelligenceGraph.clear();
+    const themes = readThemes();
+    const cold = buildListenIntel({
+      episodes: [mkEpisode()], themes,
+      read: buildTheRead({ themes, graphReady: false }), deltas: [], graphReady: false,
+    });
+    assert(cold.contrarian.status === "unavailable", "contradiction reads are graph-gated");
+    assert(cold.newEvidence.status === "unavailable", "no ledger means no new-evidence claims");
+    const flat = [cold.relevantToRead, cold.forYourWatch].flatMap(s => s.data ?? []);
+    for (const v of flat) {
+      assert(v.attachments.every(a => a.basis !== "graph"), "no graph means metadata-level attachments only");
+      assert(v.evidenceTier !== "recorded", "and nothing claims a recorded tier");
+    }
+    // Episode-card intel: shared projection with honest fallbacks.
+    const intel = episodeIntel(mkEpisode(), themes[0]);
+    assert(!!intel && intel.risk === null && intel.contrarian === null, "no graph means no risk/contradiction records, never keyword templates");
+    assert(intel!.catalystBasis === "derived-watch" && intel!.catalyst.includes(watchLineOf(themes[0])),
+      "the catalyst line falls back to the ONE canonical derived watch line");
+    // With a recorded series, the card shows the shared verified catalyst.
+    seedNarrativeGraph();
+    intelligenceGraph.addNode({ label: "CPI (FRED series)", type: "MacroSeries" as never });
+    intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Infrastructure", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
+    const warm = episodeIntel(mkEpisode(), themes[0]);
+    assert(warm!.catalystBasis === "verified" && warm!.catalyst === "CPI (FRED series)", "verified dateless catalysts ride the card when recorded");
   });
 
   for (const [name, fn] of tests) {

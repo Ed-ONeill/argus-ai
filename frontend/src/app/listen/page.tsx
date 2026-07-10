@@ -3,13 +3,14 @@
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Headphones, BarChart2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { useListenRails } from "@/hooks/useListen";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
-import { useThemeAlerts } from "@/hooks/useThemeAlerts";
-import { fetchFeed } from "@/lib/api";
+import { useFollowedThemes } from "@/hooks/useFollowedThemes";
+import { useWatchlist } from "@/hooks/useWatchlist";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { ConversationHero } from "@/components/listen/ConversationHero";
 import { IntelligenceLayer } from "@/components/listen/IntelligenceLayer";
+import { IntelLedSections } from "@/components/listen/IntelLedSections";
 import {
   ProprietarySignals, NarrativeRotation, HighestConviction, CrowdedAndMissing,
   CompaniesAndSectors, PeopleAndFunds, CompanyHeatmap, FirmsDriving, InfluentialEpisodes,
@@ -21,7 +22,13 @@ import {
   getThemeEpisodeGroups,
   generateWhyListen,
 } from "@/lib/listenIntelligence";
-import type { Episode, ThemeIntelligence, FeedResponse } from "@/lib/types";
+import { buildListenIntel } from "@/lib/listenIntel";
+import { buildTheRead } from "@/lib/theRead";
+import { deriveMorningBriefDeltas, type MorningBriefDelta } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
+import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
+import { findNarrativeForTheme } from "@/lib/narrativeDerivation";
+import type { Episode, ThemeIntelligence } from "@/lib/types";
 
 function Skeleton() {
   return (
@@ -63,19 +70,37 @@ export default function ListenPage() {
   // ── Episodes ────────────────────────────────────────────────────────────────
   const { isLoading, totalEpisodes, allEpisodes } = useListenRails();
 
-  // ── Themes (from feed cache — free if feed page was visited) ────────────────
-  const { data: feedData } = useQuery<FeedResponse>({
-    queryKey:            ["feed", {}],
-    queryFn:             () => fetchFeed({}),
-    staleTime:           5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const themes = useMemo(() => feedData?.theme_intelligence ?? [], [feedData?.theme_intelligence]);
-  const clusters = feedData?.clusters ?? [];
+  // ── Canonical intelligence provisioning (A1): the one hook every surface
+  //    mounts - themes and clusters ride along, and the shared graph is
+  //    provisioned identically to the Morning Brief / Explorer / Markets. ────
+  const argus = useArgusIntelligence();
+  const themes = argus.themes;
+  const clusters = argus.clusters;
 
-  // ── Theme watchlist + alerts ────────────────────────────────────────────────
-  const { toggle: toggleThemeWatch, isWatched: isThemeWatched } = useThemeWatchlist();
-  const { hasAlert, alertFor, dismiss: dismissAlert } = useThemeAlerts(themes);
+  // ── User state (selection only - personalization never touches truth) ──────
+  const { watchedIds, toggle: toggleThemeWatch, isWatched: isThemeWatched } = useThemeWatchlist();
+  const { followed } = useFollowedThemes();
+  const { watchlist } = useWatchlist();
+
+  // ── Shared intelligence reads (Phase 2.4): the canonical ledger replaces
+  //    the useThemeAlerts device transition store on this surface (D13). ──────
+  const deltaResult = useMemo(
+    () => deriveMorningBriefDeltas({ themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready }),
+    [themes, argus.ready],
+  );
+  const read = useMemo(
+    () => buildTheRead({ themes, deltas: deltaResult.deltas, graphReady: argus.ready }),
+    [themes, deltaResult.deltas, argus.ready],
+  );
+  const deltaForTheme = useMemo(() => {
+    const m = new Map<string, MorningBriefDelta>();
+    for (const d of deltaResult.deltas) {
+      const k = d.entity.toLowerCase();
+      if (!m.has(k)) m.set(k, d);
+    }
+    return (t: ThemeIntelligence | null) => (t ? m.get(t.name.toLowerCase()) ?? null : null);
+  }, [deltaResult.deltas]);
+  const isUpKind = (k: MorningBriefDelta["kind"]) => k === "STRENGTHENED" || k === "NEW" || k === "EXPANDED";
 
   // ── Episode → theme map (one pass over all episodes) ────────────────────────
   const episodeThemeMap = useMemo(() => {
@@ -107,6 +132,39 @@ export default function ListenPage() {
     [allEpisodes, themes],
   );
   const themeGroups = useMemo(() => allThemeGroups.slice(0, 5), [allThemeGroups]);
+
+  // ── The Listen view model (Phase 2.4): episodes attached to shared objects ──
+  const risks = useMemo(() => {
+    const m = new Map<string, RiskRead>();
+    // One shared risk read per theme that appears as a primary episode match.
+    for (const eps of episodeThemeMap.values()) {
+      const t = eps[0];
+      if (!t) continue;
+      const k = t.name.toLowerCase();
+      if (!m.has(k)) m.set(k, buildRiskRead(t.name, t));
+    }
+    return m;
+  }, [episodeThemeMap]);
+
+  const followedThemeNames = useMemo(() => {
+    const byId = new Map(themes.map(t => [t.id, t.name]));
+    const names = new Set<string>(followed.map(f => f.name));
+    for (const id of watchedIds) { const n = byId.get(id); if (n) names.add(n); }
+    return [...names];
+  }, [followed, watchedIds, themes]);
+
+  const listenVM = useMemo(
+    () => buildListenIntel({
+      episodes: allEpisodes, themes, read,
+      risks, deltas: deltaResult.deltas,
+      narrativeOf: argus.ready ? (name: string) => findNarrativeForTheme(name) : undefined,
+      researchPriorities: read.priorities.data ?? [],
+      followedThemeNames,
+      savedEntityIds: watchlist.map(w => w.id),
+      graphReady: argus.ready,
+    }),
+    [allEpisodes, themes, read, risks, deltaResult.deltas, argus.ready, followedThemeNames, watchlist],
+  );
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   function toggleSave(ep: Episode) {
@@ -146,6 +204,11 @@ export default function ListenPage() {
           </div>
           <p className="text-sm text-ink-secondary">{contextLine}</p>
         </motion.div>
+
+        {/* ── Intelligence-led sections (Phase 2.4): episodes as evidence
+            attached to the shared Read, ledger, contradiction records, and
+            the user's watch. Browse/synthesis sections remain below. ──────── */}
+        <IntelLedSections vm={listenVM} themes={themes} onThemeClick={setSelectedTheme} />
 
         {/* ── Conversation Hero — the most-discussed theme + momentum ───────── */}
         <ConversationHero groups={themeGroups} onThemeClick={setSelectedTheme} />
@@ -208,24 +271,26 @@ export default function ListenPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Theme Drawer ─────────────────────────────────────────────────────── */}
-      {selectedTheme && (
-        <ThemeDrawer
-          theme={selectedTheme}
-          clusters={clusters}
-          deals={[]}
-          episodes={allEpisodes}
-          isWatched={isThemeWatched(selectedTheme.id)}
-          hasAlert={hasAlert(selectedTheme.id)}
-          alertDirection={alertFor(selectedTheme.id)?.direction}
-          onToggleWatch={() => {
-            toggleThemeWatch(selectedTheme.id);
-            dismissAlert(selectedTheme.id);
-          }}
-          onClose={() => setSelectedTheme(null)}
-          sourceContext="listen"
-        />
-      )}
+      {/* ── Theme Drawer — alert badge comes from the CANONICAL change ledger
+             (Phase 2.4: the useThemeAlerts device transition store retired on
+             this surface, D13) ───────────────────────────────────────────── */}
+      {selectedTheme && (() => {
+        const delta = deltaForTheme(selectedTheme);
+        return (
+          <ThemeDrawer
+            theme={selectedTheme}
+            clusters={clusters}
+            deals={[]}
+            episodes={allEpisodes}
+            isWatched={isThemeWatched(selectedTheme.id)}
+            hasAlert={delta !== null}
+            alertDirection={delta ? (isUpKind(delta.kind) ? "up" : "down") : undefined}
+            onToggleWatch={() => toggleThemeWatch(selectedTheme.id)}
+            onClose={() => setSelectedTheme(null)}
+            sourceContext="listen"
+          />
+        );
+      })()}
     </>
   );
 }

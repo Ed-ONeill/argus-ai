@@ -8,7 +8,7 @@ import { TOPIC_COLOR } from "./TopicFilterBar";
 import { TickerChip } from "@/components/common/TickerChip";
 import { confColor } from "@/app/markets/marketsShared";
 import { looksLikePerson } from "@/lib/listenIntelligence";
-import { episodeIntel, buildBriefing, similarEpisodes, contradictingEpisodes } from "@/lib/episodeIntel";
+import { episodeIntel, buildBriefing, similarEpisodes, counterPositionedEpisodes } from "@/lib/episodeIntel";
 import type { Episode, ThemeIntelligence } from "@/lib/types";
 
 const THEME_SIGNAL_COLOR: Record<string, string> = {
@@ -119,12 +119,13 @@ export function EpisodeCard({
   const relevance    = Math.round(episode.relevance_score ?? 0);
   const relColor     = relevanceColor(relevance);
   const aiSummary    = episode.description?.trim() || episode.why_it_matters;
-  // Investment intelligence — the card leads with this (rotating contextual label).
-  const intel        = episodeIntel(episode, primaryTheme);
-  // Full institutional briefing — revealed on expand (Argus already "listened").
+  // Intelligence panel: a projection of shared engines (riskRead, verified
+  // catalysts, the theme's backend narrative) - Phase 2.4, no local meaning.
+  const intel        = useMemo(() => episodeIntel(episode, primaryTheme), [episode, primaryTheme]);
+  // Expanded briefing: shared records only (risks/catalysts from the engines).
   const briefing     = useMemo(() => buildBriefing(episode, primaryTheme), [episode, primaryTheme]);
   const similar      = useMemo(() => allEpisodes && episodeThemeMap ? similarEpisodes(episode, primaryTheme, allEpisodes, episodeThemeMap) : [], [episode, primaryTheme, allEpisodes, episodeThemeMap]);
-  const contradicting = useMemo(() => allEpisodes && episodeThemeMap ? contradictingEpisodes(episode, primaryTheme, allEpisodes, episodeThemeMap) : [], [episode, primaryTheme, allEpisodes, episodeThemeMap]);
+  const counterPositioned = useMemo(() => allEpisodes && episodeThemeMap ? counterPositionedEpisodes(episode, primaryTheme, allEpisodes, episodeThemeMap) : [], [episode, primaryTheme, allEpisodes, episodeThemeMap]);
 
   function handleListen(e: React.MouseEvent) {
     e.stopPropagation();
@@ -322,16 +323,19 @@ export function EpisodeCard({
           </div>
         )}
 
-        {/* ── Catalyst + contrarian flag ── */}
+        {/* ── Catalyst (shared, dateless) + shared contradiction record ── */}
         {intel && (
           <div className="flex flex-col gap-1 mb-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14 text-ink-faint">Catalyst</span>
+            <div className="flex items-center gap-1.5"
+              title={intel.catalystBasis === "verified" ? "Recorded series/release in the shared graph - verified, no date" : "Canonical derived watch line (intelligenceDeltas)"}>
+              <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14 text-ink-faint">
+                {intel.catalystBasis === "verified" ? "Catalyst" : "Watch"}
+              </span>
               <span className="text-[10px] text-ink-muted truncate">{intel.catalyst}</span>
             </div>
             {intel.contrarian && (
-              <div className="flex items-start gap-1.5">
-                <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14 mt-0.5" style={{ color: "rgba(139,92,246,0.85)" }}>Contrarian</span>
+              <div className="flex items-start gap-1.5" title="Evidence-engine contradiction record (same record Explorer shows)">
+                <span className="text-[8px] font-bold uppercase tracking-[0.1em] shrink-0 w-14 mt-0.5" style={{ color: "rgba(239,68,68,0.75)" }}>Contradicts</span>
                 <span className="text-[10px] leading-snug text-ink-muted">{intel.contrarian}</span>
               </div>
             )}
@@ -373,19 +377,9 @@ export function EpisodeCard({
                 {briefing ? (
                   <>
                     <Brief label="Executive Summary">{briefing.executiveSummary}</Brief>
-                    <Brief label="Investment Thesis">{briefing.thesis}</Brief>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div className="pl-2" style={{ borderLeft: "2px solid rgba(16,185,129,0.4)" }}>
-                        <BriefLabel color="rgba(16,185,129,0.85)">Bull Case</BriefLabel>
-                        <p className="text-[10.5px] leading-snug text-ink-secondary">{briefing.bull}</p>
-                      </div>
-                      <div className="pl-2" style={{ borderLeft: "2px solid rgba(239,68,68,0.4)" }}>
-                        <BriefLabel color="rgba(239,68,68,0.85)">Bear Case</BriefLabel>
-                        <p className="text-[10.5px] leading-snug text-ink-secondary">{briefing.bear}</p>
-                      </div>
-                    </div>
-                    <BriefList label="Risks" items={briefing.risks} color="rgba(239,68,68,0.85)" />
-                    <BriefList label="Catalysts" items={briefing.catalysts} color="rgba(82,176,200,0.9)" />
+                    {briefing.thesis && <Brief label="Argus Thesis (pipeline)">{briefing.thesis}</Brief>}
+                    <BriefList label={briefing.risksBasis === "shared-engines" ? "Risks · shared engines" : "Risks"} items={briefing.risks} color="rgba(239,68,68,0.85)" />
+                    <BriefList label="Catalysts · verified / derived" items={briefing.catalysts} color="rgba(82,176,200,0.9)" />
                     {briefing.relatedNarratives.length > 0 && (
                       <div>
                         <BriefLabel>Related Narratives</BriefLabel>
@@ -404,8 +398,8 @@ export function EpisodeCard({
                 {similar.length > 0 && (
                   <BriefEpisodes label="Similar Episodes" episodes={similar} onPlay={onPlay} accent="rgba(82,176,200,0.9)" />
                 )}
-                {contradicting.length > 0 && (
-                  <BriefEpisodes label="Contradicting Episodes" episodes={contradicting} onPlay={onPlay} accent="rgba(245,158,11,0.9)" />
+                {counterPositioned.length > 0 && (
+                  <BriefEpisodes label="Counter-Positioned Episodes" episodes={counterPositioned} onPlay={onPlay} accent="rgba(245,158,11,0.9)" />
                 )}
               </div>
             </motion.div>

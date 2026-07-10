@@ -1,12 +1,33 @@
 /**
- * lib/episodeIntel.ts, turns an episode + its matched theme into the investment
- * intelligence an episode card should lead with (implication, beneficiaries, at-
- * risk, catalyst, risk, contrarian) plus a CONTEXTUAL summary label that rotates
- * by the episode's signal profile, so cards read as dynamically generated rather
- * than templated. Light: reads stored theme fields only, no heavy engine.
+ * lib/episodeIntel.ts - the episode card's intelligence panel, as a THIN
+ * PROJECTION of shared engines (rewritten in Phase 2.4 Listen unification).
+ *
+ * The previous version INVENTED market meaning per episode: keyword-rule
+ * catalysts and risks (catalystOf/riskOf), templated implications ("tailwind
+ * for X, cleanest expressions..."), bull/bear cases, and rotating pseudo-
+ * generated labels. All of that is deleted. Every meaningful field now comes
+ * from a shared object:
+ *
+ *   read / thesis   <- the theme's backend causal narrative (pipeline
+ *                      meaning, re-voiced - never a local template)
+ *   risk            <- lib/riskRead (prediction invalidation + evidence
+ *                      contradictions - the same records Explorer shows)
+ *   catalyst        <- theRead.verifiedCatalystsFor (verified, DATELESS) or
+ *                      the canonical derived watch line (intelligenceDeltas)
+ *   beneficiaries   <- recorded pipeline exposure (related_assets tickers)
+ *   atRisk          <- stored negative-weight sectors (recorded fields)
+ *
+ * similarEpisodes / counterPositionedEpisodes are SELECTION over canonical
+ * fields (same-theme membership; opposite recorded momentum_direction over
+ * shared exposure). They create no records and infer no episode stance -
+ * shared contradiction records live on the risks fields.
+ *
+ * Pure reads; degrades to nulls, never fabricates. No em/en dashes.
  */
 
 import { sanitizeCopy } from "./utils";
+import { buildRiskRead } from "./riskRead";
+import { watchLineOf } from "./intelligenceDeltas";
 import type { Episode, ThemeIntelligence } from "./types";
 
 const isTicker = (s: string) => /^[A-Z][A-Z.]{0,5}$/.test(s);
@@ -21,88 +42,55 @@ function negativeSectors(t: ThemeIntelligence): string[] {
 }
 function firstSentence(s?: string): string | null {
   if (!s) return null;
-  const c = s.replace(/→/g, ", ").replace(/ {2,}/g, " ").trim();   // unicode arrows -> comma; keep "->"
+  const c = s.replace(/→/g, ", ").replace(/ {2,}/g, " ").trim();
   const dot = c.indexOf(". ");
   return dot > 12 ? c.slice(0, dot + 1) : c.length <= 165 ? c : null;
 }
-function hash(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-function catalystOf(t: ThemeIntelligence): string {
-  const d = [t.name, ...(t.related_macro_factors ?? [])].join(" ").toLowerCase();
-  if (/rate|yield|fed|fomc|policy/.test(d)) return "Next FOMC / rate path";
-  if (/cpi|inflation|pce|price/.test(d)) return "Next inflation print";
-  if (/\bai\b|chip|semi|gpu|data.?center/.test(d)) return "Hyperscaler capex guidance";
-  if (/energy|oil|crude|power|grid|nuclear|util/.test(d)) return "Power demand & utility orders";
-  if (/credit|lend|spread|bank/.test(d)) return "Credit spreads & bank lending";
-  if (/defense|nato|military|rearm/.test(d)) return "Defense budget headlines";
-  const macro = (t.related_macro_factors ?? [])[0];
-  return macro ? `Watch ${macro}` : "Next confirming data point";
-}
-function riskOf(t: ThemeIntelligence): string {
-  const d = [t.name, ...(t.related_macro_factors ?? [])].join(" ").toLowerCase();
-  if (/credit|lend|spread|bank/.test(d)) return "Credit spreads normalize and bank lending reopens";
-  if (/rate|yield|fed/.test(d)) return "Rates fall and the cost-of-capital edge fades";
-  if (/\bai\b|chip|semi|gpu|data.?center/.test(d)) return "Hyperscaler capex is cut";
-  if (/energy|power|grid|nuclear|util/.test(d)) return "Power-demand growth disappoints versus buildout";
-  if (/defense|nato|military|rearm/.test(d)) return "A durable de-escalation reverses the cycle";
-  return "The macro driver behind the move reverses";
-}
 
 export interface EpisodeIntel {
-  label: string;          // rotating contextual summary label
-  read: string;           // the read that matches the label
-  beneficiaries: string[]; // tickers that benefit
-  atRisk: string[];        // sectors under pressure
-  catalyst: string;        // next confirming event
-  risk: string;            // what invalidates the thesis
-  confidence: number;      // narrative confidence
+  /** Fixed honest label (the rotating pseudo-generated labels are retired). */
+  label: string;
+  /** The theme's own backend narrative sentence - pipeline meaning re-voiced.
+      Null when the pipeline recorded none (the card falls back to relevance
+      phrasing, which is presentation, not meaning). */
+  read: string | null;
+  beneficiaries: string[];        // recorded pipeline exposure (tickers)
+  atRisk: string[];               // stored negative-weight sectors
+  /** Verified dateless catalyst, or the canonical derived watch line. */
+  catalyst: string;
+  catalystBasis: "verified" | "derived-watch";
+  /** Shared risk record (prediction invalidation, else top contradiction).
+      Null when the shared engines record none - never a keyword template. */
+  risk: string | null;
+  /** Top shared contradiction record, verbatim (replaces the invented
+      "contrarian" template). */
   contrarian: string | null;
+  confidence: number;
 }
-
-const NEUTRAL_LABELS = ["Investment Takeaway", "Market Implication", "Strategist View", "Why It Matters", "Institutional Read"];
 
 export function episodeIntel(ep: Episode, theme: ThemeIntelligence | null | undefined): EpisodeIntel | null {
   if (!theme) return null;
-  const dir = dirOf(theme);
-  const sector = deriveSector(theme) ?? "the sector";
-  const conf = Math.round(theme.confidence ?? 0);
-  const vol = theme.volatility_score ?? 0;
-  const mom = theme.momentum_label;
-  const beneficiaries = (theme.related_assets ?? []).filter(isTicker).slice(0, 4);
-  const atRisk = negativeSectors(theme).slice(0, 2);
-  const catalyst = catalystOf(theme);
-  const risk = riskOf(theme);
-  const narrative = firstSentence(theme.causal_narrative);
+  const rr = buildRiskRead(theme.name, theme);
+  const verified = rr.basis === "graph" ? rr.catalysts[0] ?? null : null;
+  const read = firstSentence(theme.causal_narrative);
 
-  const implication = dir > 0
-    ? `Tailwind for ${sector}${beneficiaries.length ? `, ${beneficiaries.slice(0, 2).join(" / ")} the cleanest expressions` : ""}.`
-    : dir < 0
-    ? `Pressure on ${sector}${atRisk.length ? ` and ${atRisk[0]}` : ""}, the exposed names carry downgrade risk.`
-    : `Two-way setup in ${sector}; positioning is rotating faster than the narrative resolves.`;
-
-  const contrarian = vol >= 60
-    ? `Two-sided debate, fade risk if the consensus call on ${sector} is wrong.`
-    : (conf >= 72 && mom === "accelerating")
-    ? "Consensus is leaning in; the contrarian risk is positioning, not thesis."
-    : null;
-
-  // Contextual + deterministically-varied label so cards don't feel templated.
-  const h = hash(ep.id);
-  let label: string, read: string;
-  if (dir < 0 || mom === "reversing") { label = "Key Risk"; read = `${risk}. ${implication}`; }
-  else if (vol >= 60) { label = "Contrarian View"; read = contrarian ?? implication; }
-  else if (mom === "emerging" || theme.memory?.is_new) { label = "Why It Matters"; read = narrative ?? implication; }
-  else if (mom === "accelerating" && conf >= 70) { label = h % 2 ? "Institutional Read" : "Strategist View"; read = implication; }
-  else if (h % 5 === 0) { label = "Catalyst"; read = `${catalyst} is the next test. ${implication}`; }
-  else { label = NEUTRAL_LABELS[h % NEUTRAL_LABELS.length]; read = narrative && h % 2 === 0 ? narrative : implication; }
-
-  return { label, read: sanitizeCopy(read), beneficiaries, atRisk, catalyst: sanitizeCopy(catalyst), risk: sanitizeCopy(risk), confidence: conf, contrarian: sanitizeCopy(contrarian) };
+  return {
+    label: "Why It Matters",
+    read: read ? sanitizeCopy(read) : null,
+    beneficiaries: (theme.related_assets ?? []).filter(isTicker).slice(0, 4),
+    atRisk: negativeSectors(theme).slice(0, 2),
+    catalyst: verified ? sanitizeCopy(verified.label) : sanitizeCopy(`Watch ${watchLineOf(theme)}`),
+    catalystBasis: verified ? "verified" : "derived-watch",
+    risk: rr.invalidation ?? rr.contradictions[0]?.detail ?? null,
+    contrarian: rr.contradictions[0]?.detail ?? null,
+    confidence: Math.round(theme.confidence ?? 0),
+  };
 }
 
-// ── Full institutional briefing, what an analyst hands you after listening ────
+/* ------------------------------------------------------------------ *
+ * Expanded briefing - shared records only
+ * ------------------------------------------------------------------ */
+
 const uniq = (a: string[]) => [...new Set(a.filter(Boolean))];
 function stateVerb(t: ThemeIntelligence): string {
   switch (t.momentum_label) {
@@ -116,54 +104,59 @@ function stateVerb(t: ThemeIntelligence): string {
 }
 
 export interface EpisodeBriefing {
+  /** Episode's own description sentence (factual content) + the theme's
+      current state (canonical momentum field). */
   executiveSummary: string;
-  thesis:           string;
-  bull:             string;
-  bear:             string;
-  risks:            string[];
-  catalysts:        string[];
+  /** The theme's backend causal narrative - pipeline meaning, never local. */
+  thesis: string | null;
+  /** Shared risk records, verbatim (riskRead: invalidation + contradictions). */
+  risks: string[];
+  risksBasis: "shared-engines" | "unavailable";
+  /** Verified dateless catalysts + the canonical derived watch line. */
+  catalysts: string[];
+  /** Stored factual linkage chips (macro factors / topics) - facts, not meaning. */
   relatedNarratives: string[];
 }
 
 export function buildBriefing(ep: Episode, theme: ThemeIntelligence | null | undefined): EpisodeBriefing | null {
   if (!theme) return null;
-  const dir = dirOf(theme);
+  const rr = buildRiskRead(theme.name, theme);
   const name = theme.name.replace(/\s*[-–—:].*$/, "").trim();
-  const sector = deriveSector(theme) ?? "the sector";
-  const ben = (theme.related_assets ?? []).filter(isTicker).slice(0, 3);
-  const driver = (theme.related_macro_factors ?? [])[0] ?? "the macro backdrop";
-  const catalyst = catalystOf(theme);
-  const risk = riskOf(theme);
-  const narrative = firstSentence(theme.causal_narrative);
+  const sector = deriveSector(theme);
   const desc = firstSentence(ep.description);
+  const narrative = firstSentence(theme.causal_narrative);
 
-  const implication = dir > 0
-    ? `tailwind for ${sector}` : dir < 0 ? `pressure on ${sector}` : `a two-way setup in ${sector}`;
-
-  const secondOrder = (theme.second_order_effects ?? []).map(s => s.replace(/\s+/g, " ").trim()).filter(s => s.length > 12 && !s.includes("→"));
+  const risks = rr.basis === "graph"
+    ? uniq([rr.invalidation ?? "", ...rr.contradictions.map(c => c.detail)]).slice(0, 3)
+    : [];
+  const verified = rr.basis === "graph" ? rr.catalysts.map(c => `${c.label} (verified, no date)`) : [];
 
   return {
-    executiveSummary: sanitizeCopy(desc
-      ? `${desc} The institutional read: ${implication}.`
-      : `${name} ${stateVerb(theme)}, ${implication}. ${narrative ?? `${driver} is the driver into ${sector}.`}`),
-    thesis: sanitizeCopy(`${name} ${stateVerb(theme)}, centered in ${sector}. The case rests on ${driver} sustaining direction into ${sector}${ben.length ? `, with ${ben.join(", ")} the cleanest expressions` : ""}.`),
-    bull: sanitizeCopy(dir >= 0
-      ? `If ${driver} holds, ${sector} earnings inflect and ${ben[0] ?? "the leaders"} re-rate as flows concentrate.`
-      : `Stabilization in ${driver} sets up a mean-reversion in oversold ${sector} names.`),
-    bear: sanitizeCopy(`If ${risk.toLowerCase()}, ${sector} de-rates and the crowded ${dir >= 0 ? "long" : "short"} unwinds.`),
-    risks: uniq([risk + ".", ...secondOrder.slice(0, 1), "Positioning is crowded if the tape has already priced this."]).slice(0, 3).map(sanitizeCopy),
-    catalysts: uniq([catalyst, ...(theme.related_macro_factors ?? []).slice(0, 2).map(m => `Watch ${m}`)]).slice(0, 3).map(sanitizeCopy),
-    relatedNarratives: uniq([...(theme.related_macro_factors ?? []), ...(theme.podcast_topics ?? []), ...secondOrder.slice(0, 1)]).slice(0, 5).map(sanitizeCopy),
+    executiveSummary: sanitizeCopy(
+      `${desc ? `${desc} ` : ""}${name} ${stateVerb(theme)}${sector ? `, centered in ${sector}` : ""}.`,
+    ),
+    thesis: narrative ? sanitizeCopy(narrative) : null,
+    risks: risks.map(sanitizeCopy),
+    risksBasis: rr.basis === "graph" ? "shared-engines" : "unavailable",
+    catalysts: uniq([...verified, `Watch ${watchLineOf(theme)} (derived)`]).slice(0, 3).map(sanitizeCopy),
+    relatedNarratives: uniq([...(theme.related_macro_factors ?? []), ...(theme.podcast_topics ?? [])]).slice(0, 5).map(sanitizeCopy),
   };
 }
 
-// ── Corpus-aware: similar & contradicting episodes ────────────────────────────
+/* ------------------------------------------------------------------ *
+ * Corpus selection (no records created, no stance inferred)
+ * ------------------------------------------------------------------ */
+
 export function similarEpisodes(ep: Episode, theme: ThemeIntelligence | null | undefined, all: Episode[], themesOf: Map<string, ThemeIntelligence[]>): Episode[] {
   if (!theme) return [];
   return all.filter(e => e.id !== ep.id && (themesOf.get(e.id) ?? []).some(t => t.id === theme.id)).slice(0, 3);
 }
 
-export function contradictingEpisodes(ep: Episode, theme: ThemeIntelligence | null | undefined, all: Episode[], themesOf: Map<string, ThemeIntelligence[]>): Episode[] {
+/** Episodes attached to themes with the OPPOSITE recorded momentum_direction
+    over shared exposure. A counter-POSITIONING selection over canonical
+    fields - explicitly NOT a contradiction record (those come from the
+    evidence engine via riskRead). */
+export function counterPositionedEpisodes(ep: Episode, theme: ThemeIntelligence | null | undefined, all: Episode[], themesOf: Map<string, ThemeIntelligence[]>): Episode[] {
   if (!theme) return [];
   const dir = dirOf(theme);
   if (dir === 0) return [];

@@ -1,8 +1,23 @@
 /**
- * listenIntelligence.ts — Client-side intelligence layer for the Listen surface.
+ * listenIntelligence.ts — Listen's content-matching and factual-extraction layer.
  *
  * Pure deterministic functions — zero API calls. All derived from Episode and
  * ThemeIntelligence objects already fetched by their respective query hooks.
+ *
+ * Phase 2.4 (Listen unification) classification:
+ *  - Entity/people extraction, earnings detection, speaker aggregation:
+ *    FACTUAL INGESTION (NLP-ish parsing of episode text, not intelligence).
+ *  - matchEpisodeThemes: the DETERMINISTIC METADATA FALLBACK MATCHER. The
+ *    graph's Podcast->Theme edges are not per-episode-specific today (the
+ *    canonical adapter links episodes to the global matched-theme set, D14),
+ *    so this matcher remains the per-episode attribution home. It resolves to
+ *    CANONICAL theme objects (the same entity keys Explorer and profiles use),
+ *    is labeled partial/inferred by consumers (lib/listenIntel classifies its
+ *    matches MENTIONS/CONTEXT, never SUPPORTS), and is PROHIBITED from
+ *    creating conviction or narrative membership.
+ *  - generateWhyListen: RELEVANCE PHRASING only (who/what/why this episode is
+ *    relevant) - market meaning ("why it matters") comes from shared objects
+ *    via lib/listenIntel and never from this template.
  */
 
 import type { Episode, ThemeIntelligence } from "./types";
@@ -24,11 +39,21 @@ import { extractCompanies } from "./tickerMetadata";
 // This ensures the most specific (entity-matched) themes always surface first,
 // naturally creating more diversity across cards that reference different assets.
 
-export function matchEpisodeThemes(
+export interface EpisodeThemeMatch {
+  theme:             ThemeIntelligence;
+  score:             number;
+  /** True when the match is anchored on a recorded entity (ticker) overlap -
+      stronger than topic/keyword matching, but still metadata-level. */
+  directEntityMatch: boolean;
+}
+
+/** Detailed variant: exposes score + match basis so consumers can classify
+    honestly (entity-anchored = MENTIONS, keyword/topic-only = CONTEXT). */
+export function matchEpisodeThemesDetailed(
   episode:    Episode,
   themes:     ThemeIntelligence[],
   maxMatches = 2,
-): ThemeIntelligence[] {
+): EpisodeThemeMatch[] {
   if (themes.length === 0) return [];
 
   const entitySet = new Set(episode.entities.map(e => e.toUpperCase()));
@@ -80,8 +105,15 @@ export function matchEpisodeThemes(
       // Tiebreak: highest persistence_score (more persistent themes are more relevant)
       return (b.theme.persistence_score ?? 0) - (a.theme.persistence_score ?? 0);
     })
-    .slice(0, maxMatches)
-    .map(({ theme }) => theme);
+    .slice(0, maxMatches);
+}
+
+export function matchEpisodeThemes(
+  episode:    Episode,
+  themes:     ThemeIntelligence[],
+  maxMatches = 2,
+): ThemeIntelligence[] {
+  return matchEpisodeThemesDetailed(episode, themes, maxMatches).map(({ theme }) => theme);
 }
 
 // ── Theme episode groups (for "Most Discussed Themes" section) ────────────────
