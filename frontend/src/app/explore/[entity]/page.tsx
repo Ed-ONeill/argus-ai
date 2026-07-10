@@ -9,9 +9,10 @@
  * production consumer of the canonical Intelligence Profile (System 1,
  * lib/intelligenceProfile.ts via useIntelligenceProfile), reading profile
  * sections first and keeping the pre-profile derivations (crossIntel,
- * useIntelligenceGraph, drawerEntity routing, evidence / prediction / memory
+ * drawerEntity routing, evidence / prediction / memory
  * engines through lib/intelligenceShared) as fallbacks whenever a section is
- * unavailable. Sections with no real data are hidden, never faked.
+ * unavailable. Sections with no real data are hidden, never faked. The graph
+ * is provisioned through the canonical path (useArgusIntelligence, P2.0).
  * Dark, dense, Bloomberg / Palantir inspired. No em/en dashes.
  */
 
@@ -20,12 +21,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowUpRight, CandlestickChart, Network } from "lucide-react";
-import { useFeed } from "@/hooks/useFeed";
-import { useMAIntelligence } from "@/hooks/useMAIntelligence";
-import { useListenRails } from "@/hooks/useListen";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildCrossIntel } from "@/lib/crossIntel";
-import { createDailyThemeSnapshots, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
-import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
 import { useIntelligenceProfile, profileKindOfIntelKind } from "@/hooks/useIntelligenceProfile";
 import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
@@ -75,34 +72,17 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 
 function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
   const router = useRouter();
-  const { data } = useFeed();
-  const { deals } = useMAIntelligence();
-  const { allEpisodes } = useListenRails();
 
-  const themes   = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
-  const clusters = useMemo(() => data?.clusters ?? [], [data?.clusters]);
-  const episodes = useMemo(() => allEpisodes ?? [], [allEpisodes]);
+  // Canonical intelligence provisioning (P2.0): one shared input set and one
+  // graph build path for every surface (hooks/useArgusIntelligence). The hook
+  // gathers feed/deals/episodes/snapshots and accrues daily theme memory.
+  const graph = useArgusIntelligence();
+  const { themes, clusters, deals, episodes } = graph;
 
   const intel = useMemo(
     () => buildCrossIntel(ctx, { themes, clusters, deals, episodes }),
     [ctx, themes, clusters, deals, episodes],
   );
-
-  // Accrue daily memory whenever themes are available (idempotent per day),
-  // exactly as the drawer does, so both surfaces build the same history.
-  useEffect(() => {
-    if (themes.length === 0) return;
-    const dealCountBySector: Record<string, number> = {};
-    for (const d of deals) dealCountBySector[d.sector] = (dealCountBySector[d.sector] ?? 0) + 1;
-    createDailyThemeSnapshots(themes, { dealCountBySector });
-  }, [themes, deals]);
-
-  // Same graph build as the drawer: rebuilt from the loaded app data, then queried.
-  const snapshots = useMemo(() => themes.flatMap(t => getThemeHistory(themeKey(t))), [themes]);
-  const graph = useIntelligenceGraph({
-    enabled: true, themes, stories: clusters, storyThemes: themes,
-    episodes, matchedThemes: themes, deals, snapshots,
-  });
 
   const isSymbol = ctx.kind === "company" || ctx.kind === "etf";
 

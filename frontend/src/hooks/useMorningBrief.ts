@@ -7,12 +7,12 @@
  * Responsibilities: read the feed, build the shared intelligence graph from it
  * (same controlled bridge Feed/Explorer use), and memoize buildMorningBrief
  * with the injected inputs. Read-only: no memory writes, no graph mutation
- * beyond the standard useIntelligenceGraph rebuild. No UI. No em/en dashes.
+ * beyond the canonical provisioning rebuild (useArgusIntelligence, P2.0).
+ * No UI. No em/en dashes.
  */
 
 import { useMemo } from "react";
-import { useFeed } from "@/hooks/useFeed";
-import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { buildMorningBrief, type MorningBriefVM, type RegimeChange } from "@/lib/morningBrief";
@@ -29,17 +29,11 @@ export interface UseMorningBriefResult {
 }
 
 export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBriefResult {
-  const { data, isLoading } = useFeed();
-  const themes = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
-  const clusters = useMemo(() => data?.clusters ?? [], [data?.clusters]);
-
-  // Same graph build the drawer/Explorer perform, gated on data presence; this
-  // is what lets the brief's conviction and risks read the evidence and
-  // prediction engines instead of trusting summarizer numbers.
-  const graph = useIntelligenceGraph({
-    enabled: themes.length > 0,
-    themes, stories: clusters, storyThemes: themes, matchedThemes: themes,
-  });
+  // Canonical intelligence provisioning (P2.0): the brief reads the same graph,
+  // built from the same complete input set, as Explorer and the drawer - the
+  // homepage can no longer rebuild the singleton into a weaker state.
+  const graph = useArgusIntelligence();
+  const { themes, clusters, marketBrief, feedLoading } = graph;
 
   // Device-local snapshot index, read once per mount: absence detection for
   // the change ledger (server memory rides on present themes and cannot see
@@ -53,7 +47,7 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
 
   const vm = useMemo(
     () => buildMorningBrief({
-      marketBrief: data?.market_brief ?? null,
+      marketBrief,
       themes,
       clusters: clusters.map(c => ({ id: c.id, title: c.primary.title, source: c.primary.source ?? null })),
       storyClusterCount: clusters.length,
@@ -64,8 +58,8 @@ export function useMorningBrief(opts: UseMorningBriefOptions = {}): UseMorningBr
       graphReady: graph.ready,
     }),
     // graph.ready is the invalidation tick for the engine-backed reads
-    [data?.market_brief, themes, clusters, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, followedThemeNames, graph.ready],
+    [marketBrief, themes, clusters, opts.regimeStatus, opts.fallbackRegimeLabel, previouslyTracked, followedThemeNames, graph.ready],
   );
 
-  return { vm, isLoading, graphReady: graph.ready };
+  return { vm, isLoading: feedLoading, graphReady: graph.ready };
 }

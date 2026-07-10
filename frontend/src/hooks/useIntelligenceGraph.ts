@@ -8,19 +8,24 @@
  * source is simply skipped, and reports degrade to `found: false` rather than throw.
  *
  * No UI. No em/en dashes.
+ *
+ * P2.0 NOTE: this hook is the low-level bridge, not the provisioning contract.
+ * Production surfaces must use hooks/useArgusIntelligence (the canonical
+ * provisioning path with the complete input set); calling this hook directly
+ * from a surface with a reduced input set reintroduces the cross-surface
+ * inconsistency P2.0 eliminated (Intelligence Everywhere doc, D1).
  */
 
 import { useMemo, useCallback } from "react";
-import { intelligenceGraph } from "@/lib/intelligenceGraph";
 import {
-  buildGraphFromCurrentState, summarizeGraph,
+  summarizeGraph,
   type BuildResult, type GraphSummary, type PrivateSignalInput,
 } from "@/lib/intelligenceGraphAdapters";
 import {
   validateGraphIntegrity, getThemeIntelligenceReport, getCompanyIntelligenceReport,
   type IntegrityReport, type ThemeIntelligenceReport, type CompanyIntelligenceReport,
 } from "@/lib/intelligenceGraphDebug";
-import { reingestCachedMarketObservations } from "@/lib/dataAdapters/observationGraphBridge";
+import { provisionGraphState } from "@/lib/intelligenceProvisioning";
 import type { ThemeIntelligence, StoryCluster, FeedItem, Episode } from "@/lib/types";
 import type { MADeal } from "@/hooks/useMAIntelligence";
 import type { ThemeSnapshot } from "@/lib/themeSnapshots";
@@ -66,14 +71,12 @@ export function useIntelligenceGraph(input: UseIntelligenceGraphInput = {}): Use
   // in separate memos keyed on the build result) keeps every dependency honest.
   const { build, summary, integrity } = useMemo(() => {
     if (!enabled) return { build: null as BuildResult | null, summary: EMPTY_SUMMARY, integrity: EMPTY_INTEGRITY };
-    intelligenceGraph.clear();
-    const built = buildGraphFromCurrentState({
+    // One rebuild sequence for the whole app (clear -> build -> re-apply cached
+    // market observations): lib/intelligenceProvisioning.provisionGraphState.
+    const built = provisionGraphState({
       themes, stories, storyThemes: storyThemes ?? themes,
       episodes, matchedThemes, deals, privateSignals, snapshots,
     });
-    // Re-apply provider market observations wiped by the clear, so the drawer's graph
-    // carries node.metadata.latestMarketData when market ingestion has run.
-    reingestCachedMarketObservations();
     return { build: built, summary: summarizeGraph(), integrity: validateGraphIntegrity() };
   }, [enabled, themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots]);
 

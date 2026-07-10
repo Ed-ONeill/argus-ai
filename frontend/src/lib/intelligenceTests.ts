@@ -45,6 +45,7 @@ import { deriveNarratives, findNarrativeForTheme, narrativeKeyOfDrivers, DERIVED
 import { buildMorningBrief } from "./morningBrief";
 import { deriveMorningBriefDeltas } from "./intelligenceDeltas";
 import { buildTheRead } from "./theRead";
+import { provisionIntelligenceGraph, canonicalGraphState } from "./intelligenceProvisioning";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -1799,6 +1800,80 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const labels = q.map(x => x.entity.label.toLowerCase());
     assert(new Set(labels).size === labels.length, "queue entities are deduped");
     for (const x of q) assert(x.reason.length > 0 && x.entity.nodeType.length > 0, "every recommendation carries its reason and a routable entity");
+  });
+
+  // 82. Phase 2.0: canonical intelligence provisioning + the cross-surface
+  // consistency suite (docs/ARGUS_INTELLIGENCE_EVERYWHERE_V1.md, D1/A1).
+  // One provisioning path; the same entity yields identical numbers through
+  // the Morning Brief, The Read, and the Explorer/profile paths.
+  const canonicalInputs = () => ({ themes: readThemes() });
+  const graphShape = () => JSON.stringify(intelligenceGraph.stats());
+  const profileOf = (key: string) => JSON.stringify({ ...buildIntelligenceProfile(key), generatedAt: 0 });
+  const narrativesNow = () => JSON.stringify(deriveNarratives().map(n => ({ ...n, generatedAt: 0 })));
+
+  test("canonical provisioning is deterministic and idempotent", () => {
+    clearMarketObservationCache();
+    const s = canonicalGraphState({ themes: readThemes() });
+    assert(s.storyThemes === s.themes && s.matchedThemes === s.themes, "the canonical mapping always story/match-links against the theme set");
+    provisionIntelligenceGraph(canonicalInputs());
+    const shape1 = graphShape(), prof1 = profileOf("AI Infrastructure"), narr1 = narrativesNow();
+    const fwd1 = JSON.stringify(predictThemeTrajectory("AI Infrastructure"));
+    provisionIntelligenceGraph(canonicalInputs());
+    assert(graphShape() === shape1, "same canonical inputs, same node and relationship counts");
+    assert(profileOf("AI Infrastructure") === prof1, "same inputs, same Intelligence Profile");
+    assert(narrativesNow() === narr1, "same inputs, same DerivedNarratives regardless of which surface mounts first");
+    assert(JSON.stringify(predictThemeTrajectory("AI Infrastructure")) === fwd1, "same inputs, same forward view");
+  });
+
+  test("the same entity reads identically through every surface path", () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    const ev = evaluateEvidenceForNode("AI Infrastructure");
+    const fwd = predictThemeTrajectory("AI Infrastructure");
+    const narrative = deriveNarratives()[0];
+    // Explorer path: the profile.
+    const p = buildIntelligenceProfile("AI Infrastructure");
+    assert(p.evidence.data?.verdict === ev.verdict, "profile evidence verdict === evidence engine verdict");
+    if (fwd.found && fwd.predictedDirection !== "insufficient_signal")
+      assert(p.thesis.data?.forward?.direction === fwd.predictedDirection, "profile forward view === prediction engine read");
+    // Morning Brief path: the view model.
+    const vm = buildMorningBrief({ themes, graphReady: true });
+    assert(vm.conviction.data!.explanation.includes(`verdict: ${ev.verdict}`), "the brief's conviction decomposition cites the same verdict");
+    // The Read path: the centerpiece.
+    const read = buildTheRead({ themes, graphReady: true });
+    assert(!!narrative && read.thesis.data?.label === narrative.label, "The Read's thesis is the same DerivedNarrative");
+    const inv = fwd.found ? fwd.invalidationConditions[0] : undefined;
+    const readInv = (read.falsifiers.data?.invalidations ?? []).find(f => f.theme === "AI Infrastructure");
+    if (inv) assert(readInv?.text === inv, "The Read's falsifier is the same engine read");
+    // Narrative membership path.
+    assert(findNarrativeForTheme("AI Infrastructure")?.key === narrative.key, "narrative membership resolves to the same derived key");
+  });
+
+  test("reduced rebuilds are the hazard the canonical path removes", () => {
+    clearMarketObservationCache();
+    provisionIntelligenceGraph(canonicalInputs());
+    const full = graphShape();
+    const fullVerdict = evaluateEvidenceForNode("AI Infrastructure").verdict;
+    assert(deriveNarratives().length > 0, "the full build derives a narrative");
+    // A legacy-style reduced rebuild (one theme only) weakens the shared graph:
+    provisionIntelligenceGraph({ themes: [readThemes()[0]] });
+    assert(graphShape() !== full, "a reduced input set produces a weaker graph (the documented hazard)");
+    assert(deriveNarratives().length === 0, "the reduced graph cannot even derive the narrative");
+    // Canonical re-provisioning restores the identical full state:
+    provisionIntelligenceGraph(canonicalInputs());
+    assert(graphShape() === full, "canonical provisioning restores the exact full state");
+    assert(evaluateEvidenceForNode("AI Infrastructure").verdict === fullVerdict, "and the same verdict");
+  });
+
+  test("missing inputs degrade honestly without corrupting later provisioning", () => {
+    clearMarketObservationCache();
+    const empty = provisionIntelligenceGraph({});
+    assert(empty.total.nodesAdded === 0 && intelligenceGraph.stats().nodes === 0, "no inputs means an empty graph, never a fabricated one");
+    assert(!evaluateEvidenceForNode("AI Infrastructure").found, "engine reads degrade to not-found");
+    assert(buildIntelligenceProfile("AI Infrastructure").identity.status === "unavailable", "profiles degrade to unavailable");
+    provisionIntelligenceGraph(canonicalInputs());
+    assert(intelligenceGraph.stats().nodes > 0 && deriveNarratives().length > 0, "a later canonical provision rebuilds full intelligence");
   });
 
   for (const [name, fn] of tests) {

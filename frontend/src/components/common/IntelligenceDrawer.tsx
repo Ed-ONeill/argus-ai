@@ -6,12 +6,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { X, ArrowUpRight, Maximize2 } from "lucide-react";
 import { TickerChip } from "@/components/common/TickerChip";
-import { useFeed } from "@/hooks/useFeed";
-import { useMAIntelligence } from "@/hooks/useMAIntelligence";
-import { useListenRails } from "@/hooks/useListen";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildCrossIntel } from "@/lib/crossIntel";
-import { createDailyThemeSnapshots, getThemeMemory, getThemeHistory, themeKey } from "@/lib/themeSnapshots";
-import { useIntelligenceGraph } from "@/hooks/useIntelligenceGraph";
+import { getThemeMemory, themeKey } from "@/lib/themeSnapshots";
 import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
@@ -91,39 +88,21 @@ function RelList({ rels, accent }: { rels: GraphRel[]; accent: string }) {
 }
 
 function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }) {
-  const { data } = useFeed();
-  const { deals } = useMAIntelligence();
-  const { allEpisodes } = useListenRails();
-
-  const themes   = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
-  const clusters = useMemo(() => data?.clusters ?? [], [data?.clusters]);
-  const episodes = useMemo(() => allEpisodes ?? [], [allEpisodes]);
+  // Canonical intelligence provisioning (P2.0): one shared input set and one
+  // graph build path for every surface (hooks/useArgusIntelligence). The hook
+  // gathers feed/deals/episodes/snapshots and accrues daily theme memory.
+  const graph = useArgusIntelligence();
+  const { themes, clusters, deals, episodes } = graph;
 
   const intel = useMemo(
     () => buildCrossIntel(ctx, { themes, clusters, deals, episodes }),
     [ctx, themes, clusters, deals, episodes],
   );
 
-  // Accrue daily memory whenever themes are available (idempotent per day).
-  useEffect(() => {
-    if (themes.length === 0) return;
-    const dealCountBySector: Record<string, number> = {};
-    for (const d of deals) dealCountBySector[d.sector] = (dealCountBySector[d.sector] ?? 0) + 1;
-    createDailyThemeSnapshots(themes, { dealCountBySector });
-  }, [themes, deals]);
-
   const memory = useMemo(
     () => (intel.theme ? getThemeMemory(themeKey(intel.theme)) : { hasHistory: false, lines: [] as string[] }),
     [intel.theme],
   );
-
-  // Graph-backed enrichment. The graph is rebuilt from the same loaded data the
-  // drawer already reads, then queried for the active entity's connective picture.
-  const snapshots = useMemo(() => themes.flatMap(t => getThemeHistory(themeKey(t))), [themes]);
-  const graph = useIntelligenceGraph({
-    enabled: true, themes, stories: clusters, storyThemes: themes,
-    episodes, matchedThemes: themes, deals, snapshots,
-  });
 
   // Entity-aware routing (Phase 16): resolve which entity the drawer renders and
   // which graph key every graph-backed section reads. Companies and ETFs resolve

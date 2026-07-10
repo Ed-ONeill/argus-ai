@@ -129,7 +129,7 @@ Ordered by severity (drift risk x line count x authority worn):
 
 | # | Debt | Duplicates | Disposition |
 |---|---|---|---|
-| D1 | Divergent graph provisioning (3 builders, 3 input sets) | the one-model rule itself | A1, P2.0 |
+| D1 | ~~Divergent graph provisioning (3 builders, 3 input sets)~~ **Resolved in P2.0** (2026-07-09): all builders on `useArgusIntelligence` | the one-model rule itself | done |
 | D2 | `sectorIntelligence` thesis/risk/driver templates + `SECTOR_ENTITIES` | profiles, graph exposure | migrate P2.5; dictionary retires when graph coverage matches, else becomes labeled seed data for adapters |
 | D3 | `maIntelligence` meaning half + `companyPeers` dictionaries + `narrativeGraph` curated map | graph edges, profiles, DerivedNarrative | split P2.6; curated data may seed the graph via adapters (becoming real, sourced edges) but may not render directly |
 | D4 | `watchlistIntelligence` snapshot store | `intelligenceDeltas` + memory engines | replace P2.1 (delete the store) |
@@ -152,7 +152,7 @@ Dependency-driven; one surface per sprint; every sprint keeps the B-series gates
 
 | Phase | Scope | Acceptance criteria |
 |---|---|---|
-| **P2.0 Foundation** | A1 `useArgusIntelligence` (all three builders migrate); A2 profile cache; **consistency test suite (82.x): for a fixed dataset, the same entity yields identical conviction/verdict/forward-view through the Morning Brief VM, a profile read, and the drawer path** | one graph build path; 82.x green; no surface regressions |
+| **P2.0 Foundation - DONE (2026-07-09, A1 + consistency suite; A2 profile cache deferred to P2.7 alongside the drawer migration)** | **Ownership:** `lib/intelligenceProvisioning.ts` is the canonical provisioning contract (`CanonicalIntelligenceInputs`, `canonicalGraphState`, `provisionGraphState` - the ONLY permitted clear/rebuild sequence) and `hooks/useArgusIntelligence.ts` is the only hook surfaces may mount (gathers themes + clusters + deals + episodes + snapshots, accrues daily theme memory once, exposes the gathered data so surfaces never re-fetch). Migrated: Explorer, IntelligenceDrawer, useMorningBrief - all three former builders (D1 resolved). `useIntelligenceGraph` demoted to internal bridge (P2.0 note in its header); it routes through `provisionGraphState`, so even a rogue direct call uses the one rebuild sequence. Remaining sanctioned graph writers: the ADDITIVE market-observation ingest (`useExplorerMarketData` -> `ingestProviderObservations`) and cached-observation reingest inside the sequence itself. Legacy callers remaining: none. Consistency suite 82.x: determinism/idempotence, same-entity-same-numbers across the Morning Brief / The Read / profile / narrative paths, the reduced-rebuild hazard demonstrated and shown restored by canonical re-provisioning, honest degradation on empty inputs. | one graph build path ✓; 82.x green ✓; no surface regressions ✓ |
 | **P2.1 Saved** | `watchlistIntelligence` replaced by `intelligenceDeltas` + profile evolution; its snapshot store deleted | D4 gone; Saved shows the same deltas the brief shows, filtered; one fewer memory system |
 | **P2.2 Feed** | hero -> DerivedNarrative (retire `buildMarketStory`); story-card "why this matters" -> cached profile reads; watch/driver derivation consolidated (D9) | D6, D9 gone; hero thesis === The Read thesis for the same data |
 | **P2.3 Markets** | movers/changed -> change ledger; leaderboard grouping -> narratives; rotation -> prediction engine; retire `themeSignalDelta` narrative | D5 gone; Markets deltas byte-match brief deltas |
