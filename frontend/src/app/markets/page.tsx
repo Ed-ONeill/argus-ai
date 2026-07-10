@@ -23,27 +23,23 @@ import {
 import {
   buildThemeRelationshipMap,
   detectContradictions,
-  generateNextCatalysts,
-  marketCatalystRadar,
-  isCatalystCalendarPlaceholder,
-  type CatalystKind,
-  type RadarCatalyst,
-  generateWhyItMattersNow,
   themeBeneficiaries,
   bestExpressions,
-  themeLosers,
   securitiesForSector,
   themePersistenceWeight,
   memorySentences,
 } from "@/lib/themeIntelligence";
+import { buildRiskRead } from "@/lib/riskRead";
+import { buildIntelligenceProfile } from "@/lib/intelligenceProfile";
+import { causalLayerOfType } from "@/lib/causalMap";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
 import { useThemeAlerts, type ThemeAlert } from "@/hooks/useThemeAlerts";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
-import { buildTheRead, type ReadVM } from "@/lib/theRead";
+import { buildTheRead, verifiedCatalystsFor, type ReadVM, type CatalystItem } from "@/lib/theRead";
 import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
 import { getTrackedThemes } from "@/lib/themeSnapshots";
-import { buildMarketsIntel, type MarketsIntelVM } from "@/lib/marketsIntel";
+import { buildMarketsIntel, themeImpactBullets, type MarketsIntelVM } from "@/lib/marketsIntel";
 import {
   cleanThemeName,
   cleanMacroLabel,
@@ -51,7 +47,6 @@ import {
   convScore,
   convBasis,
   deriveKeyRisk,
-  countdownLabel,
   type DrawerData,
 } from "./marketsShared";
 
@@ -356,9 +351,13 @@ function DominantNarrativeBase({ brief, themes, intel }: {
   const whyHappened  = thesis
     ? [thesis.whyDominant, top ? memorySentences(top, 0)[0] : null].filter(Boolean).join(" ")
     : deriveWhy(brief, top);
-  const implications = top ? generateWhyItMattersNow(top).slice(0, 3) : [];
-  const benef      = top ? themeBeneficiaries(top, 5) : [];
-  const losers     = top ? themeLosers(top, 3) : null;
+  // Phase 2.4: impact bullets and beneficiaries are shared reads - the Read's
+  // recorded exposure and the ledger's "matters" lines (marketsIntel.impact) -
+  // never page-local advice templates. The dictionary-backed "Most Exposed"
+  // row retired with themeLosers; recorded weakening edges render in the
+  // Invalidation & Watch section instead.
+  const implications = intel.impact.data ?? [];
+  const benef      = (intel.read.exposure.data?.companies ?? []).slice(0, 5).map(c => c.label);
   const drivers    = themes.slice(0, 5);
   const trend      = confTrend(top?.momentum_delta ?? 0);
   const horizon    = top ? timeBucket(top) : "-";
@@ -417,25 +416,16 @@ function DominantNarrativeBase({ brief, themes, intel }: {
         </div>
       </div>
 
-      {/* who wins / who loses, prominent securities */}
-      {(benef.length > 0 || losers) && (
+      {/* who wins - the Read's shared exposure map (same objects Explorer shows) */}
+      {benef.length > 0 && (
         <div className="px-4 py-2.5 border-t border-edge/60 flex flex-wrap items-center gap-x-4 gap-y-2">
-          {benef.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-emerald-300/70">Primary Beneficiaries</span>
-              {benef.map(tk => (
-                <TickerChip key={tk} ticker={tk} mono={false} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25" />
-              ))}
-            </div>
-          )}
-          {losers && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-red-400/70">Most Exposed</span>
-              {losers.tickers.map(tk => (
-                <TickerChip key={tk} ticker={tk} mono={false} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-red-500/8 text-red-400/90 border border-red-500/20" />
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-1.5 flex-wrap"
+            title="Recorded exposure from the shared Read (narrative exposure map, or stored pipeline fields in the labeled theme fallback)">
+            <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-emerald-300/70">Primary Beneficiaries</span>
+            {benef.map(tk => (
+              <TickerChip key={tk} ticker={tk} mono={false} className="text-[12px] font-black tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-300 border border-emerald-500/25" />
+            ))}
+          </div>
         </div>
       )}
 
@@ -672,6 +662,7 @@ function WatchlistPanel({
                           className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5
                                      rounded-full leading-none shrink-0 whitespace-nowrap"
                           style={{ color: evClr, background: `${evClr}14`, border: `1px solid ${evClr}22` }}
+                          title="Current-state badge from today's snapshot - not cross-session history (ThemeMemory owns evolution)"
                         >
                           {evMeta.icon} {evMeta.label}
                         </span>
@@ -773,11 +764,9 @@ function MarketIntelBar({
             <span style={{ fontSize: "11.5px", fontWeight: 700, color: accentClr, letterSpacing: "0.01em" }}>
               {label}
             </span>
-            {brief?.confidence !== undefined && (
-              <span style={{ fontSize: "8px", color: `${accentClr}50`, fontWeight: 600 }}>
-                {brief.confidence}%
-              </span>
-            )}
+            {/* Phase 2.4: the summarizer's self-assessed confidence % is no
+                longer rendered anywhere on Markets (surfaces doc: summarizer
+                prose is voice, its confidence is not intelligence). */}
           </div>
         )}
 
@@ -855,6 +844,55 @@ function MarketIntelBar({
 }
 
 
+// ── Per-theme shared intelligence reads (Phase 2.4) ──────────────────────────
+// One selection pass over the CANONICAL engines per visible theme: graph
+// beneficiaries (profile.beneficiaries), recorded weakening edges
+// (profile.risks), verified dateless catalysts (theRead), and the strongest
+// recorded upstream driver / downstream sector for the transmission map.
+// When the graph cannot resolve a theme, the entry degrades to the labeled
+// stored-field selection - never a silent blend of both in one field.
+
+interface ThemeSharedRead {
+  basis:     "graph" | "stored";
+  wins:      string[];
+  winsBasis: "graph" | "stored";
+  losses:    string[];
+  catalysts: CatalystItem[];
+  driver:    string | null;   // strongest recorded upstream driver (causal layer 0)
+  sector:    string | null;   // strongest recorded downstream sector (causal layer 2)
+}
+
+function buildThemeSharedReads(themes: ThemeIntelligence[], graphReady: boolean): Map<string, ThemeSharedRead> {
+  const map = new Map<string, ThemeSharedRead>();
+  for (const t of themes) {
+    if (graphReady) {
+      const p = buildIntelligenceProfile(t.name);
+      if (p.identity.status !== "unavailable") {
+        const bene = p.beneficiaries.data ?? [];
+        const winsGraph = bene.filter(l => l.nodeType === "Company" || l.nodeType === "ETF").slice(0, 3).map(l => l.label);
+        const losses = (p.risks.data?.weakening ?? [])
+          .filter(l => l.nodeType === "Company" || l.nodeType === "ETF").slice(0, 3).map(l => l.label);
+        map.set(t.id, {
+          basis: "graph",
+          wins: winsGraph.length > 0 ? winsGraph : themeBeneficiaries(t, 3),
+          winsBasis: winsGraph.length > 0 ? "graph" : "stored",
+          losses,
+          catalysts: verifiedCatalystsFor([t.name], 2),
+          driver: (p.drivers.data ?? []).find(l => causalLayerOfType(l.nodeType) === 0)?.label ?? null,
+          sector: bene.find(l => causalLayerOfType(l.nodeType) === 2)?.label ?? null,
+        });
+        continue;
+      }
+    }
+    map.set(t.id, {
+      basis: "stored", wins: themeBeneficiaries(t, 3), winsBasis: "stored",
+      losses: [], catalysts: [], driver: null, sector: null,
+    });
+  }
+  return map;
+}
+
+
 // ── THEME COMMAND CENTER ──────────────────────────────────────────────────────
 
 const MOMENTUM_META: Record<string, { label: string; color: string }> = {
@@ -892,84 +930,62 @@ function shortRisk(t: ThemeIntelligence): string {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), 32)).trim() + "…";
 }
 
-// Short labels and glyphs for each scheduled-catalyst kind.
-const CATALYST_META: Record<CatalystKind, { short: string; glyph: string }> = {
-  "fomc":           { short: "FOMC",  glyph: "◆" },
-  "cpi":            { short: "CPI",   glyph: "▣" },
-  "pce":            { short: "PCE",   glyph: "▣" },
-  "jobs":           { short: "Jobs",  glyph: "▦" },
-  "gdp":            { short: "GDP",   glyph: "▤" },
-  "nvda-earnings":  { short: "NVDA",  glyph: "▲" },
-  "cloud-earnings": { short: "Cloud", glyph: "▲" },
-  "semi-earnings":  { short: "Semis", glyph: "▲" },
-  "bank-earnings":  { short: "Banks", glyph: "▲" },
-  "opec":           { short: "OPEC+", glyph: "◉" },
-  "treasury":       { short: "UST",   glyph: "◇" },
-  "china":          { short: "China", glyph: "◈" },
-};
+// Phase 2.4: catalysts are the shared VERIFIED, DATELESS objects (theRead
+// verifiedCatalystsFor - recorded series/releases in the graph). The placeholder
+// economic calendar and its indicative dates were deleted: a dated catalyst is
+// unavailable until a real Event provider exists.
 
-// Market-wide upcoming-catalyst strip: the soonest scheduled events across the
-// visible themes, with imminent (<=7d) events emphasized.
-function CatalystRadarStrip({ catalysts }: { catalysts: RadarCatalyst[] }) {
+// Market-wide catalyst strip: the shared Read's verified catalysts. Real
+// recorded series/releases linked to the thesis - and DATELESS, honestly.
+function CatalystRadarStrip({ catalysts }: { catalysts: CatalystItem[] }) {
   if (catalysts.length === 0) return null;
+  const clr = "#818cf8";
   return (
     <div className="mb-1.5 flex items-center gap-1.5 overflow-x-auto pb-0.5">
-      <span className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 shrink-0 pr-0.5">Upcoming</span>
-      {isCatalystCalendarPlaceholder() && (
-        <span title="Dates are indicative placeholders until a live calendar source is connected"
-          className="text-[6.5px] font-semibold uppercase tracking-wide text-amber-500/55 shrink-0">est.</span>
-      )}
-      {catalysts.map(c => {
-        const meta = CATALYST_META[c.kind];
-        const clr  = c.imminent ? "#f59e0b" : "#818cf8";
-        return (
-          <span key={`${c.kind}-${c.date.getTime()}`}
-            className="shrink-0 flex items-center gap-1.5 rounded-md border px-2 py-1"
-            style={{ borderColor: `${clr}33`, background: `${clr}10` }}>
-            <span className="text-[10px] leading-none" style={{ color: clr }}>{meta.glyph}</span>
-            <span className="flex flex-col leading-none">
-              <span className="text-[9.5px] font-bold text-ink">{meta.short}</span>
-              <span className="text-[7px] text-ink-muted/55 tabular-nums mt-px">{c.dateLabel}{c.themeCount > 1 ? ` · ${c.themeCount} themes` : ""}</span>
-            </span>
-            <span className="text-[10px] font-black tabular-nums" style={{ color: clr }}>{countdownLabel(c.daysAway)}</span>
+      <span className="text-[6.5px] font-bold uppercase tracking-[0.16em] text-ink-muted/40 shrink-0 pr-0.5">Catalysts</span>
+      {catalysts.map(c => (
+        <span key={`${c.label}-${c.feeds}`} title={c.detail}
+          className="shrink-0 flex items-center gap-1.5 rounded-md border px-2 py-1"
+          style={{ borderColor: `${clr}33`, background: `${clr}10` }}>
+          <span className="text-[10px] leading-none" style={{ color: clr }}>◆</span>
+          <span className="flex flex-col leading-none">
+            <span className="text-[9.5px] font-bold text-ink">{c.label}</span>
+            <span className="text-[7px] text-ink-muted/55 mt-px">feeds {c.feeds}</span>
           </span>
-        );
-      })}
+          <span className="text-[6.5px] font-bold tracking-[0.1em]" style={{ color: "#fbbf24" }}>VERIFIED · NO DATE</span>
+        </span>
+      ))}
     </div>
   );
 }
 
-// Per-theme next-catalyst chips, the soonest dated events that move this theme,
-// colored by whether they confirm or threaten the thesis.
-function ThemeCatalystRow({ theme }: { theme: ThemeIntelligence }) {
-  const cats = useMemo(() => generateNextCatalysts(theme).slice(0, 2), [theme]);
-  if (cats.length === 0) return null;
+// Per-theme verified-catalyst chips: recorded series/releases linked to THIS
+// theme in the graph. Empty (rendering nothing) when none are recorded.
+function ThemeCatalystRow({ catalysts }: { catalysts: CatalystItem[] }) {
+  if (catalysts.length === 0) return null;
+  const clr = "#a78bfa";
   return (
     <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
-      <span className="text-[6.5px] font-bold uppercase tracking-wide text-indigo-400/55 shrink-0">Next</span>
-      {cats.map(c => {
-        const meta = CATALYST_META[c.kind];
-        const clr  = c.imminent ? "#f59e0b" : c.direction === "confirming" ? "#10b981" : "#a78bfa";
-        return (
-          <span key={c.kind} title={c.reason}
-            className="flex items-center gap-1 rounded px-1 py-px border"
-            style={{ borderColor: `${clr}2e`, background: `${clr}12` }}>
-            <span className="text-[8px]" style={{ color: clr }}>{c.direction === "confirming" ? "▲" : "⚑"}</span>
-            <span className="text-[8.5px] font-bold text-ink-secondary">{meta.short}</span>
-            <span className="text-[8.5px] font-black tabular-nums" style={{ color: clr }}>{countdownLabel(c.daysAway)}</span>
-          </span>
-        );
-      })}
+      <span className="text-[6.5px] font-bold uppercase tracking-wide text-indigo-400/55 shrink-0">Catalysts</span>
+      {catalysts.slice(0, 2).map(c => (
+        <span key={c.label} title={c.detail}
+          className="flex items-center gap-1 rounded px-1 py-px border"
+          style={{ borderColor: `${clr}2e`, background: `${clr}12` }}>
+          <span className="text-[8px]" style={{ color: clr }}>◆</span>
+          <span className="text-[8.5px] font-bold text-ink-secondary">{c.label}</span>
+          <span className="text-[6.5px] font-bold tracking-wide" style={{ color: "#fbbf24" }}>NO DATE</span>
+        </span>
+      ))}
     </div>
   );
 }
 
-function ThemeCommandCenterBase({ themes, onThemeClick }: {
-  themes:       ThemeIntelligence[];
-  onThemeClick: (t: ThemeIntelligence) => void;
+function ThemeCommandCenterBase({ themes, onThemeClick, reads, readCatalysts }: {
+  themes:        ThemeIntelligence[];
+  onThemeClick:  (t: ThemeIntelligence) => void;
+  reads:         Map<string, ThemeSharedRead>;
+  readCatalysts: CatalystItem[];
 }) {
-  const radar = useMemo(() => marketCatalystRadar(themes, new Date(), 5), [themes]);
-
   if (themes.length === 0) return (
     <div className="mb-4">
       <SectionHeader label="Theme Command Center" icon={<Zap size={11} className="text-accent shrink-0" />} />
@@ -981,15 +997,22 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
   return (
     <div className="mb-4">
       <SectionHeader label="Theme Command Center" icon={<Zap size={11} className="text-accent shrink-0" />}
-        sub="conviction, exposure, and the next dated catalyst" />
-      <CatalystRadarStrip catalysts={radar} />
+        sub="conviction, exposure, and verified catalysts" />
+      <CatalystRadarStrip catalysts={readCatalysts} />
       <div className="grid sm:grid-cols-2 gap-1.5">
         {sorted.map(t => {
           const mm    = MOMENTUM_META[t.momentum_label] ?? MOMENTUM_META.stable;
           const conf  = t.confidence ?? 0;
           const d     = t.momentum_delta ?? 0;
-          const benef  = themeBeneficiaries(t, 3);
-          const losers = themeLosers(t, 3);
+          // Phase 2.4: exposure reads come from the shared per-theme read
+          // (graph beneficiaries / weakening edges), with the stored-field
+          // selection as the labeled fallback - one source per render.
+          const read   = reads.get(t.id);
+          const benef  = read?.wins ?? [];
+          const losses = read?.losses ?? [];
+          const winsTitle = read?.winsBasis === "graph"
+            ? "Recorded downstream exposure (shared graph edges - same as Explorer)"
+            : "Stored-field read (pipeline exposure); graph exposure unavailable for this theme";
           return (
             <button key={t.id} onClick={() => onThemeClick(t)}
               className="text-left rounded-lg border border-edge bg-surface flex items-center gap-3 pl-3 pr-3 py-2
@@ -1018,27 +1041,27 @@ function ThemeCommandCenterBase({ themes, onThemeClick }: {
                   <span className="text-ink-muted/25">·</span>
                   <span className="text-ink-muted/50 truncate"><span className="text-ink-muted/35">Driver</span> {themePrimaryDriver(t)}</span>
                 </div>
-                {/* who wins / who loses, prominent tickers */}
+                {/* who wins / who loses, prominent tickers (shared reads) */}
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap min-w-0">
                   {benef.length > 0 && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1" title={winsTitle}>
                       <span className="text-[6.5px] font-bold uppercase tracking-wide text-emerald-400/55">Wins</span>
                       {benef.map(tk => (
                         <TickerChip key={tk} ticker={tk} mono={false} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20" />
                       ))}
                     </span>
                   )}
-                  {losers && (
-                    <span className="flex items-center gap-1">
+                  {losses.length > 0 && (
+                    <span className="flex items-center gap-1" title="Recorded weakening edges (shared graph risks - same as Explorer)">
                       <span className="text-[6.5px] font-bold uppercase tracking-wide text-red-400/55">Loses</span>
-                      {losers.tickers.map(tk => (
+                      {losses.map(tk => (
                         <TickerChip key={tk} ticker={tk} mono={false} className="text-[9.5px] font-bold tabular-nums px-1 py-px rounded bg-red-500/8 text-red-400/90 border border-red-500/15" />
                       ))}
                     </span>
                   )}
                 </div>
-                {/* next dated catalysts */}
-                <ThemeCatalystRow theme={t} />
+                {/* verified, dateless catalysts recorded against this theme */}
+                <ThemeCatalystRow catalysts={read?.catalysts ?? []} />
                 {/* what changes the view */}
                 <div className="flex items-center gap-1 mt-px text-[8px] min-w-0">
                   <span className="text-amber-500/50 font-bold uppercase tracking-wide shrink-0">Watch</span>
@@ -1074,17 +1097,33 @@ function ChainArrow({ color }: { color: string }) {
   );
 }
 
-// Transmission Map: a true causal chain ending in tradeable securities —
-// Macro Driver → Theme → Sector → Securities. Built from structured fields
-// (related_macro_factors, name, related_industries, themeBeneficiaries) rather
-// than parsed prose, so every chain terminates in instruments.
-function ThemeTransmissionBase({ themes, onNodeClick }: {
+// Transmission Map: Macro Driver → Theme → Sector → Securities. Phase 2.4:
+// the canonical representation is GRAPH-RECORDED edges (per-theme profile
+// reads - the same drivers/beneficiaries Explorer shows). The stored-field
+// chain survives ONLY as an explicitly labeled fallback when the graph is
+// unavailable; the two sources are never blended in one render.
+function ThemeTransmissionBase({ themes, onNodeClick, reads, graphReady }: {
   themes:      ThemeIntelligence[];
   onNodeClick: (t: ThemeIntelligence) => void;
+  reads:       Map<string, ThemeSharedRead>;
+  graphReady:  boolean;
 }) {
   const chains = useMemo(() => {
-    return [...themes]
-      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+    const sorted = [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    if (graphReady) {
+      // Graph-recorded chains only: driver/sector/securities are recorded edges.
+      return sorted
+        .map(t => {
+          const r = reads.get(t.id);
+          if (!r || r.basis !== "graph" || r.winsBasis !== "graph") return null;
+          if (!r.sector || r.wins.length === 0) return null;
+          return { t, macro: r.driver ? cleanMacroLabel(r.driver) : null, sector: r.sector, tickers: r.wins };
+        })
+        .filter((c): c is { t: ThemeIntelligence; macro: string | null; sector: string; tickers: string[] } => c !== null)
+        .slice(0, 5);
+    }
+    // Labeled stored-field fallback (graph unavailable).
+    return sorted
       .map(t => {
         const sectors = t.related_industries ?? [];
         const sector  = sectors.find(s => t.relationship_weights?.[s]?.direction === "positive") ?? sectors[0] ?? null;
@@ -1093,7 +1132,7 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
       })
       .filter(c => c.sector && c.tickers.length > 0)
       .slice(0, 5);
-  }, [themes]);
+  }, [themes, reads, graphReady]);
 
   const [open, setOpen] = useState(false);
 
@@ -1111,7 +1150,10 @@ function ThemeTransmissionBase({ themes, onNodeClick }: {
         className="w-full flex items-center gap-2 mb-2 group">
         <Network size={11} className="text-accent shrink-0" />
         <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-secondary">Transmission Map</span>
-        <span className="text-[9px] text-ink-muted">{chains.length} causal chains, macro driver to security</span>
+        <span className="text-[9px] text-ink-muted">
+          {chains.length} causal chains, macro driver to security
+          {graphReady ? " · recorded graph edges" : " · STORED-FIELD READ (graph unavailable)"}
+        </span>
         <span className="h-px flex-1 bg-edge" />
         <ChevronDown size={12} className={cn("text-ink-muted/45 transition-transform shrink-0", open ? "" : "-rotate-90")} />
       </button>
@@ -1241,7 +1283,9 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
       trend, trendColor, count: list.length, supportive, risk: deriveKeyRisk(list[0]),
       exposures: exposures.slice(0, 4),
       expressWhy: be?.why ?? "",
-      whyBullets: generateWhyItMattersNow(list[0]).slice(0, 3),
+      // Phase 2.4: recorded-fact bullets (momentum state, stored exposure,
+      // server memory) - the advice-template generator retired.
+      whyBullets: themeImpactBullets(list[0]),
       horizon: timeBucket(list[0]), leadDelta: list[0].momentum_delta ?? 0,
     });
   }
@@ -1558,9 +1602,21 @@ export default function MarketsPage() {
     [read, argus.themes, argus.ready],
   );
   const relMap = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
-  const contradictions = useMemo(
-    () => detectContradictions(visible, sectorData, riskRegime, volRegime),
-    [visible, sectorData, riskRegime, volRegime],
+
+  // Phase 2.4: the stored-field theme-vs-theme detector is a FALLBACK only,
+  // computed exactly when the graph cannot provide the shared contradiction
+  // records (evidence engine, via lib/riskRead). It never competes with them.
+  const fallbackContradictions = useMemo(
+    () => (argus.ready ? [] : detectContradictions(visible, sectorData, riskRegime, volRegime)),
+    [argus.ready, visible, sectorData, riskRegime, volRegime],
+  );
+
+  // Per-theme shared reads: graph beneficiaries / weakening edges / verified
+  // catalysts / recorded driver-sector hops, consumed by the Command Center
+  // and the Transmission Map (selection only; meaning stays in the engines).
+  const themeReads = useMemo(
+    () => buildThemeSharedReads(visible, argus.ready),
+    [visible, argus.ready],
   );
 
   // Stable identity so memoized sections don't re-render when the drawer opens.
@@ -1572,9 +1628,12 @@ export default function MarketsPage() {
       upstream:   rel?.upstream   ?? [],
       downstream: rel?.downstream ?? [],
       connected:  rel?.connected  ?? [],
-      conflicts:  contradictions.filter(c => c.themeIds.includes(t.id)),
+      // Shared engine records when the graph is provisioned; the stored-field
+      // conflicts survive only as the labeled fallback.
+      shared:     argus.ready ? buildRiskRead(t.name, t) : null,
+      conflicts:  argus.ready ? [] : fallbackContradictions.filter(c => c.themeIds.includes(t.id)),
     });
-  }, [dismissAlert, relMap, contradictions]);
+  }, [dismissAlert, relMap, argus.ready, fallbackContradictions]);
 
   const handleFollowToggle = useCallback((t: ThemeIntelligence) => {
     toggleFollow(t, cleanThemeName(t.name));
@@ -1679,13 +1738,14 @@ export default function MarketsPage() {
         <MarketPulseStrip themes={visible} onThemeClick={openDrawer} />
 
         {/* ══ 3. THEME COMMAND CENTER, what's driving it + catalysts ══ */}
-        <ThemeCommandCenter themes={visible} onThemeClick={openDrawer} />
+        <ThemeCommandCenter themes={visible} onThemeClick={openDrawer} reads={themeReads}
+          readCatalysts={intel.read.catalysts.data ?? []} />
 
         {/* ══ 4. SECTOR POSITIONING, where it matters + the trade ══ */}
         <SectorPositioning themes={visible} />
 
         {/* ══ 5. TRANSMISSION MAP, how it spreads (secondary, collapsed) ══ */}
-        <ThemeTransmission themes={visible} onNodeClick={openDrawer} />
+        <ThemeTransmission themes={visible} onNodeClick={openDrawer} reads={themeReads} graphReady={argus.ready} />
 
         {/* ══ 6. EVIDENCE VALIDATION, why we believe it ═══════ */}
         <div ref={clusterRef} className="mb-4">

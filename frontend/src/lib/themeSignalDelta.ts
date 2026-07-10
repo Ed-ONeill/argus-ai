@@ -122,71 +122,11 @@ export function computeSignalDeltas(theme: ThemeIntelligence): SignalDelta[] {
   return out.slice(0, 4);
 }
 
-// ── generateWeeklyChange ──────────────────────────────────────────────────────
-
-/**
- * Institutional-quality change narrative derived entirely from data fields.
- * Describes what changed this period — not a re-statement of the theme definition.
- */
-export function generateWeeklyChange(theme: ThemeIntelligence): string {
-  const delta      = theme.momentum_delta     ?? 0;
-  const momentum   = theme.momentum_label;
-  const breadth    = theme.breadth_score      ?? 0;
-  const persist    = theme.persistence_score  ?? 0;
-  const cycles     = theme.persistence_cycles ?? 0;
-  const confirmed  = theme.cross_category_confirmed;
-  const direction  = theme.momentum_direction;
-  const industries = (theme.related_industries ?? []).slice(0, 3);
-  const effects    = (theme.second_order_effects ?? []);
-  const name       = theme.name;
-
-  const ind2 = industries.length >= 2
-    ? `${industries[0]} and ${industries[1]}`
-    : industries[0] ?? "tracked sectors";
-
-  const cycleNote = cycles > 1
-    ? `${cycles} consecutive cycles`
-    : cycles === 1 ? "one cycle" : "initial formation";
-
-  // ── Strong acceleration ────────────────────────────────────────────────────
-  if (delta >= 15) {
-    return `${name} saw a material signal acceleration this period${industries.length > 0 ? `, broadening into ${ind2}` : ""}. ${confirmed ? "Cross-category confirmation strengthened the case for continued expansion." : `Delta of +${delta.toFixed(0)} vs prior cycle, with breadth at ${breadth}.`}${effects[0] ? ` Second-order: ${effects[0]}.` : ""}`;
-  }
-
-  // ── Moderate strengthening ─────────────────────────────────────────────────
-  if (delta >= 7) {
-    return `Signal in ${name} continued to build${industries.length > 0 ? `, with particular depth in ${industries[0]}` : ""}. The theme has sustained ${cycleNote} of track record and carries a delta of +${delta.toFixed(0)} vs the prior period.${effects[0] ? ` ${effects[0]}.` : ""}`;
-  }
-
-  // ── Sharp deterioration ────────────────────────────────────────────────────
-  if (delta <= -15) {
-    return `${name} experienced a material signal reversal this period. ${breadth < 40 ? "Breadth narrowed, with fewer sectors showing active exposure." : "Breadth has held up despite the momentum shift."} Persistence at ${persist}${persist > 60 ? " provides structural anchoring" : " is insufficient to prevent further deterioration"}.${effects[0] ? ` ${effects[0]}.` : ""}`;
-  }
-
-  // ── Moderate cooling ───────────────────────────────────────────────────────
-  if (delta <= -7) {
-    return `Momentum in ${name} softened relative to prior periods. ${ind2} remains the primary exposure vector, though signal velocity has slowed. ${cycles > 3 ? `${cycles} cycles of persistence suggests structural rather than tactical cooling.` : "Confirmation is needed to prevent further degradation."}`;
-  }
-
-  // ── Active acceleration (label-based, delta small) ─────────────────────────
-  if (momentum === "accelerating") {
-    return `${name} is in active acceleration${industries.length > 0 ? `, with ${ind2} as primary drivers` : ""}. ${confirmed ? "Cross-category confirmation signals a broadening rather than concentrated trade." : `Breadth at ${breadth} and persistence at ${persist} support continued development.`}${effects[0] ? ` ${effects[0]}.` : ""}`;
-  }
-
-  // ── Reversal ──────────────────────────────────────────────────────────────
-  if (momentum === "reversing") {
-    return `${name} is in active reversal. Signal degradation running at ${Math.abs(delta).toFixed(0)} delta per cycle. ${persist < 40 ? "Low persistence reduces the probability of mean reversion." : `Persistence at ${persist} may limit the downside.`}`;
-  }
-
-  // ── Cooling phase ──────────────────────────────────────────────────────────
-  if (momentum === "cooling") {
-    return `${name} has entered a cooling phase${cycles > 3 ? ` after ${cycles} cycles of sustained presence` : ""}. The signal remains intact but conviction is softening. ${breadth > 50 ? "Breadth remains supportive." : "Breadth narrowing is consistent with a late-cycle pattern."}`;
-  }
-
-  // ── Stable / emerging (default) ────────────────────────────────────────────
-  const dirWord = direction === "bullish" ? "constructive" : direction === "bearish" ? "cautious" : "neutral";
-  return `${name} maintained ${dirWord} signal characteristics this period${industries.length > 0 ? `, with ${ind2} as primary exposure anchors` : ""}. Persistence at ${persist} across ${cycleNote}, delta ${delta >= 0 ? "+" : ""}${delta.toFixed(0)} vs prior.${effects[0] ? ` ${effects[0]}.` : ""}`;
-}
+// generateWeeklyChange: RETIRED (Phase 2.4 Intelligence Consistency). It
+// narrated "this period" from a SINGLE snapshot - fabricated temporality.
+// Cross-session change is owned by server ThemeMemory (see
+// themeIntelligence.memorySentences and lib/intelligenceDeltas); consumers
+// render an honest current-state line when no memory exists.
 
 // ── computeIndustryExposureRanking ────────────────────────────────────────────
 

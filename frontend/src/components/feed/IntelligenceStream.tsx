@@ -6,7 +6,8 @@ import { ChevronDown, ExternalLink, Bookmark, BookmarkCheck, Radio, ArrowRight, 
 import { catColor, timeAgo } from "@/lib/utils";
 import { classifyImpact } from "@/lib/types";
 import { transmissionPath, dirOf, themeWatch } from "@/lib/themeTransmission";
-import { themeBeneficiaries, generateNextCatalysts, generateThesis, generateBullBearCases } from "@/lib/themeIntelligence";
+import { themeBeneficiaries, generateThesis, generateBullBearCases } from "@/lib/themeIntelligence";
+import { buildRiskRead } from "@/lib/riskRead";
 import { Beam, useBeam } from "@/lib/feedHighlight";
 import { TickerChip } from "@/components/common/TickerChip";
 import { cleanThemeName } from "@/app/markets/marketsShared";
@@ -139,8 +140,12 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
   const sectors = (theme.related_industries ?? []).slice(0, 4);
   const related = [...cluster.related].sort((a, b) => (b.published_ts ?? "").localeCompare(a.published_ts ?? ""));
   const cases = generateBullBearCases(theme);
-  const cats = generateNextCatalysts(theme);
-  const catalyst = cats.find(c => c.direction === "confirming") ?? cats[0] ?? null;
+  // Phase 2.4: catalyst + contradiction come from the shared risk read
+  // (verified dateless catalysts; evidence-engine records). Templates remain
+  // only as the graphless fallback.
+  const shared = buildRiskRead(theme.name, theme);
+  const catalyst = shared.basis === "graph" ? (shared.catalysts[0] ?? null) : null;
+  const sharedContradiction = shared.basis === "graph" ? (shared.contradictions[0] ?? null) : null;
   const mem = theme.memory;
   const isBreaking = item.signal_strength === "strong" && /^(\d+)(m|h)/.test(item.published ?? "");
   // Shared context tokens, hovering anything in this dossier lights the matching
@@ -265,7 +270,9 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
                 {mem && mem.contradicting_total > 0 && <span className="text-[8px] font-bold ml-auto" style={{ color: RED }}>{mem.contradictions_today > 0 ? `${mem.contradictions_today} today · ` : ""}{mem.contradicting_total} total</span>}
               </div>
               <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.62)" }}>
-                {cases.bear || "No material counter-signal in the current evidence, confirmation is one-sided, which itself is a crowding risk."}
+                {sharedContradiction
+                  ? <>{sharedContradiction.detail} <span style={{ color: "rgba(255,255,255,0.35)" }}>sev {sharedContradiction.severity} (evidence engine)</span></>
+                  : (cases.bear || "No material counter-signal in the current evidence, confirmation is one-sided, which itself is a crowding risk.")}
               </p>
             </div>
 
@@ -274,9 +281,9 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
               <BlockLabel>Prediction</BlockLabel>
               <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}>{generateThesis(theme)}</p>
               {catalyst && (
-                <p className="text-[9.5px] mt-1.5 flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.46)" }}>
+                <p className="text-[9.5px] mt-1.5 flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.46)" }} title={catalyst.detail}>
                   <span className="font-bold uppercase tracking-wide" style={{ color: `${dc}c0` }}>Test</span>
-                  {catalyst.label} · {catalyst.dateLabel} ({catalyst.daysAway}d)
+                  {catalyst.label} · verified, no date
                 </p>
               )}
             </div>

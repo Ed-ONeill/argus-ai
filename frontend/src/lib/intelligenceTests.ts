@@ -44,11 +44,13 @@ import { buildIntelligenceProfile, PROFILE_VERSION } from "./intelligenceProfile
 import { deriveNarratives, findNarrativeForTheme, narrativeKeyOfDrivers, DERIVED_NARRATIVE_VERSION } from "./narrativeDerivation";
 import { buildMorningBrief } from "./morningBrief";
 import { deriveMorningBriefDeltas } from "./intelligenceDeltas";
-import { buildTheRead } from "./theRead";
+import { buildTheRead, verifiedCatalystsFor } from "./theRead";
 import { provisionIntelligenceGraph, canonicalGraphState } from "./intelligenceProvisioning";
 import { buildMarketStoryVM } from "./feedNarrative";
-import { buildMarketsIntel } from "./marketsIntel";
-import { deltasToSection } from "./intelligenceDeltas";
+import { buildMarketsIntel, themeImpactBullets } from "./marketsIntel";
+import { deltasToSection, watchLineOf } from "./intelligenceDeltas";
+import { buildRiskRead } from "./riskRead";
+import { memorySentences } from "./themeIntelligence";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -1962,6 +1964,133 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     // deltasToSection is the single policy home: statuses must match the brief's.
     const dr = deriveMorningBriefDeltas({ themes: readThemes() });
     assert(deltasToSection(dr).status === buildMorningBrief({ themes: readThemes() }).changes.status, "one status policy for the ledger everywhere");
+  });
+
+  // 85. Phase 2.4 Intelligence Consistency: one concept, one owner. The same
+  // contradiction / invalidation / catalyst / transmission / beneficiary
+  // records surface identically through every production path (evidence
+  // engine === profile === riskRead === The Read === Markets), and sparse
+  // inputs degrade consistently and honestly.
+
+  test("contradiction and invalidation records are identical through every surface path", () => {
+    seedNarrativeGraph();
+    intelligenceGraph.addNode({ label: "Rate Shock", type: "Macro" as never });
+    intelligenceGraph.addRelationship({ source: "Rate Shock", target: "AI Infrastructure", relationshipType: "weakens" as never, strength: 60, confidence: 65 });
+    const themes = readThemes();
+    const strip = (xs: Array<{ detail: string; severity: number }>) => JSON.stringify(xs.map(c => ({ detail: c.detail, severity: c.severity })));
+
+    const ev = detectContradictions("AI Infrastructure");                       // the owner
+    assert(ev.length > 0, "the seeded weakens edge yields evidence-engine contradiction records");
+    const p = buildIntelligenceProfile("AI Infrastructure");                    // Explorer path
+    assert(strip(p.risks.data?.contradictions ?? []) === strip(ev), "profile risks carry the same records");
+    const rr = buildRiskRead("AI Infrastructure", themes[0]);                   // drawer path
+    assert(rr.basis === "graph" && strip(rr.contradictions) === strip(ev), "riskRead carries the same records verbatim");
+    const read = buildTheRead({ themes, graphReady: true });                    // Read / brief / Markets path
+    const evAll = [...ev, ...detectContradictions("Datacenter Power")];
+    for (const c of read.falsifiers.data?.contradictions ?? [])
+      assert(evAll.some(e => e.detail === c.detail && e.severity === c.severity), "every Read falsifier contradiction is an evidence-engine record");
+    if (read.thesis.data?.contradiction)
+      assert(evAll.some(e => e.detail === read.thesis.data!.contradiction!.detail), "the standing contradiction is an evidence-engine record");
+
+    // Invalidation: prediction engine === profile === riskRead === Read.
+    const fwd = predictThemeTrajectory("AI Infrastructure");
+    const inv = fwd.found ? fwd.invalidationConditions[0] ?? null : null;
+    assert(rr.invalidation === (p.risks.data?.invalidation ?? null), "riskRead invalidation === profile invalidation");
+    assert(rr.invalidation === inv, "and both are the prediction engine's own condition");
+    const readInv = (read.falsifiers.data?.invalidations ?? []).find(f => f.theme === "AI Infrastructure");
+    if (inv) assert(readInv?.text === inv, "The Read's invalidation is the same engine record");
+  });
+
+  test("transmission is recorded edges only, on every surface", () => {
+    seedNarrativeGraph();
+    const read = buildTheRead({ themes: readThemes(), graphReady: true });
+    const hops = read.chain.data ?? [];
+    assert(hops.length >= 2 && hops[0].edge === null, "a recorded chain resolves from the anchor");
+    for (const h of hops.slice(1)) {
+      const node = intelligenceGraph.getNode(h.label);
+      assert(!!node, `chain hop ${h.label} is a recorded node`);
+      const rels = intelligenceGraph.getRelationships(node!.id);
+      assert(rels.some(r => r.relationshipType === h.edge!.relationship), "every hop's edge is a recorded relationship type on that node");
+    }
+    // Explorer / Markets per-theme path: the profile's strongest path is graph nodes only.
+    const p = buildIntelligenceProfile("AI Infrastructure");
+    const path = p.transmission.data?.strongestPath ?? [];
+    assert(path.length >= 2, "the profile resolves a recorded path");
+    for (const label of path) assert(!!intelligenceGraph.getNode(label), `profile path node ${label} is recorded in the graph`);
+  });
+
+  test("evolution narration is memory-owned; single snapshots stay current-state", () => {
+    const withMem = mkTheme({ memory: mkMem() });
+    const lines = memorySentences(withMem, 1);
+    assert(lines.length > 0 && /\d/.test(lines[0]), "memory-based change lines carry recorded numbers");
+    const noMem = mkTheme();
+    assert(memorySentences(noMem, 1).length === 0, "no recorded memory means no historical narrative - callers state current state instead");
+  });
+
+  test("beneficiaries resolve from the shared exposure objects", () => {
+    seedNarrativeGraph();
+    const themes = readThemes();
+    const read = buildTheRead({ themes, graphReady: true });
+    const narrative = deriveNarratives()[0];
+    assert(!!narrative, "the seeded graph derives a narrative");
+    const heroBenef = (read.exposure.data?.companies ?? []).map(c => c.label);  // what the Markets hero renders
+    const narrAssets = (narrative.exposure.data?.assets ?? []).slice(0, 8).map(a => a.label);
+    assert(JSON.stringify(heroBenef) === JSON.stringify(narrAssets), "Markets hero beneficiaries are exactly the derived narrative's exposure assets");
+    const p = buildIntelligenceProfile("AI Infrastructure");
+    const wins = (p.beneficiaries.data ?? []).filter(l => l.nodeType === "Company" || l.nodeType === "ETF").map(l => l.label);
+    assert(wins.includes("NVDA"), "per-theme graph beneficiaries surface the recorded tradeable");
+  });
+
+  test("catalysts are one shared dateless read; watch items stay derived and distinct", () => {
+    seedNarrativeGraph();
+    intelligenceGraph.addNode({ label: "CPI (FRED series)", type: "MacroSeries" as never });
+    intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Infrastructure", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
+    const themes = readThemes();
+    const rr = buildRiskRead("AI Infrastructure", themes[0]);
+    assert(JSON.stringify(rr.catalysts) === JSON.stringify(verifiedCatalystsFor(["AI Infrastructure"])), "riskRead projects verifiedCatalystsFor verbatim");
+    const read = buildTheRead({ themes, graphReady: true });
+    const readItems = (read.catalysts.data ?? []).filter(c => c.feeds === "AI Infrastructure");
+    assert(readItems.length === rr.catalysts.length && readItems.every((c, i) => c.label === rr.catalysts[i].label && c.detail === rr.catalysts[i].detail),
+      "The Read and the per-entity read expose the same catalyst records");
+    for (const c of rr.catalysts) {
+      const keys = Object.keys(c).sort().join(",");
+      assert(keys === "detail,feeds,label,nodeType", `catalysts carry no date or countdown fields, got ${keys}`);
+    }
+    assert(rr.watchItems.some(w => w.includes(watchLineOf(themes[0]))), "the derived watch line rides the shared read (one derivation home)");
+    assert(rr.watchItems.every(w => !rr.catalysts.some(c => w === c.label)), "watch items and catalysts stay distinct records");
+  });
+
+  test("markets impact bullets are selections of shared objects, never advice", () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    const read = buildTheRead({ themes, graphReady: true });
+    const dr = deriveMorningBriefDeltas({ themes });
+    const mi = buildMarketsIntel(read, dr);
+    const bullets = mi.impact.data ?? [];
+    assert(bullets.length > 0 && mi.impact.status === "live", "impact resolves with exposure and ledger present");
+    const memberSet = new Set((read.thesis.data?.members ?? []).map(m => m.name.toLowerCase()));
+    for (const b of bullets.slice(1))
+      assert(dr.deltas.some(d => d.matters === b && memberSet.has(d.entity.toLowerCase())), "ledger bullets are member matters lines verbatim");
+    const exp = read.exposure.data!;
+    assert((exp.sectors[0] && bullets[0].includes(exp.sectors[0].label)) || (exp.companies[0] && bullets[0].includes(exp.companies[0].label)),
+      "the exposure bullet names the Read's recorded exposure");
+    const tb = themeImpactBullets(mkTheme({ memory: mkMem() }));
+    assert(tb.length > 0 && tb.every(b => !/investor|institutional flows|holding period|entry signal/i.test(b)), "per-theme bullets are recorded facts, not positioning advice");
+    assert(tb.some(b => b.includes("sessions")), "memory grounding rides when memory exists");
+  });
+
+  test("shared reads degrade consistently on an empty graph", () => {
+    intelligenceGraph.clear();
+    const t = mkTheme();
+    const rr = buildRiskRead(t.name, t);
+    assert(rr.basis === "unavailable" && rr.contradictions.length === 0 && rr.invalidation === null && rr.weakening.length === 0 && rr.catalysts.length === 0,
+      "no graph means no engine records, never invented ones");
+    assert(rr.watchItems.length === 1 && rr.watchItems[0].includes(watchLineOf(t)),
+      "only the stored-field derived watch line survives - and it is the canonical derivation");
+    assert(verifiedCatalystsFor([t.name]).length === 0, "no recorded series means no catalysts");
+    const mi = buildMarketsIntel(buildTheRead({}), deriveMorningBriefDeltas({}));
+    assert(mi.impact.status === "unavailable" && mi.impact.data === null, "no exposure and no ledger means no impact bullets");
   });
 
   for (const [name, fn] of tests) {

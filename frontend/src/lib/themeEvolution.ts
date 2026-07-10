@@ -6,6 +6,13 @@
  * breadth, volatility, source diversity, and cross-category confirmation.
  *
  * Zero LLM calls. Pure deterministic computation.
+ *
+ * Phase 2.4 (Intelligence Consistency): these states derive from a SINGLE
+ * snapshot. They are CURRENT-STATE BADGES only and must never be presented
+ * as historical evolution - cross-session evolution is owned by server
+ * ThemeMemory + the memory engine (see lib/intelligenceOwnership.ts,
+ * "evolution"). getEvolutionNarrative survives only on not-yet-migrated
+ * surfaces (Industries, M&A) and retires with their P2.5/P2.6 sprints.
  */
 
 import type { ThemeIntelligence } from "./types";

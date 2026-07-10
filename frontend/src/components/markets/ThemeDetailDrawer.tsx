@@ -15,7 +15,6 @@ import {
 import {
   generateIntelligenceBriefing,
   generateBullBearCases,
-  generateNextCatalysts,
   generateWatchSignals,
   generateInvalidationSignals,
   computeThemeHealth,
@@ -30,7 +29,6 @@ import {
   convScore,
   convBasis,
   deriveKeyRisk,
-  countdownLabel,
   type DrawerData,
 } from "@/app/markets/marketsShared";
 
@@ -156,7 +154,7 @@ export function ThemeDetailDrawer({
   }, [data]);
 
   if (!data) return null;
-  const { theme: t, upstream, downstream, connected, conflicts } = data;
+  const { theme: t, upstream, downstream, connected, conflicts, shared } = data;
   const publicName = cleanThemeName(t.name);
   const evState    = computeThemeEvolutionState(t);
   const evMeta     = THEME_EVOLUTION_META[evState];
@@ -178,9 +176,17 @@ export function ThemeDetailDrawer({
   const bColor  = borderColorForTheme(t, evState);
   const health  = computeThemeHealth(t);
   const bbCases = generateBullBearCases(t);
-  const catalysts      = generateNextCatalysts(t);
-  const watchSignals   = generateWatchSignals(t);
-  const invalidations  = generateInvalidationSignals(t);
+  // Phase 2.4: catalysts / invalidation / watch / conflicts come from the
+  // shared risk read (lib/riskRead - the same engine records Explorer and the
+  // Morning Brief show). The stored-field keyword generators survive ONLY as
+  // the labeled fallback when the graph was unavailable at open time.
+  const hasShared      = shared !== null && shared.basis === "graph";
+  const catalysts      = hasShared ? shared.catalysts : [];
+  const watchSignals   = hasShared ? [] : generateWatchSignals(t);
+  const sharedWatch    = hasShared ? shared.watchItems : [];
+  const invalidations  = hasShared ? [] : generateInvalidationSignals(t);
+  const sharedInvalidation = hasShared ? shared.invalidation : null;
+  const sharedConflicts    = hasShared ? shared.contradictions : [];
   const briefingSents  = generateIntelligenceBriefing(t);
   const bestExpr       = bestExpressions(t);
   const exposedLosers  = themeLosers(t);
@@ -215,7 +221,8 @@ export function ThemeDetailDrawer({
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                    <span className={cn("text-[10px] font-semibold uppercase tracking-wider", evCls)}>
+                    <span className={cn("text-[10px] font-semibold uppercase tracking-wider", evCls)}
+                      title="Current-state badge from today's snapshot - not cross-session history (ThemeMemory owns evolution)">
                       {evMeta.icon} {evMeta.label}
                     </span>
                     <span
@@ -503,13 +510,22 @@ export function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Watch Signals */}
-              {watchSignals.length > 0 && (
+              {/* What Changes Our View - shared watch items (derived, dateless),
+                  or the labeled stored-field fallback when the graph was down */}
+              {(sharedWatch.length > 0 || watchSignals.length > 0) && (
                 <div className="rounded-lg border border-amber-500/25 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12">
+                  <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12 flex items-center justify-between">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">What Changes Our View</p>
+                    <p className="text-[7.5px] font-bold tracking-[0.1em] text-amber-600/55">
+                      {sharedWatch.length > 0 ? "DERIVED" : "STORED-FIELD READ"}
+                    </p>
                   </div>
                   <div className="divide-y divide-amber-500/15">
+                    {sharedWatch.map((item, i) => (
+                      <div key={`sw-${i}`} className="px-4 py-3">
+                        <p className="text-[11px] text-ink-secondary leading-snug">{item}</p>
+                      </div>
+                    ))}
                     {watchSignals.map((sig, i) => (
                       <div key={i} className="px-4 py-3">
                         <p className="text-[11px] font-semibold text-ink mb-0.5">{sig.variable}</p>
@@ -520,40 +536,29 @@ export function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Next Catalysts — dated, chronological */}
+              {/* Catalysts - verified, dateless (recorded series/releases in the
+                  shared graph). No dated calendar is ingested; nothing simulated. */}
               {catalysts.length > 0 && (
                 <div className="rounded-lg border border-edge overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-edge bg-raised/60 flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Upcoming Catalysts</p>
-                    <p className="text-[8px] text-ink-muted/45">scheduled, soonest first</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Catalysts</p>
+                    <p className="text-[8px] font-bold tracking-[0.1em]" style={{ color: "#fbbf24" }}>VERIFIED · NO DATE</p>
                   </div>
                   <div className="divide-y divide-edge/50">
-                    {catalysts.map((cat, i) => {
-                      const accent = cat.imminent ? "#f59e0b" : cat.direction === "confirming" ? "#10b981" : "#a78bfa";
-                      return (
-                        <div key={i} className="px-4 py-3 flex items-start gap-3">
-                          {/* countdown + date — the institutional hook */}
-                          <div className="flex flex-col items-center w-11 shrink-0 mt-0.5">
-                            <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: accent }}>{countdownLabel(cat.daysAway)}</span>
-                            <span className="text-[8px] text-ink-muted/55 tabular-nums mt-0.5">{cat.dateLabel}</span>
+                    {catalysts.map((cat, i) => (
+                      <div key={i} className="px-4 py-3 flex items-start gap-3">
+                        <span className="text-[13px] leading-none mt-0.5" style={{ color: "#a78bfa" }}>◆</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                            <span className="text-[11px] font-semibold text-ink">{cat.label}</span>
+                            <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none text-ink-muted bg-raised border border-edge">
+                              feeds {cat.feeds}
+                            </span>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                              <span className="text-[11px] font-semibold text-ink">{cat.label}</span>
-                              <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none"
-                                style={{ color: accent, background: `${accent}1a` }}>
-                                {cat.direction === "confirming" ? "▲ confirming" : "⚑ risk"}
-                              </span>
-                              {cat.imminent && (
-                                <span className="text-[7.5px] font-bold px-1 py-px rounded leading-none text-amber-700 bg-amber-500/15">this week</span>
-                              )}
-                            </div>
-                            <p className="text-[10.5px] text-ink-secondary leading-snug">{cat.reason}</p>
-                          </div>
-                          <span className="text-[8px] text-ink-muted/40 shrink-0 mt-0.5">{cat.sensitivity}</span>
+                          <p className="text-[10.5px] text-ink-secondary leading-snug">{cat.detail}</p>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -659,13 +664,24 @@ export function ThemeDetailDrawer({
                 </div>
               </div>
 
-              {/* Invalidation Signals */}
-              {invalidations.length > 0 && (
+              {/* Thesis Invalidation - the prediction engine's recorded
+                  condition (same record as Explorer/profile risks), or the
+                  labeled keyword-template fallback without the graph */}
+              {(sharedInvalidation || invalidations.length > 0) && (
                 <div className="rounded-lg border border-edge overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60">
+                  <div className="px-4 py-2.5 border-b border-edge bg-raised/60 flex items-center justify-between">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Thesis Invalidation</p>
+                    <p className="text-[8px] text-ink-muted/45 font-bold tracking-[0.1em]">
+                      {sharedInvalidation ? "PREDICTION ENGINE" : "STORED-FIELD READ"}
+                    </p>
                   </div>
                   <div className="divide-y divide-edge/50">
+                    {sharedInvalidation && (
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-semibold text-ink mb-1">{sharedInvalidation}</p>
+                        <p className="text-[10.5px] text-ink-secondary leading-snug">Recorded invalidation condition for the forward view of this theme.</p>
+                      </div>
+                    )}
                     {invalidations.map((inv, i) => (
                       <div key={i} className="px-4 py-3">
                         <p className="text-[11px] font-semibold text-ink mb-1">{inv.condition}</p>
@@ -676,14 +692,27 @@ export function ThemeDetailDrawer({
                 </div>
               )}
 
-              {/* Signal Conflicts */}
-              {conflicts.length > 0 && (
+              {/* Signal Conflicts - shared evidence-engine contradiction records
+                  (identical to Explorer / the Read), or the labeled stored-field
+                  theme-overlap fallback when the graph was unavailable */}
+              {(sharedConflicts.length > 0 || conflicts.length > 0) && (
                 <div className="rounded-lg border border-amber-500/25 overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12">
+                  <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12 flex items-center justify-between">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">Signal Conflicts</p>
+                    <p className="text-[7.5px] font-bold tracking-[0.1em] text-amber-600/55">
+                      {sharedConflicts.length > 0 ? "EVIDENCE ENGINE" : "STORED-FIELD READ"}
+                    </p>
                   </div>
                   <div className="divide-y divide-amber-500/15">
-                    {conflicts.slice(0, 3).map(c => (
+                    {sharedConflicts.slice(0, 3).map((c, i) => (
+                      <div key={`sc-${i}`} className="flex items-start gap-2.5 px-4 py-3">
+                        <AlertTriangle size={12} className="text-amber-500/70 shrink-0 mt-0.5" />
+                        <p className="text-[12px] text-ink-secondary leading-relaxed">
+                          {c.detail} <span className="text-ink-muted">sev {c.severity}</span>
+                        </p>
+                      </div>
+                    ))}
+                    {sharedConflicts.length === 0 && conflicts.slice(0, 3).map(c => (
                       <div key={c.id} className="flex items-start gap-2.5 px-4 py-3">
                         <AlertTriangle size={12} className="text-amber-500/70 shrink-0 mt-0.5" />
                         <p className="text-[12px] text-ink-secondary leading-relaxed">{c.description}</p>

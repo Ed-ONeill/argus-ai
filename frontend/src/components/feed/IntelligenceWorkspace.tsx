@@ -3,9 +3,10 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  bestExpressions, themeLosers, generateBullBearCases, generateNextCatalysts,
+  bestExpressions, themeLosers, generateBullBearCases,
   generateInvalidationSignals, themeBeneficiaries, explainMechanism,
 } from "@/lib/themeIntelligence";
+import { buildRiskRead } from "@/lib/riskRead";
 import { deriveDriver, deriveSector, dirOf, themeWatch } from "@/lib/themeTransmission";
 import { focusedThemes, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
 import { Beam } from "@/lib/feedHighlight";
@@ -70,9 +71,16 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   const best = bestExpressions(theme);
   const losers = themeLosers(theme, 3);
   const cases = generateBullBearCases(theme);
-  const cats = generateNextCatalysts(theme);
-  const catalyst = cats.find(c => c.direction === "confirming") ?? cats[0] ?? null;
-  const invalidation = generateInvalidationSignals(theme)[0] ?? null;
+  // Phase 2.4: catalyst and invalidation are the shared per-entity risk read
+  // (verified dateless catalysts + the prediction engine's condition - the
+  // same records Explorer shows). The keyword-template invalidation survives
+  // only as the graphless fallback; dated catalysts are gone entirely.
+  const shared = buildRiskRead(theme.name, theme);
+  const hasShared = shared.basis === "graph";
+  const catalyst = hasShared ? (shared.catalysts[0] ?? null) : null;
+  const invalidation = hasShared
+    ? shared.invalidation
+    : (generateInvalidationSignals(theme)[0]?.condition ?? null);
   const mem = theme.memory;
 
   // 1, What changed?
@@ -278,15 +286,15 @@ export function IntelligenceWorkspace({ focus, themes, clusters, isLoading }: Pr
             </p>
             <div className="flex flex-col gap-2 mt-3">
               {r.catalyst && (
-                <div className="flex items-baseline gap-2.5 text-[11px]">
-                  <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: r.catalyst.imminent ? AMBER : CYAN }}>{r.catalyst.dateLabel}</span>
-                  <span className="font-light" style={{ color: "rgba(255,255,255,0.58)" }}>{r.catalyst.label}, {r.catalyst.reason}</span>
+                <div className="flex items-baseline gap-2.5 text-[11px]" title={r.catalyst.detail}>
+                  <span className="text-[8px] font-bold uppercase tracking-wide shrink-0" style={{ color: AMBER }}>Verified · no date</span>
+                  <span className="font-light" style={{ color: "rgba(255,255,255,0.58)" }}>{r.catalyst.label}, feeds {r.catalyst.feeds}</span>
                 </div>
               )}
               {r.invalidation && (
                 <div className="flex items-baseline gap-2.5 text-[11px]">
                   <span className="text-[8px] font-bold uppercase tracking-wide shrink-0" style={{ color: RED }}>Invalidates</span>
-                  <span className="font-light" style={{ color: "rgba(255,255,255,0.48)" }}>{r.invalidation.condition}, {r.invalidation.impact}</span>
+                  <span className="font-light" style={{ color: "rgba(255,255,255,0.48)" }}>{r.invalidation}</span>
                 </div>
               )}
             </div>

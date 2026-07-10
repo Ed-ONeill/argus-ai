@@ -5,6 +5,13 @@
  * free of heavy deps (no maIntelligence) so feed components that only need the
  * transmission path don't pull the M&A engine into First Load. Pure read of
  * stored theme fields.
+ *
+ * Phase 2.4 (Intelligence Consistency): the CANONICAL transmission
+ * representation is graph-recorded edges (profile.transmission / theRead
+ * chain Z5). transmissionPath here is the STORED-FIELD FALLBACK - permitted
+ * only when the graph is unavailable, rendered with an explicit label, and
+ * never blended with graph chains in one render (ownership registry:
+ * "transmission").
  */
 
 import type { ThemeIntelligence } from "@/lib/types";

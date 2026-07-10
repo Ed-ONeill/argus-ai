@@ -16,17 +16,18 @@ import {
   type CrossAssetImpact,
 } from "@/lib/themeImpact";
 import {
-  computeSignalDeltas, generateWeeklyChange,
+  computeSignalDeltas,
   computeIndustryExposureRanking, computeAssetExposure,
   type SignalDelta, type AssetExposure,
 } from "@/lib/themeSignalDelta";
 import {
-  generateNextCatalysts, generateBullBearCases, generateWatchSignals,
+  generateBullBearCases, generateWatchSignals,
   generateEvidenceItems, explainConviction, computeThemeHealth, generateInvalidationSignals,
-  generateThesis, generateIntelligenceBriefing, computeIntelligenceScore,
-  type ThemeCatalyst, type BullBearCases, type WatchSignal,
+  generateThesis, generateIntelligenceBriefing, computeIntelligenceScore, memorySentences,
+  type BullBearCases, type WatchSignal,
   type EvidenceItem, type ConvictionExplanation, type ThemeHealthScore, type InvalidationSignal,
 } from "@/lib/themeIntelligence";
+import { buildRiskRead } from "@/lib/riskRead";
 import {
   computeCompanyExposures, computeTransmissionPaths,
   type CompanyExposure, type TransmissionPath,
@@ -158,18 +159,36 @@ export function ThemeDrawer({
   const causalChain                                                  = useMemo(() => parseCausalChain(theme.causal_narrative ?? ""), [theme.causal_narrative]);
   const crossAssetImpacts: CrossAssetImpact[]                       = useMemo(() => computeCrossAssetImpact(theme), [theme]);
   const signalDeltas:      SignalDelta[]                             = useMemo(() => computeSignalDeltas(theme), [theme]);
-  const weeklyChange                                                 = useMemo(() => generateWeeklyChange(theme), [theme]);
+  // Phase 2.4: the shared per-entity risk read (lib/riskRead) - the same
+  // evidence-engine contradictions, prediction-engine invalidation, and
+  // verified dateless catalysts Explorer and the Morning Brief show. On host
+  // pages that have not provisioned the graph it degrades to basis
+  // "unavailable" and the stored-field keyword generators stand in as
+  // explicitly labeled fallbacks - one source per render, never blended.
+  const shared     = useMemo(() => buildRiskRead(theme.name, theme), [theme]);
+  const hasShared  = shared.basis === "graph";
+  // Cross-session change is OWNED by server ThemeMemory (real recorded
+  // history via memorySentences). The single-snapshot "weekly change"
+  // narrative retired (Phase 2.4): one snapshot cannot narrate a week.
+  // Without memory this is an honest current-state line.
+  const changeLine = useMemo(() => {
+    const mem = memorySentences(theme, 1);
+    if (mem.length > 0) return mem.join(" ");
+    const d = Math.round(theme.momentum_delta ?? 0);
+    return `Current state: ${theme.momentum_label ?? "stable"}${d !== 0 ? ` (${d > 0 ? "+" : ""}${d} momentum delta this cycle)` : ""}, ${theme.signal_strength} signal. No cross-session memory yet.`;
+  }, [theme]);
   const industryExposure                                             = useMemo(() => computeIndustryExposureRanking(theme), [theme]);
   const assetExposure:     AssetExposure[]                          = useMemo(() => computeAssetExposure(theme), [theme]);
   const conviction                                                   = useMemo(() => computeConvictionScore(theme), [theme]);
   const cvLabel                                                      = convictionLabel(conviction);
-  const catalysts:         ThemeCatalyst[]                          = useMemo(() => generateNextCatalysts(theme),  [theme]);
+  const catalysts                                                    = useMemo(() => (hasShared ? shared.catalysts : []), [hasShared, shared.catalysts]);
   const bullBear:          BullBearCases                            = useMemo(() => generateBullBearCases(theme),   [theme]);
-  const watchSignals:      WatchSignal[]                            = useMemo(() => generateWatchSignals(theme),    [theme]);
+  const watchSignals:      WatchSignal[]                            = useMemo(() => (hasShared ? [] : generateWatchSignals(theme)), [hasShared, theme]);
   const evidenceItems:     EvidenceItem[]                           = useMemo(() => generateEvidenceItems(theme),   [theme]);
   const convictionExpl:    ConvictionExplanation                    = useMemo(() => explainConviction(theme, conviction), [theme, conviction]);
   const themeHealth:       ThemeHealthScore                         = useMemo(() => computeThemeHealth(theme),      [theme]);
-  const invalidation:      InvalidationSignal[]                     = useMemo(() => generateInvalidationSignals(theme), [theme]);
+  const invalidation:      InvalidationSignal[]                     = useMemo(() => (hasShared ? [] : generateInvalidationSignals(theme)), [hasShared, theme]);
+  const invalidationLine                                             = hasShared ? shared.invalidation : (invalidation[0]?.condition ?? null);
   const thesis                                                       = useMemo(() => generateThesis(theme),                [theme]);
   const briefing                                                     = useMemo(() => generateIntelligenceBriefing(theme),  [theme]);
   const intelligenceScore                                            = useMemo(() => computeIntelligenceScore(theme),       [theme]);
@@ -206,12 +225,13 @@ export function ThemeDrawer({
   }, [theme]);
 
   const primaryMonitor = useMemo(() => {
-    const highCat = catalysts.find(c => c.sensitivity === "High");
-    if (highCat) return highCat.label;
+    // Shared watch items first (profile watch + the derived dateless line);
+    // stored-field keyword signals only as the graphless fallback.
+    if (shared.watchItems.length > 0) return shared.watchItems[0];
     if (watchSignals.length > 0) return watchSignals[0].variable;
     if (catalysts.length > 0) return catalysts[0].label;
     return (theme.related_macro_factors ?? [])[0] ?? null;
-  }, [catalysts, watchSignals, theme.related_macro_factors]);
+  }, [shared.watchItems, catalysts, watchSignals, theme.related_macro_factors]);
 
   const bearishItems = useMemo(() => {
     const hws   = companyExposures.filter(c => c.direction === "headwind");
@@ -331,8 +351,9 @@ export function ThemeDrawer({
             <p
               className="text-[11.5px] leading-snug line-clamp-1 mb-2"
               style={{ color: "rgba(255,255,255,0.48)" }}
+              title="Cross-session change from server ThemeMemory (recorded history); current-state line when no memory exists"
             >
-              {weeklyChange}
+              {changeLine}
             </p>
             <div className="flex items-center gap-3 flex-wrap">
               {beneficiaries.length > 0 && (
@@ -347,13 +368,13 @@ export function ThemeDrawer({
                   ))}
                 </div>
               )}
-              {invalidation[0] && (
+              {invalidationLine && (
                 <div className="flex items-center gap-1 min-w-0">
                   <span className="text-[8px] font-bold uppercase tracking-wider shrink-0" style={{ color: "rgba(239,68,68,0.40)" }}>
                     Risk
                   </span>
                   <span className="text-[9px] truncate" style={{ color: "rgba(239,68,68,0.58)", maxWidth: 100 }}>
-                    {invalidation[0].condition}
+                    {invalidationLine}
                   </span>
                 </div>
               )}
@@ -463,33 +484,36 @@ export function ThemeDrawer({
             >
               <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2"
                 style={{ color: "rgba(82,176,200,0.45)" }}>What Changed</p>
-              <p className="text-[12px] leading-relaxed" style={{ color: "rgba(255,255,255,0.60)" }}>
-                {weeklyChange}
+              <p className="text-[12px] leading-relaxed" style={{ color: "rgba(255,255,255,0.60)" }}
+                title="Cross-session change from server ThemeMemory (recorded history); current-state line when no memory exists">
+                {changeLine}
               </p>
             </div>
 
-            {/* ── Next Catalysts ────────────────────────────────────────── */}
+            {/* ── Catalysts: verified, dateless (recorded series/releases in
+                   the shared graph; nothing simulated, no invented dates) ── */}
             {catalysts.length > 0 && (
               <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
-                  style={{ color: "rgba(251,191,36,0.52)" }}>Next Catalysts</p>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em]"
+                    style={{ color: "rgba(251,191,36,0.52)" }}>Catalysts</p>
+                  <p className="text-[7.5px] font-bold tracking-[0.1em]" style={{ color: "rgba(251,191,36,0.45)" }}>
+                    VERIFIED · NO DATE
+                  </p>
+                </div>
                 <div className="space-y-3">
                   {catalysts.map(cat => (
                     <div key={cat.label}>
                       <div className="flex items-center gap-2 mb-0.5">
                         <p className="text-[11px] font-semibold leading-snug flex-1"
                           style={{ color: "rgba(255,255,255,0.72)" }}>{cat.label}</p>
-                        <span
-                          className="text-[7.5px] font-bold px-1 py-0.5 rounded shrink-0"
-                          style={{
-                            background: cat.sensitivity === "High" ? "rgba(239,68,68,0.10)" : cat.sensitivity === "Medium" ? "rgba(251,191,36,0.10)" : "rgba(107,114,128,0.10)",
-                            color:      cat.sensitivity === "High" ? "#EF4444" : cat.sensitivity === "Medium" ? "#F59E0B" : "#6B7280",
-                          }}
-                        >{cat.sensitivity}</span>
+                        <span className="text-[7.5px] font-bold px-1 py-0.5 rounded shrink-0"
+                          style={{ background: "rgba(167,139,250,0.10)", color: "#A78BFA" }}>
+                          feeds {cat.feeds}
+                        </span>
                       </div>
-                      <p className="text-[10.5px] leading-snug"
-                        style={{ color: cat.direction === "confirming" ? "rgba(16,185,129,0.65)" : "rgba(239,68,68,0.60)" }}>
-                        {cat.direction === "confirming" ? "↑ Bullish: " : "↓ Bearish: "}{cat.reason}
+                      <p className="text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.40)" }}>
+                        {cat.detail}
                       </p>
                     </div>
                   ))}
@@ -545,16 +569,41 @@ export function ThemeDrawer({
               </div>
             )}
 
-            {/* ── What Breaks the Thesis ────────────────────────────────── */}
-            {invalidation.length > 0 && (
+            {/* ── What Breaks the Thesis: prediction-engine invalidation +
+                   evidence-engine contradictions (shared), or the labeled
+                   stored-field fallback when the graph was unavailable ── */}
+            {(invalidationLine || shared.contradictions.length > 0 || invalidation.length > 0) && (
               <div
                 className="rounded-xl p-3.5"
                 style={{ background: "rgba(239,68,68,0.022)", border: "1px solid rgba(239,68,68,0.08)" }}
               >
-                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
-                  style={{ color: "rgba(239,68,68,0.48)" }}>What Breaks the Thesis</p>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em]"
+                    style={{ color: "rgba(239,68,68,0.48)" }}>What Breaks the Thesis</p>
+                  <p className="text-[7.5px] font-bold tracking-[0.1em]" style={{ color: "rgba(239,68,68,0.35)" }}>
+                    {hasShared ? "SHARED ENGINES" : "STORED-FIELD READ"}
+                  </p>
+                </div>
                 <div className="space-y-1.5">
-                  {invalidation.slice(0, 3).map((sig, i) => (
+                  {hasShared && invalidationLine && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-[10px] font-bold shrink-0 leading-snug"
+                        style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
+                      <p className="text-[11.5px] leading-snug font-medium"
+                        style={{ color: "rgba(255,255,255,0.65)" }}>{invalidationLine}</p>
+                    </div>
+                  )}
+                  {hasShared && shared.contradictions.slice(0, 2).map((c, i) => (
+                    <div key={`sc-${i}`} className="flex items-start gap-2">
+                      <span className="text-[10px] font-bold shrink-0 leading-snug"
+                        style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
+                      <p className="text-[11.5px] leading-snug font-medium"
+                        style={{ color: "rgba(255,255,255,0.65)" }}>
+                        {c.detail} <span style={{ color: "rgba(255,255,255,0.32)" }}>sev {c.severity}</span>
+                      </p>
+                    </div>
+                  ))}
+                  {!hasShared && invalidation.slice(0, 3).map((sig, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <span className="text-[10px] font-bold shrink-0 leading-snug"
                         style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
@@ -656,7 +705,7 @@ export function ThemeDrawer({
             </div>
 
             {/* ── So What? ──────────────────────────────────────────────── */}
-            {(beneficiaries.length > 0 || bearishItems.length > 0 || !!primaryMonitor || !!invalidation[0]) && (
+            {(beneficiaries.length > 0 || bearishItems.length > 0 || !!primaryMonitor || !!invalidationLine) && (
               <div className="rounded-xl p-3.5"
                 style={{ background: "rgba(251,191,36,0.025)", border: "1px solid rgba(251,191,36,0.10)" }}>
                 <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
@@ -695,12 +744,12 @@ export function ThemeDrawer({
                       </p>
                     </div>
                   )}
-                  {invalidation[0] && (
+                  {invalidationLine && (
                     <div className="flex items-start gap-2.5">
                       <span className="text-[8px] font-bold uppercase tracking-[0.10em] shrink-0 pt-0.5"
                         style={{ color: "rgba(239,68,68,0.45)", width: 48 }}>Risk</span>
                       <p className="text-[10.5px] leading-snug" style={{ color: "rgba(239,68,68,0.62)" }}>
-                        {invalidation[0].condition}
+                        {invalidationLine}
                       </p>
                     </div>
                   )}
@@ -1445,10 +1494,18 @@ export function ThemeDrawer({
           {/* ── RISKS ────────────────────────────────────────────────────── */}
           {activeTab === "Risks" && (<>
 
-            {watchSignals.length > 0 && (
-              <Section title="Watch">
+            {(shared.watchItems.length > 0 || watchSignals.length > 0) && (
+              <Section title={hasShared ? "Watch · derived" : "Watch · stored-field read"}>
                 <div className="space-y-2">
-                  {watchSignals.map(sig => (
+                  {hasShared && shared.watchItems.map((item, i) => (
+                    <div key={`sw-${i}`} className="flex items-start gap-2">
+                      <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full" style={{ background: "rgba(82,176,200,0.55)" }} />
+                      <p className="text-[11px] leading-snug flex-1" style={{ color: "rgba(255,255,255,0.65)" }}>
+                        {item}
+                      </p>
+                    </div>
+                  ))}
+                  {!hasShared && watchSignals.map(sig => (
                     <div key={sig.variable} className="flex items-start gap-2">
                       <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full" style={{ background: "rgba(82,176,200,0.55)" }} />
                       <div className="flex-1 min-w-0">
@@ -1465,15 +1522,34 @@ export function ThemeDrawer({
               </Section>
             )}
 
-            {invalidation.length > 0 && (
+            {(invalidationLine || shared.contradictions.length > 0 || invalidation.length > 0) && (
               <div
                 className="rounded-xl p-3.5"
                 style={{ background: "rgba(239,68,68,0.022)", border: "1px solid rgba(239,68,68,0.08)" }}
               >
-                <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-2.5"
-                  style={{ color: "rgba(239,68,68,0.48)" }}>Thesis Invalidated If</p>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em]"
+                    style={{ color: "rgba(239,68,68,0.48)" }}>Thesis Invalidated If</p>
+                  <p className="text-[7.5px] font-bold tracking-[0.1em]" style={{ color: "rgba(239,68,68,0.35)" }}>
+                    {hasShared ? "SHARED ENGINES" : "STORED-FIELD READ"}
+                  </p>
+                </div>
                 <div className="space-y-1.5">
-                  {invalidation.map((sig, i) => (
+                  {hasShared && invalidationLine && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
+                      <p className="text-[11.5px] leading-snug font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>{invalidationLine}</p>
+                    </div>
+                  )}
+                  {hasShared && shared.contradictions.map((c, i) => (
+                    <div key={`rc-${i}`} className="flex items-start gap-2">
+                      <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
+                      <p className="text-[11.5px] leading-snug font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>
+                        {c.detail} <span style={{ color: "rgba(255,255,255,0.32)" }}>sev {c.severity}</span>
+                      </p>
+                    </div>
+                  ))}
+                  {!hasShared && invalidation.map((sig, i) => (
                     <div key={i} className="space-y-0.5">
                       <div className="flex items-start gap-2">
                         <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>-</span>

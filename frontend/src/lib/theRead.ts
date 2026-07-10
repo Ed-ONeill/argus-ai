@@ -172,6 +172,34 @@ const firstSentence = (s: string | null | undefined): string | null => {
   return dot > 12 ? c.slice(0, dot + 1) : c;
 };
 
+/**
+ * Verified catalysts for a set of host entities: macro series / economic
+ * releases actually RECORDED in the graph against those hosts. THE single
+ * home for catalyst semantics (ownership registry: catalysts). They are real
+ * and linked but DATELESS: no dated event source is ingested, so no dates are
+ * shown, ever. Returns [] when nothing is recorded (or the graph is empty) -
+ * callers degrade honestly, never to an invented calendar.
+ */
+export function verifiedCatalystsFor(hostLabels: string[], max = 4): CatalystItem[] {
+  const items: CatalystItem[] = [];
+  const seenCat = new Set<string>();
+  for (const label of hostLabels) {
+    const host = G.getNode(label);
+    if (!host) continue;
+    for (const { node } of G.getNeighbors(host.id)) {
+      const ty = String(node.type);
+      if (ty !== "MacroSeries" && ty !== "EconomicRelease") continue;
+      if (seenCat.has(node.id)) continue;
+      seenCat.add(node.id);
+      items.push({
+        label: node.label, nodeType: ty, feeds: host.label,
+        detail: `Recorded ${ty === "EconomicRelease" ? "economic release" : "macro series"} linked to ${host.label}; prints on a known provider cadence. No dated calendar is ingested, so no date is shown.`,
+      });
+    }
+  }
+  return items.slice(0, max);
+}
+
 /** Strongest recorded next-layer hop from any of `fromNodes`, preferring
     `prefer` ids (the narrative's own members) over raw strength. */
 function nextHop(fromNodes: IntelNode[], layer: number, seen: Set<string>, prefer?: Set<string>):
@@ -500,23 +528,10 @@ export function buildTheRead(inputs: ReadInputs = {}): ReadVM {
   if (!graphReady) {
     catalysts = unavailable<CatalystItem[]>("Catalyst reads need the intelligence graph.");
   } else {
-    const items: CatalystItem[] = [];
-    const seenCat = new Set<string>();
-    const hosts: IntelNode[] = [];
-    if (anchorHop) { const n = G.getNode(anchorHop.label); if (n) hosts.push(n); }
-    for (const t of memberThemes) { const n = G.getNode(t.name); if (n) hosts.push(n); }
-    for (const host of hosts) {
-      for (const { node } of G.getNeighbors(host.id)) {
-        const ty = String(node.type);
-        if (ty !== "MacroSeries" && ty !== "EconomicRelease") continue;
-        if (seenCat.has(node.id)) continue;
-        seenCat.add(node.id);
-        items.push({
-          label: node.label, nodeType: ty, feeds: host.label,
-          detail: `Recorded ${ty === "EconomicRelease" ? "economic release" : "macro series"} linked to ${host.label}; prints on a known provider cadence. No dated calendar is ingested, so no date is shown.`,
-        });
-      }
-    }
+    const hostLabels: string[] = [];
+    if (anchorHop) hostLabels.push(anchorHop.label);
+    for (const t of memberThemes) hostLabels.push(t.name);
+    const items = verifiedCatalystsFor(hostLabels);
     catalysts = items.length > 0
       ? section<CatalystItem[]>("partial", items.slice(0, 4), "Verified, dateless: series exist and are linked, but the Event provider (dated calendar) is future work. Nothing is simulated.")
       : unavailable<CatalystItem[]>("No verified upcoming catalysts: no dated event source is ingested yet (Event provider is future work).");

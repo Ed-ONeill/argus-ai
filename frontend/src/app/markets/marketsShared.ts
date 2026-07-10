@@ -3,13 +3,20 @@
 // module lets the drawer load lazily without importing from the route component.
 
 import type { ThemeIntelligence } from "@/lib/types";
+import type { RiskRead } from "@/lib/riskRead";
 
 export type DrawerData = {
   theme:      ThemeIntelligence;
   upstream:   string[];
   downstream: string[];
   connected:  { id: string; name: string; linkType: string; strength: string }[];
+  /** Stored-field theme-vs-theme conflicts: FALLBACK ONLY, populated when the
+      graph is unavailable (rendered with an explicit stored-field label). */
   conflicts:  { id: string; description: string; type: string; severity: string; themeIds: string[] }[];
+  /** The shared contradiction/risk/watch/catalyst projection (lib/riskRead) -
+      the same engine records Explorer, the Morning Brief, and The Read show.
+      Null when the graph was not provisioned when the drawer opened. */
+  shared:     RiskRead | null;
 };
 
 const MACRO_LABEL_MAP: Record<string, string> = {
@@ -116,8 +123,4 @@ export function deriveKeyRisk(t: ThemeIntelligence): string {
     return "The signal sits in a single asset class and needs cross-asset confirmation.";
   if (second_order_effects.length > 0)   return second_order_effects[0];
   return "A policy or macro inflection would invalidate the thesis.";
-}
-
-export function countdownLabel(daysAway: number): string {
-  return daysAway <= 0 ? "today" : daysAway === 1 ? "1d" : `${daysAway}d`;
 }
