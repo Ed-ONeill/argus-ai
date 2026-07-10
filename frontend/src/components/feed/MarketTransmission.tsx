@@ -2,8 +2,9 @@
 
 import { useMemo } from "react";
 import type { ThemeIntelligence, MarketBrief } from "@/lib/types";
-import { cleanThemeName, cleanMacroLabel, confColor, convScore } from "@/app/markets/marketsShared";
+import { cleanThemeName, confColor, convScore } from "@/app/markets/marketsShared";
 import { themeBeneficiaries } from "@/lib/themeIntelligence";
+import { dirOf as sharedDirOf, deriveDriver as sharedDeriveDriver, deriveSector as sharedDeriveSector } from "@/lib/themeTransmission";
 
 /**
  * MarketTransmission — the Feed hero: a live transmission BOARD.
@@ -55,23 +56,11 @@ const COLS = "150px 30px minmax(190px,1fr) 30px 148px 30px minmax(168px,auto)";
 
 // ── Derivations (real stored fields only, never invented) ──────────────────────
 
-function dirOf(t: ThemeIntelligence): Dir {
-  return t.momentum_direction === "bullish" ? "bullish"
-       : t.momentum_direction === "bearish" ? "bearish" : "neutral";
-}
-function deriveDriver(t: ThemeIntelligence): string {
-  const cn = t.causal_narrative ?? "";
-  if (cn.includes("→")) {
-    const head = cn.split("→").map(s => s.trim()).filter(Boolean)[0];
-    if (head && head.length > 2) return cleanMacroLabel(head);
-  }
-  const macro = (t.related_macro_factors ?? [])[0];
-  return macro ? cleanMacroLabel(macro) : "Macro backdrop";
-}
-function deriveSector(t: ThemeIntelligence): string | null {
-  const inds = t.related_industries ?? [];
-  return inds.find(s => t.relationship_weights?.[s]?.direction === "positive") ?? inds[0] ?? null;
-}
+// D9 (Phase 2 Feed unification): local copies removed; the shared derivations
+// in lib/themeTransmission (backed by lib/intelligenceDeltas) are the one home.
+const dirOf = sharedDirOf;
+const deriveDriver = sharedDeriveDriver;
+const deriveSector = sharedDeriveSector;
 function buildBands(themes: ThemeIntelligence[]): Band[] {
   return [...themes]
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))

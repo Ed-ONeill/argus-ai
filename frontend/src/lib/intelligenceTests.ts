@@ -46,6 +46,7 @@ import { buildMorningBrief } from "./morningBrief";
 import { deriveMorningBriefDeltas } from "./intelligenceDeltas";
 import { buildTheRead } from "./theRead";
 import { provisionIntelligenceGraph, canonicalGraphState } from "./intelligenceProvisioning";
+import { buildMarketStoryVM } from "./feedNarrative";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -1808,7 +1809,13 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // the Morning Brief, The Read, and the Explorer/profile paths.
   const canonicalInputs = () => ({ themes: readThemes() });
   const graphShape = () => JSON.stringify(intelligenceGraph.stats());
-  const profileOf = (key: string) => JSON.stringify({ ...buildIntelligenceProfile(key), generatedAt: 0 });
+  // Determinism is about content, not wall clock: rebuild timestamps (node
+  // firstSeen/lastSeen, generatedAt) are normalized before comparison.
+  const profileOf = (key: string) => {
+    const p = buildIntelligenceProfile(key);
+    const ident = p.identity.data ? { ...p.identity.data, firstSeen: 0, lastSeen: 0 } : null;
+    return JSON.stringify({ ...p, generatedAt: 0, identity: { ...p.identity, data: ident } });
+  };
   const narrativesNow = () => JSON.stringify(deriveNarratives().map(n => ({ ...n, generatedAt: 0 })));
 
   test("canonical provisioning is deterministic and idempotent", () => {
@@ -1874,6 +1881,40 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(buildIntelligenceProfile("AI Infrastructure").identity.status === "unavailable", "profiles degrade to unavailable");
     provisionIntelligenceGraph(canonicalInputs());
     assert(intelligenceGraph.stats().nodes > 0 && deriveNarratives().length > 0, "a later canonical provision rebuilds full intelligence");
+  });
+
+  // 83. Phase 2 Feed unification: the feed hero's "Today's Market Story" is
+  // the same DerivedNarrative thesis The Read shows, re-voiced - never an
+  // independently synthesized desk note (debt D6 retired).
+  test("the feed hero story is the same thesis The Read shows", () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    const read = buildTheRead({ themes, graphReady: true });
+    const story = buildMarketStoryVM(read, themes, { riskRegime: "neutral" });
+    assert(!!story && story.mode === "narrative", "a derivable narrative yields a narrative-mode story");
+    assert(story!.paragraph.startsWith(read.thesis.data!.thesisLine), "the hero paragraph opens with the shared thesis line, verbatim");
+    assert(JSON.stringify(story!.movers) === JSON.stringify(read.thesis.data!.members.map(m => m.name)), "the movers are exactly the narrative's members");
+    assert(story!.watch.includes(read.watch.data![0].text), "the watch line is the shared derived watch item");
+  });
+
+  test("the feed hero story degrades honestly with The Read", () => {
+    intelligenceGraph.clear();
+    const themes = readThemes();
+    const cold = buildMarketStoryVM(buildTheRead({ themes, graphReady: false }), themes, { riskRegime: "risk-on" });
+    assert(!!cold && cold.mode === "theme", "no graph yields the single-theme fallback, same honesty marker as The Read");
+    const none = buildMarketStoryVM(buildTheRead({}), [], { riskRegime: "neutral" });
+    assert(none === null, "no themes means no story, never a fabricated one");
+    // A bearish non-member theme becomes the counterweight sentence (stored
+    // direction fields, feed voice - not new meaning).
+    seedNarrativeGraph();
+    provisionIntelligenceGraph({ themes: [...themes, mkTheme({ id: "th-oil", name: "Oil Shock", confidence: 55, momentum_direction: "bearish" as const })] });
+    const withBear = buildMarketStoryVM(
+      buildTheRead({ themes: [...themes, mkTheme({ id: "th-oil", name: "Oil Shock", confidence: 55, momentum_direction: "bearish" as const })], graphReady: true }),
+      [...themes, mkTheme({ id: "th-oil", name: "Oil Shock", confidence: 55, momentum_direction: "bearish" as const })],
+      { riskRegime: "neutral" },
+    );
+    assert(!!withBear && withBear.paragraph.includes("Oil Shock"), "the bearish counterweight rides in feed voice");
   });
 
   for (const [name, fn] of tests) {

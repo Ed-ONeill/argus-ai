@@ -13,7 +13,6 @@ import type { ThemeIntelligence } from "@/lib/types";
 import { themeBeneficiaries } from "@/lib/themeIntelligence";
 import { tickerInfo } from "@/lib/maIntelligence";
 import { cleanThemeName } from "@/app/markets/marketsShared";
-import { sanitizeCopy } from "@/lib/utils";
 import { dirOf, deriveDriver, deriveSector } from "@/lib/themeTransmission";
 import type { GraphModel, GraphNode, GraphEdge, RelationType } from "@/lib/graph/types";
 
@@ -104,65 +103,6 @@ export function buildMarketMap(themes: ThemeIntelligence[], snap: MarketSnapshot
   return { id: `market:${Date.now()}`, centerId, title: "Argus Market Map", subtitle: regimeLabel, nodes, edges };
 }
 
-// ── Today's Market Story, institutional morning desk note (deterministic) ─────
-export interface MarketStory { paragraph: string; watch: string; movers: string[] }
-
-function confirmSignal(driver: string): string {
-  const d = driver.toLowerCase();
-  if (/rate|yield|fed|policy|financ/.test(d)) return "whether bond yields confirm the move or reverse it";
-  if (/energy|oil|crude|supply/.test(d)) return "whether crude holds its bid or fades";
-  if (/dollar|fx|currenc/.test(d)) return "whether the dollar extends or stalls";
-  if (/inflation|cpi|price/.test(d)) return "the next inflation print for confirmation";
-  if (/credit|spread|default/.test(d)) return "whether credit spreads widen from here";
-  return "whether rates and the dollar confirm the rotation";
-}
-
-export function buildMarketStory(themes: ThemeIntelligence[], snap: MarketSnapshot): MarketStory | null {
-  const ranked = [...themes]
-    .filter(t => deriveSector(t) && themeBeneficiaries(t, 1).length)
-    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
-    .slice(0, 5);
-  if (ranked.length === 0) return null;
-
-  const bull = ranked.filter(t => dirOf(t) === "bullish");
-  const bear = ranked.filter(t => dirOf(t) === "bearish");
-  const uniq = (a: string[]) => [...new Set(a)].filter(Boolean);
-  const favored  = uniq(bull.map(t => deriveSector(t) as string)).slice(0, 2);
-  const pressured = uniq(bear.map(t => deriveSector(t) as string)).slice(0, 2);
-  const lead = ranked[0];
-  const driver = deriveDriver(lead);
-
-  // 1, what is moving
-  const leadName = cleanThemeName(lead.name).toLowerCase();
-  let s1: string;
-  if (bull.length && bear.length) {
-    s1 = `Markets are repricing ${cleanThemeName(bull[0].name).toLowerCase()} and ${cleanThemeName(bear[0].name).toLowerCase()} at the same time.`;
-  } else if (snap.riskRegime === "risk-off") {
-    s1 = `Markets are de-risking around ${leadName}, with conviction concentrating rather than broadening.`;
-  } else if (snap.riskRegime === "risk-on") {
-    s1 = `Markets are leaning into ${leadName}, rewarding the narrative as risk appetite holds.`;
-  } else {
-    s1 = `Markets are working through ${leadName} without a decisive regime tilt.`;
-  }
-
-  // 2, rotation
-  let s2: string;
-  if (favored.length && pressured.length) {
-    s2 = `The immediate rotation favors ${favored.join(" and ")} while keeping ${pressured.join(" and ")} under pressure.`;
-  } else if (favored.length) {
-    s2 = `Flows tilt toward ${favored.join(" and ")}, with the rest of the tape following rather than leading.`;
-  } else if (pressured.length) {
-    s2 = `${pressured.join(" and ")} carry the pressure; nothing is yet attracting decisive sponsorship.`;
-  } else {
-    s2 = `Sector leadership is unsettled, positioning is rotating faster than the narrative is resolving.`;
-  }
-
-  // 3, what to watch
-  const s3 = `The next signal is ${confirmSignal(driver)}.`;
-
-  return {
-    paragraph: sanitizeCopy(`${s1} ${s2}`),
-    watch: sanitizeCopy(s3),
-    movers: ranked.slice(0, 4).map(t => cleanThemeName(t.name)),
-  };
-}
+// "Today's Market Story" moved to lib/feedNarrative.ts (Phase 2 Feed
+// unification, debt D6): the hero now re-voices the SAME DerivedNarrative
+// thesis The Read shows, instead of synthesizing an ad-hoc desk note here.

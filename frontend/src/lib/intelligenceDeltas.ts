@@ -96,8 +96,9 @@ export interface DeltaResult {
  * ------------------------------------------------------------------ */
 
 /** The theme's dominant driver, from its stored fields (no label cosmetics).
-    Mirrors themeTransmission.deriveDriver semantics; keep in sync until the
-    watch derivation consolidates in B4. */
+    THE single home for this derivation (D9, consolidated in P2 Feed
+    unification): themeTransmission.deriveDriver delegates here and adds the
+    cosmetic label cleanup. */
 export function driverOf(t: ThemeIntelligence): string {
   const cn = t.causal_narrative ?? "";
   if (cn.includes("→")) {
@@ -108,7 +109,8 @@ export function driverOf(t: ThemeIntelligence): string {
 }
 
 /** Dateless "what to watch" line from stored driver + direction fields.
-    Mirrors themeTransmission.themeWatch; same sync rule as driverOf. */
+    THE single home for this derivation (D9): themeTransmission.themeWatch
+    delegates here. */
 export function watchLineOf(t: ThemeIntelligence): string {
   const d = driverOf(t).toLowerCase();
   const base = /rate|yield|fed|policy/.test(d) ? "bond yields"

@@ -3,7 +3,10 @@
 import { useMemo, useState, useEffect } from "react";
 import { Play, Pause } from "lucide-react";
 import NetworkGraph from "@/components/graph/NetworkGraph";
-import { buildMarketMap, buildMarketStory, type MarketSnapshot } from "@/lib/marketMap";
+import { buildMarketMap, type MarketSnapshot } from "@/lib/marketMap";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
+import { buildTheRead } from "@/lib/theRead";
+import { buildMarketStoryVM } from "@/lib/feedNarrative";
 import { buildFocusStory, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
 import { useActiveBeamTokens, setBeacon, releaseBeacon, nodeTokens } from "@/lib/feedHighlight";
 import { confColor, convScore } from "@/app/markets/marketsShared";
@@ -62,7 +65,20 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
   const exitReplay = () => { setReplaying(false); setPlaying(false); };
 
   const model = useMemo(() => buildMarketMap(themes, snapshot), [themes, snapshot]);
-  const globalStory = useMemo(() => buildMarketStory(themes, snapshot), [themes, snapshot]);
+
+  // Today's Market Story = the SAME DerivedNarrative thesis The Read shows on
+  // the Morning Brief, phrased in feed voice (P2 Feed unification, D6). Built
+  // over the canonically provisioned graph (P2.0) from canonical themes, never
+  // the personalized ordering - prioritization is never truth.
+  const argus = useArgusIntelligence();
+  const read = useMemo(
+    () => buildTheRead({ themes: argus.themes, graphReady: argus.ready }),
+    [argus.themes, argus.ready],
+  );
+  const globalStory = useMemo(
+    () => buildMarketStoryVM(read, argus.themes, { riskRegime: snapshot.riskRegime }),
+    [read, argus.themes, snapshot.riskRegime],
+  );
   const focusStory = useMemo(() => (focus ? buildFocusStory(focus, themes) : null), [focus, themes]);
   const story = focus ? focusStory : globalStory;
 

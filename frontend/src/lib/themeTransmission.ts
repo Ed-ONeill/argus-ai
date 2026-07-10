@@ -9,20 +9,19 @@
 
 import type { ThemeIntelligence } from "@/lib/types";
 import { themeBeneficiaries } from "@/lib/themeIntelligence";
+import { driverOf, watchLineOf } from "@/lib/intelligenceDeltas";
 import { cleanMacroLabel } from "@/app/markets/marketsShared";
 
 export function dirOf(t: ThemeIntelligence): "bullish" | "bearish" | "neutral" {
   return t.momentum_direction === "bullish" ? "bullish" : t.momentum_direction === "bearish" ? "bearish" : "neutral";
 }
 
+/** D9 consolidation (Phase 2 Feed unification): the driver derivation has ONE
+    home in lib/intelligenceDeltas.driverOf; this wrapper only applies the
+    cosmetic macro-label cleanup on top. */
 export function deriveDriver(t: ThemeIntelligence): string {
-  const cn = t.causal_narrative ?? "";
-  if (cn.includes("→")) {
-    const head = cn.split("→").map(s => s.trim()).filter(Boolean)[0];
-    if (head && head.length > 2) return cleanMacroLabel(head);
-  }
-  const macro = (t.related_macro_factors ?? [])[0];
-  return macro ? cleanMacroLabel(macro) : "Macro backdrop";
+  const d = driverOf(t);
+  return d === "the macro backdrop" ? "Macro backdrop" : cleanMacroLabel(d);
 }
 
 export function deriveSector(t: ThemeIntelligence): string | null {
@@ -35,18 +34,8 @@ export function transmissionPath(theme: ThemeIntelligence): ThemeTransmission {
   return { driver: deriveDriver(theme), sector: deriveSector(theme), tickers: themeBeneficiaries(theme, 3) };
 }
 
-/** "What to watch next" for a theme — varies by macro driver and direction. */
+/** "What to watch next" for a theme. D9: delegates to the single derivation in
+    lib/intelligenceDeltas.watchLineOf. */
 export function themeWatch(theme: ThemeIntelligence): string {
-  const d = deriveDriver(theme).toLowerCase();
-  const base = /rate|yield|fed|policy/.test(d) ? "bond yields"
-    : /financ|credit|spread|default/.test(d) ? "credit spreads"
-    : /energy|oil|crude|supply/.test(d) ? "crude and the curve"
-    : /dollar|fx|currenc/.test(d) ? "the dollar"
-    : /inflation|cpi|price/.test(d) ? "the next inflation print"
-    : /power|electr|grid|infra/.test(d) ? "utility and grid orders"
-    : "rates and breadth";
-  const dir = dirOf(theme);
-  return dir === "bullish" ? `${base} for follow-through`
-    : dir === "bearish" ? `${base} for further pressure`
-    : `${base} for direction`;
+  return watchLineOf(theme);
 }
