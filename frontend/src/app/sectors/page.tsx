@@ -1,11 +1,19 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Layers, TrendingDown, TrendingUp, RefreshCw, ShieldAlert, Zap,
 } from "lucide-react";
 import { cn, formatRelativeAge } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
+import { buildIndustriesIntel, type SectorIntelVM } from "@/lib/industriesIntel";
+import { buildIntelligenceProfile, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
+import { deriveNarratives } from "@/lib/narrativeDerivation";
+import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { SectorLeaderboard } from "@/components/sectors/SectorLeaderboard";
 import {
   SectorIntelligenceCard,
@@ -206,6 +214,28 @@ function RotationCardSkeleton() {
 export default function SectorsPage() {
   const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
 
+  // Phase 2.5: shared-engine projections per sector (the same profile /
+  // risk / ledger / narrative reads Explorer shows), injected into the cards.
+  const argus = useArgusIntelligence();
+  const sectorIntelByName = useMemo(() => {
+    const names = (sectorData?.sectors ?? []).map(s => s.name);
+    if (names.length === 0) return new Map<string, SectorIntelVM>();
+    const profiles = new Map<string, IntelligenceProfile>();
+    const risks = new Map<string, RiskRead>();
+    for (const n of names) {
+      const k = n.toLowerCase();
+      if (argus.ready) profiles.set(k, buildIntelligenceProfile(n));
+      risks.set(k, buildRiskRead(n));
+    }
+    const dr = deriveMorningBriefDeltas({ themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready });
+    const vm = buildIndustriesIntel({
+      sectors: names, themes: argus.themes, profiles, risks,
+      narratives: argus.ready ? deriveNarratives() : [],
+      deltas: dr.deltas, graphReady: argus.ready,
+    });
+    return new Map((vm.sectors.data ?? []).map(s => [s.key.toLowerCase(), s]));
+  }, [sectorData?.sectors, argus.themes, argus.ready]);
+
   const regimeMeta    = regime ? (REGIME_META[regime] ?? null) : null;
   const rotations     = (sectorData?.rotation_signals ?? []).slice(0, 3);
   const showRotations = isLoading || rotations.length > 0;
@@ -330,6 +360,7 @@ export default function SectorsPage() {
                       industries={sectorData?.industries ?? []}
                       clusters={clusters}
                       regime={regime}
+                      intel={sectorIntelByName.get(sector.name.toLowerCase()) ?? null}
                       index={i}
                     />
                   ))

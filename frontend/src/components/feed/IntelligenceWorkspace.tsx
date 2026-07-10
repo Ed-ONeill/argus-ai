@@ -3,7 +3,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  bestExpressions, themeLosers, generateBullBearCases,
+  generateBullBearCases,
   generateInvalidationSignals, themeBeneficiaries, explainMechanism,
 } from "@/lib/themeIntelligence";
 import { buildRiskRead } from "@/lib/riskRead";
@@ -67,9 +67,10 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   const driver = deriveDriver(theme);
   const sector = deriveSector(theme);
   const stories = storiesForTheme(theme, clusters).slice(0, 4);
+  // P2.5 (D11): recorded exposure only - the curated securities dictionary
+  // (bestExpressions/themeLosers winWhy/loseWhy) is deleted.
   const beneficiaries = themeBeneficiaries(theme, 6);
-  const best = bestExpressions(theme);
-  const losers = themeLosers(theme, 3);
+  const negSectors = (theme.related_industries ?? []).filter(s => theme.relationship_weights?.[s]?.direction === "negative");
   const cases = generateBullBearCases(theme);
   // Phase 2.4: catalyst and invalidation are the shared per-entity risk read
   // (verified dateless catalysts + the prediction engine's condition - the
@@ -106,20 +107,20 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
     || firstSentence(theme.causal_narrative)
     || `${driver} is transmitting into ${sector ?? "the broader tape"}; ${dir === "bearish" ? "that pressures" : "that rewards"} the names with the most direct exposure, and the move tends to spread before it is fully priced.`;
 
-  // 3, Who benefits?
-  const benefitsText = best?.why || cases.bull
-    || `Most direct exposure sits with the leaders in ${sector ?? "the theme's core sector"}.`;
+  // 3, Who benefits? (recorded exposure; stored-field re-voice as fallback)
+  const benefitsText = cases.bull
+    || `Most direct recorded exposure sits with ${beneficiaries.slice(0, 2).join(" and ") || `the leaders in ${sector ?? "the theme's core sector"}`}.`;
 
-  // 4, Who is hurt?
-  const hurt = losers
-    ? { text: losers.risk, tickers: losers.tickers, label: losers.sector }
+  // 4, Who is hurt? Recorded negative-weight sectors only - never dictionary risk prose.
+  const hurt = negSectors.length > 0
+    ? { text: `Recorded negative exposure: ${negSectors.slice(0, 2).join(", ")} (pipeline relationship weights).`, tickers: [] as string[], label: negSectors[0] as string | null }
     : cases.bear
     ? { text: cases.bear, tickers: [] as string[], label: null as string | null }
     : null;
 
   return {
     name, dir, driver, sector, stories, beneficiaries, catalyst, invalidation,
-    benefitsTickers: best?.tickers ?? beneficiaries.slice(0, 4),
+    benefitsTickers: beneficiaries.slice(0, 4),
     whatChanged, whyMatters, benefitsText, hurt,
     watch: themeWatch(theme),
     transmission: [

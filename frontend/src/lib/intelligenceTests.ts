@@ -54,6 +54,8 @@ import { memorySentences } from "./themeIntelligence";
 import { buildSavedIntel, type SavedEntityInput } from "./savedIntel";
 import { buildListenIntel } from "./listenIntel";
 import { episodeIntel } from "./episodeIntel";
+import { buildIndustriesIntel, compareSectors } from "./industriesIntel";
+import { themeBeneficiaries } from "./themeIntelligence";
 import type { Episode } from "./types";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
@@ -2318,6 +2320,91 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Infrastructure", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
     const warm = episodeIntel(mkEpisode(), themes[0]);
     assert(warm!.catalystBasis === "verified" && warm!.catalyst === "CPI (FRED series)", "verified dateless catalysts ride the card when recorded");
+  });
+
+  // 88. Phase 2.5 Industries unification: sector reads are the SAME profile /
+  // risk / ledger / narrative records Explorer shows; comparison is pure
+  // selection; sparse inputs degrade honestly; and no editorial dictionary can
+  // silently render as intelligence (the securities library is deleted).
+
+  const industriesFixture = () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    const dr = deriveMorningBriefDeltas({ themes });
+    const names = ["Semiconductors", "Utilities"];
+    const profiles = new Map(names.map(n => [n.toLowerCase(), buildIntelligenceProfile(n)]));
+    const risks = new Map(names.map(n => [n.toLowerCase(), buildRiskRead(n)]));
+    return { themes, dr, names, profiles, risks };
+  };
+
+  test("industries sector reads equal the Explorer profile and shared records", () => {
+    const { themes, dr, names, profiles, risks } = industriesFixture();
+    const vm = buildIndustriesIntel({
+      sectors: names, themes, profiles, risks,
+      narratives: deriveNarratives(), deltas: dr.deltas, graphReady: true,
+    });
+    const semis = (vm.sectors.data ?? []).find(s => s.key === "Semiconductors");
+    assert(!!semis && semis.live, "the Semiconductors sector resolves through the shared engines");
+    const p = profiles.get("semiconductors")!;
+    assert(semis!.conviction === p.confidence.data?.conviction, "Industries conviction === Explorer profile conviction");
+    assert(semis!.evidenceVerdict === (p.evidence.data?.verdict ?? null), "evidence verdict matches the profile");
+    assert(JSON.stringify(semis!.drivers.map(d => d.label)) === JSON.stringify((p.drivers.data ?? []).slice(0, 6).map(l => l.label)),
+      "Industries drivers are the profile's recorded drivers, in order");
+    const profBene = (p.beneficiaries.data ?? []).filter(l => l.nodeType === "Company" || l.nodeType === "ETF").map(l => l.label);
+    assert(JSON.stringify(semis!.beneficiaries.map(b => b.label)) === JSON.stringify(profBene.slice(0, 6)),
+      "Industries beneficiaries are the profile's recorded Company/ETF beneficiaries");
+    const rr = risks.get("semiconductors")!;
+    assert(JSON.stringify(semis!.contradictions) === JSON.stringify(rr.contradictions) && semis!.invalidation === rr.invalidation,
+      "Industries risks/contradictions are the shared riskRead records, verbatim");
+    if (semis!.transmission) {
+      assert(JSON.stringify(semis!.transmission) === JSON.stringify(p.transmission.data?.strongestPath),
+        "Industries transmission is the profile's recorded strongest path");
+    }
+    const narr = deriveNarratives().find(n => (n.exposure.data?.sectors ?? []).some(s => s.label === "Semiconductors"));
+    assert(semis!.narrative === (narr?.label ?? null), "narrative membership equals DerivedNarrative exposure");
+    assert(semis!.themes.every(t => (t.related_industries ?? []).includes("Semiconductors")), "sector themes are recorded exposure only");
+  });
+
+  test("industries deltas are ledger records; comparison is selection only", () => {
+    const { themes, dr, names, profiles, risks } = industriesFixture();
+    const inputs = { sectors: names, themes, profiles, risks, narratives: deriveNarratives(), deltas: dr.deltas, graphReady: true };
+    const vm = buildIndustriesIntel(inputs);
+    for (const s of vm.sectors.data ?? [])
+      assert(s.latestChange === null || dr.deltas.includes(s.latestChange), "every rendered change IS a canonical ledger record (object identity)");
+    // Comparison: selecting fewer targets never changes another sector's values.
+    const solo = buildIndustriesIntel({ ...inputs, sectors: ["Semiconductors"] });
+    const a = solo.sectors.data!.find(s => s.key === "Semiconductors")!;
+    const b = vm.sectors.data!.find(s => s.key === "Semiconductors")!;
+    const strip = (x: typeof a) => JSON.stringify({ ...x, themes: x.themes.map(t => t.id) });
+    assert(strip(a) === strip(b), "adding or removing a comparison target changes selection only, never values");
+    const picked = compareSectors(vm, ["Semiconductors"]);
+    assert(picked.length === 1 && strip(picked[0]) === strip(b), "compareSectors is pure filtering of the same objects");
+  });
+
+  test("industries degrades honestly and no editorial dictionary can render", () => {
+    const empty = buildIndustriesIntel({});
+    assert(empty.sectors.status === "unavailable" && empty.sectors.data === null, "no sectors means an honest empty state");
+    intelligenceGraph.clear();
+    const themes = readThemes();
+    const cold = buildIndustriesIntel({
+      sectors: ["Semiconductors"], themes,
+      risks: new Map([["semiconductors", buildRiskRead("Semiconductors")]]),
+      deltas: [], graphReady: false,
+    });
+    assert(cold.sectors.status === "partial" && !!cold.sectors.note, "no graph means a partial section with a note");
+    const s = cold.sectors.data![0];
+    assert(!s.live && s.conviction === null && s.forward === null && s.drivers.length === 0 && s.beneficiaries.length === 0
+      && s.transmission === null && s.evolutionLines.length === 0,
+      "an unresolved sector carries nulls/empties - never editorial prose");
+    assert(s.themes.length > 0, "stored theme exposure (pipeline facts) still lists honestly");
+    // D11: the securities dictionary is deleted - a theme with no recorded
+    // exposure yields NO tickers, it can never silently borrow curated ones.
+    const bare = mkTheme({ related_assets: [], memory: undefined });
+    assert(themeBeneficiaries(bare, 4).length === 0, "no recorded exposure means no beneficiary chips, honestly");
+    const rich = mkTheme();
+    assert(themeBeneficiaries(rich, 4).every(tk => (rich.related_assets ?? []).includes(tk) || Object.keys(rich.memory?.ticker_sessions ?? {}).includes(tk)),
+      "every beneficiary ticker traces to recorded pipeline or memory data");
   });
 
   for (const [name, fn] of tests) {

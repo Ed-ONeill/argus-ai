@@ -19,8 +19,6 @@ import {
   generateInvalidationSignals,
   computeThemeHealth,
   themeBeneficiaries,
-  bestExpressions,
-  themeLosers,
 } from "@/lib/themeIntelligence";
 import {
   cleanThemeName,
@@ -188,8 +186,16 @@ export function ThemeDetailDrawer({
   const sharedInvalidation = hasShared ? shared.invalidation : null;
   const sharedConflicts    = hasShared ? shared.contradictions : [];
   const briefingSents  = generateIntelligenceBriefing(t);
-  const bestExpr       = bestExpressions(t);
-  const exposedLosers  = themeLosers(t);
+  // P2.5 (D11): recorded exposure only - the curated securities dictionary
+  // (bestExpressions winWhy / themeLosers loseWhy) is deleted. Downside
+  // exposure = shared weakening edges, else recorded negative-weight sectors.
+  const bestTickers    = themeBeneficiaries(t, 4);
+  const negSectors     = (t.related_industries ?? []).filter(s => (t.relationship_weights ?? {})[s]?.direction === "negative");
+  const exposedLabels  = hasShared && shared.weakening.length > 0
+    ? { labels: shared.weakening.map(w => w.label).slice(0, 3), basis: "shared" as const }
+    : negSectors.length > 0
+      ? { labels: negSectors.slice(0, 3), basis: "stored" as const }
+      : null;
 
   return (
     <AnimatePresence>
@@ -284,37 +290,41 @@ export function ThemeDetailDrawer({
             {/* Body */}
             <div className="px-5 py-5 space-y-4">
 
-              {/* ── Best Expressions — name the securities first ── */}
-              {bestExpr && (
+              {/* ── Recorded Exposure — memory-confirmed + pipeline tickers ── */}
+              {bestTickers.length > 0 && (
                 <div className="rounded-lg border border-emerald-500/25 overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-emerald-500/25 bg-emerald-500/12">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-300/80">Best Expressions</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-300/80">Recorded Exposure</p>
                   </div>
                   <div className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {bestExpr.tickers.map(tk => (
+                      {bestTickers.map(tk => (
                         <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">{tk}</span>
                       ))}
                     </div>
-                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">{bestExpr.why}</p>
+                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">
+                      Memory-confirmed tickers first, then pipeline exposure. Recorded fields only.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* ── Most Exposed Losers ─────────────────────────── */}
-              {exposedLosers && (
+              {/* ── Most Exposed — shared weakening edges, else recorded
+                     negative-weight sectors (no dictionary risk prose) ── */}
+              {exposedLabels && (
                 <div className="rounded-lg border border-red-500/25 overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-red-500/25 bg-red-500/12 flex items-baseline gap-2">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-400/80">Most Exposed</p>
-                    <span className="text-[10px] font-semibold text-ink-secondary">{exposedLosers.sector}</span>
+                    <span className="text-[8px] font-bold tracking-[0.1em] text-red-400/55">
+                      {exposedLabels.basis === "shared" ? "RECORDED WEAKENING EDGES" : "STORED-FIELD READ"}
+                    </span>
                   </div>
                   <div className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {exposedLosers.tickers.map(tk => (
-                        <span key={tk} className="text-[13px] font-black tabular-nums px-2 py-1 rounded-md bg-red-500/8 text-red-400/90 border border-red-500/20">{tk}</span>
+                      {exposedLabels.labels.map(lb => (
+                        <span key={lb} className="text-[12px] font-bold px-2 py-1 rounded-md bg-red-500/8 text-red-400/90 border border-red-500/20">{lb}</span>
                       ))}
                     </div>
-                    <p className="text-[11px] text-ink-secondary leading-snug mt-2">{exposedLosers.risk}</p>
                   </div>
                 </div>
               )}

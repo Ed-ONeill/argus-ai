@@ -1145,73 +1145,22 @@ export function explainMechanism(theme: ThemeIntelligence): string | null {
   return null;
 }
 
-// ── Security Expression Library ───────────────────────────────────────────────
-// Maps a sector/theme keyword to the securities that most directly express the
-// view, plus a concrete one-line reason a buyer wins and a seller loses. Lets
-// the page name instruments and investment implications, not just themes.
+// ── Security Expression Library: DELETED (Phase 2.5, D11) ────────────────────
+// The curated ticker/winWhy/loseWhy dictionary (SECURITY_LIBRARY, secEntryFor,
+// securitiesForSector, bestExpressions, themeLosers) was editorial exposure and
+// risk authority wearing intelligence. Exposure now comes from RECORDED data
+// only: graph beneficiaries / weakening edges (profiles, riskRead) and the
+// pipeline fields below.
+
 const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
-interface SecEntry { regex: RegExp; tickers: string[]; winWhy: string; loseWhy: string; }
-const SECURITY_LIBRARY: SecEntry[] = [
-  { regex: /semiconductor|\bchip|\bgpu\b|accelerat|foundry/, tickers: ["NVDA", "AVGO", "AMD", "TSM"],
-    winWhy: "Direct leverage to AI accelerator and data-center chip demand.", loseWhy: "A capex slowdown shows up in order books before earnings." },
-  { regex: /semi.?cap|wafer|lithograph|etch|deposition|fab\b/, tickers: ["ASML", "AMAT", "LRCX", "KLAC"],
-    winWhy: "Fab buildout converts into multi-year equipment orders.", loseWhy: "Capex cuts hit equipment makers first in the cycle." },
-  { regex: /ai (compute|infra)|data ?center|hyperscal|server|networking/, tickers: ["NVDA", "AVGO", "DELL", "SMCI"],
-    winWhy: "Hyperscaler capex converts almost directly into hardware orders.", loseWhy: "A capex pause stalls the hardware build cycle." },
-  { regex: /nuclear|smr|uranium/, tickers: ["CEG", "VST", "TLN", "CCJ"],
-    winWhy: "Round-the-clock carbon-free demand reprices merchant generators.", loseWhy: "A power-demand miss deflates the re-rating." },
-  { regex: /utilit|grid|electric|\bpower\b|transmission|baseload/, tickers: ["NEE", "SO", "DUK", "AEP"],
-    winWhy: "Grid buildout expands rate base and load growth.", loseWhy: "Rising rates raise financing costs for regulated utilities." },
-  { regex: /electrical equip|power equip|cooling|grid equip/, tickers: ["ETN", "GEV", "PWR", "VRT"],
-    winWhy: "Grid and data-center buildout drives an equipment order cycle.", loseWhy: "Buildout delays push the order cycle out." },
-  { regex: /\boil\b|crude|\be&p\b|exploration|upstream|opec/, tickers: ["XOM", "CVX", "COP", "EOG"],
-    winWhy: "Higher crude lifts upstream cash flow and buybacks.", loseWhy: "Falling crude compresses upstream margins." },
-  { regex: /oil ?service|drilling|oilfield/, tickers: ["SLB", "HAL", "BKR"],
-    winWhy: "Rising activity drives oilfield service pricing.", loseWhy: "Producer capex cuts hit service demand first." },
-  { regex: /software|saas|application|enterprise app/, tickers: ["CRM", "NOW", "WDAY", "ADBE"],
-    winWhy: "Recurring revenue and pricing power compound through cycles.", loseWhy: "Higher discount rates compress long-duration multiples." },
-  { regex: /cybersecur|security software/, tickers: ["PANW", "CRWD", "ZS", "FTNT"],
-    winWhy: "Security budgets are defended even in downturns.", loseWhy: "Higher rates compress high-multiple growth names." },
-  { regex: /private credit|direct lending|alternative (asset|credit)|private capital/, tickers: ["BX", "KKR", "APO", "ARES"],
-    winWhy: "Fee income grows as lending shifts off bank balance sheets.", loseWhy: "A credit-cycle turn raises default losses on the book." },
-  { regex: /\bbank|deposit|regional bank|net interest/, tickers: ["JPM", "BAC", "WFC", "C"],
-    winWhy: "Wider net interest margins lift earnings.", loseWhy: "Tighter credit and deposit flight pressure earnings." },
-  { regex: /defense|aerospace|military|missile|munition/, tickers: ["LMT", "RTX", "NOC", "GD"],
-    winWhy: "Rising defense budgets back multi-year backlogs.", loseWhy: "Budget delays slip the backlog to the right." },
-  { regex: /homebuild|housing|residential|mortgage/, tickers: ["DHI", "LEN", "PHM"],
-    winWhy: "Lower mortgage rates revive demand and starts.", loseWhy: "Higher mortgage rates choke affordability and volume." },
-  { regex: /copper|industrial metal|\bmining\b/, tickers: ["FCX", "SCCO", "BHP"],
-    winWhy: "Electrification tightens copper supply against demand.", loseWhy: "A demand slowdown softens metal prices." },
-  { regex: /pharma|biotech|drug|therapeut/, tickers: ["LLY", "MRK", "PFE", "AMGN"],
-    winWhy: "Pipeline depth and pricing drive durable cash flow.", loseWhy: "Patent cliffs and pricing pressure weigh on earnings." },
-  { regex: /natural gas|\blng\b|pipeline|midstream/, tickers: ["LNG", "WMB", "KMI", "ET"],
-    winWhy: "Export demand underpins volumes and fee income.", loseWhy: "Low prices pressure producer economics upstream." },
-  { regex: /\bgold\b|precious metal|bullion/, tickers: ["GLD", "NEM", "AEM"],
-    winWhy: "Falling real rates lift gold and the miners' leverage to it.", loseWhy: "Rising real rates weigh on gold." },
-];
 
-function secEntryFor(text: string): SecEntry | null {
-  const lc = text.toLowerCase();
-  for (const e of SECURITY_LIBRARY) if (e.regex.test(lc)) return e;
-  return null;
-}
-
-// Securities specific to a sector/industry label (not the theme driving it), so
-// two sectors sharing a lead theme do not display the same tickers.
-export function securitiesForSector(sector: string, max = 4): string[] {
-  const e = secEntryFor(sector);
-  return e ? e.tickers.slice(0, max) : [];
-}
-
-// Primary beneficiary tickers: prefer the theme's own related_assets, fall back
-// to the library keyed off non-negative industries and the theme name.
-// Memory-aware: tickers that have recurred across the most sessions are surfaced
-// first (the historically-confirmed beneficiaries), then current exposure fills in.
+// Primary beneficiary tickers from RECORDED data only (P2.5): server-memory
+// ticker sessions first (historically-confirmed beneficiaries), then the
+// pipeline's related_assets. The curated-library fallback tail is deleted -
+// a theme with little recorded exposure shows few chips, honestly.
 export function themeBeneficiaries(theme: ThemeIntelligence, max = 4): string[] {
   const out: string[] = [];
 
-  // Lead with historically-confirmed beneficiaries (seen across ≥2 sessions),
-  // ordered by how persistently they have been linked to this theme.
   const ts = theme.memory?.ticker_sessions;
   if (ts) {
     for (const [tk, cnt] of Object.entries(ts).sort((a, b) => b[1] - a[1])) {
@@ -1224,50 +1173,7 @@ export function themeBeneficiaries(theme: ThemeIntelligence, max = 4): string[] 
     if (TICKER_RE.test(a) && !out.includes(a)) out.push(a);
     if (out.length >= max) break;
   }
-  if (out.length < 2) {
-    const posInds = (theme.related_industries ?? []).filter(
-      i => (theme.relationship_weights ?? {})[i]?.direction !== "negative",
-    );
-    for (const key of [...posInds, theme.name]) {
-      const e = secEntryFor(key);
-      if (e) for (const t of e.tickers) if (!out.includes(t)) out.push(t);
-      if (out.length >= max) break;
-    }
-  }
   return out.slice(0, max);
-}
-
-// Best expressions: top beneficiary tickers + a concrete reason to own them.
-export interface BestExpression { tickers: string[]; why: string; }
-export function bestExpressions(theme: ThemeIntelligence): BestExpression | null {
-  const tickers = themeBeneficiaries(theme, 4);
-  if (tickers.length === 0) return null;
-  const posInds = (theme.related_industries ?? []).filter(
-    i => (theme.relationship_weights ?? {})[i]?.direction !== "negative",
-  );
-  let why = "";
-  for (const key of [...posInds, theme.name, ...(theme.related_macro_factors ?? [])]) {
-    const e = secEntryFor(key);
-    if (e) { why = e.winWhy; break; }
-  }
-  return { tickers, why: why || "Most direct exposure to the theme's primary driver." };
-}
-
-// Most exposed losers: the hurt sector, its securities, and the concrete risk.
-// Returns null when nothing is clearly hurt (so the section only shows when real).
-export interface ExposedLosers { sector: string; tickers: string[]; risk: string; }
-export function themeLosers(theme: ThemeIntelligence, max = 3): ExposedLosers | null {
-  const negInds = (theme.related_industries ?? []).filter(
-    i => (theme.relationship_weights ?? {})[i]?.direction === "negative",
-  );
-  let sector: string | null = null;
-  let entry: SecEntry | null = null;
-  for (const i of negInds) { const e = secEntryFor(i); if (e) { sector = i; entry = e; break; } }
-  if (!entry && theme.momentum_direction === "bearish") {
-    for (const i of (theme.related_industries ?? [])) { const e = secEntryFor(i); if (e) { sector = i; entry = e; break; } }
-  }
-  if (!entry || !sector) return null;
-  return { sector, tickers: entry.tickers.slice(0, max), risk: entry.loseWhy };
 }
 
 // generateWhyItMattersNow: RETIRED (Phase 2.4). Its advice-template bullets

@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, TrendingUp, TrendingDown, Minus,
-  AlertTriangle, Globe, BarChart3, Zap,
+  AlertTriangle, BarChart3, Zap,
   Radio, ShieldAlert, Target, Shuffle, RefreshCw,
   Headphones, ArrowUpRight, Activity, Network, Building2, Sprout,
 } from "lucide-react";
@@ -23,18 +23,20 @@ import {
   filterIndustryClusters,
 } from "@/lib/industryConfig";
 import {
-  generateThesis,
-  getCrossAssetEffects,
-  getRiskFactors,
-  getKeyDrivers,
   getLiveDevelopments,
-  getLeadershipDynamics,
-  getPositioningNarrative,
   getMomentumState,
   type LiveDevelopment,
   type LeadershipDynamics,
   type MomentumState,
 } from "@/lib/sectorIntelligence";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
+import { buildIndustriesIntel, type SectorIntelVM } from "@/lib/industriesIntel";
+import { buildIntelligenceProfile, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
+import { deriveNarratives } from "@/lib/narrativeDerivation";
+import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
+import { explorerHrefForNode } from "@/lib/intelligenceShared";
 import type { IndustrySignal, StoryCluster, ThemeIntelligence } from "@/lib/types";
 import { getThemesForIndustry } from "@/lib/themeGraph";
 import { getThemeBeneficiaries, getThemeHeadwinds } from "@/lib/themeImpact";
@@ -44,18 +46,16 @@ import {
   getIndustrySponsorDeals,
   getIndustryAcquirers,
   getIndustrySponsors,
-  getThemeNarrative,
   getMatchingTheme,
   type EntitySignal,
   type SectorDealItem,
   type IndustryAcquirer,
   type IndustrySponsor,
 } from "@/lib/industryIntelligence";
-import { computeThemeEvolutionState, getEvolutionNarrative, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
+import { computeThemeEvolutionState, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
 import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { IndustryArtwork, industryIcon } from "@/components/industries/industryIdentity";
-import { themeBeneficiaries } from "@/lib/themeIntelligence";
 import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
 import type { IndustryConfig } from "@/lib/industryConfig";
 
@@ -530,10 +530,12 @@ function IndustryTape({ tickers, benefit, headwind }: {
 function ActiveThemeCard({ theme, color, onOpen }: {
   theme: ThemeIntelligence; color: string; onOpen: () => void;
 }) {
+  // Current-state badge only (single snapshot); narrative text is PIPELINE
+  // fields only - the editorial getEvolutionNarrative fallback retired (P2.5).
   const evState = computeThemeEvolutionState(theme);
   const evMeta  = THEME_EVOLUTION_META[evState];
   const benef   = getThemeBeneficiaries(theme).slice(0, 4);
-  const narrative = (theme.second_order_effects?.[0] || theme.description || getEvolutionNarrative(theme.name, evState) || "").trim();
+  const narrative = (theme.second_order_effects?.[0] || theme.description || "").trim();
   const convColor = theme.confidence >= 70 ? "#10b981" : theme.confidence >= 45 ? "#f59e0b" : "#94a3b8";
   const strengthCls =
     theme.signal_strength === "strong" ? "text-emerald-600 bg-emerald-50 border-emerald-200" :
@@ -554,7 +556,8 @@ function ActiveThemeCard({ theme, color, onOpen }: {
       {/* State chips */}
       <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
         <span className="text-[8.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border"
-          style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}>
+          style={{ color: evMeta.color, background: evMeta.bg, borderColor: evMeta.border }}
+          title="Current-state badge from today's snapshot - not cross-session history (ThemeMemory owns evolution)">
           {evMeta.label}
         </span>
         {theme.confidence_label && (
@@ -599,22 +602,22 @@ function ActiveThemeCard({ theme, color, onOpen }: {
 
 interface TransmissionRow { driver: string; theme: string; tickers: string[] }
 
+// STORED-FIELD chains only (theme macro factor -> theme -> recorded assets).
+// P2.5: the fabricated "structural demand / capital cycle" fallback rows are
+// deleted - when no theme records exposure, the map renders nothing rather
+// than an invented chain. The dictionary-backed themeBeneficiaries tail is
+// replaced by the theme's own recorded assets (D11 narrowing).
 function buildTransmissionRows(industry: IndustryConfig, themes: ThemeIntelligence[]): TransmissionRow[] {
   const keyset = new Set(industry.keyAssets.map(a => a.toUpperCase()));
-  const rows = themes.slice(0, 3).map(t => {
-    const driver = cleanMacroLabel((t.related_macro_factors ?? [])[0] ?? industry.macroDrivers[0] ?? "Macro backdrop");
-    const benef  = themeBeneficiaries(t, 6);
-    const inInd  = benef.filter(tk => keyset.has(tk.toUpperCase()));
+  const isTicker = (s: string) => /^[A-Z][A-Z.]{0,5}$/.test(s);
+  return themes.slice(0, 3).flatMap(t => {
+    const macro = (t.related_macro_factors ?? [])[0];
+    const benef = (t.related_assets ?? []).filter(isTicker);
+    const inInd = benef.filter(tk => keyset.has(tk.toUpperCase()));
     const tickers = (inInd.length > 0 ? inInd : benef).slice(0, 4);
-    return { driver, theme: cleanThemeName(t.name), tickers: tickers.length ? tickers : industry.keyAssets.slice(0, 4) };
+    if (!macro || tickers.length === 0) return [];
+    return [{ driver: cleanMacroLabel(macro), theme: cleanThemeName(t.name), tickers }];
   });
-  if (rows.length > 0) return rows;
-  // Structural fallback so every industry shows its transmission.
-  return industry.macroDrivers.slice(0, 2).map((d, i) => ({
-    driver: cleanMacroLabel(d),
-    theme: `${industry.name} ${i === 0 ? "structural demand" : "capital cycle"}`,
-    tickers: industry.keyAssets.slice(i * 4, i * 4 + 4),
-  }));
 }
 
 function IndustryTransmissionMap({ industry, themes }: { industry: IndustryConfig; themes: ThemeIntelligence[] }) {
@@ -634,7 +637,9 @@ function IndustryTransmissionMap({ industry, themes }: { industry: IndustryConfi
         <Network size={11} className="shrink-0" style={{ color: c }} />
         <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">Industry Transmission Map</span>
         <span className="h-px flex-1 bg-edge" />
-        <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] text-ink-muted/50">driver → theme → {industry.shortName} → expressions</span>
+        <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] text-ink-muted/50"
+          title="Stored pipeline fields (theme macro factor, recorded assets); the recorded graph path renders in the Recorded Transmission card">
+          driver → theme → {industry.shortName} → expressions · stored-field read</span>
       </div>
       <div className="divide-y divide-edge/55">
         {rows.map((r, i) => (
@@ -712,6 +717,25 @@ export default function IndustryDetailPage() {
   const whatMattersNow = feedData?.what_matters_now ?? [];
   const { deals: maDeals } = useMAIntelligence();
 
+  // Shared intelligence (Phase 2.5): the sector projects the SAME profile /
+  // risk / ledger / narrative reads Explorer shows for the Sector entity.
+  const argus = useArgusIntelligence();
+  const sectorKey = industry?.sector ?? "";
+  const si = useMemo<SectorIntelVM | null>(() => {
+    if (!sectorKey) return null;
+    const profiles = new Map<string, IntelligenceProfile>();
+    const risks = new Map<string, RiskRead>();
+    if (argus.ready) profiles.set(sectorKey.toLowerCase(), buildIntelligenceProfile(sectorKey));
+    risks.set(sectorKey.toLowerCase(), buildRiskRead(sectorKey));
+    const dr = deriveMorningBriefDeltas({ themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready });
+    const vm = buildIndustriesIntel({
+      sectors: [sectorKey], themes: argus.themes, profiles, risks,
+      narratives: argus.ready ? deriveNarratives() : [],
+      deltas: dr.deltas, graphReady: argus.ready,
+    });
+    return vm.sectors.data?.[0] ?? null;
+  }, [sectorKey, argus.themes, argus.ready]);
+
   // Not found state
   if (!industry) {
     return (
@@ -737,14 +761,14 @@ export default function IndustryDetailPage() {
   const bestIndSignal  = indSignals[0] ?? null;
   const topClusters    = filterIndustryClusters(industry, clusters);
 
-  const thesis  = sectorIntel ? generateThesis(sectorIntel, indSignals, regime) : null;
-  const [cxA, cxB] = sectorIntel ? getCrossAssetEffects(industry.sector, regime) : ["", ""];
-  const [rkA, rkB] = sectorIntel ? getRiskFactors(industry.sector, regime)       : ["", ""];
-  const drivers = sectorIntel
-    ? getKeyDrivers(sectorIntel, indSignals, topClusters)
-    : industry.macroDrivers.slice(0, 6);
-
+  // Phase 2.5: sector meaning comes from the shared reads (si); the editorial
+  // thesis/risk/cross-asset/positioning generators are deleted (D2).
   const activeThemes    = getThemesForIndustry(industry.name, feedData?.theme_intelligence ?? []).slice(0, 3);
+  // Recorded drivers (graph edges) first; stored theme macro factors as the
+  // labeled fallback - the THEMATIC_DRIVERS editorial dictionary is gone.
+  const recordedDrivers = si?.drivers ?? [];
+  const fallbackDrivers = [...new Set(activeThemes.flatMap(t => (t.related_macro_factors ?? []).slice(0, 2)))]
+    .map(cleanMacroLabel).slice(0, 6);
   // Thematic exposure sets (real signal: beneficiary / headwind of active themes),
   // shared by the market tape and the Thematic Exposure module.
   const tapeBenefit  = new Set<string>();
@@ -753,10 +777,19 @@ export default function IndustryDetailPage() {
     getThemeBeneficiaries(t).forEach(a => tapeBenefit.add(a.toUpperCase()));
     getThemeHeadwinds(t).forEach(a => { if (!tapeBenefit.has(a.toUpperCase())) tapeHeadwind.add(a.toUpperCase()); });
   }
-  const liveDevelopments = getLiveDevelopments(industry.slug, sectorIntel, indSignals, topClusters, regime);
-  const leadership      = getLeadershipDynamics(industry.slug, sectorIntel, indSignals, regime);
-  const positioning     = getPositioningNarrative(industry.slug, sectorIntel, regime);
+  const liveDevelopments = getLiveDevelopments(topClusters);
+  // Leadership = SHARED graph exposure: recorded beneficiaries vs recorded
+  // weakening edges (the same reads Explorer shows). Never editorial lists.
   const momentumState   = getMomentumState(sectorIntel, indSignals);
+  const leadership: LeadershipDynamics = {
+    leaders: (si?.beneficiaries ?? []).map(b => b.label).slice(0, 4),
+    laggards: (si?.weakening ?? []).slice(0, 4),
+    improving: [],
+    state: momentumState === "fading" ? "rotating" : momentumState === "reversing" ? "narrowing" : momentumState,
+    explanation: si?.live
+      ? "Recorded downstream exposure (graph beneficiaries) vs recorded weakening edges - the same reads Explorer shows for this sector."
+      : "Sector entity not resolved in the shared graph yet.",
+  };
 
   const maClusters    = topClusters.filter(c => c.primary.category === "M&A").slice(0, 5);
   const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 10);
@@ -777,7 +810,6 @@ export default function IndustryDetailPage() {
   const industrySponsorDeals = getIndustrySponsorDeals(industry, dealsMapped);
   const vcClusters           = filterVCFundingClusters(industry, feedData?.clusters ?? []);
   const keyCompanies         = getInfluentialEntities(industry, topClusters, indSignals, sectorIntel, leadership.leaders, leadership.laggards);
-  const themeNarrative       = getThemeNarrative(industry, feedData?.theme_intelligence ?? []);
   const matchingTheme        = getMatchingTheme(industry, feedData?.theme_intelligence ?? []);
   const industryAcquirers    = getIndustryAcquirers(industrySponsorDeals);
   const industrySponsors     = getIndustrySponsors(industrySponsorDeals);
@@ -1030,50 +1062,76 @@ export default function IndustryDetailPage() {
       {/* ── Content ──────────────────────────────────────────────────────── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-4">
 
-        {/* ── What Matters ──────────────────────────────────────────────── */}
-        {thesis && (
-          <motion.section
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.08, duration: 0.25, ease: "easeOut" }}
-            className="bg-surface rounded-xl border border-edge p-5"
-            style={{ borderLeftColor: industry.color, borderLeftWidth: "3px" }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Zap size={11} className="shrink-0" style={{ color: industry.color }} />
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
-                What Matters Now
+        {/* ── What Matters — shared engine reads only (Phase 2.5): forward
+            view (prediction engine), the canonical ledger record, and the
+            derived narrative membership. Honest partial states; the editorial
+            sector thesis generator is deleted. ──────────────────────────── */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08, duration: 0.25, ease: "easeOut" }}
+          className="bg-surface rounded-xl border border-edge p-5"
+          style={{ borderLeftColor: industry.color, borderLeftWidth: "3px" }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Zap size={11} className="shrink-0" style={{ color: industry.color }} />
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
+              What Matters Now
+            </span>
+            {si?.narrative && (
+              <span className="text-[9px] font-bold px-2 py-px rounded-full ml-1"
+                title="Derived-narrative exposure (shared derivation)"
+                style={{ color: industry.color, background: `${industry.color}14` }}>
+                {cleanThemeName(si.narrative)}
               </span>
-              {topTheme && (
-                <span
-                  className="text-[9px] font-bold px-2 py-px rounded-full ml-1"
-                  style={{ color: industry.color, background: `${industry.color}14` }}
-                >
-                  {topTheme}
-                </span>
-              )}
-            </div>
-            <p className="text-[13px] text-ink-secondary leading-relaxed">
-              {thesis}
-            </p>
-            {themeNarrative && (
-              <div className="mt-2.5 pt-2.5 border-t border-edge/40 flex items-start gap-2">
-                <p className="flex-1 text-[11.5px] text-ink-muted/70 leading-relaxed italic">
-                  {themeNarrative}
-                </p>
-                {matchingTheme && (
-                  <button
-                    onClick={() => setDrawerTheme(matchingTheme)}
-                    className="shrink-0 text-[9.5px] font-semibold px-2 py-1 rounded transition-opacity hover:opacity-80 mt-0.5"
-                    style={{ background: "rgba(82,176,200,0.08)", color: "rgba(82,176,200,0.70)", border: "1px solid rgba(82,176,200,0.14)" }}
-                  >
-                    View Theme
-                  </button>
-                )}
-              </div>
             )}
-          </motion.section>
-        )}
+            {topTheme && !si?.narrative && (
+              <span className="text-[9px] font-bold px-2 py-px rounded-full ml-1"
+                style={{ color: industry.color, background: `${industry.color}14` }}>
+                {topTheme}
+              </span>
+            )}
+            {(() => {
+              const href = explorerHrefForNode({ type: "Sector", label: industry.sector });
+              return href ? (
+                <Link href={href} className="ml-auto inline-flex items-center gap-1 text-[9.5px] font-semibold text-accent hover:underline shrink-0">
+                  Open in Explorer <ArrowUpRight size={10} />
+                </Link>
+              ) : null;
+            })()}
+          </div>
+          <div className="space-y-2">
+            {si?.forward ? (
+              <p className="text-[13px] text-ink-secondary leading-relaxed">
+                <span className="font-semibold text-ink capitalize">{si.forward.direction}</span>
+                <span className="text-ink-muted"> · prediction engine, confidence {si.forward.confidence}</span>
+                {si.forward.reasons.length > 0 && <> — {si.forward.reasons.join("; ")}.</>}
+              </p>
+            ) : (
+              <p className="text-[11.5px] text-ink-muted leading-relaxed">
+                No resolvable forward view for {industry.sector} yet
+                {si?.live ? " (insufficient recorded signal)." : " (sector entity not in the shared graph)."}
+              </p>
+            )}
+            {si?.latestChange && (
+              <p className="text-[11.5px] text-ink-secondary leading-snug" title={si.latestChange.why}>
+                <span className="text-[7.5px] font-bold tracking-[0.12em] px-1 py-0.5 rounded border border-sky-500/40 text-sky-600 mr-1.5 align-middle">
+                  {si.latestChange.kind}
+                </span>
+                {si.latestChange.what}
+              </p>
+            )}
+            {matchingTheme && (
+              <button
+                onClick={() => setDrawerTheme(matchingTheme)}
+                className="text-[9.5px] font-semibold px-2 py-1 rounded transition-opacity hover:opacity-80"
+                style={{ background: "rgba(82,176,200,0.08)", color: "rgba(82,176,200,0.70)", border: "1px solid rgba(82,176,200,0.14)" }}
+              >
+                View Theme
+              </button>
+            )}
+          </div>
+        </motion.section>
 
         {/* ── Industry Transmission Map ─────────────────────────────────── */}
         <motion.div
@@ -1091,62 +1149,84 @@ export default function IndustryDetailPage() {
           transition={{ delay: 0.1, duration: 0.25, ease: "easeOut" }}
           className="grid grid-cols-1 lg:grid-cols-2 gap-4"
         >
-          {/* Positioning */}
+          {/* Forward View / What Breaks It / Watch - shared engine records
+              (the editorial bull/bear positioning library is deleted, D2) */}
           <div className="bg-surface rounded-xl border border-edge p-5" style={{ borderTopColor: industry.color, borderTopWidth: "2px" }}>
-            <SectionHeader icon={TrendingUp}>Positioning</SectionHeader>
+            <SectionHeader icon={TrendingUp}>Positioning · shared engines</SectionHeader>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
               <div>
-                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-emerald-500/80 mb-1">Bull Case</p>
-                <p className="text-[11px] text-ink-secondary leading-relaxed">{positioning.bull}</p>
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-emerald-500/80 mb-1">Forward View</p>
+                <p className="text-[11px] text-ink-secondary leading-relaxed">
+                  {si?.forward
+                    ? `${si.forward.direction} (prediction engine, confidence ${si.forward.confidence}).`
+                    : "No resolvable forward view yet."}
+                </p>
               </div>
               <div>
-                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-red-500/80 mb-1">Bear Case</p>
-                <p className="text-[11px] text-ink-secondary leading-relaxed">{positioning.bear}</p>
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-red-500/80 mb-1">What Breaks It</p>
+                <p className="text-[11px] text-ink-secondary leading-relaxed">
+                  {si?.invalidation ?? si?.contradictions[0]?.detail ?? "No recorded invalidation or contradiction for this sector yet."}
+                </p>
               </div>
               <div className="col-span-2 pt-1 border-t border-edge/60">
                 <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1" style={{ color: `${industry.color}aa` }}>Watch For</p>
-                <p className="text-[10.5px] text-ink-muted leading-relaxed">{positioning.watchFor}</p>
+                <p className="text-[10.5px] text-ink-muted leading-relaxed">
+                  {si?.watch ?? "No derivable watch item yet."}
+                  {si?.watch && <span className="ml-1.5 text-[7px] font-bold tracking-[0.12em] px-1 py-px rounded border border-accent/30 text-accent/70 align-middle">DERIVED</span>}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Risk Factors */}
+          {/* Risk Factors - the shared risk read, verbatim */}
           <div className="bg-surface rounded-xl border border-edge p-5">
-            <SectionHeader icon={ShieldAlert}>Risk Factors</SectionHeader>
-            {(rkA || rkB) ? (
+            <SectionHeader icon={ShieldAlert}>Risk Factors · shared engines</SectionHeader>
+            {(si && (si.contradictions.length > 0 || si.invalidation || si.weakening.length > 0)) ? (
               <ul className="space-y-2.5">
-                {[rkA, rkB].filter(Boolean).map((line, i) => (
-                  <li key={i} className="flex items-start gap-2">
+                {si.invalidation && (
+                  <li className="flex items-start gap-2">
                     <AlertTriangle size={10} className="text-amber-500/70 mt-[2px] shrink-0" />
-                    <p className="text-[11px] text-ink-secondary leading-relaxed">{line}</p>
+                    <p className="text-[11px] text-ink-secondary leading-relaxed">{si.invalidation} <span className="text-ink-muted">(prediction engine)</span></p>
+                  </li>
+                )}
+                {si.contradictions.slice(0, 2).map((c, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <AlertTriangle size={10} className="text-red-500/70 mt-[2px] shrink-0" />
+                    <p className="text-[11px] text-ink-secondary leading-relaxed">{c.detail} <span className="text-ink-muted">sev {c.severity} (evidence engine)</span></p>
+                  </li>
+                ))}
+                {si.weakening.slice(0, 2).map((w, i) => (
+                  <li key={`w-${i}`} className="flex items-start gap-2">
+                    <span className="w-1 h-1 rounded-full mt-[6px] shrink-0 bg-red-400" />
+                    <p className="text-[11px] text-ink-secondary leading-relaxed">Recorded weakening link: {w}</p>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-[11px] text-ink-muted leading-relaxed">No acute sector-specific risk flags in the current regime window.</p>
+              <p className="text-[11px] text-ink-muted leading-relaxed">
+                No recorded risk records for this sector yet{si?.live ? "." : " (sector entity not in the shared graph)."}
+              </p>
             )}
           </div>
 
-          {/* Geopolitical Exposure */}
-          <div className="bg-surface rounded-xl border border-edge p-5">
-            <SectionHeader icon={Globe}>Geopolitical Exposure</SectionHeader>
-            <p className="text-[11.5px] text-ink-secondary leading-relaxed">{industry.geopoliticalExposure}</p>
-          </div>
-
-          {/* Cross-Asset Effects */}
-          <div className="bg-surface rounded-xl border border-edge p-5">
-            <SectionHeader icon={Target}>Cross-Asset Effects</SectionHeader>
-            {(cxA || cxB) ? (
-              <ul className="space-y-2.5">
-                {[cxA, cxB].filter(Boolean).map((line, i) => (
-                  <li key={i} className="flex items-start gap-2.5">
-                    <span className="w-1 h-1 rounded-full mt-[6px] shrink-0" style={{ background: industry.color }} />
-                    <p className="text-[12px] text-ink-secondary leading-relaxed">{line}</p>
-                  </li>
+          {/* Recorded Transmission - one graph-recorded path (replaces the
+              editorial Cross-Asset Effects and Geopolitical Exposure prose) */}
+          <div className="bg-surface rounded-xl border border-edge p-5 lg:col-span-2">
+            <SectionHeader icon={Target}>Recorded Transmission</SectionHeader>
+            {si?.transmission ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {si.transmission.map((label, i) => (
+                  <span key={`${label}-${i}`} className="flex items-center gap-1.5">
+                    {i > 0 && <span className="text-[13px]" style={{ color: `${industry.color}66` }}>→</span>}
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-edge bg-raised text-ink-secondary">{label}</span>
+                  </span>
                 ))}
-              </ul>
+                <span className="text-[8px] font-bold tracking-[0.1em] text-ink-muted/60 ml-1">RECORDED GRAPH EDGES</span>
+              </div>
             ) : (
-              <p className="text-[11px] text-ink-muted leading-relaxed">Cross-asset spillover is muted in the current regime.</p>
+              <p className="text-[11px] text-ink-muted leading-relaxed">
+                No recorded transmission path through {industry.sector} yet. Nothing is reconstructed from prose or dictionaries.
+              </p>
             )}
           </div>
         </motion.div>
@@ -1291,14 +1371,11 @@ export default function IndustryDetailPage() {
                 </div>
               )}
               {maClusters.length === 0 && industrySponsorDeals.length === 0 && (
-                <div className="space-y-2">
-                  <p className="text-[11.5px] text-ink-secondary leading-relaxed">
-                    {industry.maTheme}
-                  </p>
-                  <p className="text-[10px] text-ink-muted">
-                    No active M&A stories in the current feed window.
-                  </p>
-                </div>
+                // P2.5: the editorial maTheme paragraph no longer stands in for
+                // missing intelligence - the empty state is stated honestly.
+                <p className="text-[10px] text-ink-muted">
+                  No active M&A stories or recorded deals in the current feed window.
+                </p>
               )}
             </motion.section>
 
@@ -1334,12 +1411,26 @@ export default function IndustryDetailPage() {
               transition={{ delay: 0.17, duration: 0.25, ease: "easeOut" }}
               className="bg-surface rounded-xl border border-edge p-4"
             >
-              <SectionHeader icon={BarChart3}>Macro Drivers</SectionHeader>
-              <div className="flex flex-wrap gap-1.5">
-                {drivers.map(d => (
-                  <DriverChip key={d} label={d} color={industry.color} />
-                ))}
-              </div>
+              <SectionHeader icon={BarChart3}>
+                {recordedDrivers.length > 0 ? "Drivers · recorded edges" : "Drivers · stored-field read"}
+              </SectionHeader>
+              {recordedDrivers.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {recordedDrivers.map(d => (
+                    <span key={d.label} title={`${d.relationship.replace(/_/g, " ")} (strength ${Math.round(d.strength)}) - recorded graph edge`}>
+                      <DriverChip label={cleanMacroLabel(d.label)} color={industry.color} />
+                    </span>
+                  ))}
+                </div>
+              ) : fallbackDrivers.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5" title="Stored theme macro factors (pipeline fields); graph drivers unavailable">
+                  {fallbackDrivers.map(d => (
+                    <DriverChip key={d} label={d} color={industry.color} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-ink-muted leading-relaxed">No recorded drivers for this sector yet.</p>
+              )}
             </motion.section>
 
             {/* Thematic Exposure — beneficiaries & headwinds from active themes */}

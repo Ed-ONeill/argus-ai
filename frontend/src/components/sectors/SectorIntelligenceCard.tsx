@@ -4,13 +4,8 @@ import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { sectorColor } from "./SectorTile";
-import {
-  generateThesis,
-  getCrossAssetEffects,
-  getRiskFactors,
-  getKeyDrivers,
-  filterSectorClusters,
-} from "@/lib/sectorIntelligence";
+import { filterSectorClusters } from "@/lib/sectorIntelligence";
+import type { SectorIntelVM } from "@/lib/industriesIntel";
 import type { SectorIntelligence, IndustrySignal, StoryCluster } from "@/lib/types";
 
 // ── Alignment badge config ────────────────────────────────────────────────────
@@ -113,14 +108,18 @@ interface SectorIntelligenceCardProps {
   clusters:   StoryCluster[];
   regime:     string | null;
   index:      number;
+  /** The shared-engine projection for this sector (lib/industriesIntel).
+      Null when the graph is not provisioned - the card degrades honestly. */
+  intel?:     SectorIntelVM | null;
 }
 
 export function SectorIntelligenceCard({
   sector,
   industries,
   clusters,
-  regime,
+  regime: _regime,
   index,
+  intel = null,
 }: SectorIntelligenceCardProps) {
   const color = sectorColor(sector.name);
   const score = sector.signal_score;
@@ -132,10 +131,12 @@ export function SectorIntelligenceCard({
 
   const sectorClusters = filterSectorClusters(clusters, sector.name, 3);
 
-  const thesis            = generateThesis(sector, sectorIndustries, regime);
-  const [crossA, crossB]  = getCrossAssetEffects(sector.name, regime);
-  const [riskA, riskB]    = getRiskFactors(sector.name, regime);
-  const drivers           = getKeyDrivers(sector, sectorIndustries, sectorClusters);
+  // Phase 2.5: the editorial thesis/cross-asset/risk/driver generators are
+  // deleted (D2). Everything meaningful below is a shared-engine read.
+  const drivers = intel && intel.drivers.length > 0 ? intel.drivers.map(d => d.label) : [];
+  const driversFactual = drivers.length === 0
+    ? ([sector.top_entity, ...sectorIndustries.slice(0, 2).map(i => i.name)].filter(Boolean) as string[])
+    : [];
 
   const align        = ALIGN_META[sector.regime_alignment as keyof typeof ALIGN_META] ?? ALIGN_META.neutral;
   const maxIndustry  = sectorIndustries[0]?.signal_score ?? 1;
@@ -200,16 +201,39 @@ export function SectorIntelligenceCard({
         </p>
       </div>
 
-      {/* ── Thesis ───────────────────────────────────────────────────── */}
-      <p
-        className="pl-3 py-0.5 border-l-[2px] text-[11.5px] text-ink-secondary leading-snug"
+      {/* ── Shared read: forward view + narrative + latest ledger record ── */}
+      <div
+        className="pl-3 py-0.5 border-l-[2px] space-y-1"
         style={{ borderLeftColor: `${color}60` }}
       >
-        {thesis}
-      </p>
+        {intel?.forward ? (
+          <p className="text-[11.5px] text-ink-secondary leading-snug">
+            <span className="font-semibold text-ink capitalize">{intel.forward.direction}</span>
+            <span className="text-ink-muted"> · prediction engine, confidence {intel.forward.confidence}</span>
+            {intel.forward.reasons.length > 0 && <> — {intel.forward.reasons[0]}.</>}
+          </p>
+        ) : (
+          <p className="text-[10.5px] text-ink-muted leading-snug">
+            No resolvable forward view for {sector.name} yet{intel?.live === false ? " (sector not in the shared graph)" : ""}.
+          </p>
+        )}
+        {intel?.narrative && (
+          <p className="text-[10px] text-ink-muted" title="Derived-narrative exposure (shared derivation)">
+            Narrative: <span className="font-semibold text-ink-secondary">{intel.narrative}</span>
+          </p>
+        )}
+        {intel?.latestChange && (
+          <p className="text-[10.5px] text-ink-secondary leading-snug" title={intel.latestChange.why}>
+            <span className="text-[7px] font-bold tracking-[0.12em] px-1 py-px rounded border border-sky-500/40 text-sky-600 mr-1 align-middle">
+              {intel.latestChange.kind}
+            </span>
+            {intel.latestChange.what}
+          </p>
+        )}
+      </div>
 
-      {/* ── Industries + Key Drivers ──────────────────────────────────── */}
-      {(sectorIndustries.length > 0 || drivers.length > 0) && (
+      {/* ── Industries + Drivers ──────────────────────────────────────── */}
+      {(sectorIndustries.length > 0 || drivers.length > 0 || driversFactual.length > 0) && (
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
           {sectorIndustries.length > 0 && (
             <div className="space-y-1.5">
@@ -227,14 +251,14 @@ export function SectorIntelligenceCard({
               </div>
             </div>
           )}
-          {drivers.length > 0 && (
+          {(drivers.length > 0 || driversFactual.length > 0) && (
             <div className={cn(
               "space-y-1.5",
               sectorIndustries.length === 0 && "col-span-2",
             )}>
-              <SubLabel>Key Drivers</SubLabel>
+              <SubLabel>{drivers.length > 0 ? "Drivers · recorded edges" : "In Focus · signal fields"}</SubLabel>
               <div className="flex flex-wrap gap-1">
-                {drivers.map(driver => (
+                {(drivers.length > 0 ? drivers : driversFactual).map(driver => (
                   <span
                     key={driver}
                     className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded leading-none"
@@ -249,29 +273,39 @@ export function SectorIntelligenceCard({
         </div>
       )}
 
-      {/* ── Cross-Asset + Risk Factors ────────────────────────────────── */}
+      {/* ── Risks + Watch — the shared risk read, verbatim ────────────── */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-2.5 border-t border-edge/50">
         <div className="space-y-1.5">
-          <SubLabel>Cross-Asset</SubLabel>
-          <ul className="space-y-1.5">
-            {[crossA, crossB].map((line, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <span className="text-[10px] text-ink-muted/50 shrink-0 mt-[1px] leading-none">·</span>
-                <span className="text-[10.5px] text-ink-secondary leading-snug">{line}</span>
-              </li>
-            ))}
-          </ul>
+          <SubLabel>Risk Factors · shared engines</SubLabel>
+          {intel && (intel.invalidation || intel.contradictions.length > 0) ? (
+            <ul className="space-y-1.5">
+              {intel.invalidation && (
+                <li className="flex items-start gap-1.5">
+                  <span className="text-[10px] text-amber-500/60 shrink-0 mt-[1px] leading-none">⚠</span>
+                  <span className="text-[10.5px] text-ink-secondary leading-snug">{intel.invalidation}</span>
+                </li>
+              )}
+              {intel.contradictions.slice(0, 2).map((c, i) => (
+                <li key={i} className="flex items-start gap-1.5">
+                  <span className="text-[10px] text-red-500/60 shrink-0 mt-[1px] leading-none">⚠</span>
+                  <span className="text-[10.5px] text-ink-secondary leading-snug">{c.detail} <span className="text-ink-muted">sev {c.severity}</span></span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[10px] text-ink-muted leading-snug">No recorded risk records yet.</p>
+          )}
         </div>
         <div className="space-y-1.5">
-          <SubLabel>Risk Factors</SubLabel>
-          <ul className="space-y-1.5">
-            {[riskA, riskB].map((line, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <span className="text-[10px] text-amber-500/60 shrink-0 mt-[1px] leading-none">⚠</span>
-                <span className="text-[10.5px] text-ink-secondary leading-snug">{line}</span>
-              </li>
-            ))}
-          </ul>
+          <SubLabel>Watch</SubLabel>
+          {intel?.watch ? (
+            <p className="text-[10.5px] text-ink-secondary leading-snug">
+              {intel.watch}
+              <span className="ml-1 text-[7px] font-bold tracking-[0.12em] px-1 py-px rounded border border-edge text-ink-muted align-middle">DERIVED</span>
+            </p>
+          ) : (
+            <p className="text-[10px] text-ink-muted leading-snug">No derivable watch item yet.</p>
+          )}
         </div>
       </div>
 

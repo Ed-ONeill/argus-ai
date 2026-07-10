@@ -24,8 +24,6 @@ import {
   buildThemeRelationshipMap,
   detectContradictions,
   themeBeneficiaries,
-  bestExpressions,
-  securitiesForSector,
   themePersistenceWeight,
   memorySentences,
 } from "@/lib/themeIntelligence";
@@ -1270,10 +1268,9 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
     const wk  = list.filter(t => t.momentum_label === "cooling" || t.momentum_label === "reversing").length;
     const trend = imp > wk ? "Improving" : wk > imp ? "Weakening" : "Stable";
     const trendColor = imp > wk ? "#10b981" : wk > imp ? "#ef4444" : "#94a3b8";
-    const be = bestExpressions(list[0]);
-    // Sector-specific securities first, so sectors sharing a lead theme differ.
-    const exposures: string[] = securitiesForSector(sector);
-    if (exposures.length === 0 && be?.tickers) exposures.push(...be.tickers);
+    // P2.5 (D11): exposures are RECORDED pipeline assets only - the curated
+    // securities dictionary (securitiesForSector/bestExpressions) is deleted.
+    const exposures: string[] = [];
     for (const t of list.slice(0, 3)) for (const a of (t.related_assets ?? [])) {
       if (a && !exposures.includes(a) && /^[A-Z.]{1,6}$/.test(a)) exposures.push(a);
     }
@@ -1282,7 +1279,7 @@ function computeSectorPositions(themes: ThemeIntelligence[]): SectorPosition[] {
       drivers: list.slice(0, 2).map(t => cleanThemeName(t.name)),
       trend, trendColor, count: list.length, supportive, risk: deriveKeyRisk(list[0]),
       exposures: exposures.slice(0, 4),
-      expressWhy: be?.why ?? "",
+      expressWhy: exposures.length > 0 ? "Recorded theme exposure (pipeline fields)." : "",
       // Phase 2.4: recorded-fact bullets (momentum state, stored exposure,
       // server memory) - the advice-template generator retired.
       whyBullets: themeImpactBullets(list[0]),
