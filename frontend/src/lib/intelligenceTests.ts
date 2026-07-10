@@ -51,6 +51,7 @@ import { buildMarketsIntel, themeImpactBullets } from "./marketsIntel";
 import { deltasToSection, watchLineOf } from "./intelligenceDeltas";
 import { buildRiskRead } from "./riskRead";
 import { memorySentences } from "./themeIntelligence";
+import { buildSavedIntel, type SavedEntityInput } from "./savedIntel";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -2091,6 +2092,101 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert(verifiedCatalystsFor([t.name]).length === 0, "no recorded series means no catalysts");
     const mi = buildMarketsIntel(buildTheRead({}), deriveMorningBriefDeltas({}));
     assert(mi.impact.status === "unavailable" && mi.impact.data === null, "no exposure and no ledger means no impact bullets");
+  });
+
+  // 86. Phase 2.1 Saved unification: Saved is a pure projection of shared
+  // intelligence over the user's selection. Its reads equal Explorer's, its
+  // changes are a filtered subset of the canonical ledger, and saving alters
+  // inclusion and ordering only - never intelligence values (prioritization,
+  // never truth). The parallel watchlist snapshot store (D4) is deleted.
+
+  const savedFixture = () => {
+    seedNarrativeGraph();
+    const themes = readThemes();
+    const dr = deriveMorningBriefDeltas({ themes });
+    const read = buildTheRead({ themes, deltas: dr.deltas, graphReady: true });
+    const profiles = new Map<string, ReturnType<typeof buildIntelligenceProfile>>();
+    const risks = new Map<string, ReturnType<typeof buildRiskRead>>();
+    for (const label of ["AI Infrastructure", "Datacenter Power", "NVDA"]) {
+      const t = themes.find(x => x.name === label) ?? null;
+      profiles.set(label.toLowerCase(), buildIntelligenceProfile(label));
+      risks.set(label.toLowerCase(), buildRiskRead(label, t));
+    }
+    const shared = {
+      themes, profiles, risks, deltas: dr.deltas, hadMemory: dr.hadMemory,
+      narrativeOf: (n: string) => findNarrativeForTheme(n),
+      researchPriorities: read.priorities.data ?? [], graphReady: true,
+    };
+    const followedAI: SavedEntityInput = { id: "th-ai", label: "AI Infrastructure", kind: "theme" };
+    const followedDC: SavedEntityInput = { id: "th-dc", label: "Datacenter Power", kind: "theme" };
+    const savedNVDA: SavedEntityInput = { id: "NVDA", label: "NVDA", kind: "company" };
+    return { themes, dr, read, shared, followedAI, followedDC, savedNVDA };
+  };
+
+  test("saved reads equal the Explorer profile and the shared risk read", () => {
+    const { themes, shared, followedAI, savedNVDA } = savedFixture();
+    const vm = buildSavedIntel({ followedThemes: [followedAI], savedEntities: [savedNVDA], ...shared });
+    const items = vm.items.data ?? [];
+    const themeItem = items.find(i => i.entityKey === "AI Infrastructure");
+    const nvda = items.find(i => i.entityKey === "NVDA");
+    assert(!!themeItem && !!nvda, "both monitored entities resolve");
+    assert(themeItem!.conviction === Math.round(themes[0].confidence ?? 0), "theme conviction is the pipeline number - the same owner every surface reads");
+    assert(themeItem!.convictionBasis === "theme pipeline", "and names its basis");
+    const nvdaProfile = shared.profiles.get("nvda")!;
+    assert(nvda!.conviction === nvdaProfile.confidence.data?.conviction, "company conviction equals the Explorer profile's conviction, verbatim");
+    const rr = shared.risks.get("ai infrastructure")!;
+    assert(themeItem!.risk === (rr.invalidation ?? rr.contradictions[0]?.detail ?? null), "saved risk is the shared risk-read record");
+    assert(themeItem!.watch === (rr.watchItems[0] ?? null), "saved watch is the shared watch item, verbatim");
+    assert(themeItem!.narrative === (findNarrativeForTheme("AI Infrastructure")?.label ?? null), "narrative membership resolves through the shared derivation");
+    assert(themeItem!.status === (themes[0].memory?.status ?? null), "status is the server ThemeMemory status");
+  });
+
+  test("saved changes are a filtered subset of the canonical ledger", () => {
+    const { dr, shared, followedAI, followedDC, savedNVDA } = savedFixture();
+    const vm = buildSavedIntel({ followedThemes: [followedAI, followedDC], savedEntities: [savedNVDA], ...shared });
+    const items = vm.items.data ?? [];
+    for (const i of items)
+      assert(i.latestChange === null || dr.deltas.includes(i.latestChange), "every rendered change IS a canonical ledger record (same object, no re-wording)");
+    const s = vm.summary.data!;
+    for (const label of [...s.strengthening, ...s.weakening, ...s.contradicted])
+      assert(dr.deltas.some(d => d.entity === label), "summary groups name only entities the ledger recorded");
+    assert(s.monitored === items.length && s.changed === items.filter(i => i.latestChange !== null).length, "summary counts are projections of the item set");
+    const monitored = new Set(items.map(i => i.entityKey.toLowerCase()));
+    for (const p of s.priorities)
+      assert(monitored.has(p.entity.label.toLowerCase()), "summary priorities overlap the monitored set only");
+  });
+
+  test("saving changes inclusion and ordering only, never intelligence values", () => {
+    const { shared, followedAI, followedDC, savedNVDA } = savedFixture();
+    const solo = buildSavedIntel({ followedThemes: [followedAI], ...shared });
+    const crowd = buildSavedIntel({ followedThemes: [followedAI, followedDC], savedEntities: [savedNVDA], ...shared });
+    const a = solo.items.data!.find(i => i.entityKey === "AI Infrastructure")!;
+    const b = crowd.items.data!.find(i => i.entityKey === "AI Infrastructure")!;
+    assert(JSON.stringify(a) === JSON.stringify(b), "the same entity carries identical intelligence regardless of what else is saved");
+    assert(!solo.items.data!.some(i => i.entityKey === "NVDA") && crowd.items.data!.some(i => i.entityKey === "NVDA"), "saving changes inclusion");
+    // Determinism: same inputs, same view model.
+    assert(JSON.stringify(buildSavedIntel({ followedThemes: [followedAI], ...shared })) === JSON.stringify(solo), "same inputs, same Saved view model");
+  });
+
+  test("saved degrades honestly on empty and graphless inputs", () => {
+    const empty = buildSavedIntel({});
+    assert(empty.items.status === "unavailable" && empty.items.data === null, "nothing monitored means an honest empty state");
+    assert(empty.summary.status === "unavailable" && empty.summary.data === null, "and no summary");
+    intelligenceGraph.clear();
+    const cold = buildSavedIntel({
+      savedEntities: [{ id: "ZZZQ", label: "ZZZQ", kind: "company" }],
+      risks: new Map([["zzzq", buildRiskRead("ZZZQ")]]),
+      graphReady: false,
+    });
+    assert(cold.items.status === "partial" && !!cold.items.note, "no graph means a partial section with a note");
+    const it = cold.items.data![0];
+    assert(it.conviction === null && it.status === null && it.latestChange === null && it.narrative === null && it.risk === null && it.watch === null,
+      "an unresolvable entity carries nulls everywhere - never fabricated values");
+    assert(it.live === false, "and is marked not-live");
+    // First cycle: memory-less summary is partial, not invented.
+    const { shared, followedAI } = savedFixture();
+    const firstCycle = buildSavedIntel({ followedThemes: [followedAI], ...shared, deltas: [], hadMemory: false });
+    assert(firstCycle.summary.status === "partial" && (firstCycle.summary.note ?? "").includes("First cycle"), "first-cycle summary is honest");
   });
 
   for (const [name, fn] of tests) {

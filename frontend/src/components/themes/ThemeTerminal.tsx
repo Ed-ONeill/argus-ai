@@ -12,7 +12,8 @@ import {
 } from "@/lib/themeMomentum";
 import { computeConvictionScore, convictionLabel } from "@/lib/themeImpact";
 import { generateIntelligenceAlerts, type IntelligenceAlert } from "@/lib/themeIntelligence";
-import { useWatchlistIntelligence } from "@/hooks/useWatchlistIntelligence";
+import { deriveMorningBriefDeltas, type MorningBriefDelta } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
 
 // ── Safe fallback for missing/failed momentum computation ─────────────────────
 
@@ -63,7 +64,50 @@ export function ThemeTerminal({
   const [filter, setFilter] = useState<"all" | "watchlist">("all");
   const [sortBy, setSortBy] = useState<"signal" | "persistence" | "momentum" | "lifecycle">("signal");
 
-  const { deltas, weeklyChanges, watchedRanked } = useWatchlistIntelligence(themes, watchedIds);
+  // Phase 2.1 (Saved unification): the terminal's watchlist intelligence is
+  // the CANONICAL change ledger (intelligenceDeltas over server ThemeMemory +
+  // device snapshot history) - the same records the Morning Brief, Markets,
+  // and Saved show, verbatim. The parallel watchlist snapshot store
+  // (lib/watchlistIntelligence, D4) was deleted; the terminal only selects
+  // and orders.
+  const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds]);
+  const ledger = useMemo(
+    () => deriveMorningBriefDeltas({ themes, previouslyTracked: getTrackedThemes() }),
+    [themes],
+  );
+  // Highest-ranked ledger record per theme id, preserving canonical order.
+  const deltaByThemeId = useMemo(() => {
+    const idByName = new Map(themes.map(t => [t.name.toLowerCase(), t.id]));
+    const m = new Map<string, { delta: MorningBriefDelta; rank: number }>();
+    ledger.deltas.forEach((d, i) => {
+      const id = idByName.get(d.entity.toLowerCase());
+      if (id && !m.has(id)) m.set(id, { delta: d, rank: i });
+    });
+    return m;
+  }, [ledger, themes]);
+
+  const isUpKind = (k: MorningBriefDelta["kind"]) =>
+    k === "STRENGTHENED" || k === "NEW" || k === "EXPANDED";
+
+  // Watched changes: canonical records filtered to the watch, canonical order.
+  const watchedChanges = useMemo(
+    () => ledger.deltas
+      .map(d => ({ delta: d, theme: themes.find(t => t.name.toLowerCase() === d.entity.toLowerCase()) ?? null }))
+      .filter((x): x is { delta: MorningBriefDelta; theme: ThemeIntelligence } => x.theme !== null && watchedSet.has(x.theme.id))
+      .slice(0, 5),
+    [ledger, themes, watchedSet],
+  );
+
+  // Summary bar: watched themes, ledger-changed first, then by conviction.
+  const watchedRanked = useMemo(
+    () => [...themes]
+      .filter(t => watchedSet.has(t.id))
+      .sort((a, b) =>
+        ((deltaByThemeId.get(a.id)?.rank ?? Number.POSITIVE_INFINITY) - (deltaByThemeId.get(b.id)?.rank ?? Number.POSITIVE_INFINITY)) ||
+        ((b.confidence ?? 0) - (a.confidence ?? 0)))
+      .slice(0, 5),
+    [themes, watchedSet, deltaByThemeId],
+  );
 
   // ESC to close
   useEffect(() => {
@@ -111,7 +155,9 @@ export function ThemeTerminal({
   const displayed = filter === "watchlist"
     ? [...themes]
         .filter(t => watchedIds.includes(t.id))
-        .sort((a, b) => (deltas[b.id]?.priorityScore ?? 0) - (deltas[a.id]?.priorityScore ?? 0))
+        .sort((a, b) =>
+          ((deltaByThemeId.get(a.id)?.rank ?? Number.POSITIVE_INFINITY) - (deltaByThemeId.get(b.id)?.rank ?? Number.POSITIVE_INFINITY)) ||
+          ((b.confidence ?? 0) - (a.confidence ?? 0)))
     : sorted;
 
 
@@ -324,27 +370,28 @@ export function ThemeTerminal({
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-6">
 
-          {/* ── This Week's Changes ─────────────────────────────────────────── */}
-          {filter === "watchlist" && weeklyChanges.length > 0 && (
+          {/* ── What Changed: the canonical ledger, filtered to the watch ──── */}
+          {filter === "watchlist" && watchedChanges.length > 0 && (
             <div className="mb-5 rounded-xl p-4"
               style={{ background: "rgba(255,255,255,0.018)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <p className="text-[8px] font-bold uppercase tracking-[0.16em] mb-3"
-                style={{ color: "rgba(255,255,255,0.28)" }}>This Week&apos;s Changes</p>
+                style={{ color: "rgba(255,255,255,0.28)" }}>What Changed · shared change ledger</p>
               <div className="space-y-1.5">
-                {weeklyChanges.map(({ theme: t, sentence, direction }) => (
+                {watchedChanges.map(({ theme: t, delta }) => (
                   <button
-                    key={t.id}
+                    key={`${delta.kind}-${t.id}`}
                     onClick={() => onSelectTheme(t)}
                     className="flex items-center gap-2 w-full text-left hover:opacity-80 transition-opacity"
+                    title={delta.why}
                   >
                     <span
                       className="text-[9px] font-bold shrink-0"
-                      style={{ color: direction === "up" ? "#10B981" : "#EF4444" }}
+                      style={{ color: isUpKind(delta.kind) ? "#10B981" : "#EF4444" }}
                     >
-                      {direction === "up" ? "▲" : "▼"}
+                      {isUpKind(delta.kind) ? "▲" : "▼"}
                     </span>
                     <span className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.58)" }}>
-                      {sentence}
+                      {delta.what}
                     </span>
                   </button>
                 ))}
@@ -406,16 +453,19 @@ export function ThemeTerminal({
                             {alert && (
                               <AlertCircle size={10} style={{ color: "#F59E0B" }} aria-label="Signal changed" />
                             )}
-                            {watched && deltas[theme.id]?.alertChip && (() => {
-                              const chip = deltas[theme.id]?.alertChip;
-                              if (!chip) return null;
-                              const chipColor = chip.direction === "up" ? "#10B981" : "#EF4444";
+                            {watched && deltaByThemeId.get(theme.id) && (() => {
+                              // Canonical ledger record for this theme; the chip
+                              // renders its KIND verbatim - no local thresholds.
+                              const { delta } = deltaByThemeId.get(theme.id)!;
+                              const up = isUpKind(delta.kind);
+                              const chipColor = up ? "#10B981" : "#EF4444";
                               return (
                                 <span
                                   className="text-[8.5px] font-bold px-1.5 py-0.5 rounded"
                                   style={{ background: `${chipColor}14`, color: chipColor }}
+                                  title={delta.what}
                                 >
-                                  {chip.direction === "up" ? "▲" : "▼"} {chip.label}
+                                  {up ? "▲" : "▼"} {delta.kind}
                                 </span>
                               );
                             })()}
