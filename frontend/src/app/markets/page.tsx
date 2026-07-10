@@ -39,6 +39,11 @@ import {
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
 import { useThemeAlerts, type ThemeAlert } from "@/hooks/useThemeAlerts";
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
+import { buildTheRead, type ReadVM } from "@/lib/theRead";
+import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
+import { buildMarketsIntel, type MarketsIntelVM } from "@/lib/marketsIntel";
 import {
   cleanThemeName,
   cleanMacroLabel,
@@ -331,17 +336,26 @@ function deriveWhy(brief: MarketBrief | null | undefined, top: ThemeIntelligence
   return memLine ? `${base} ${memLine}` : base;
 }
 
-function DominantNarrativeBase({ brief, themes }: {
+function DominantNarrativeBase({ brief, themes, intel }: {
   brief:  MarketBrief | null | undefined;
   themes: ThemeIntelligence[];
+  intel:  MarketsIntelVM;
 }) {
   const top = themes[0];
-  if (!brief && !top) return null;
+  const thesis = intel.read.thesis.data;
+  if (!brief && !top && !thesis) return null;
 
-  const confidence   = brief?.confidence ?? top?.confidence ?? 0;
+  // Phase 2.2: the headline is the SAME DerivedNarrative thesis The Read
+  // shows, and conviction is the leading member's decomposable read - the
+  // summarizer's self-assessed confidence is never rendered here again. The
+  // legacy local synthesis survives only as the no-thesis fallback.
+  const conviction   = intel.conviction.data;
+  const confidence   = conviction?.value ?? top?.confidence ?? 0;
   const cColor       = confColor(confidence);
-  const whatHappened = deriveWhatHappened(brief, themes);
-  const whyHappened  = deriveWhy(brief, top);
+  const whatHappened = thesis ? thesis.thesisLine : deriveWhatHappened(brief, themes);
+  const whyHappened  = thesis
+    ? [thesis.whyDominant, top ? memorySentences(top, 0)[0] : null].filter(Boolean).join(" ")
+    : deriveWhy(brief, top);
   const implications = top ? generateWhyItMattersNow(top).slice(0, 3) : [];
   const benef      = top ? themeBeneficiaries(top, 5) : [];
   const losers     = top ? themeLosers(top, 3) : null;
@@ -358,14 +372,17 @@ function DominantNarrativeBase({ brief, themes }: {
       {/* hero headline, the focal point */}
       <div className="px-5 pt-4 pb-4">
         <p className="text-[8.5px] font-bold uppercase tracking-[0.24em] text-ink-muted/60 mb-2">Dominant Narrative</p>
-        <p className="text-[22px] sm:text-[26px] font-black text-ink leading-[1.1] tracking-tight break-words">{whatHappened}</p>
+        <p className="text-[22px] sm:text-[26px] font-black text-ink leading-[1.1] tracking-tight break-words"
+          title={thesis ? `Derived narrative: ${thesis.label} (${thesis.mode === "narrative" ? "multi-theme, driver-set keyed" : "single-theme fallback"}). The same thesis shown by the Morning Brief and Explorer.` : undefined}>
+          {whatHappened}
+        </p>
       </div>
 
       {/* stats strip, dark-tinted band for rhythm + larger numbers */}
       <div className="grid grid-cols-4 divide-x divide-edge border-y border-edge" style={{ background: "rgba(255,255,255,0.025)" }}>
-        <div className="px-3 py-2">
-          <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Confidence</p>
-          <p className="text-[20px] font-black tabular-nums leading-none mt-1" style={{ color: cColor }}>{confidence}<span className="text-[11px] opacity-60">%</span></p>
+        <div className="px-3 py-2" title={conviction?.explanation}>
+          <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Conviction</p>
+          <p className="text-[20px] font-black tabular-nums leading-none mt-1" style={{ color: cColor }}>{confidence}</p>
         </div>
         <div className="px-3 py-2">
           <p className="text-[7px] font-bold uppercase tracking-[0.14em] text-ink-muted/60">Trend</p>
@@ -441,6 +458,114 @@ function DominantNarrativeBase({ brief, themes }: {
 }
 
 
+
+// ── What Changed (Phase 2.2) — the shared change ledger, grouped by the
+//    dominant narrative instead of tickers. Same MorningBriefDelta records the
+//    Morning Brief shows; Markets only re-groups and re-voices. ─────────────────
+
+const DELTA_COLOR: Record<string, string> = {
+  CONTRADICTED: "#f87171", BROKEN: "#f87171", WEAKENED: "#fbbf24",
+  STRENGTHENED: "#34d399", NEW: "#60a5fa", EXPANDED: "#7cc7d8",
+};
+
+function MarketRotationsBase({ changed }: { changed: MarketsIntelVM["changed"] }) {
+  const data = changed.data;
+  if (!data || data.narrative.length + data.broader.length === 0) return null;
+  const rows = [
+    ...data.narrative.map(d => ({ d, inNarrative: true })),
+    ...data.broader.map(d => ({ d, inNarrative: false })),
+  ].slice(0, 5);
+  return (
+    <div className="mb-4">
+      <SectionHeader label="What Changed" sub="cross-session deltas · shared change ledger" />
+      <div className="rounded-xl border border-edge bg-surface overflow-hidden divide-y divide-edge/60">
+        {rows.map(({ d, inNarrative }, i) => {
+          const c = DELTA_COLOR[d.kind] ?? "rgba(255,255,255,0.4)";
+          return (
+            <div key={`${d.kind}-${d.entity}-${i}`} className="px-4 py-2 flex items-start gap-3" title={`${d.matters} ${d.watch}`}>
+              <span className="shrink-0 text-[7.5px] font-bold tracking-[0.14em] px-1.5 py-0.5 rounded border mt-0.5"
+                style={{ color: c, borderColor: `${c}40` }}>
+                {d.kind}{inNarrative ? " · NARRATIVE" : ""}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[11.5px] font-semibold text-ink leading-snug break-words">{d.what}</p>
+                <p className="text-[10px] text-ink-muted leading-snug mt-0.5 break-words">{d.why}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Invalidation & Watch (Phase 2.2) — the Read's falsifiers and watch items,
+//    market voice. Falsifier absence and the no-confirmed-catalyst state render
+//    honestly; nothing here is bespoke page logic. ───────────────────────────────
+
+function InvalidationWatchBase({ read }: { read: ReadVM }) {
+  const thesis = read.thesis.data;
+  const f = read.falsifiers.data;
+  const watch = read.watch.data ?? [];
+  const catalysts = read.catalysts.data ?? [];
+  if (!thesis && !f && watch.length === 0) return null;
+  return (
+    <div className="mb-4 grid sm:grid-cols-2 gap-3">
+      <div className="rounded-xl border border-edge bg-surface px-4 py-3">
+        <p className="text-[8px] font-bold uppercase tracking-[0.16em] text-red-400/70 mb-2">What Could Invalidate This</p>
+        <div className="space-y-1.5">
+          {thesis?.contradiction && (
+            <p className="text-[11px] text-ink-secondary leading-snug break-words">
+              <span className="text-red-400/90 mr-1">⚠</span>
+              Standing contradiction ({thesis.contradiction.entity}, severity {thesis.contradiction.severity}): {thesis.contradiction.detail}
+            </p>
+          )}
+          {f?.noneNote && !thesis?.contradiction && (
+            <p className="text-[10.5px] leading-snug" style={{ color: "#fbbf24" }}>{f.noneNote}</p>
+          )}
+          {(f?.invalidations ?? []).map((x, i) => (
+            <p key={`inv-${i}`} className="text-[11px] text-ink-secondary leading-snug break-words" title={`Invalidation condition for ${x.theme} (prediction engine)`}>
+              <span className="mr-1" style={{ color: "#fbbf24" }}>⚠</span>{x.text}
+            </p>
+          ))}
+          {(f?.contradictions ?? []).map((x, i) => (
+            <p key={`con-${i}`} className="text-[11px] text-ink-secondary leading-snug break-words">
+              <span className="text-red-400/90 mr-1">⚠</span>{x.detail} <span className="text-ink-muted">sev {x.severity}</span>
+            </p>
+          ))}
+          {(f?.breakers ?? []).map((x, i) => (
+            <p key={`brk-${i}`} className="text-[10.5px] text-ink-muted leading-snug break-words">
+              ◦ {x.from} {x.relationship.replace(/_/g, " ")} {x.target}
+            </p>
+          ))}
+          {!f && <p className="text-[10.5px] text-ink-muted">Falsifier reads need the intelligence graph.</p>}
+        </div>
+      </div>
+      <div className="rounded-xl border border-edge bg-surface px-4 py-3">
+        <p className="text-[8px] font-bold uppercase tracking-[0.16em] text-accent/70 mb-2">Watch Next</p>
+        <div className="space-y-1.5">
+          {watch.map((w, i) => (
+            <p key={`w-${i}`} className="text-[11px] text-ink-secondary leading-snug break-words">
+              Watch {w.text} <span className="text-ink-muted">- {w.binding}</span>
+              <span className="ml-1.5 text-[7.5px] font-bold tracking-[0.12em] px-1 py-0.5 rounded border border-accent/30 text-accent/80 align-middle">DERIVED</span>
+            </p>
+          ))}
+          {catalysts.map((c, i) => (
+            <p key={`c-${i}`} className="text-[11px] text-ink-secondary leading-snug break-words" title={c.detail}>
+              {c.label} <span className="text-ink-muted">feeds {c.feeds}</span>
+              <span className="ml-1.5 text-[7.5px] font-bold tracking-[0.12em] px-1 py-0.5 rounded border align-middle" style={{ color: "#fbbf24", borderColor: "#fbbf2440" }}>VERIFIED · NO DATE</span>
+            </p>
+          ))}
+          {catalysts.length === 0 && (
+            <p className="text-[10.5px] text-ink-muted leading-snug">
+              No confirmed catalyst. No dated event source is ingested yet; nothing is simulated.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Section header ─────────────────────────────────────────────────────────────
 
@@ -1364,6 +1489,8 @@ function EvidenceValidationBase({ themes, clusters, savedIds, onSave }: {
 const MarketSnapshot                = memo(MarketSnapshotBase);
 const MarketPulseStrip              = memo(MarketPulseStripBase);
 const DominantNarrative             = memo(DominantNarrativeBase);
+const MarketRotations               = memo(MarketRotationsBase);
+const InvalidationWatch             = memo(InvalidationWatchBase);
 const ThemeCommandCenter            = memo(ThemeCommandCenterBase);
 const ThemeTransmission             = memo(ThemeTransmissionBase);
 const SectorPositioning             = memo(SectorPositioningBase);
@@ -1408,6 +1535,27 @@ export default function MarketsPage() {
   const visible = useMemo(
     () => themes.filter(t => t.signal_strength === "strong" || t.signal_strength === "medium"),
     [themes],
+  );
+
+  // Shared intelligence spine (Phase 2.2): Markets projects the SAME Read
+  // (DerivedNarrative thesis, transmission chain, falsifiers, watch) and the
+  // same change ledger the Morning Brief shows - one model, market voice.
+  // Built from CANONICAL themes (never the filtered `visible` selection), so
+  // Markets cannot disagree with the brief or Explorer about the narrative.
+  const argus = useArgusIntelligence();
+  const read = useMemo<ReadVM>(
+    () => buildTheRead({
+      themes: argus.themes,
+      clusters: argus.clusters.map(c => ({ id: c.id, title: c.primary.title })),
+      graphReady: argus.ready,
+    }),
+    [argus.themes, argus.clusters, argus.ready],
+  );
+  const intel = useMemo<MarketsIntelVM>(
+    () => buildMarketsIntel(read, deriveMorningBriefDeltas({
+      themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready,
+    })),
+    [read, argus.themes, argus.ready],
   );
   const relMap = useMemo(() => buildThemeRelationshipMap(visible), [visible]);
   const contradictions = useMemo(
@@ -1484,8 +1632,9 @@ export default function MarketsPage() {
         <MarketSnapshot themes={visible} sectorData={sectorData} regime={derivedRegime} brief={data?.market_brief} />
 
         {/* ══ 2. DOMINANT NARRATIVE, the plain-language read, kept directly
-            under the snapshot so the market view is graspable in one screen ══ */}
-        <DominantNarrative brief={data?.market_brief} themes={visible} />
+            under the snapshot so the market view is graspable in one screen.
+            Phase 2.2: the headline is the shared DerivedNarrative thesis. ══ */}
+        <DominantNarrative brief={data?.market_brief} themes={visible} intel={intel} />
 
         {/* Live prices + regime, single strip (the standalone price tape
             duplicated these instruments and was removed) */}
@@ -1522,6 +1671,10 @@ export default function MarketsPage() {
           )}
         </AnimatePresence>
 
+        {/* ══ WHAT CHANGED (Phase 2.2), the shared change ledger grouped by
+            the dominant narrative - rotations, not isolated price moves ══ */}
+        <MarketRotations changed={intel.changed} />
+
         {/* Market internals + movers, secondary detail, below the headline read */}
         <MarketPulseStrip themes={visible} onThemeClick={openDrawer} />
 
@@ -1543,6 +1696,10 @@ export default function MarketsPage() {
             onSave={(item) => toggleSave(item)}
           />
         </div>
+
+        {/* ══ INVALIDATION & WATCH (Phase 2.2), the Read's falsifiers and
+            watch items in market voice - honest empty states throughout ══ */}
+        <InvalidationWatch read={intel.read} />
 
         {/* Watchlist, personal tracking, below the core workflow */}
         <WatchlistPanel

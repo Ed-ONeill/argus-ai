@@ -38,6 +38,7 @@
  */
 
 import type { ThemeIntelligence } from "./types";
+import type { ProfileSection } from "./intelligenceProfile";
 import { themeKey } from "./themeSnapshots";
 import { evaluateEvidenceForNode } from "./evidenceEngine";
 
@@ -265,4 +266,22 @@ export function deriveMorningBriefDeltas(inputs: DeltaInputs = {}): DeltaResult 
     a.entity.localeCompare(b.entity));
 
   return { deltas: deltas.slice(0, 6), hadMemory };
+}
+
+/**
+ * Wrap a delta result in the standard section statuses. The ONE home for the
+ * ledger's honesty policy (first cycle = unavailable; device-only = partial);
+ * the Morning Brief and Markets both consume this - never re-implement it.
+ */
+export function deltasToSection(result: DeltaResult): ProfileSection<MorningBriefDelta[]> {
+  if (!result.hadMemory) {
+    return { status: "unavailable", data: null, note: "First cycle: no cross-session memory to compare against yet." };
+  }
+  if (result.deltas.length === 0) {
+    return { status: "partial", data: [], note: "Memory exists but recorded no material changes this cycle." };
+  }
+  const server = result.deltas.some(d => d.basis === "server");
+  return server
+    ? { status: "live", data: result.deltas }
+    : { status: "partial", data: result.deltas, note: "Only device-local history was available for this read." };
 }

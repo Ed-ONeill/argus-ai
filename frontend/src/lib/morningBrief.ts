@@ -28,7 +28,7 @@ import type { MarketBrief, ThemeIntelligence } from "./types";
 import type { ProfileSection, ProfileStatus } from "./intelligenceProfile";
 import { evaluateEvidenceForNode } from "./evidenceEngine";
 import { predictThemeTrajectory } from "./predictionEngine";
-import { deriveMorningBriefDeltas, watchLineOf, type MorningBriefDelta, type TrackedTheme } from "./intelligenceDeltas";
+import { deriveMorningBriefDeltas, deltasToSection, watchLineOf, type MorningBriefDelta, type TrackedTheme } from "./intelligenceDeltas";
 import { buildTheRead, type ReadVM, type ReadClusterInput } from "./theRead";
 
 /* ------------------------------------------------------------------ *
@@ -151,14 +151,8 @@ export function buildMorningBrief(inputs: MorningBriefInputs = {}): MorningBrief
   const deltaResult = deriveMorningBriefDeltas({
     themes, previouslyTracked: inputs.previouslyTracked, graphReady,
   });
-  const changes = !deltaResult.hadMemory
-    ? unavailable<MorningBriefDelta[]>("First cycle: no cross-session memory to compare against yet.")
-    : deltaResult.deltas.length === 0
-      ? section<MorningBriefDelta[]>("partial", [], "Memory exists but recorded no material changes this cycle.")
-      : section<MorningBriefDelta[]>(
-          deltaResult.deltas.some(d => d.basis === "server") ? "live" : "partial",
-          deltaResult.deltas,
-          deltaResult.deltas.some(d => d.basis === "server") ? undefined : "Only device-local history was available for this read.");
+  // Section statuses come from the delta layer's one policy home (P2.2).
+  const changes = deltasToSection(deltaResult);
 
   /* -- conviction: leading theme, decomposed. The summarizer's confidence
         number (MarketBrief.confidence) is deliberately never read here. -- */

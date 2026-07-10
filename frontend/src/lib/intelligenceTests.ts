@@ -47,6 +47,8 @@ import { deriveMorningBriefDeltas } from "./intelligenceDeltas";
 import { buildTheRead } from "./theRead";
 import { provisionIntelligenceGraph, canonicalGraphState } from "./intelligenceProvisioning";
 import { buildMarketStoryVM } from "./feedNarrative";
+import { buildMarketsIntel } from "./marketsIntel";
+import { deltasToSection } from "./intelligenceDeltas";
 import type { ThemeIntelligence, MarketBrief } from "./types";
 import type { SchedulerLogger } from "./dataAdapters/ingestionScheduler";
 import type { IngestionReport } from "./dataAdapters/providerIngestion";
@@ -1915,6 +1917,51 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
       { riskRegime: "neutral" },
     );
     assert(!!withBear && withBear.paragraph.includes("Oil Shock"), "the bearish counterweight rides in feed voice");
+  });
+
+  // 84. Phase 2.2 Markets: the Intelligence Terminal projects the same Read
+  // and the same change ledger the Morning Brief shows - grouped by narrative,
+  // with a decomposable conviction that can never be the summarizer's number.
+  test("markets projects the same thesis and ledger the brief shows", () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    const read = buildTheRead({ themes, graphReady: true });
+    const dr = deriveMorningBriefDeltas({ themes });
+    const mi = buildMarketsIntel(read, dr);
+    assert(mi.read === read, "Markets carries the shared Read by reference - projection, not re-derivation");
+    assert(mi.conviction.data!.value === read.thesis.data!.members[0].conviction, "conviction is the leading member's backend read");
+    assert(mi.conviction.data!.explanation.includes(read.thesis.data!.whyDominant), "conviction decomposes through the thesis's own credentials");
+    // The grouped ledger is exactly the brief's ledger, re-grouped.
+    const vm = buildMorningBrief({ themes, graphReady: true });
+    const flat = [...(mi.changed.data?.narrative ?? []), ...(mi.changed.data?.broader ?? [])];
+    const key = (d: { kind: string; entity: string }) => `${d.kind}|${d.entity}`;
+    assert(
+      JSON.stringify(flat.map(key).sort()) === JSON.stringify((vm.changes.data ?? []).map(key).sort()),
+      "the Markets ledger and the brief ledger are the same records",
+    );
+    assert(mi.changed.status === vm.changes.status, "and carry the same honesty status (one policy home)");
+  });
+
+  test("markets groups changes by narrative membership, not tickers", () => {
+    clearMarketObservationCache();
+    const themes = [...readThemes(), mkTheme({ id: "th-oil", name: "Oil Shock", confidence: 55, momentum_direction: "bearish" as const, memory: mkMem({ name: "Oil Shock", conviction_trend: "falling", conviction_change: -9, conviction_window_start: 70, conviction_current: 61, status: "weakening" }) })];
+    provisionIntelligenceGraph({ themes: readThemes() });   // Oil Shock stays outside the narrative
+    const read = buildTheRead({ themes, graphReady: true });
+    const mi = buildMarketsIntel(read, deriveMorningBriefDeltas({ themes }));
+    const g = mi.changed.data!;
+    assert(g.narrative.every(d => read.thesis.data!.members.some(m => m.name === d.entity)), "narrative-group deltas touch member themes only");
+    assert(g.broader.some(d => d.entity === "Oil Shock"), "non-member changes land in the broader group, never dropped");
+  });
+
+  test("markets degrades honestly without memory or thesis", () => {
+    intelligenceGraph.clear();
+    const cold = buildMarketsIntel(buildTheRead({}), deriveMorningBriefDeltas({}));
+    assert(cold.conviction.status === "unavailable" && cold.conviction.data === null, "no thesis means no conviction number, never a default");
+    assert(cold.changed.status === "unavailable" && cold.changed.data === null, "no memory means an honest first-cycle state");
+    // deltasToSection is the single policy home: statuses must match the brief's.
+    const dr = deriveMorningBriefDeltas({ themes: readThemes() });
+    assert(deltasToSection(dr).status === buildMorningBrief({ themes: readThemes() }).changes.status, "one status policy for the ledger everywhere");
   });
 
   for (const [name, fn] of tests) {
