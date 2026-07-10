@@ -55,6 +55,7 @@ import { buildSavedIntel, type SavedEntityInput } from "./savedIntel";
 import { buildListenIntel } from "./listenIntel";
 import { episodeIntel } from "./episodeIntel";
 import { buildIndustriesIntel, compareSectors } from "./industriesIntel";
+import { buildMAIntel, buildPrivateIntel } from "./maIntel";
 import { themeBeneficiaries } from "./themeIntelligence";
 import type { Episode } from "./types";
 import type { ThemeIntelligence, MarketBrief } from "./types";
@@ -2405,6 +2406,75 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const rich = mkTheme();
     assert(themeBeneficiaries(rich, 4).every(tk => (rich.related_assets ?? []).includes(tk) || Object.keys(rich.memory?.ticker_sessions ?? {}).includes(tk)),
       "every beneficiary ticker traces to recorded pipeline or memory data");
+  });
+
+  // 89. Phase 2.6 M&A + Private unification: deals/rounds are facts; their
+  // meaning is a projection of shared engines. Entity reads equal Explorer's;
+  // evidence classification requires recorded relationships (a sector or
+  // keyword overlap can never become SUPPORTS); ledger records ride by object
+  // identity; sparse/unresolved inputs degrade honestly.
+
+  const maFixture = () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    intelligenceGraph.addNode({ label: "MegaCo buys PowerCo", type: "Deal" as never, aliases: ["deal-1"] } as never);
+    intelligenceGraph.addRelationship({ source: "MegaCo buys PowerCo", target: "AI Infrastructure", relationshipType: "mentions" as never, strength: 50, confidence: 60 });
+    const dr = deriveMorningBriefDeltas({ themes });
+    const profiles = new Map([["nvda", buildIntelligenceProfile("NVDA")], ["semiconductors", buildIntelligenceProfile("Semiconductors")]]);
+    const risks = new Map([["nvda", buildRiskRead("NVDA")], ["semiconductors", buildRiskRead("Semiconductors")]]);
+    const dealFacts = [{ id: "deal-1", title: "MegaCo buys PowerCo", sector: "Semiconductors", entities: ["NVDA"], acquirer: "NVDA", target: "PowerCo" }];
+    return { themes, dr, profiles, risks, dealFacts };
+  };
+
+  test("m&a entity reads equal Explorer; classification is recorded-edge based", () => {
+    const { themes, dr, profiles, risks, dealFacts } = maFixture();
+    const vm = buildMAIntel({ deals: dealFacts, themes, profiles, risks, narratives: deriveNarratives(), deltas: dr.deltas, graphReady: true });
+    const d = vm.deals.data![0];
+    assert(d.acquirer?.key === "NVDA", "the acquirer resolves to the canonical graph key");
+    assert(d.acquirer!.conviction === profiles.get("nvda")!.confidence.data?.conviction, "acquirer conviction equals the Explorer profile, verbatim");
+    assert(d.target !== null && d.target.key === null, "an unknown target stays EXPLICITLY unresolved, never silently mapped");
+    assert(d.relation === "MENTIONS" && d.relationBasis === "graph", "a recorded mentions edge classifies as MENTIONS - never upgraded to support");
+    const rr = risks.get("nvda")!;
+    assert(JSON.stringify(d.risks?.contradictions ?? []) === JSON.stringify(rr.contradictions) && (d.risks?.invalidation ?? null) === rr.invalidation,
+      "deal risks are the shared riskRead records, verbatim");
+    assert(d.latestChange === null || dr.deltas.includes(d.latestChange), "deal deltas are canonical ledger records by object identity");
+    // A recorded supporting edge - and only that - upgrades the classification
+    // (a second edge to a DIFFERENT theme: the graph dedupes per node pair).
+    intelligenceGraph.addRelationship({ source: "MegaCo buys PowerCo", target: "Datacenter Power", relationshipType: "supports" as never, strength: 60, confidence: 60 });
+    const vm2 = buildMAIntel({ deals: dealFacts, themes, profiles, risks, deltas: dr.deltas, graphReady: true });
+    assert(vm2.deals.data![0].relation === "SUPPORTS" && vm2.deals.data![0].relationBasis === "graph", "SUPPORTS requires a recorded supporting relationship");
+  });
+
+  test("a deal keyword or sector overlap can never become support", () => {
+    const { themes, dr, profiles, risks } = maFixture();
+    const keywordDeal = [{ id: "deal-kw", title: "Startup raises money for AI Infrastructure ambitions", sector: "Semiconductors", entities: [], acquirer: null, target: null }];
+    const vm = buildMAIntel({ deals: keywordDeal, themes, profiles, risks, deltas: dr.deltas, graphReady: true });
+    const d = vm.deals.data![0];
+    assert(d.relation === "CONTEXT" && d.relationBasis === "metadata", "sector overlap alone is CONTEXT, never support");
+    const entityDeal = [{ id: "deal-e", title: "Someone buys NVDA stake", sector: null, entities: ["NVDA"], acquirer: null, target: null }];
+    const vm2 = buildMAIntel({ deals: entityDeal, themes, profiles, risks, deltas: dr.deltas, graphReady: true });
+    assert(vm2.deals.data![0].relation === "MENTIONS" && vm2.deals.data![0].relationBasis === "metadata",
+      "resolved-entity overlap is a MENTION (inferred, labeled)");
+    for (const v of [d, vm2.deals.data![0]]) assert(v.relation !== "SUPPORTS" && v.relation !== "CONTRADICTS", "metadata can never claim support or contradiction");
+  });
+
+  test("private flows are shared reads and degrade honestly", () => {
+    const { themes, dr } = maFixture();
+    const read = buildTheRead({ themes, deltas: dr.deltas, graphReady: true });
+    const risks = new Map(themes.map(t => [t.name.toLowerCase(), buildRiskRead(t.name, t)]));
+    const vm = buildPrivateIntel({ themes, readThesisLine: read.thesis.data?.thesisLine ?? null, risks, narratives: deriveNarratives(), deltas: dr.deltas, graphReady: true });
+    assert(vm.thesisLine.data === read.thesis.data!.thesisLine, "the Private thesis is the SAME thesis line The Read shows");
+    const f = vm.flows.data!.find(x => x.theme === "AI Infrastructure")!;
+    assert(f.conviction === Math.round(themes[0].confidence ?? 0), "flow conviction is the pipeline number");
+    assert(f.invalidation === (risks.get("ai infrastructure")!.invalidation ?? null), "flow invalidation is the shared riskRead record");
+    assert(f.latestChange === null || dr.deltas.includes(f.latestChange), "flow deltas are ledger records by identity");
+    assert(f.beneficiaries.every(tk => (themes[0].related_assets ?? []).includes(tk)), "beneficiaries are recorded pipeline assets only");
+    const empty = buildPrivateIntel({});
+    assert(empty.thesisLine.status === "unavailable" && empty.flows.status === "unavailable", "no inputs means honest empty states");
+    intelligenceGraph.clear();
+    const cold = buildPrivateIntel({ themes, deltas: [], graphReady: false });
+    assert(cold.flows.status === "partial" && cold.flows.data!.every(x => x.invalidation === null), "no graph means no risk records, never keyword templates");
   });
 
   for (const [name, fn] of tests) {

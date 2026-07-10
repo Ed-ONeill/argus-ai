@@ -14,16 +14,19 @@ import {
   type CapitalFlowLayer,
   type FlowStatus,
 } from "@/lib/capitalFlow";
-import {
-  flowPressure, capitalDestinations, capitalSources, biggestFlow,
-  flowStrength, flowTimeline, radarAxes, takeaways,
-  type FlowItem, type FlowMetric, type TimelineNode, type RadarAxis,
-} from "@/lib/capitalFlowIntel";
+import { flowPressure } from "@/lib/capitalFlowIntel";
+// Phase 2.6: capital-flow MEANING comes from the shared engines
+import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
+import { buildPrivateIntel, type PrivateFlowItem } from "@/lib/maIntel";
+import { buildTheRead } from "@/lib/theRead";
+import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
+import { deriveNarratives } from "@/lib/narrativeDerivation";
+import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { TickerChip } from "@/components/common/TickerChip";
 import { useFeed } from "@/hooks/useFeed";
 import {
   computeThemeEvolutionState,
-  getEvolutionNarrative,
   filterCapitalFlowThemes,
   THEME_EVOLUTION_META,
 } from "@/lib/themeEvolution";
@@ -237,16 +240,7 @@ function SponsorDealRow({ deal, index }: { deal: { title: string; peFirm: string
 
 // ── Shared building blocks ─────────────────────────────────────────────────────
 
-function SectionLabel({ children, accent = "#52b0c8" }: { children: React.ReactNode; accent?: string }) {
-  return (
-    <div className="flex items-center gap-2 mb-4">
-      <div className="w-1.5 h-1.5 rounded-full" style={{ background: accent }} />
-      <h2 className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>{children}</h2>
-    </div>
-  );
-}
-
-// Reveal wrapper — staggered scroll-in; nothing appears abruptly.
+// SectionLabel: unused after the D10 migration (deleted).
 function Reveal({ children, className, delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
   return (
     <motion.div className={className}
@@ -278,186 +272,57 @@ function CapitalPressureBar({ layers }: { layers: CapitalFlowLayer[] }) {
   );
 }
 
-// ── 2 + 3 · Flow item row (destination / source) ───────────────────────────────
-function FlowItemRow({ item, max, i }: { item: FlowItem; max: number; i: number }) {
-  const w = Math.round((Math.abs(item.value) / max) * 100);
-  return (
-    <motion.div className="flex items-center gap-3"
-      initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-      transition={{ delay: i * 0.05, duration: 0.3 }}>
-      <span className="text-[11px] font-medium w-32 shrink-0 truncate" style={{ color: "rgba(255,255,255,0.7)" }}>{item.label}</span>
-      <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
-        <motion.div className="h-full rounded-full" style={{ background: item.color }}
-          initial={{ width: 0 }} whileInView={{ width: `${Math.max(4, w)}%` }} viewport={{ once: true }}
-          transition={{ delay: i * 0.05 + 0.1, duration: 0.7, ease: "easeOut" }} />
-      </div>
-      <span className="text-[11px] font-bold tabular-nums w-9 text-right shrink-0" style={{ color: item.color }}>
-        {item.value > 0 ? "+" : ""}{item.value}
-      </span>
-    </motion.div>
-  );
-}
+// FlowItemRow: DELETED (Phase 2.6, D10).
 
-function FlowColumn({ title, items, accent }: { title: string; items: FlowItem[]; accent: string }) {
-  const max = Math.max(1, ...items.map(i => Math.abs(i.value)));
+// FlowColumn / BiggestFlowCard// FlowColumn / BiggestFlowCard / FlowStrengthGrid / TransmissionTimeline /
+// CapitalRadar / TakeawaysGrid: DELETED (Phase 2.6, D10). Keyword-scored
+// destinations/sources, invented invalidations, derived flow scores, and the
+// "smart money" takeaways were page-local meaning. The shared engines answer
+// those questions now (SharedFlowsPanel below).
+
+function SharedFlowsPanel({ thesisLine, flows, note }: { thesisLine: string | null; flows: PrivateFlowItem[]; note?: string }) {
   return (
-    <div>
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] mb-3" style={{ color: accent }}>{title}</p>
+    <div className="rounded-xl border p-5" style={{ background: "rgba(82,176,200,0.04)", borderColor: "rgba(82,176,200,0.16)" }}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: "rgba(124,199,216,0.9)" }}>Where Capital Is Concentrating · shared engines</span>
+        {note && <span className="text-[8.5px] italic" style={{ color: "rgba(255,255,255,0.3)" }}>{note}</span>}
+      </div>
+      {thesisLine ? (
+        <p className="text-[13px] leading-relaxed mb-3" style={{ color: "rgba(255,255,255,0.82)" }}
+          title="The SAME thesis line The Read / Markets / Feed show - one model">{thesisLine}</p>
+      ) : (
+        <p className="text-[11px] mb-3" style={{ color: "rgba(255,255,255,0.4)" }}>No shared Read thesis available yet.</p>
+      )}
       <div className="space-y-2.5">
-        {items.length ? items.map((it, i) => <FlowItemRow key={it.label} item={it} max={max} i={i} />)
-          : <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>No material rotation detected.</p>}
-      </div>
-    </div>
-  );
-}
-
-// ── 4 · Today's Biggest Flow ───────────────────────────────────────────────────
-function BiggestFlowCard({ flow }: { flow: ReturnType<typeof biggestFlow> }) {
-  if (!flow) return null;
-  const dc = flow.direction > 0 ? "#22c55e" : flow.direction < 0 ? "#ef4444" : "#fbbf24";
-  return (
-    <div className="relative rounded-xl border overflow-hidden p-5"
-      style={{ borderColor: `${dc}33`, background: `linear-gradient(135deg, ${dc}0e, rgba(255,255,255,0.015) 55%)` }}>
-      <div aria-hidden className="tg-glow absolute left-0 top-4 bottom-4 w-[2px] rounded-full" style={{ background: dc }} />
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <p className="text-[9px] font-bold uppercase tracking-[0.18em] mb-1.5" style={{ color: "rgba(255,255,255,0.42)" }}>Today&apos;s Biggest Flow</p>
-          <div className="flex items-center gap-2">
-            <span className="text-[20px] font-black leading-none" style={{ color: "rgba(255,255,255,0.95)" }}>{flow.label}</span>
-            <span className="text-[18px] font-black" style={{ color: dc }}>{flow.direction > 0 ? "↑" : flow.direction < 0 ? "↓" : "↔"}</span>
-          </div>
-        </div>
-        <div className="flex flex-col items-end shrink-0">
-          <span className="text-[26px] font-black tabular-nums leading-none" style={{ color: dc }}>{flow.confidence}</span>
-          <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.4)" }}>Confidence</span>
-        </div>
-      </div>
-      <div className="grid sm:grid-cols-2 gap-x-5 gap-y-3 mt-4">
-        <TakeawayLine label="Reason" value={flow.reason} />
-        <div>
-          <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(255,255,255,0.36)" }}>Beneficiaries</p>
-          {flow.beneficiaries.length ? (
-            <div className="flex flex-wrap gap-x-2.5 gap-y-1">
-              {flow.beneficiaries.map(b => <TickerChip key={b} ticker={b} size="md" color="#22c55e" />)}
+        {flows.map(f => (
+          <div key={f.theme} className="rounded-lg border px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11.5px] font-semibold" style={{ color: "rgba(255,255,255,0.82)" }}>{f.theme}</span>
+              <span className="text-[12px] font-black tabular-nums" style={{ color: f.conviction >= 70 ? "#34d399" : f.conviction >= 45 ? "#fbbf24" : "#94a3b8" }}>{f.conviction}</span>
+              <span className="text-[8.5px] font-bold uppercase tracking-wide" style={{ color: f.direction === "bullish" ? "#34d399" : f.direction === "bearish" ? "#f87171" : "rgba(255,255,255,0.4)" }}>{f.direction}</span>
+              {f.narrative && <span className="text-[8.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(167,139,250,0.12)", color: "#c4b5fd" }}>{f.narrative}</span>}
+              {f.beneficiaries.length > 0 && <span className="ml-auto flex items-center gap-1">{f.beneficiaries.slice(0, 3).map(t => <TickerChip key={t} ticker={t} color="#34d399" />)}</span>}
             </div>
-          ) : <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>-</p>}
-        </div>
-        <TakeawayLine label="Invalidation" value={flow.invalidation} color="#f87171" />
-      </div>
-    </div>
-  );
-}
-
-// ── 5 · Flow Strength ──────────────────────────────────────────────────────────
-function FlowStrengthGrid({ metrics }: { metrics: FlowMetric[] }) {
-  const col = (v: number) => v >= 66 ? "#22c55e" : v >= 40 ? "#fbbf24" : "#f97316";
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-      {metrics.map((m, i) => (
-        <motion.div key={m.label}
-          initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05, duration: 0.3 }}>
-          <div className="flex items-baseline justify-between mb-1">
-            <span className="text-[9.5px] font-medium" style={{ color: "rgba(255,255,255,0.55)" }}>{m.label}</span>
-            <span className="text-[12px] font-black tabular-nums" style={{ color: col(m.value) }}>{m.value}</span>
+            {f.latestChange && (
+              <p className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.55)" }} title={f.latestChange.why}>
+                <span className="text-[7px] font-bold tracking-[0.12em] px-1 py-px rounded border mr-1.5" style={{ color: "#7cc7d8", borderColor: "rgba(124,199,216,0.4)" }}>{f.latestChange.kind}</span>
+                {f.latestChange.what}
+              </p>
+            )}
+            {(f.invalidation || f.watch) && (
+              <p className="text-[9.5px] mt-1" style={{ color: "rgba(255,255,255,0.42)" }}>
+                {f.invalidation ? <>⚠ {f.invalidation} <span style={{ color: "rgba(255,255,255,0.28)" }}>(prediction engine)</span></> : <>Watch {f.watch} <span className="text-[7px] font-bold tracking-[0.1em] px-1 py-px rounded border align-middle" style={{ color: "#7cc7d8", borderColor: "rgba(124,199,216,0.35)" }}>DERIVED</span></>}
+              </p>
+            )}
           </div>
-          <div className="h-[5px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
-            <motion.div className="h-full rounded-full" style={{ background: col(m.value) }}
-              initial={{ width: 0 }} whileInView={{ width: `${m.value}%` }} viewport={{ once: true }} transition={{ delay: i * 0.05 + 0.1, duration: 0.7, ease: "easeOut" }} />
-          </div>
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-// ── 6 · Transmission Timeline ──────────────────────────────────────────────────
-function TransmissionTimeline({ nodes }: { nodes: TimelineNode[] }) {
-  const [open, setOpen] = useState<number | null>(null);
-  return (
-    <div className="flex flex-col gap-0">
-      {nodes.map((n, i) => {
-        const color = FLOW_STATUS_COLOR[n.status];
-        return (
-          <div key={`${n.label}-${i}`}>
-            <motion.button onMouseEnter={() => setOpen(i)} onMouseLeave={() => setOpen(null)}
-              initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05, duration: 0.3 }}
-              className="w-full flex items-center gap-3 text-left group">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 8px ${color}66` }} />
-              <span className="text-[11px] font-semibold w-28 shrink-0 truncate" style={{ color: "rgba(255,255,255,0.78)" }}>{n.label}</span>
-              <span className="text-[9.5px]" style={{ color }}>{n.signal}</span>
-              <span className="ml-auto text-[8.5px] tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.28)" }}>{FLOW_STATUS_LABEL[n.status]}</span>
-            </motion.button>
-            <div className="overflow-hidden transition-all duration-200" style={{ maxHeight: open === i ? 48 : 0, opacity: open === i ? 1 : 0 }}>
-              <p className="text-[10px] leading-snug pl-5 py-1.5" style={{ color: "rgba(255,255,255,0.42)" }}>{n.evidence}</p>
-            </div>
-            {i < nodes.length - 1 && <div className="ml-[3px] w-px h-3" style={{ background: "rgba(255,255,255,0.12)" }} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── 7 · Live Capital Radar ─────────────────────────────────────────────────────
-function CapitalRadar({ axes }: { axes: RadarAxis[] }) {
-  const size = 220, c = size / 2, R = 78;
-  const pt = (i: number, r: number) => {
-    const a = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
-    return [c + Math.cos(a) * r, c + Math.sin(a) * r] as const;
-  };
-  const poly = axes.map((ax, i) => pt(i, R * ax.value).join(",")).join(" ");
-  return (
-    <div className="flex items-center justify-center">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {[0.33, 0.66, 1].map(g => (
-          <polygon key={g} points={axes.map((_, i) => pt(i, R * g).join(",")).join(" ")}
-            fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
         ))}
-        {axes.map((_, i) => { const [x, y] = pt(i, R); return <line key={i} x1={c} y1={c} x2={x} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />; })}
-        <motion.polygon points={poly} fill="rgba(82,176,200,0.14)" stroke="#52b0c8" strokeWidth={1.5}
-          initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }}
-          transition={{ duration: 0.7, ease: [0.22, 0, 0.36, 1] }} style={{ transformOrigin: "center" }} />
-        {axes.map((ax, i) => {
-          const [x, y] = pt(i, R * ax.value);
-          const [lx, ly] = pt(i, R + 16);
-          return (
-            <g key={ax.label}>
-              <motion.circle cx={x} cy={y} r={2.5} fill="#7cc7d8"
-                animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 3, repeat: Infinity, delay: i * 0.35, ease: "easeInOut" }} />
-              <text x={lx} y={ly} fontSize={7.5} fontWeight={600} textAnchor={lx < c - 4 ? "end" : lx > c + 4 ? "start" : "middle"}
-                dominantBaseline="middle" fill="rgba(255,255,255,0.5)">{ax.label}</text>
-            </g>
-          );
-        })}
-      </svg>
+        {flows.length === 0 && <p className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.4)" }}>No themes with recorded exposure this cycle.</p>}
+      </div>
     </div>
   );
 }
 
-// ── 8 · Institutional takeaways ────────────────────────────────────────────────
-function TakeawayLine({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div>
-      <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(255,255,255,0.36)" }}>{label}</p>
-      <p className="text-[11px] leading-snug" style={{ color: color ?? "rgba(255,255,255,0.78)" }}>{value}</p>
-    </div>
-  );
-}
-
-function TakeawaysGrid({ items }: { items: { label: string; value: string }[] }) {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-      {items.map((t, i) => (
-        <motion.div key={t.label}
-          initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.04, duration: 0.3 }}>
-          <TakeawayLine label={t.label} value={t.value} color={t.label === "Most At Risk" || t.label === "Invalidation" ? "#f87171" : t.label === "Most Leveraged" ? "#34d399" : undefined} />
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Page ─// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PrivateMarketsPage() {
   const { riskRegime, volRegime } = useMarketState();
@@ -502,17 +367,23 @@ export default function PrivateMarketsPage() {
   const closedLayers = capitalFlow.layers.filter(l => l.status === "contracting"  || l.status === "blocked").length;
 
   // ── Institutional intelligence — all derived from the live flow + themes ────
-  const allThemes = useMemo(() => feedData?.theme_intelligence ?? [], [feedData]);
-  const rateHigh  = tnxRate !== null && tnxRate > 4.5;
-  const riskOff   = riskRegime === "risk-off";
   const layers    = capitalFlow.layers;
-  const destinations = useMemo(() => capitalDestinations(allThemes, layers), [allThemes, layers]);
-  const sources      = useMemo(() => capitalSources(allThemes, layers, rateHigh, riskOff), [allThemes, layers, rateHigh, riskOff]);
-  const biggest      = useMemo(() => biggestFlow(allThemes), [allThemes]);
-  const strength     = useMemo(() => flowStrength(layers, allThemes), [layers, allThemes]);
-  const timeline     = useMemo(() => flowTimeline(layers, destinations), [layers, destinations]);
-  const radar        = useMemo(() => radarAxes(allThemes, layers, riskOff), [allThemes, layers, riskOff]);
-  const takeawayItems = useMemo(() => takeaways(layers, allThemes, rateHigh, riskOff), [layers, allThemes, rateHigh, riskOff]);
+  // Phase 2.6 (D10): capital-flow MEANING is a shared-engine projection - the
+  // keyword destination/source scores, invented invalidations, flow-strength
+  // composites, radar, and "smart money" takeaways are deleted.
+  const argus = useArgusIntelligence();
+  const privateIntel = useMemo(() => {
+    const dr = deriveMorningBriefDeltas({ themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready });
+    const read = buildTheRead({ themes: argus.themes, deltas: dr.deltas, graphReady: argus.ready });
+    const risks = new Map<string, RiskRead>();
+    for (const t of argus.themes.slice(0, 12)) risks.set(t.name.toLowerCase(), buildRiskRead(t.name, t));
+    return buildPrivateIntel({
+      themes: argus.themes,
+      readThesisLine: read.thesis.data?.thesisLine ?? null,
+      risks, narratives: argus.ready ? deriveNarratives() : [],
+      deltas: dr.deltas, graphReady: argus.ready,
+    });
+  }, [argus.themes, argus.ready]);
 
   return (
     <div className="min-h-screen pb-24" style={{ background: "#030710" }}>
@@ -569,8 +440,14 @@ export default function PrivateMarketsPage() {
           {/* ── Capital Flow — main column ───────────────────────────── */}
           <div className="lg:col-span-3 space-y-10">
 
-            {/* 4 · Today's Biggest Flow — the focal point */}
-            {biggest && <Reveal><BiggestFlowCard flow={biggest} /></Reveal>}
+            {/* Shared capital read — the same thesis/risks every surface shows */}
+            <Reveal>
+              <SharedFlowsPanel
+                thesisLine={privateIntel.thesisLine.data}
+                flows={privateIntel.flows.data ?? []}
+                note={privateIntel.flows.note}
+              />
+            </Reveal>
 
             {/* Transmission chain */}
             <div>
@@ -589,40 +466,10 @@ export default function PrivateMarketsPage() {
               </p>
             </div>
 
-            {/* 2 + 3 · Where capital is going / leaving */}
-            <Reveal>
-              <SectionLabel>Capital Rotation</SectionLabel>
-              <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
-                <FlowColumn title="Where Capital Is Going" items={destinations} accent="#34d399" />
-                <FlowColumn title="Where Capital Is Leaving" items={sources} accent="#f87171" />
-              </div>
-            </Reveal>
-
-            {/* 5 · Flow strength */}
-            <Reveal>
-              <SectionLabel>Flow Strength</SectionLabel>
-              <FlowStrengthGrid metrics={strength} />
-            </Reveal>
-
-            {/* 6 + 7 · Transmission timeline + rotation radar */}
-            <Reveal>
-              <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
-                <div>
-                  <SectionLabel>Transmission Timeline</SectionLabel>
-                  <TransmissionTimeline nodes={timeline} />
-                </div>
-                <div>
-                  <SectionLabel>Live Capital Radar</SectionLabel>
-                  <CapitalRadar axes={radar} />
-                </div>
-              </div>
-            </Reveal>
-
-            {/* 8 · Institutional takeaways */}
-            <Reveal>
-              <SectionLabel>Institutional Takeaways</SectionLabel>
-              <TakeawaysGrid items={takeawayItems} />
-            </Reveal>
+            {/* Phase 2.6: the Capital Rotation / Flow Strength / Timeline /
+                Radar / Takeaways sections are deleted (D10) - they rendered
+                keyword-scored and templated meaning. The factual transmission
+                chain above and the shared reads replace them. */}
           </div>
 
           {/* ── Right column — permanent intelligence panel (sticky) ─── */}
@@ -724,10 +571,12 @@ export default function PrivateMarketsPage() {
                             {t.name}
                           </span>
                         </div>
-                        <p className="text-[10px] italic leading-snug"
-                          style={{ color: "rgba(255,255,255,0.36)" }}>
-                          {getEvolutionNarrative(t.name, evState)}
-                        </p>
+                        {(t.second_order_effects?.[0] || t.description) && (
+                          <p className="text-[10px] italic leading-snug"
+                            style={{ color: "rgba(255,255,255,0.36)" }}>
+                            {t.second_order_effects?.[0] || t.description}
+                          </p>
+                        )}
                       </div>
                     );
                   })}

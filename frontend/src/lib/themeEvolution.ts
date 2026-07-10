@@ -122,19 +122,8 @@ export function computeThemeEvolutionState(t: ThemeIntelligence): ThemeEvolution
   return "stabilizing";
 }
 
-// ── Narrative text ────────────────────────────────────────────────────────────
-
-export function getEvolutionNarrative(name: string, state: ThemeEvolutionState): string {
-  switch (state) {
-    case "accelerating":  return `${name} gaining momentum, signal score and source count rising sharply.`;
-    case "strengthening": return `${name} building conviction with growing evidence and cross-source confirmation.`;
-    case "broadening":    return `${name} spreading to new sectors, cross-category confirmation growing.`;
-    case "stabilizing":   return `${name} holding at current significance, established but not advancing.`;
-    case "peaking":       return `${name} showing saturation signals, watch for incoming reversal indicators.`;
-    case "weakening":     return `${name} losing signal strength, fewer sources and declining confidence.`;
-    case "reversing":     return `${name} reversing, prior consensus breaking down rapidly.`;
-  }
-}
+// getEvolutionNarrative: DELETED (Phase 2.6) - editorial temporal narration
+// from a single snapshot; ThemeMemory owns evolution narration.
 
 // ── Theme filtering helpers ───────────────────────────────────────────────────
 
