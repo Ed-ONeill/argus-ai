@@ -25,12 +25,108 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import feed, saved, analyze, listen, briefings
 from app.background import refresher
 
+# Configure logging at the entrypoint so startup logs (persistence probe, router
+# registration) are visible on Railway. Without this, nothing configures the root
+# logger until app.inference is first imported, and INFO records emitted before
+# that are silently dropped. basicConfig is a no-op if a handler already exists.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
 log = logging.getLogger(__name__)
+
+
+def _theme_memory_persistence_probe() -> None:
+    """Log whether the theme-memory store sits on persistent storage.
+
+    Persistence cannot be proven from repo code: Railway volumes are attached in
+    the dashboard, not in railway.toml, and THEME_MEMORY_DIR is a service
+    variable. So we log the resolved path, existence, writability, and a marker
+    file stamped with the deployment id. If a later deployment finds a marker
+    written by a DIFFERENT deployment id, the directory survived a redeploy and
+    is therefore persistent; a marker that is always fresh means ephemeral
+    container filesystem.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    try:
+        from app.theme_memory import _STORE_DIR as store_dir
+    except Exception as exc:  # pragma: no cover - import failure is itself the finding
+        log.error("[persistence-probe] cannot import theme_memory store dir: %r", exc)
+        return
+
+    env_dir = os.getenv("THEME_MEMORY_DIR")
+    volume_path = os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+    volume_name = os.getenv("RAILWAY_VOLUME_NAME")
+    deploy_id = os.getenv("RAILWAY_DEPLOYMENT_ID") or "local"
+
+    log.info("[persistence-probe] THEME_MEMORY_DIR env = %r", env_dir)
+    log.info("[persistence-probe] resolved store dir   = %s", store_dir)
+    log.info(
+        "[persistence-probe] Railway volume        = %s",
+        f"{volume_name or '?'} mounted at {volume_path}" if volume_path else "NONE DETECTED",
+    )
+    if volume_path and env_dir and not str(Path(env_dir)).startswith(str(Path(volume_path))):
+        log.warning(
+            "[persistence-probe] THEME_MEMORY_DIR is OUTSIDE the mounted volume - store is ephemeral"
+        )
+
+    exists = store_dir.is_dir()
+    log.info("[persistence-probe] directory exists      = %s", exists)
+
+    writable = False
+    try:
+        store_dir.mkdir(parents=True, exist_ok=True)
+        probe = store_dir / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        writable = True
+    except Exception as exc:
+        log.error("[persistence-probe] directory NOT writable: %r", exc)
+    log.info("[persistence-probe] directory writable    = %s", writable)
+
+    marker = store_dir / ".persistence_marker.json"
+    if marker.is_file():
+        try:
+            prev = json.loads(marker.read_text(encoding="utf-8"))
+        except Exception:
+            prev = {}
+        prev_deploy = prev.get("deployment_id", "?")
+        if prev_deploy not in (deploy_id, "?"):
+            log.info(
+                "[persistence-probe] marker SURVIVED redeploy: written %s by deployment %s "
+                "(current %s) -> storage IS PERSISTENT",
+                prev.get("written_at", "?"), prev_deploy, deploy_id,
+            )
+        else:
+            log.info(
+                "[persistence-probe] marker present, written %s by this same deployment (%s) - "
+                "redeploy once more and check this line to confirm survival",
+                prev.get("written_at", "?"), deploy_id,
+            )
+    elif writable:
+        marker.write_text(
+            json.dumps({
+                "written_at": datetime.now(timezone.utc).isoformat(),
+                "deployment_id": deploy_id,
+                "store_dir": str(store_dir),
+            }),
+            encoding="utf-8",
+        )
+        log.info(
+            "[persistence-probe] marker CREATED by deployment %s. If the next deployment logs "
+            "'marker present/SURVIVED', storage is persistent; if it logs 'marker CREATED' "
+            "again, the directory is EPHEMERAL container filesystem",
+            deploy_id,
+        )
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
+    _theme_memory_persistence_probe()
     # Start the background feed-refresh daemon.  It immediately warms the
     # processed-feed cache so the first page load is served from cache, not
     # from a blocking pipeline call.
