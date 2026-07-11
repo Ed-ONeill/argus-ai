@@ -188,3 +188,5 @@ Rough sizing: P2.0 and P2.5 are the heavy sprints; P2.1 is deliberately first-an
 ## 8. Maintenance
 
 This document is the Phase 2 execution contract. Each P2.x sprint updates its row (done + date + deviations) in the same PR, and strikes its debt items from section 4. The surfaces doc governs per-surface ownership; engine docs govern semantics; when a migration reveals a missing engine capability, the capability is added to the engine with tests first, never inlined in the surface.
+
+**Phase 3 pointer:** the memory layer that gives this platform a durable past (audit of all current memory stores, canonical record model, migration plan M3.1-M3.5) is specified in `ARGUS_INSTITUTIONAL_MEMORY_V2.md`. D13-remainder (theme-follow store merge) and the in-memory saved route are scheduled there under M3.5.

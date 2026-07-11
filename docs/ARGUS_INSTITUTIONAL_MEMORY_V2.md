@@ -1,0 +1,653 @@
+# ARGUS INSTITUTIONAL MEMORY V2
+
+**Status: DESIGN DOCUMENT (Phase 3.0). Nothing in sections 3-13 is built unless explicitly marked LIVE.**
+
+This document is the canonical design for the Argus institutional-memory layer. It follows
+the Phase 2 closure of Intelligence Everywhere (ARGUS_INTELLIGENCE_EVERYWHERE_V1.md): every
+production surface projects one canonical intelligence platform. Phase 3 gives that platform
+a durable past.
+
+The problem Phase 3 solves is not absence of memory. Argus already remembers things in at
+least a dozen places. The problem is that memory is fragmented across stores with different
+lifetimes, different keys, and different owners - and the most valuable parts of it live in
+individual browsers, where they are neither institutional nor durable.
+
+Status vocabulary used throughout:
+
+- **LIVE** - exists in production code today and behaves as described
+- **PARTIAL** - exists but is incomplete, lossy, or not wired end to end
+- **BROWSER-LOCAL** - exists but only in one browser's localStorage (not institutional)
+- **BROWSER-SESSION** - exists only for the lifetime of one page session
+- **BACKEND-PERSISTED** - written server-side, survives browser and device changes
+- **PROPOSED** - designed here, not built
+- **DEPRECATED** - should be retired by the migration plan
+
+---
+
+## 1. Current-state audit
+
+Every memory-bearing mechanism found in production code, with the ten audit attributes.
+"Replayable" means: could the record deterministically reproduce what Argus showed at that time?
+
+### 1.1 ThemeMemory (backend) - LIVE, BACKEND-PERSISTED (volume-dependent)
+
+| Attribute | Finding |
+|---|---|
+| Stores | Per-theme rolling summary (`first_seen`, `last_seen`, `conviction_first/prev/current/peak/trough`, strengthening/weakening/stable streaks, `status`, `lifecycle_current`, `confirming_total`/`contradicting_total`, `sector_counts`, `ticker_counts`, `cycles_absent`) + observation ring buffer (120 entries at ~5-min cycles, ~10h: conviction, momentum label/direction/delta, signal strength, lifecycle, breadth, persistence_cycles, evidence_count, confirming/contradicting) + evidence ring buffer (60 entries: story_ids, sources, sectors, tickers, root_causes, transmission_path, catalysts, risks) |
+| Where | `app/theme_memory.py` -> JSON file `data/theme_memory/theme_memory.json`, or `THEME_MEMORY_DIR` (Railway volume) |
+| Lifetime | Indefinite summary; ~10h observation window; ~60-cycle evidence window |
+| Key | Pipeline theme id = theme ontology config key (`app/data/theme_ontology.py`) - curated, stable |
+| Survives browser change | Yes (server-side) |
+| Survives deployment | Only if `THEME_MEMORY_DIR` points at a persistent volume; otherwise reset on redeploy |
+| Scope | Market-global |
+| Nature | Factual (observed pipeline outputs) + derived (streaks, lifecycle, confirming/contradicting) |
+| Replayable | Partially: summary is cumulative and lossy; ring buffers age out; no daily granularity beyond ~10h |
+| Verdict | **MIGRATE** - this is the closest thing Argus has to institutional memory; promote its content into canonical Entity Snapshots + Transition Events, keep the module as the intraday accrual engine |
+
+Exposed via FastAPI: `GET /api/memory/{ping,themes,changes,strengthening,weakening,stale,theme/{id},theme/{id}/summary,theme/{id}/evidence}` (`api/routes/memory.py`), and attached to every feed theme as `theme.memory` (`api/routes/feed.py::_theme_mem_summary`). The summarizer also injects `brief_memory_context()` into Today's Take prompts.
+
+### 1.2 ThemeTracker in-process history (backend) - LIVE, NOT PERSISTED
+
+`app/theme_graph.py` keeps `_history` (last 12 conviction/strength snapshots per theme) and
+`_breadth_history` in process memory to compute `momentum_delta`, momentum labels, and
+persistence. Lost on every restart, which means momentum labels are amnesiac immediately
+after a deploy. Market-global, derived, not replayable. **Verdict: KEEP as compute buffer,
+but the canonical layer must not depend on it; its inputs get durably captured by observation
+records instead.**
+
+### 1.3 ProcessedFeedCache (backend) - LIVE, BACKEND-PERSISTED
+
+`data/feed_cache` persists processed feed cycles so restarts do not reprocess. Operational
+cache, not memory: no history semantics, overwritten forward. **Verdict: KEEP as-is (out of
+memory scope); it is however the natural hook point for the raw-payload archive in 5.4.**
+
+### 1.4 Saved-items API route (backend) - PARTIAL, NOT PERSISTED
+
+`api/routes/saved.py` stores saved items in a module-level dict ("swap for a DB-backed store
+when multi-user support is needed"). Lost on restart. The production frontend does not rely
+on it (it uses Supabase + localStorage, 1.10). **Verdict: DEPRECATED - delete or rewrite onto
+Supabase in M3.5; keeping two save paths invites divergence.**
+
+### 1.5 themeSnapshots (frontend) - LIVE, BROWSER-LOCAL
+
+| Attribute | Finding |
+|---|---|
+| Stores | One `ThemeSnapshot` per theme per day: conviction, momentum, persistence, breadth, acceleration, related companies/sectors, source/story counts, M&A deal count, Listen mention count, a composite `privateSignalScore`, top drivers/risks, one-line summary |
+| Where | `frontend/src/lib/themeSnapshots.ts` -> localStorage `argus.themeSnapshots.v1`, cap 120/theme |
+| Lifetime | Until localStorage is cleared |
+| Key | `themeKey()` = display-name prefix slugified - **NOT the ontology id** |
+| Survives browser/device change | No |
+| Survives deployment | Yes (client-side), but not shared across users |
+| Scope | Written from market-global data, but each device has a private divergent copy |
+| Nature | Factual capture + one derived composite score |
+| Replayable | Per-device only |
+| Verdict | **MIGRATE** - schema is a good draft of the Entity Snapshot for themes; the canonical writer moves server-side; localStorage copy is then a read cache at most |
+
+Written by `useArgusIntelligence` on every data arrival (idempotent per day). Read by
+`getThemeHistory`/`getThemeDelta`/`getThemeMemory` and by `intelligenceDeltas` (absence
+detection via `getTrackedThemes`).
+
+### 1.6 memoryEngine (frontend) - LIVE, BROWSER-LOCAL
+
+| Attribute | Finding |
+|---|---|
+| Stores | Per graph node per day: `EntitySnapshot` (confidence, conviction, momentum, persistence, evidence/relationship/source/mention counts, importance, full edge signatures with strength/confidence/evidenceCount), `InferenceRecord`, `PredictionRecord` (direction, probability, confidence) |
+| Where | `frontend/src/lib/memoryEngine.ts` -> localStorage `argus.memoryEngine.v1` |
+| Lifetime | Until localStorage cleared; upsert-by-date (one per day) |
+| Key | Graph node id (`normalizeKey(label)`) - **a third key scheme** |
+| Survives browser/device change | No |
+| Survives deployment | Client-side yes; institutionally no |
+| Scope | Market-global content, per-device copy |
+| Nature | Factual capture of derived engine outputs; predictions are inferred |
+| Replayable | Per-device: edge signatures make relationship replay possible in principle |
+| Verdict | **MIGRATE** - this is the correct *shape* (entity + relationship + prediction history, insufficient_history honesty, analogs/patterns readers). The writer must move server-side; the reader API can survive nearly unchanged |
+
+Written by `recordDailyMemorySnapshot()` (once-per-day guard in `intelligenceShared.ts`) from
+the Explorer page and the IntelligenceDrawer - i.e. **history only accrues on days someone
+opens those surfaces in that browser**. Read by `profile.evolution`, `buildTimeline`,
+`buildConvictionHistory`, `detectHistoricalPatterns`, `findHistoricalAnalogs`,
+`summarizeEvolution`.
+
+### 1.7 intelligenceDeltas (frontend) - LIVE, DERIVED-AT-READ
+
+Not a store. Derives the change ledger (What Changed) from server `theme.memory` + device
+themeSnapshots (absence detection). Canonical owner of the *deltas* concept per
+`intelligenceOwnership.ts`. **Verdict: KEEP as projection; once Transition Events exist it
+reads them instead of recomputing change from two mismatched stores.**
+
+### 1.8 profile.evolution / buildTimeline - LIVE, DERIVED-AT-READ
+
+Reads ThemeMemory summaries (server) + memoryEngine (device). **KEEP as projection.**
+
+### 1.9 Session/market state accumulators (frontend) - LIVE, BROWSER-SESSION
+
+`useMarketMemory` (session stress accumulation, volatility episode counts, "First
+Episode/Recurring/Conditioned" labels, in `useRef`) and the summarizer-style in-memory caches.
+Gone on refresh. `argus_regime_track_v1` (homepage regime tracker) is BROWSER-LOCAL kin.
+**Verdict: KEEP as UI behavior, but these must never be presented as institutional history;
+the regime-observation need is met canonically by Market Context records (8.1).**
+
+### 1.10 User state - LIVE, MIXED
+
+Backend-persisted (Supabase Postgres, per-user): `profiles`, `saved_items`, `watchlist`,
+`user_preferences`. Browser-local only: `argus:theme-watchlist` (theme follows),
+`argus:followed-themes` (id+name+timestamp follows; D13-remainder from Phase 2),
+`argus_saved_ids`/`argus_saved_items` (guest-mode saves), `argus_watchlist` (guest mode),
+`argus_onboarding_v1`, `argus_terminal_settings`. User-specific, factual. **Verdict: KEEP -
+this is personal memory, explicitly out of institutional scope (section 11); the two theme
+follow stores merge in M3.5 per the deferred D13 plan.**
+
+### 1.11 Intelligence graph + profile cache - LIVE, IN-MEMORY PER SESSION
+
+The graph singleton is rebuilt from the current payload each session; `profileCache` is keyed
+by graph version. **There are no durable graph snapshots today** - the only recorded edge
+history anywhere is memoryEngine's per-device edge signatures. Not replayable across time.
+**Verdict: KEEP as the live working set; durable Relationship Snapshots (3.B) are the fix.**
+
+### 1.12 Narrative derivation - LIVE, DERIVED-AT-READ, NO HISTORY
+
+`narrativeDerivation.deriveNarratives` already computes a **deterministic driver-set key**
+(sorted canonical driver node ids joined) - the right stable ID - but nothing persists
+narratives, so "how long has this narrative persisted" is unanswerable beyond ThemeMemory's
+per-member first_seen. **Verdict: narrative history is net-new persistence (3.C).**
+
+### 1.13 Prediction engine - LIVE (derived), history PARTIAL, outcomes MISSING
+
+`predictionEngine` recomputes trajectories at read time. History exists only as memoryEngine
+`PredictionRecord`s in localStorage. **There are no Outcome records anywhere in the platform,
+no market-movement joins, and therefore no calibration.** Assumptions and invalidation
+conditions are computed but not persisted alongside the prediction. **Verdict: prediction/
+outcome ledger is net-new persistence (3.E/3.F); the engine stays the sole author of
+prediction content.**
+
+### 1.14 Assistant personal memory (backend) - LIVE, OUT OF SCOPE
+
+`app/memory.py` (chat sessions), `app/memory_store.py` (SQLite `data/memory.db`, personal
+profile/preference facts), `data/conversations`. This is the LLM-assistant product's memory,
+not market memory. **Verdict: KEEP, firewalled. Institutional memory must never read from or
+write to these stores, and nothing market-global may key off them.**
+
+### 1.15 Grep sweep confirmation
+
+The audit swept `memory|snapshot|history|evolution|delta|previous|first_seen|streak|
+persistence|analog|prediction|outcome|calibration` across `app/`, `api/`, `frontend/src`.
+Systems 1.1-1.14 account for every hit; remaining matches are pure compute
+(`themeEvolution` current-state badge, `predictionEngine` internals, `theme_graph`
+persistence scoring) or Phase 2 tombstone comments. `outcome` and `calibration` have **zero
+production implementations** - confirming the largest gap.
+
+### 1.16 Summary of weaknesses
+
+1. **Institutional history lives in browsers.** The two richest histories (1.5, 1.6) are
+   per-device, divergent, wiped by a cache clear, and accrue only when particular pages are
+   opened. Browser storage is currently the *de facto* canonical record - the exact inversion
+   of what an institutional platform needs.
+2. **Three key schemes for one theme.** Ontology id (backend), name-slug (themeSnapshots),
+   `normalizeKey(label)` (graph/memoryEngine). A rename fragments history silently.
+3. **Backend memory is lossy by design.** Ring buffers cap at ~10h of observations; the
+   summary is cumulative aggregates, so trajectory shape older than the buffer is gone.
+   Deploy without a volume = total amnesia.
+4. **No outcomes, no calibration.** Argus records what it expected (per-device) and never
+   what happened. Every calibration question is unanswerable today.
+5. **No narrative or relationship history** beyond per-device edge signatures.
+6. **No replay.** The graph is rebuilt from the current payload only; yesterday's profile
+   cannot be reconstructed anywhere, by anyone.
+7. **Duplicate/abandoned stores.** In-memory saved route (1.4); two theme-follow stores (1.10).
+
+---
+
+## 2. Canonical record model (PROPOSED)
+
+Six durable record types plus one context record. All are **append-only** (corrections append
+a superseding record; nothing is edited in place). All carry `schema_version`, `written_at`,
+`writer` (module@version), and `provenance` (which pipeline cycle / graph version produced
+them). Field names are indicative; exact SQL DDL belongs to M3.1.
+
+### A. EntitySnapshot - an entity at a point in time
+
+```
+entity_snapshot {
+  snapshot_id        // = {subject_uid}:{as_of}:{cadence}  (natural key, idempotent)
+  subject_uid        // canonical entity UID (section 3)
+  entity_type        // theme | company | sector | macro | narrative-member ...
+  as_of              // date (daily cadence) or timestamp (event cadence)
+  cadence            // "daily" | "event"
+  conviction         // pipeline confidence, 0-100 (themes) / node conviction
+  evidence_verdict   // verdict + counts from evidenceEngine (LIVE source)
+  forward_view       // direction, probability, confidence (predictionEngine; nullable)
+  drivers[]          // canonical UIDs
+  beneficiaries[]    // canonical UIDs + role
+  risks[]            // contradiction/invalidation/weakening records (verbatim shape)
+  contradiction_count, confirming_count
+  narrative_uids[]   // memberships at snapshot time
+  transmission_path  // strongest recorded path (edge id list)
+  momentum, persistence, breadth, mention_count, source_count, story_count
+  completeness       // live | partial | unavailable - honesty is stored, not assumed
+  graph_version      // provisioning version that produced this view
+  provenance         // pipeline cycle id, ingest sources
+}
+```
+
+Live sources today: everything above is computable at write time from the pipeline payload +
+graph + engines (that is what `buildIntelligenceProfile` already assembles). The snapshot
+persists the *projection inputs*, not prose.
+
+### B. RelationshipSnapshot - one edge over time
+
+```
+relationship_snapshot {
+  rel_uid            // = {source_uid}|{type}|{target_uid}  (direction-normalized)
+  as_of, cadence
+  strength, confidence, evidence_count
+  status             // active | weakening | aged_out
+  first_seen, last_seen   // maintained by the writer, never by readers
+  provenance
+}
+```
+
+Live source: graph edges (memoryEngine already captures exactly this shape per-device).
+
+### C. NarrativeSnapshot - a DerivedNarrative over time
+
+```
+narrative_snapshot {
+  narrative_uid      // stable driver-set key from narrativeDerivation (LIVE) - NOT the label
+  as_of
+  label              // display label AT THAT TIME (labels may drift; uid may not)
+  member_uids[]      // themes + roles
+  coherence, evidence_count, contradiction_count
+  thesis             // pipeline/derivation thesis sentence(s), verbatim
+  lifecycle          // emerging | dominant | secondary | fading (derivation's own state)
+  rank               // dominant=1, ... at snapshot time
+  provenance
+}
+```
+
+`first_seen`/`persistence` are **queries over snapshots**, not stored fields (avoid
+cumulative-field drift). Membership change is a Transition Event.
+
+### D. TransitionEvent - a meaningful change between states
+
+```
+transition_event {
+  event_id           // ULID
+  subject_uid        // entity, relationship (rel_uid), or narrative uid
+  kind               // conviction_crossed | conviction_strengthened | conviction_weakened |
+                     // contradiction_added | contradiction_resolved |
+                     // relationship_added | relationship_expanded | relationship_aged_out |
+                     // narrative_member_added | narrative_member_removed |
+                     // narrative_emerged | narrative_faded |
+                     // prediction_created | prediction_changed | prediction_invalidated |
+                     // evidence_aged_out | theme_absent | theme_returned
+  observed_at
+  from_value, to_value    // typed by kind (JSON)
+  threshold          // the rule that fired (e.g. "conviction crossed 70")
+  snapshot_before, snapshot_after   // snapshot_ids, for replay anchoring
+  provenance
+}
+```
+
+Transition Events are what `intelligenceDeltas` becomes a *reader* of. The status policy
+(`deltasToSection`) stays frontend; the facts move backend.
+
+### E. PredictionRecord - what Argus expected
+
+```
+prediction {
+  prediction_id      // ULID
+  subject_uid
+  kind               // theme_trajectory | company_trajectory | sector_rotation
+  predicted_direction, probability, confidence
+  horizon            // explicit, e.g. "10 sessions" - REQUIRED (unresolvable without it)
+  assumptions[]      // verbatim from predictionEngine
+  invalidation[]     // conditions, verbatim
+  created_at, graph_version, provenance
+  status             // active | superseded | resolved | invalidated | expired
+  superseded_by      // prediction_id (when the engine's view changed materially)
+  content_hash       // dedup: same subject+direction+bucketed probability = no new record
+}
+```
+
+### F. OutcomeRecord - what actually happened
+
+```
+outcome {
+  outcome_id         // ULID
+  prediction_id      // the prediction being resolved (1:N allowed: interim + final)
+  subject_uid
+  observed_at, horizon_elapsed
+  observed_direction // from market data / subsequent snapshots
+  market_move        // price/return measure when a quoted proxy exists (nullable + labeled)
+  narrative_outcome  // persisted | faded | reversed (from narrative snapshots)
+  verdict            // correct | incorrect | partial | unresolvable
+  method             // exactly how the verdict was computed (auditable)
+  source             // market-data provider / snapshot query
+}
+```
+
+**Predictions and outcomes are separate record types with separate writers.** A prediction is
+written when the engine speaks; an outcome is written by a resolution job when the horizon
+elapses. Calibration is a **query** over the join, never a stored opinion.
+
+### G. MarketContextRecord (supporting, PROPOSED)
+
+Daily market regime context (rates direction, vol level, breadth, risk appetite) captured
+from data already flowing through `useMarketState`'s backend sources. Needed by analogs
+(section 9) and outcome attribution; cheap (one row/day).
+
+---
+
+## 3. Stable identity (PROPOSED)
+
+### 3.1 Canonical UID scheme
+
+`{type}:{namespace}:{key}`, lowercase, immutable once minted:
+
+| Subject | UID form | Source of key |
+|---|---|---|
+| Theme | `theme:ontology:<ontology-id>` | `app/data/theme_ontology.py` config key (LIVE, curated) |
+| Company | `company:ticker:<TICKER>@<listing>` | primary listing ticker at mint time |
+| Sector | `sector:argus:<slug>` | curated sector taxonomy (SECTOR_ENTITIES keys) |
+| Macro series | `macro:series:<slug>` | MacroSeries/EconomicRelease node key |
+| Narrative | `narrative:driverset:<sorted-driver-uids-hash>` | narrativeDerivation key (LIVE) |
+| Deal | `deal:ma:<acquirer-uid>+<target-uid>+<announce-date>` | M&A facts |
+| Relationship | `rel:<source_uid>|<type>|<target_uid>` | graph edge, direction-normalized |
+| Snapshot | `{subject_uid}:{as_of}:{cadence}` | natural key |
+| Prediction / Outcome / Transition | ULID | writer-generated |
+
+**Display labels are never keys.** Every record stores the label it displayed at write time
+for auditability, but joins happen on UIDs only.
+
+### 3.2 Alias and lifecycle ledger
+
+One small table resolves the messy cases:
+
+```
+identity_alias { alias, alias_kind (label|ticker|slug|legacy-key), subject_uid,
+                 valid_from, valid_to, reason (rename|ticker_change|merger|dedup) }
+identity_lifecycle { subject_uid, status (active|superseded|absorbed|retired),
+                     superseded_by, effective_at }
+```
+
+- **Theme renames**: ontology id persists; the old display name becomes an alias row.
+  History is continuous by construction.
+- **Ticker changes** (e.g. FB->META): UID keeps the mint-time ticker; new ticker becomes an
+  alias; resolvers accept both. No history rewrite.
+- **Mergers**: target UID gets `absorbed`, `superseded_by = acquirer_uid`; history remains
+  queryable under the retired UID; forward accrual stops.
+- **Duplicate company names**: resolution is by ticker, not name; two entities with one name
+  are two UIDs; the graph resolver (`lib/entity.ts` registry) is the single mapper.
+- **Narrative membership drift**: the driver-set key means a *materially different* driver
+  set is a *different narrative UID*, with a `narrative_emerged` transition linking
+  predecessor via `identity_lifecycle` when overlap is high. Label drift alone changes
+  nothing.
+- **Deleted/superseded entities**: never hard-deleted; `identity_lifecycle.status` gates
+  forward writes, history stays.
+
+### 3.3 Migration of existing keys
+
+- ThemeMemory keys are already ontology ids -> prefix to `theme:ontology:*`, lossless.
+- themeSnapshots name-slugs -> resolve through the alias table at import; unresolvable slugs
+  import under `theme:legacy:<slug>` rather than being dropped or guessed.
+- memoryEngine `normalizeKey(label)` node ids -> resolve via the entity registry; same
+  legacy-namespace fallback.
+
+---
+
+## 4. Storage ownership (PROPOSED)
+
+**Rule: market-global institutional memory is backend-persisted in Postgres. Browser storage
+is never the canonical historical record - at most a convenience cache of backend reads.**
+
+| Record type | Owner | Rationale |
+|---|---|---|
+| EntitySnapshot, RelationshipSnapshot, NarrativeSnapshot, TransitionEvent, Prediction, Outcome, MarketContext, identity tables | **Supabase Postgres, written ONLY by the FastAPI backend via service role** | One durable SQL store already in the stack (auth + user tables live there); Railway volumes are single-instance JSON files with no query surface. Backend-only writes keep the pipeline the sole author of market truth; the browser gets read-only APIs |
+| ThemeMemory JSON | FastAPI + volume (unchanged) | Stays the intraday accrual engine; its end-of-day state feeds the snapshot writer. Not the system of record once M3.2 lands |
+| Raw pipeline payload archive (optional, for deep replay) | Object storage (one JSON per cycle or per day) | Cheap insurance; enables re-derivation if schemas evolve. Not required for first-class replay (section 6) |
+| Graph, profileCache, summarizer caches | In-memory (unchanged) | Working set, rebuilt per session/process |
+| localStorage (themeSnapshots, memoryEngine) | Demoted to device cache | After M3.2, readers prefer backend history APIs; local stores remain as offline fallback, clearly labeled DEVICE-LOCAL when they are the only source |
+| User state (saves, follows, preferences, personal research memory) | Supabase per-user tables (RLS) | Personal memory, section 11 |
+| Assistant memory (`data/memory.db`, conversations) | Unchanged, firewalled | Different product |
+
+Why not "Supabase direct from browser" for institutional records: the browser must never
+hold write credentials for market truth, and snapshot writing must happen even when no
+browser is open. Why not "SQLite on the Railway volume": no concurrent query surface for
+future services, no managed backups, and it re-creates the single-file fragility ThemeMemory
+already has.
+
+---
+
+## 5. Ingestion and accrual (PROPOSED)
+
+### 5.1 Write triggers
+
+| Trigger | Writes | Cadence guard |
+|---|---|---|
+| Intelligence cycle completes (`app/background.py`, ~5 min) | ThemeMemory update (LIVE, unchanged); Transition Events when thresholds fire; Prediction records when content hash changes | debounce below |
+| **Daily close (primary snapshot writer)** | One EntitySnapshot per active entity, one RelationshipSnapshot per active edge, one NarrativeSnapshot per derived narrative, one MarketContext row | idempotent upsert on natural key `{uid}:{date}:daily` |
+| Material change intraday | `cadence="event"` EntitySnapshot for the affected subject only + the Transition Event | thresholds: conviction move >= 10 pts or crossing {40,55,70,85}; contradiction count change; relationship added/aged; narrative membership change |
+| Graph reprovisioning | nothing by itself (provisioning is a rebuild, not news) - but stamps `graph_version` used by all same-cycle writes | - |
+| Prediction creation/change | Prediction record | `content_hash` dedup: direction + probability bucket (5 pts) + invalidation set; unchanged view = no row |
+| Prediction horizon elapses / invalidation observed | Outcome record via resolution job (daily) | one final outcome per prediction; interim outcomes allowed at horizon midpoints |
+
+### 5.2 Idempotency rules
+
+1. Snapshot natural keys make daily writes upserts: re-running the writer for the same date
+   is a no-op (byte-identical) or a correction (append `revision` with the same natural key
+   only if provenance differs - never silent overwrite of differing content).
+2. Transition Events carry `(subject_uid, kind, observed_at-bucket, from, to)` uniqueness;
+   the same threshold cannot fire twice for one crossing (re-arm only after the value leaves
+   a hysteresis band, mirroring `_TREND_DELTA` practice).
+3. Predictions dedup by `content_hash`; a changed view supersedes (`superseded_by`), never
+   updates in place.
+4. Writers are single-flight per cycle (the background thread already serializes updates).
+
+This prevents the two failure modes seen in the current stores: duplicate daily snapshots
+(themeSnapshots guards per-day; memoryEngine upserts by date - both patterns are kept) and
+unbounded event spam (ThemeMemory's `_TREND_DELTA` deadband generalizes to all thresholds).
+
+### 5.3 Absence is data
+
+The daily writer records `theme_absent` transitions when a previously active UID produces no
+observation (generalizing `cycles_absent`), and `theme_returned` on reappearance. Absence
+handling moves off device-local `getTrackedThemes`.
+
+---
+
+## 6. Replay and determinism (PROPOSED)
+
+Replay target: **reconstruct what Argus displayed and believed at date D** - profile,
+evidence verdict, active prediction, narrative state - without re-running the pipeline.
+
+Minimum sufficient set (all from section 2):
+
+1. EntitySnapshot(uid, D) - conviction, verdict, forward view, risks, completeness, and the
+   `graph_version` it was rendered from
+2. RelationshipSnapshots(as_of = D) incident to uid - the recorded edge set
+3. NarrativeSnapshots(D) - memberships and dominance
+4. Active Prediction records at D (created <= D, not superseded/resolved before D)
+5. Transition Events in (D, now] - "what changed afterward"
+6. MarketContext(D) - the regime it happened in
+
+Design consequence: snapshots persist **projection inputs** (typed values and record lists),
+so replay = feed a stored snapshot to the *current* renderer. This is lossy-proof against UI
+copy changes but tolerant of them. Deep replay (re-deriving with improved engines over old
+data) additionally requires the raw payload archive (4, optional) - recommended but not
+required for M3.2-M3.4.
+
+Determinism rules: every writer output is a pure function of (pipeline payload, graph
+version, prior records); wall-clock reads are injected (`now()` parameters already exist in
+memoryEngine/orchestrator - keep that discipline); LLM-generated prose is stored verbatim
+with provenance, never regenerated during replay.
+
+---
+
+## 7. Retention (PROPOSED)
+
+| Data | Retention | Rationale |
+|---|---|---|
+| Raw observations (intraday, per cycle) | 90 days rolling, then daily downsample kept forever | Intraday shape matters for recent analysis; daily is enough for analogs |
+| Evidence records (story ids, sources per observation) | 1 year full, then per-day aggregates forever | Traceability window; aggregates preserve calibration features |
+| EntitySnapshots (daily) | **Forever** | The institutional record; ~hundreds of entities x 1 row/day is small |
+| RelationshipSnapshots (daily) | Forever, `status=aged_out` rows compressed to first/last + monthly samples after 2 years | Topology history powers analogs |
+| NarrativeSnapshots | Forever | Small; narrative persistence is a headline query |
+| TransitionEvents | Forever | They ARE the change ledger |
+| Predictions + Outcomes | **Forever, never pruned** | Calibration and analog credibility die without full history; explicitly protected |
+| MarketContext | Forever | One row/day |
+| Raw payload archive | 1 year hot, then cold storage | Deep-replay insurance |
+| User interaction history (M3.5, opt-in) | 180 days raw, aggregates only afterward; user-deletable at any time | Section 12 |
+
+Nothing needed for calibration or analog analysis is ever deleted; retention only downsamples
+*intraday* granularity.
+
+---
+
+## 8. Historical queries -> record types
+
+| Question | Records required | Possible today? |
+|---|---|---|
+| What changed since yesterday? | TransitionEvents (+ EntitySnapshots for context) | PARTIAL - derived-at-read from ThemeMemory + device snapshots |
+| When did Argus first detect this? | first EntitySnapshot / `theme_returned`-free history; ThemeMemory `first_seen` | PARTIAL (LIVE for themes, backend, volume-dependent) |
+| How long has this narrative persisted? | NarrativeSnapshots for narrative_uid | NO (no narrative history) |
+| What happened after conviction crossed 70? | TransitionEvent(conviction_crossed) x EntitySnapshots after x Outcomes/MarketContext | NO |
+| Which relationships strengthened before the move? | RelationshipSnapshots + MarketContext/market_move | NO (per-device edge signatures only) |
+| Closest historical analogs? | EntitySnapshots + NarrativeSnapshots + RelationshipSnapshots + MarketContext (section 9) | Device-local, cold-start-limited toy (memoryEngine) |
+| Which predictions were right? | Predictions x Outcomes | NO (no outcomes) |
+| How calibrated is Argus by horizon and narrative type? | Predictions x Outcomes x NarrativeSnapshots, grouped | NO |
+| Which contradictions correctly warned of reversals? | TransitionEvent(contradiction_added) x subsequent Outcomes/TransitionEvents | NO |
+| How often does this transmission path persist? | RelationshipSnapshots over the path's rel_uids | NO |
+
+---
+
+## 9. Analog engine prerequisites (PROPOSED - do not build yet)
+
+An analog is credible only when similarity is computed over **recorded trajectories in
+comparable regimes with known outcomes**. Dimension inventory:
+
+| Dimension | Live today? | Needs |
+|---|---|---|
+| Narrative membership | Derivable now, no history | NarrativeSnapshots (M3.2) |
+| Conviction trajectory | ThemeMemory (~10h) + device snapshots | Daily EntitySnapshots (M3.2) |
+| Relationship topology | Graph now; per-device history only | RelationshipSnapshots (M3.2) |
+| Evidence composition (confirming/contradicting mix, source diversity) | ThemeMemory counters | Persisted per-snapshot (M3.2) |
+| Macro regime | useMarketState reads live data; nothing persisted | MarketContext records (M3.2/M3.4) |
+| Price response | NOT persisted anywhere | Outcome records + market_move (M3.3) |
+| Volatility | Live reads only | MarketContext (M3.2/M3.4) |
+| Sector breadth | breadth_score live; history in ring buffer | Daily snapshots (M3.2) |
+| Contradiction pattern | Counters live | TransitionEvents (M3.2) |
+| Catalyst sequence | Verified dateless catalysts only (Phase 2 rule) | Real Event provider (out of scope); sequence analogs deferred |
+
+Credibility gate before ANY analog ships: >= 60 daily snapshots across >= 2 distinct macro
+regimes, plus resolved outcomes for the candidate analog set. Until then, analog surfaces
+must say "insufficient history" (the memoryEngine honesty pattern, kept). The current
+device-local `findHistoricalAnalogs` must not be marketed as historical analogs; it compares
+whatever this browser happened to record.
+
+---
+
+## 10. Institutional memory vs personalization
+
+Two ledgers, never blended:
+
+| | Institutional | Personal |
+|---|---|---|
+| Content | Snapshots, transitions, predictions, outcomes, narratives, market context | Follows, saves, opens, dismissals, portfolio context, sector preferences |
+| Truth status | Market-global, objective, append-only | Private, mutable, deletable |
+| Writer | FastAPI pipeline only | User actions only |
+| Store | Postgres (service role) | Supabase per-user tables (RLS) + localStorage cache |
+| Reader contract | Same records for every user | Only that user |
+
+Personalization may **rank, filter, and prioritize** institutional memory (ordering only -
+the Phase 2 doctrine extends unchanged to history). It may never rewrite, re-weight the
+stored values of, or write into institutional records. No institutional record may contain a
+user id. The reverse read (personal memory consulting institutional history to rank) is fine.
+
+## 11. Privacy and user-memory boundaries (for M3.5, PROPOSED)
+
+- **Opt-in**: behavioral memory (opens, dwell, research trails) is off by default; explicit
+  settings toggle. Follows/saves are already explicit actions and need no extra consent.
+- **Inspectable**: a settings surface lists everything stored about the user, verbatim.
+- **Deletable**: single control wipes behavioral memory (Supabase delete + localStorage
+  clear); follows/saves individually removable as today.
+- **Retention**: raw behavioral events 180 days, then aggregates only (7); aggregates carry
+  no timestamps finer than a week.
+- **Aggregation**: personalization features read aggregates (theme-open counts, sector
+  affinity), not raw click streams.
+- **Raw click history is not necessary** and should not be kept beyond the aggregation
+  window; never collect: page content of external links, free-text search terms tied to
+  identity beyond the session, anything from the assistant's personal memory store (1.14),
+  portfolio holdings unless explicitly entered by the user for that purpose.
+
+---
+
+## 12. Migration map
+
+| Current system | Canonical target | Disposition | Risk | Phase |
+|---|---|---|---|---|
+| ThemeMemory summary + ring buffers (1.1) | EntitySnapshot (theme) + TransitionEvent; module stays as intraday accrual engine | MIGRATE (content), KEEP (engine) | Low - additive; key already canonical | M3.1-M3.2 |
+| ThemeTracker in-process history (1.2) | none (compute buffer) | KEEP | None | - |
+| ProcessedFeedCache (1.3) | payload archive hook (optional) | KEEP | None | M3.4 opt |
+| Saved-items API dict (1.4) | Supabase saved_items | DELETE (route rewired or removed) | Low - frontend doesn't depend on it | M3.5 |
+| themeSnapshots localStorage (1.5) | EntitySnapshot (theme, daily); local store demoted to cache | MIGRATE writer server-side; optional one-time device import under legacy namespace | Medium - key translation (name-slug -> ontology id); divergent device copies must not merge silently | M3.2 |
+| memoryEngine localStorage (1.6) | EntitySnapshot + RelationshipSnapshot + Prediction; reader API preserved over backend data | MIGRATE (writer moves; readers repointed) | Medium - key translation; readers must label device-only history until backend depth exceeds it | M3.2-M3.3 |
+| intelligenceDeltas (1.7) | reader of TransitionEvents | KEEP (repoint source) | Low | M3.2 |
+| profile.evolution / buildTimeline (1.8) | reader of EntitySnapshots | KEEP (repoint) | Low | M3.2 |
+| useMarketMemory session accumulators + regime tracker (1.9) | UI behavior; regime need met by MarketContext | KEEP (UI); MarketContext new | Low | M3.2/M3.4 |
+| Supabase user tables + guest localStorage (1.10) | personal memory (unchanged); two theme-follow stores merge | KEEP; MERGE follows (deferred D13) | Medium - user data loss if merge is careless; union-read until designed | M3.5 |
+| Graph + profileCache (1.11) | working set; RelationshipSnapshots add durability | KEEP | None | M3.2 |
+| Narrative derivation (1.12) | NarrativeSnapshots (new persistence; key already exists) | KEEP engine, ADD history | Low | M3.2 |
+| predictionEngine outputs (1.13) | Prediction + Outcome ledger | KEEP engine, ADD persistence + resolution job | Medium - horizon semantics must be made explicit before recording | M3.3 |
+| Assistant memory (1.14) | none | KEEP, FIREWALLED | None - enforce no-import rule in review | - |
+
+**No production behavior changes in this sprint; the table is the plan, not the change.**
+
+## 13. Implementation phases
+
+- **M3.1 - Canonical persistence foundation.** Postgres schemas for the seven record types +
+  identity tables; UID mint/resolve service in the backend; the daily snapshot writer
+  (themes first, from ThemeMemory end-of-cycle state); idempotency tests (re-run = no-op);
+  volume-loss runbook ends here. *Exit: theme EntitySnapshots accrue server-side daily.*
+- **M3.2 - Entity and narrative history.** Extend the writer to companies/sectors/macro,
+  RelationshipSnapshots, NarrativeSnapshots, TransitionEvents with thresholds + hysteresis,
+  MarketContext rows; repoint `intelligenceDeltas`/`profile.evolution`/timeline readers to
+  backend history APIs with labeled device-local fallback. *Exit: What Changed reads
+  TransitionEvents; history survives a redeploy and a new device.*
+- **M3.3 - Prediction and outcome ledger.** Explicit horizons in predictionEngine outputs;
+  Prediction persistence with content-hash dedup; daily resolution job writing Outcomes;
+  calibration as SQL views (by horizon, by narrative type). *Exit: "which predictions were
+  right" is a query.*
+- **M3.4 - Replay and analog prerequisites.** as-of query APIs (profile at D), timeline
+  reconstruction endpoint, similarity feature extraction over recorded history, payload
+  archive (optional), credibility gate instrumentation. *Exit: replay of any date since M3.2;
+  analog engine unblocked but NOT built.*
+- **M3.5 - Personal research memory.** Opt-in behavioral signals, aggregation, inspect/delete
+  controls; theme-follow store merge (D13-remainder); delete the in-memory saved route.
+  *Exit: personalization reads aggregates; user can see and wipe everything.*
+
+## 14. Risks and non-goals
+
+**Risks**
+1. *Key translation is the riskiest step.* Name-slug and normalizeKey histories that fail to
+   resolve must land in `*:legacy:*` namespaces, never be guessed into canonical UIDs.
+2. *Silent divergence during dual-write (M3.2).* While local stores still write, readers must
+   have one preference order (backend first) and label the source; never merge the two.
+3. *Outcome semantics.* A sloppy "correct/incorrect" verdict poisons calibration; verdict
+   `method` must be stored and reviewed before any calibration surface ships.
+4. *Cumulative-field drift.* Stored aggregates (streaks, totals) can disagree with their own
+   history after bugs; canonical rule: aggregates are queries, snapshots are truth.
+5. *Volume amnesia before M3.1 lands.* ThemeMemory remains the only institutional store;
+   verify `THEME_MEMORY_DIR` is on a persistent volume today.
+6. *Supabase coupling.* Institutional tables must be service-role-only from day one; adding
+   browser write paths "temporarily" would recreate the localStorage problem with worse blast
+   radius.
+
+**Non-goals for Phase 3.0-3.4:** building the analog engine; alerts; Memory V2 UI surfaces;
+dated-catalyst/event providers; multi-user backend saved-items; changing any current scoring
+semantics; new frontend memory stores (there are enough).
+
+---
+
+*Related: ARGUS_INTELLIGENCE_MODEL_V1.md (ontology + confidence vocabulary),
+ARGUS_INTELLIGENCE_PROFILE_V1.md (the projection snapshots persist),
+ARGUS_INTELLIGENCE_SURFACES_V1.md (surface ownership), ARGUS_INTELLIGENCE_EVERYWHERE_V1.md
+(Phase 2 closure this design builds on).*

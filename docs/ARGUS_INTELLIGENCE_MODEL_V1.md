@@ -451,3 +451,5 @@ Each step is additive; none requires refactoring a working system ahead of need.
 ## Appendix B - Document maintenance
 
 This file is canonical. Changes to the entity or relationship vocabulary, the confidence factors, or the layering rules require updating this document in the same PR. The validation suite (`intelligenceTests.ts`) is the executable shadow of sections 2, 3, 5, and 7; when they disagree, the tests are wrong or this document is - resolve explicitly, never silently.
+
+**Memory (Phase 3):** durable history of the vocabulary defined here - entity/relationship/narrative snapshots, transitions, predictions, and outcomes - is specified in `ARGUS_INSTITUTIONAL_MEMORY_V2.md`. Canonical UIDs there wrap (never replace) the ontology keys defined in this document.

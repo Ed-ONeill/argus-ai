@@ -147,3 +147,5 @@ This document and `intelligenceProfile.ts` change together, in the same PR, or n
 ---
 
 **Phase 2.7 status (2026-07-10):** the profile is the platform's per-entity read everywhere. A2 shipped (`lib/profileCache.ts`: one build per entity per graph version, invalidated by the sanctioned graph writers); A4 shipped (`lib/entityContext.ts` projects the cached profile + shared risk read into every drawer). The consolidation table's remaining items (drawer `buildForecast` path, page-local risk/thesis logic) are resolved - see `ARGUS_INTELLIGENCE_EVERYWHERE_V1.md` sections 4 and 6.
+
+**Memory (Phase 3):** `ARGUS_INSTITUTIONAL_MEMORY_V2.md` specifies how this projection's inputs are persisted as daily Entity Snapshots so any past profile can be replayed. The profile stays the read; snapshots are the record.

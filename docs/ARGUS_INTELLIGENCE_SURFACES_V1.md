@@ -255,3 +255,5 @@ This document is the product-architecture contract. Adding a surface, changing a
 ---
 
 **Phase 2 closure (2026-07-10):** the pipeline rule now holds on all nine surfaces plus the shared drawers. Every production surface projects one canonical intelligence platform; no production surface independently computes market meaning. The bypass test (5.4) passes everywhere: page-local derivations are either pure projections, presentation wording over shared objects, factual ingestion, or explicitly labeled stored-field fallbacks (registry: `lib/intelligenceOwnership.ts`). Implementation record: `ARGUS_INTELLIGENCE_EVERYWHERE_V1.md`.
+
+**Memory (Phase 3):** history shown on any surface (What Changed, evolution, prediction track records) must come from the institutional-memory records specified in `ARGUS_INSTITUTIONAL_MEMORY_V2.md`; browser-local stores are device caches, never presented as institutional history.
