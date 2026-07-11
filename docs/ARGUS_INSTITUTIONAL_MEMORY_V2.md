@@ -1,6 +1,10 @@
 # ARGUS INSTITUTIONAL MEMORY V2
 
-**Status: DESIGN DOCUMENT (Phase 3.0). Nothing in sections 3-13 is built unless explicitly marked LIVE.**
+**Status: DESIGN DOCUMENT (Phase 3.0). Nothing in sections 3-13 is built unless explicitly
+marked LIVE. Section 15 is the M3.1 implementation record — M3.1 is CODE COMPLETE with tests;
+production enablement is pending the manual rollout steps in
+docs/ARGUS_MEMORY_OPERATIONS_V1.md (M3.1 is only "complete" once theme snapshots accrue in
+production).**
 
 This document is the canonical design for the Argus institutional-memory layer. It follows
 the Phase 2 closure of Intelligence Everywhere (ARGUS_INTELLIGENCE_EVERYWHERE_V1.md): every
@@ -647,7 +651,143 @@ semantics; new frontend memory stores (there are enough).
 
 ---
 
+---
+
+## 15. M3.1 implementation record (BUILT — enablement pending rollout)
+
+What was actually built for M3.1, where it diverges from or narrows sections 2-5, and the
+exact operational contracts. Operational procedures live in ARGUS_MEMORY_OPERATIONS_V1.md.
+
+### 15.1 Scope shipped
+
+Themes only. No relationship/narrative/prediction/outcome writers, no analog engine, no
+frontend integration, no alerts. ThemeMemory (1.1) is unchanged and remains the rolling
+intraday layer; the writer reads its summaries, never replaces it.
+
+### 15.2 Storage
+
+Supabase Postgres, four tables (migration `supabase/migrations/004_institutional_memory.sql`
+— numbering continues the lineage in `frontend/supabase/migrations/`; this file lives at the
+repo root because the tables are backend-owned):
+
+| Table | Purpose |
+|---|---|
+| `institutional_entities` | canonical identity registry; `unique(entity_type, namespace, canonical_key)` |
+| `entity_snapshots` | historical state; natural key `unique(entity_uid, snapshot_date, snapshot_kind, schema_version)` |
+| `transition_events` | changes between sealed snapshots; `event_key` unique |
+| `memory_write_runs` | audit + idempotency ledger; `run_key` unique |
+
+`schema_version = 1`, `writer_version = "m3.1.0"` (`app/institutional_memory/models.py`).
+
+### 15.3 Identity
+
+UID format `theme:ontology:<theme_id>` where `<theme_id>` is an **exact**
+`app/data/theme_ontology.py` config key (pipeline theme ids are these keys, so the mapping is
+lossless). Anything that is not an exact ontology key mints `theme:legacy:<slug>` — no fuzzy
+matching, no silent merges. Display labels never participate in the UID; a label change is
+recorded by moving the old label into `institutional_entities.aliases`. Implementation:
+`app/institutional_memory/identity.py`.
+
+### 15.4 Daily boundary (honest definition)
+
+`snapshot_kind = "daily_utc"`: one row per theme per **UTC calendar day** — this is NOT U.S.
+market close. The writer runs on the 5-minute background cycle; the current UTC day's row is
+**mutable-until-sealed** (updated in place when state actually changed, counted unchanged
+otherwise) and is sealed by definition the moment the UTC date advances. A sealed row is
+never modified. The sealed value is therefore the last observed state of that UTC day
+(~23:55Z when the pipeline is healthy).
+
+### 15.5 Idempotency policy
+
+1. `run_key = sha256(writer_version, schema_version, snapshot_date, sorted (uid, payload_hash))`
+   — an identical re-run (retry, restart, duplicate deploy) resolves to an already-completed
+   run and is skipped outright.
+2. Snapshot natural key + `payload_hash` (sha256 over the canonical-JSON `payload.state`
+   object only — observation time and provenance excluded): unchanged state is never
+   rewritten; changed state on an open day updates in place (documented policy 7a).
+3. `event_key = {uid}|{type}|{sealed_date}|v{schema_version}` with ignore-duplicates insert:
+   at most one event of a type per theme per sealed day.
+4. Bootstrap: a theme with any existing `bootstrap_baseline` snapshot is skipped forever.
+
+### 15.6 Transitions
+
+Generated once per day when day D-1 seals, comparing D-1's sealed snapshot against the
+theme's most recent prior sealed snapshot (14-day lookback; presence flips compare only the
+immediately preceding sealed day so absence fires once). Types and thresholds
+(`app/institutional_memory/transitions.py`): conviction ±3 pts (mirrors ThemeMemory
+`_TREND_DELTA`), lifecycle label change, evidence verdict-rank move or story-count ±2,
+contradiction count move (count-based — itemized contradiction records do not exist yet),
+breadth ±2 (mirrors `breadth_trend`), causal-narrative exact-string change,
+`active_status_changed` on presence flips. All comparisons read typed values from
+`payload.state`, so JSON ordering can never fire an event.
+
+### 15.7 Writer integration and failure policy
+
+`app/background.py::run_pipeline` calls `app.institutional_memory.record_cycle(themes)` after
+the ThemeMemory update, **full-feed warm target only** (the Markets-only run is a subset and
+must never write a partial market state). `record_cycle` never raises: Supabase failure logs
+`[institutional-memory] write_failed …`, records a failed run when reachable, leaves
+ThemeMemory untouched, and retries on the next cycle. Success is never reported when a write
+failed.
+
+### 15.8 Security
+
+RLS enabled on all four tables with **no policies** + explicit `revoke all` from
+`anon`/`authenticated`: the frontend (anon or authenticated) can neither read nor write.
+The backend service role (bypasses RLS) is the only writer; frontend reads happen only
+through the FastAPI endpoints below. The service-role key exists only as backend env config
+and is never logged (verified by test).
+
+### 15.9 Read API (M3.1 surface)
+
+```
+GET /api/memory/v2/status
+GET /api/memory/v2/themes/{theme_uid}/snapshots?date_from&date_to&limit&order
+GET /api/memory/v2/themes/{theme_uid}/transitions?date_from&date_to&limit&order
+GET /api/memory/v2/themes/{theme_uid}/latest
+```
+
+`{theme_uid}` accepts the full canonical UID or a bare pipeline theme id. Errors are
+sanitized (502/503 with generic detail; specifics go to server logs only). The v1 routes
+(`/api/memory/*` over ThemeMemory) are unchanged.
+
+### 15.10 Environment variables (backend only)
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `SUPABASE_URL` | Supabase project URL | empty |
+| `SUPABASE_SERVICE_ROLE_KEY` | service-role key (writer credential) | empty |
+| `INSTITUTIONAL_MEMORY_ENABLED` | master switch | `false` (safe default) |
+
+Startup logs `[institutional-memory] enabled=… / disabled reason=…` without secret values.
+
+### 15.11 Bootstrap
+
+`python scripts/bootstrap_institutional_memory.py [--dry-run]` — one baseline snapshot per
+theme known to ThemeMemory, `snapshot_kind="bootstrap_baseline"`,
+`provenance.source="theme_memory_bootstrap"`, `completeness_status="bootstrap"`,
+`snapshot_date` = run date, `observed_at` = the theme's real `last_seen`. No ring-buffer
+observations are expanded into fake daily history; nothing is backdated. Idempotent and
+audited in `memory_write_runs`. Browser localStorage histories are NOT imported in M3.1.
+
+### 15.12 Known limitations
+
+1. The daily boundary is a UTC day, not market close (revisit in M3.2 with the
+   material-change/event cadence).
+2. Contradiction transitions are count-based; itemized contradiction identity does not exist
+   in the pipeline yet.
+3. `graph_version`, `forward_view`, `beneficiaries`, `narrative_memberships` are honest
+   nulls — the backend has no graph-version, prediction, or narrative persistence yet.
+4. Intraday material-change snapshots are deferred to M3.2; intraday deltas remain served by
+   ThemeMemory.
+5. `transitions_inserted` counts attempted inserts; duplicates suppressed by `event_key` are
+   not netted out of the counter.
+6. The mutable-until-sealed daily row means intraday provenance reflects the **last** write
+   of the day (update_count-style revision history is not kept).
+
+---
+
 *Related: ARGUS_INTELLIGENCE_MODEL_V1.md (ontology + confidence vocabulary),
 ARGUS_INTELLIGENCE_PROFILE_V1.md (the projection snapshots persist),
 ARGUS_INTELLIGENCE_SURFACES_V1.md (surface ownership), ARGUS_INTELLIGENCE_EVERYWHERE_V1.md
-(Phase 2 closure this design builds on).*
+(Phase 2 closure this design builds on), ARGUS_MEMORY_OPERATIONS_V1.md (runbook).*

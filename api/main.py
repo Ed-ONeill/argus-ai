@@ -127,6 +127,12 @@ def _theme_memory_persistence_probe() -> None:
 async def lifespan(_app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
     _theme_memory_persistence_probe()
+    # Institutional memory (M3.1): log enabled/disabled and why (no secrets).
+    try:
+        from app.institutional_memory import log_startup_status
+        log_startup_status()
+    except Exception:
+        log.exception("[main] institutional memory status check failed at startup")
     # Start the background feed-refresh daemon.  It immediately warms the
     # processed-feed cache so the first page load is served from cache, not
     # from a blocking pipeline call.
@@ -195,6 +201,23 @@ try:
 except Exception as _exc:
     log.exception(
         "[main] FAILED to register memory router — /api/memory/* will be unavailable: %r",
+        _exc,
+    )
+
+# Institutional memory v2 router (M3.1) — read-only queries over the permanent
+# Supabase archive. Wrapped so a startup import error is logged clearly rather
+# than silently killing the deploy.
+try:
+    from api.routes import memory_v2 as _memory_v2_mod
+    app.include_router(
+        _memory_v2_mod.router,
+        prefix="/api/memory/v2",
+        tags=["memory-v2"],
+    )
+    log.info("[main] memory v2 router registered at /api/memory/v2")
+except Exception as _exc:
+    log.exception(
+        "[main] FAILED to register memory v2 router — /api/memory/v2/* will be unavailable: %r",
         _exc,
     )
 

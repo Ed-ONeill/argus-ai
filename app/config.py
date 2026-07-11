@@ -70,6 +70,15 @@ class Settings(BaseSettings):
     log_level:          str  = "INFO"
     save_conversations: bool = True
 
+    # ── Institutional memory (M3.1) ───────────────────────────────────────────
+    # Backend-only Supabase credentials for the institutional-memory archive.
+    # The service-role key must NEVER be exposed to the frontend or logged.
+    # institutional_memory_enabled defaults to False so incomplete deployments
+    # can never write to production without explicit configuration.
+    supabase_url:              str  = ""
+    supabase_service_role_key: str  = ""
+    institutional_memory_enabled: bool = False
+
     @field_validator("documents_dir", "embeddings_dir", "models_dir",
                      "chroma_dir", "conversations_dir", "log_file", mode="after")
     @classmethod
