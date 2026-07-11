@@ -34,6 +34,7 @@
 import { intelligenceGraph } from "./intelligenceGraph";
 import { buildGraphFromCurrentState, type BuildResult } from "./intelligenceGraphAdapters";
 import { reingestCachedMarketObservations } from "./dataAdapters/observationGraphBridge";
+import { invalidateProfileCache } from "./profileCache";
 
 /** The adapter-facing state shape (single source of truth: the adapter itself). */
 export type GraphState = NonNullable<Parameters<typeof buildGraphFromCurrentState>[0]>;
@@ -71,6 +72,8 @@ export function provisionGraphState(state: GraphState): BuildResult {
   intelligenceGraph.clear();
   const built = buildGraphFromCurrentState(state);
   reingestCachedMarketObservations();
+  // A2 (P2.7): a rebuilt graph is a new graph version - drop cached profiles.
+  invalidateProfileCache();
   return built;
 }
 

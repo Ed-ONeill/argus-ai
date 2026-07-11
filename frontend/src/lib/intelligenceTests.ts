@@ -56,6 +56,8 @@ import { buildListenIntel } from "./listenIntel";
 import { episodeIntel } from "./episodeIntel";
 import { buildIndustriesIntel, compareSectors } from "./industriesIntel";
 import { buildMAIntel, buildPrivateIntel } from "./maIntel";
+import { invalidateProfileCache, profileCacheVersion, cachedProfile } from "./profileCache";
+import { buildEntityContext } from "./entityContext";
 import { themeBeneficiaries } from "./themeIntelligence";
 import type { Episode } from "./types";
 import type { ThemeIntelligence, MarketBrief } from "./types";
@@ -1404,6 +1406,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
   // no narrative-level confidence/lifecycle/velocity (fabrication today).
   const seedNarrativeGraph = (themeAName = "AI Infrastructure") => {
     intelligenceGraph.clear();
+    invalidateProfileCache();
     const add = (label: string, type: string) => intelligenceGraph.addNode({ label, type: type as never });
     add("AI Capex", "Macro");
     add("GLP-1 Adoption", "Macro");
@@ -1792,6 +1795,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     assert((cold.catalysts.note ?? "").includes("Event provider"), "the absence note names the missing provider");
     intelligenceGraph.addNode({ label: "CPI (FRED series)", type: "MacroSeries" as never });
     intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Capex", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
+    invalidateProfileCache();
     const warm = buildTheRead({ themes: readThemes(), graphReady: true });
     const items = warm.catalysts.data ?? [];
     assert(warm.catalysts.status === "partial" && items.length === 1, "a recorded series linked to the thesis surfaces as a catalyst");
@@ -1983,6 +1987,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     seedNarrativeGraph();
     intelligenceGraph.addNode({ label: "Rate Shock", type: "Macro" as never });
     intelligenceGraph.addRelationship({ source: "Rate Shock", target: "AI Infrastructure", relationshipType: "weakens" as never, strength: 60, confidence: 65 });
+    invalidateProfileCache();
     const themes = readThemes();
     const strip = (xs: Array<{ detail: string; severity: number }>) => JSON.stringify(xs.map(c => ({ detail: c.detail, severity: c.severity })));
 
@@ -2052,6 +2057,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     seedNarrativeGraph();
     intelligenceGraph.addNode({ label: "CPI (FRED series)", type: "MacroSeries" as never });
     intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Infrastructure", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
+    invalidateProfileCache();
     const themes = readThemes();
     const rr = buildRiskRead("AI Infrastructure", themes[0]);
     assert(JSON.stringify(rr.catalysts) === JSON.stringify(verifiedCatalystsFor(["AI Infrastructure"])), "riskRead projects verifiedCatalystsFor verbatim");
@@ -2261,6 +2267,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     const { themes, episodes, dr, read } = listenFixture();
     intelligenceGraph.addNode({ label: "Rate Shock", type: "Macro" as never });
     intelligenceGraph.addRelationship({ source: "Rate Shock", target: "AI Infrastructure", relationshipType: "weakens" as never, strength: 60, confidence: 65 });
+    invalidateProfileCache();
     const risks = new Map(themes.map(t => [t.name.toLowerCase(), buildRiskRead(t.name, t)]));
     const vm = buildListenIntel({ episodes, themes, read, risks, deltas: dr.deltas, graphReady: true });
     const c = vm.contrarian.data ?? [];
@@ -2319,6 +2326,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     seedNarrativeGraph();
     intelligenceGraph.addNode({ label: "CPI (FRED series)", type: "MacroSeries" as never });
     intelligenceGraph.addRelationship({ source: "CPI (FRED series)", target: "AI Infrastructure", relationshipType: "correlates" as never, strength: 40, confidence: 60 });
+    invalidateProfileCache();
     const warm = episodeIntel(mkEpisode(), themes[0]);
     assert(warm!.catalystBasis === "verified" && warm!.catalyst === "CPI (FRED series)", "verified dateless catalysts ride the card when recorded");
   });
@@ -2420,6 +2428,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     provisionIntelligenceGraph({ themes });
     intelligenceGraph.addNode({ label: "MegaCo buys PowerCo", type: "Deal" as never, aliases: ["deal-1"] } as never);
     intelligenceGraph.addRelationship({ source: "MegaCo buys PowerCo", target: "AI Infrastructure", relationshipType: "mentions" as never, strength: 50, confidence: 60 });
+    invalidateProfileCache();
     const dr = deriveMorningBriefDeltas({ themes });
     const profiles = new Map([["nvda", buildIntelligenceProfile("NVDA")], ["semiconductors", buildIntelligenceProfile("Semiconductors")]]);
     const risks = new Map([["nvda", buildRiskRead("NVDA")], ["semiconductors", buildRiskRead("Semiconductors")]]);
@@ -2442,6 +2451,7 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     // A recorded supporting edge - and only that - upgrades the classification
     // (a second edge to a DIFFERENT theme: the graph dedupes per node pair).
     intelligenceGraph.addRelationship({ source: "MegaCo buys PowerCo", target: "Datacenter Power", relationshipType: "supports" as never, strength: 60, confidence: 60 });
+    invalidateProfileCache();
     const vm2 = buildMAIntel({ deals: dealFacts, themes, profiles, risks, deltas: dr.deltas, graphReady: true });
     assert(vm2.deals.data![0].relation === "SUPPORTS" && vm2.deals.data![0].relationBasis === "graph", "SUPPORTS requires a recorded supporting relationship");
   });
@@ -2475,6 +2485,61 @@ export async function runIntelligenceTests(): Promise<TestSummary> {
     intelligenceGraph.clear();
     const cold = buildPrivateIntel({ themes, deltas: [], graphReady: false });
     assert(cold.flows.status === "partial" && cold.flows.data!.every(x => x.invalidation === null), "no graph means no risk records, never keyword templates");
+  });
+
+  // 90. Phase 2.7 closure: one Entity Context everywhere; the A2 profile
+  // cache is version-keyed; D14's per-episode podcast edges are isolated.
+
+  test("entity context is one object everywhere; the profile cache is version-keyed", () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    provisionIntelligenceGraph({ themes });
+    const v1 = profileCacheVersion();
+    const p1 = cachedProfile("AI Infrastructure");
+    assert(cachedProfile("AI Infrastructure") === p1, "identical reads return the SAME cached object within one graph version");
+    const dr = deriveMorningBriefDeltas({ themes });
+    const a = buildEntityContext({ entityKey: "AI Infrastructure", theme: themes[0], deltas: dr.deltas });
+    const b = buildEntityContext({ entityKey: "AI Infrastructure", theme: themes[0], deltas: dr.deltas });
+    assert(a.profile === b.profile && a.profile === p1, "every drawer holds the SAME profile object Explorer holds");
+    assert(JSON.stringify(a.risks) === JSON.stringify(b.risks), "same risk records for the same entity");
+    assert(JSON.stringify(a.forward) === JSON.stringify(p1.thesis.data?.forward ?? null), "drawer forward view === Explorer profile forward view");
+    assert(a.conviction === Math.round(themes[0].confidence ?? 0) && a.convictionBasis === "theme pipeline", "conviction is the pipeline number, basis named");
+    assert(a.latestChange === null || dr.deltas.includes(a.latestChange), "context deltas are ledger records by object identity");
+    assert(a.narrative === (findNarrativeForTheme("AI Infrastructure")?.label ?? null), "narrative membership equals the shared derivation");
+    provisionIntelligenceGraph({ themes });
+    assert(profileCacheVersion() > v1, "reprovisioning advances the graph version");
+    assert(cachedProfile("AI Infrastructure") !== p1, "and invalidates stale cached profiles");
+    const unknown = buildEntityContext({ entityKey: "ZZZQ-UNKNOWN" });
+    assert(unknown.status === "unavailable" && unknown.profile === null && unknown.conviction === null && unknown.forward === null
+      && unknown.catalysts.length === 0, "unknown entities carry nulls - no template can supply missing meaning");
+  });
+
+  test("D14 fixed: podcast theme edges are per-episode, isolated, deterministic", () => {
+    clearMarketObservationCache();
+    const themes = readThemes();
+    const eps = [
+      mkEpisode(),
+      mkEpisode({ id: "ep-2", title: "Unrelated cooking show", topics: ["Food"], entities: [], description: "Recipes and pans." }),
+    ];
+    provisionIntelligenceGraph({ themes, episodes: eps });
+    const shape1 = JSON.stringify(intelligenceGraph.stats());
+    const themeNames = new Set(themes.map(t => t.name.toLowerCase()));
+    const themeNeighborsOf = (key: string): string[] => {
+      const n = intelligenceGraph.getNode(key);
+      if (!n) return [];
+      return intelligenceGraph.getNeighbors(n.id)
+        .filter(x => String(x.node.type) === "Theme" && themeNames.has(x.node.label.toLowerCase()))
+        .map(x => x.node.label);
+    };
+    const matched = themeNeighborsOf("ep-1");
+    assert(matched.includes("AI Infrastructure"), "a matching episode records ITS canonical theme edge");
+    assert(themeNeighborsOf("ep-2").length === 0, "an unrelated episode shares NO canonical theme edges (the dense global links are gone)");
+    provisionIntelligenceGraph({ themes, episodes: eps });
+    assert(JSON.stringify(intelligenceGraph.stats()) === shape1, "per-episode ingestion is deterministic");
+    const vm = buildListenIntel({ episodes: eps, themes, read: buildTheRead({ themes, graphReady: true }), deltas: [], graphReady: true });
+    for (const v of [vm.relevantToRead, vm.newEvidence, vm.contrarian, vm.forYourWatch].flatMap(x => x.data ?? []))
+      for (const at of v.attachments)
+        if (at.relation === "SUPPORTS") assert(at.basis === "graph" && /support|confirm|drive|strengthen|benefit/i.test(at.relationship ?? ""), "SUPPORTS still requires a recorded supporting relationship");
   });
 
   for (const [name, fn] of tests) {

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Headphones, BarChart2 } from "lucide-react";
@@ -16,7 +17,8 @@ import {
   CompaniesAndSectors, PeopleAndFunds, CompanyHeatmap, FirmsDriving, InfluentialEpisodes,
 } from "@/components/listen/ListenSections";
 import { MiniPlayer } from "@/components/listen/MiniPlayer";
-import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
+// P2.7 perf: the drawer only mounts on open - load it on demand.
+const ThemeDrawer = dynamic(() => import("@/components/themes/ThemeDrawer").then(m => m.ThemeDrawer), { ssr: false });
 import {
   matchEpisodeThemes,
   getThemeEpisodeGroups,

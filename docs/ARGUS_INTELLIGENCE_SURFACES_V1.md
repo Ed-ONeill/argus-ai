@@ -250,3 +250,8 @@ Every future feature must satisfy all of these. They are review criteria, not as
 ## 9. Maintenance
 
 This document is the product-architecture contract. Adding a surface, changing a surface's question/ownership, or adding a future consumer requires updating it in the same PR. The engine docs govern intelligence semantics; the migration inventories here (5.3) and in the profile doc (section 5) must stay consistent - when a migration lands, both update together.
+
+
+---
+
+**Phase 2 closure (2026-07-10):** the pipeline rule now holds on all nine surfaces plus the shared drawers. Every production surface projects one canonical intelligence platform; no production surface independently computes market meaning. The bypass test (5.4) passes everywhere: page-local derivations are either pure projections, presentation wording over shared objects, factual ingestion, or explicitly labeled stored-field fallbacks (registry: `lib/intelligenceOwnership.ts`). Implementation record: `ARGUS_INTELLIGENCE_EVERYWHERE_V1.md`.

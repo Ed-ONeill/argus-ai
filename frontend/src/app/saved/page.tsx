@@ -28,7 +28,8 @@ import { buildSavedIntel, type SavedEntityInput, type SavedItemVM } from "@/lib/
 import { deriveMorningBriefDeltas, type MorningBriefDelta } from "@/lib/intelligenceDeltas";
 import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { buildTheRead } from "@/lib/theRead";
-import { buildIntelligenceProfile, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { cachedProfile } from "@/lib/profileCache";
 import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
 import { findNarrativeForTheme } from "@/lib/narrativeDerivation";
 import { explorerHrefForNode } from "@/lib/intelligenceShared";
@@ -182,7 +183,7 @@ export default function SavedPage() {
       const label = liveTheme?.name ?? e.label;
       const key = label.toLowerCase();
       if (r.has(key)) continue;
-      if (argus.ready) p.set(key, buildIntelligenceProfile(label));
+      if (argus.ready) p.set(key, cachedProfile(label));
       r.set(key, buildRiskRead(label, liveTheme));
     }
     return { profiles: p, risks: r };

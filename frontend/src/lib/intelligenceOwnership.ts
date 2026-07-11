@@ -103,12 +103,12 @@ export const INTELLIGENCE_OWNERSHIP: Record<IntelligenceConcept, ConceptOwnershi
   invalidations: {
     owner: "predictionEngine.predictThemeTrajectory().invalidationConditions / predictCompanyTrajectory().invalidation",
     projections: ["profile.risks.invalidation", "theRead.falsifiers.invalidations", "riskRead"],
-    fallbacks: ["themeIntelligence.generateInvalidationSignals (keyword templates) ONLY when the graph is unavailable, labeled"],
+    fallbacks: [],   // keyword templates deleted (P2.7, D12) - honest empty states instead
     surfaceMay: "select one invalidation to feature",
   },
   forward_view: {
     owner: "predictionEngine (theme/company/sector trajectory)",
-    projections: ["profile.thesis.forward", "intelligenceShared.buildForecast (normalization; retires at P2.7/A4)"],
+    projections: ["profile.thesis.forward", "entityContext.forward (A4)"],   // buildForecast deleted (P2.7, D8)
     fallbacks: [],
     surfaceMay: "format direction/probability; never compute a forward view from stored fields",
   },
@@ -146,7 +146,7 @@ export const INTELLIGENCE_OWNERSHIP: Record<IntelligenceConcept, ConceptOwnershi
   watch_items: {
     owner: "intelligenceDeltas.watchLineOf (derived, dateless) + profile.watch (falsifiers first)",
     projections: ["theRead.watch (Z6)", "themeTransmission.themeWatch (delegating wrapper)"],
-    fallbacks: ["themeIntelligence.generateWatchSignals (keyword templates) ONLY when the graph is unavailable, labeled"],
+    fallbacks: [],   // keyword templates deleted (P2.7, D12)
     surfaceMay: "bind watch items to the zone they confirm; phrase in surface voice",
   },
   catalysts: {

@@ -34,7 +34,8 @@ import { causalLayerOfType, deriveEdgeTrend, type EdgeTrend } from "./causalMap"
 import { evaluateEvidenceForNode } from "./evidenceEngine";
 import { predictThemeTrajectory, rankFutureOpportunities } from "./predictionEngine";
 import { deriveNarratives, type DerivedNarrative } from "./narrativeDerivation";
-import { buildIntelligenceProfile, type ProfileSection, type ProfileStatus } from "./intelligenceProfile";
+import { type ProfileSection, type ProfileStatus } from "./intelligenceProfile";
+import { cachedProfile } from "./profileCache";
 import { watchLineOf, type MorningBriefDelta } from "./intelligenceDeltas";
 import type { ThemeIntelligence } from "./types";
 
@@ -491,7 +492,7 @@ export function buildTheRead(inputs: ReadInputs = {}): ReadVM {
       parts.push([DELTA_WEIGHT[d.kind], `${d.kind.toLowerCase()} this cycle: ${d.what}`]);
     }
     if (graphReady) {
-      const p = buildIntelligenceProfile(entity.label);
+      const p = cachedProfile(entity.label);
       if (p.identity.status !== "unavailable") {
         const thin = [p.thesis, p.drivers, p.transmission, p.beneficiaries, p.risks, p.evidence, p.evolution, p.watch]
           .filter(s => s.status === "unavailable").length;

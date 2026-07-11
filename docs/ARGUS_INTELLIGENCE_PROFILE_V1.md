@@ -142,3 +142,8 @@ v0 (this sprint) is a stateless assembler: every call re-reads the graph and eng
 ## 7. Maintenance
 
 This document and `intelligenceProfile.ts` change together, in the same PR, or not at all. Section additions require: a status/data/note wrapper, a data-source mapping row in section 3, and a test in `intelligenceTests.ts`. The model doc (Appendix B) governs vocabulary; this doc governs the read model.
+
+
+---
+
+**Phase 2.7 status (2026-07-10):** the profile is the platform's per-entity read everywhere. A2 shipped (`lib/profileCache.ts`: one build per entity per graph version, invalidated by the sanctioned graph writers); A4 shipped (`lib/entityContext.ts` projects the cached profile + shared risk read into every drawer). The consolidation table's remaining items (drawer `buildForecast` path, page-local risk/thesis logic) are resolved - see `ARGUS_INTELLIGENCE_EVERYWHERE_V1.md` sections 4 and 6.

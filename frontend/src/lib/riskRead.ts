@@ -23,7 +23,7 @@
  */
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
-import { buildIntelligenceProfile } from "./intelligenceProfile";
+import { cachedProfile } from "./profileCache";
 import { verifiedCatalystsFor, type CatalystItem } from "./theRead";
 import { watchLineOf } from "./intelligenceDeltas";
 import type { ThemeIntelligence } from "./types";
@@ -65,7 +65,7 @@ export function buildRiskRead(entityKey: string, theme?: ThemeIntelligence | nul
     };
   }
 
-  const p = buildIntelligenceProfile(entityKey);
+  const p = cachedProfile(entityKey);   // A2: one profile per entity per graph version
   const risks = p.risks.data;
   const watchItems = [...(p.watch.data?.items ?? [])];
   if (derivedWatch && !watchItems.includes(derivedWatch)) watchItems.push(derivedWatch);

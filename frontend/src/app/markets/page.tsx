@@ -28,11 +28,10 @@ import {
   memorySentences,
 } from "@/lib/themeIntelligence";
 import { buildRiskRead } from "@/lib/riskRead";
-import { buildIntelligenceProfile } from "@/lib/intelligenceProfile";
+import { cachedProfile } from "@/lib/profileCache";
 import { causalLayerOfType } from "@/lib/causalMap";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFollowedThemes, type FollowedTheme } from "@/hooks/useFollowedThemes";
-import { useThemeAlerts, type ThemeAlert } from "@/hooks/useThemeAlerts";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildTheRead, verifiedCatalystsFor, type ReadVM, type CatalystItem } from "@/lib/theRead";
 import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
@@ -55,6 +54,8 @@ const ThemeDetailDrawer = dynamic(
   { ssr: false },
 );
 
+
+interface LedgerAlert { themeId: string; direction: "up" | "down" }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -583,7 +584,7 @@ function WatchlistPanel({
   liveThemes:  ThemeIntelligence[];
   onOpenTheme: (t: ThemeIntelligence) => void;
   onUnfollow:  (id: string) => void;
-  alerts:      ThemeAlert[];
+  alerts:      LedgerAlert[];
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -864,7 +865,7 @@ function buildThemeSharedReads(themes: ThemeIntelligence[], graphReady: boolean)
   const map = new Map<string, ThemeSharedRead>();
   for (const t of themes) {
     if (graphReady) {
-      const p = buildIntelligenceProfile(t.name);
+      const p = cachedProfile(t.name);
       if (p.identity.status !== "unavailable") {
         const bene = p.beneficiaries.data ?? [];
         const winsGraph = bene.filter(l => l.nodeType === "Company" || l.nodeType === "ETF").slice(0, 3).map(l => l.label);
@@ -1567,7 +1568,8 @@ export default function MarketsPage() {
   const clusters      = useMemo(() => data?.clusters           ?? [], [data]);
   const themes        = useMemo(() => data?.theme_intelligence ?? [], [data]);
 
-  const { alerts, dismiss: dismissAlert } = useThemeAlerts(themes);
+  // D13 (P2.7): watchlist alert chips are CANONICAL ledger records - the
+  // device signal-transition store (useThemeAlerts) is deleted.
   const cacheAge      = data?.cache_age_seconds;
   const derivedRegime = data?.sector_data?.derived_regime ?? "";
   const sectorData    = data?.sector_data ?? null;
@@ -1618,7 +1620,6 @@ export default function MarketsPage() {
 
   // Stable identity so memoized sections don't re-render when the drawer opens.
   const openDrawer = useCallback((t: ThemeIntelligence) => {
-    dismissAlert(t.id);
     const rel = relMap.get(t.id);
     setDrawerData({
       theme:      t,
@@ -1630,13 +1631,23 @@ export default function MarketsPage() {
       shared:     argus.ready ? buildRiskRead(t.name, t) : null,
       conflicts:  argus.ready ? [] : fallbackContradictions.filter(c => c.themeIds.includes(t.id)),
     });
-  }, [dismissAlert, relMap, argus.ready, fallbackContradictions]);
+  }, [relMap, argus.ready, fallbackContradictions]);
 
   const handleFollowToggle = useCallback((t: ThemeIntelligence) => {
     toggleFollow(t, cleanThemeName(t.name));
   }, [toggleFollow]);
 
-  const watchlistAlerts = alerts.filter(a => followedIds.includes(a.themeId));
+  const watchlistAlerts = useMemo<LedgerAlert[]>(() => {
+    const deltas = [...(intel.changed.data?.narrative ?? []), ...(intel.changed.data?.broader ?? [])];
+    const byName = new Map(themes.map(t => [t.name.toLowerCase(), t.id]));
+    const out: LedgerAlert[] = [];
+    for (const d of deltas) {
+      const id = byName.get(d.entity.toLowerCase());
+      if (!id || !followedIds.includes(id) || out.some(a => a.themeId === id)) continue;
+      out.push({ themeId: id, direction: d.kind === "STRENGTHENED" || d.kind === "NEW" || d.kind === "EXPANDED" ? "up" : "down" });
+    }
+    return out;
+  }, [intel.changed.data, themes, followedIds]);
 
   const activeCfg = SNAPSHOT_CONFIGS.find(c => c.key === activeKey) ?? null;
 

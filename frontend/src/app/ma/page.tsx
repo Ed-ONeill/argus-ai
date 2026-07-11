@@ -21,7 +21,8 @@ import { buildSignalProfile, type SignalProfile } from "@/lib/argusReasoning";
 // Phase 2.6: shared intelligence (the same engines every unified surface reads)
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildMAIntel, type DealIntelShared } from "@/lib/maIntel";
-import { buildIntelligenceProfile, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { cachedProfile } from "@/lib/profileCache";
 import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
 import { deriveNarratives } from "@/lib/narrativeDerivation";
 import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
@@ -1028,7 +1029,7 @@ export default function MAPage() {
       for (const k of keys) {
         const node = intelligenceGraph.getNode(k);
         if (!node || profiles.has(node.label.toLowerCase())) continue;
-        profiles.set(node.label.toLowerCase(), buildIntelligenceProfile(node.label));
+        profiles.set(node.label.toLowerCase(), cachedProfile(node.label));
         risks.set(node.label.toLowerCase(), buildRiskRead(node.label));
       }
     }

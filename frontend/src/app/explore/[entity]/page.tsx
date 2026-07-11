@@ -23,11 +23,12 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, CandlestickChart, Network } from "lucide-react";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildCrossIntel } from "@/lib/crossIntel";
+import { findNarrativeForTheme } from "@/lib/narrativeDerivation";
 import { useIntelligenceProfile, profileKindOfIntelKind } from "@/hooks/useIntelligenceProfile";
 import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
-  parseExplorerEntity, explorerHrefForNode, buildForecast, buildTimeline, buildRelationshipMap,
+  parseExplorerEntity, explorerHrefForNode, buildTimeline, buildRelationshipMap,
   buildMarketStructure, buildPriceSeries, buildConvictionHistory, buildThemeExposure,
   collectCurrentThemes, recordDailyMemorySnapshot, expandMap, countExpansion, EXPANSION_MODES,
   dirColor, verdictColor, evColor, fmtDate, fmtDay,
@@ -168,8 +169,10 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
         invalidation: profile.risks.data?.invalidation ?? null,
       };
     }
-    return graph.ready ? buildForecast(ctx.kind, ctx.label, entity.graphKey) : null;
-  }, [profile.thesis.data, profile.risks.data, graph, ctx.kind, ctx.label, entity.graphKey]);
+    // D8 (P2.7): buildForecast is deleted - the profile's forward view (the
+    // prediction engine, assembled centrally) is the ONLY forecast source.
+    return null;
+  }, [profile.thesis.data, profile.risks.data]);
 
   // Watch next: the profile carries the injected crossIntel watch item verbatim
   // (derived falsifiers arrive prefixed); fall back to the direct read.
@@ -367,15 +370,42 @@ function ExplorerWorkspace({ ctx }: { ctx: IntelContext }) {
           </Section>
         )}
 
+        {/* Narrative Membership (P2.7): the SAME DerivedNarrative object The
+            Read shows - no Explorer-local derivation. */}
+        {(() => {
+          const n = graph.ready ? findNarrativeForTheme(ctx.label) : null;
+          if (!n) return null;
+          const members = (n.members.data ?? []).map(m => m.label);
+          return (
+            <Section label="Narrative Membership">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(167,139,250,0.14)", color: "#c4b5fd", border: "1px solid rgba(167,139,250,0.25)" }}
+                  title="Derived narrative (shared derivation - identical to The Read)">{n.label}</span>
+                <span className="text-[9px]" style={{ color: A(0.4) }}>
+                  {members.some(m => m.toLowerCase() === ctx.label.toLowerCase()) ? "member theme" : "related via recorded exposure"}
+                </span>
+                <Link href="/" className="ml-auto text-[9.5px] font-semibold hover:underline" style={{ color: "#7cc7d8" }}>Open in The Read →</Link>
+              </div>
+              <p className="text-[10.5px] leading-snug" style={{ color: A(0.55) }}>
+                Members: {members.join(", ") || "none recorded"}
+              </p>
+            </Section>
+          );
+        })()}
+
         <div className="border-t" style={{ borderColor: A(0.06) }}>
           <div className="grid grid-cols-2 gap-px" style={{ background: A(0.06) }}>
             <div className="px-5 py-3" style={{ background: "#0b0f18" }}>
-              <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(52,211,153,0.7)" }}>Opportunity</p>
-              <p className="text-[11px] leading-snug" style={{ color: A(0.66) }}>{intel.opportunity}</p>
+              <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(52,211,153,0.7)" }}>Forward View · prediction engine</p>
+              <p className="text-[11px] leading-snug" style={{ color: A(0.66) }}>
+                {forecast ? `${forecast.direction}${forecast.reasons[0] ? ` - ${forecast.reasons[0]}` : ""}` : "No resolvable forward view yet."}
+              </p>
             </div>
             <div className="px-5 py-3" style={{ background: "#0b0f18" }}>
-              <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(248,113,113,0.75)" }}>Risk</p>
-              <p className="text-[11px] leading-snug" style={{ color: A(0.66) }}>{intel.risk}</p>
+              <p className="text-[8.5px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(248,113,113,0.75)" }}>Risk · shared engines</p>
+              <p className="text-[11px] leading-snug" style={{ color: A(0.66) }}>
+                {profile.risks.data?.contradictions[0]?.detail ?? profile.risks.data?.invalidation ?? "No recorded risk records yet."}
+              </p>
             </div>
           </div>
           {forecast?.invalidation && (

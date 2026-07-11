@@ -38,13 +38,10 @@ export interface CrossIntel {
   stories:      StoryCluster[];
   deals:        MADeal[];
   listen:       Episode[];
-  privateRead:  string;
   conviction:   number | null;
   momentum:     string | null;
   persistence:  number | null;
   acceleration: number | null;
-  risk:         string;
-  opportunity:  string;
   nextWatch:    string;
   relatedPages: RelatedPage[];
 }
@@ -111,19 +108,9 @@ export function buildCrossIntel(ctx: IntelContext, { themes, clusters, deals, ep
   const conviction = theme ? Math.round(theme.confidence ?? 0) : null;
   const accel = theme ? Math.round(theme.momentum_delta ?? 0) : null;
 
-  const where = sector ?? ctx.label;
-  const privateRead = dir === "bullish"
-    ? `Capital rotating toward ${where}; ${companies.slice(0, 2).join(" / ") || "exposed names"} are the cleanest expressions.`
-    : dir === "bearish"
-    ? `Capital leaving ${where}; the exposed names carry downgrade risk.`
-    : `Two-way flow in ${where}; no decisive rotation yet.`;
-
-  const opportunity = dir === "bearish"
-    ? `Mean-reversion setup in ${where} if the driver stabilizes.`
-    : `${companies.slice(0, 2).join(" and ") || "The leaders"} re-rate as ${where} inflects.`;
-  const risk = theme
-    ? (firstSentence((theme.second_order_effects ?? [])[0]) || "The macro driver behind the move reverses.")
-    : "The macro driver behind the move reverses.";
+  // P2.7 (D8): the privateRead / opportunity / risk template outputs are
+  // DELETED - crossIntel is now routing + narrative injection only. Risk and
+  // forward meaning come from shared profiles (Explorer/drawer render them).
 
   const relatedPages: RelatedPage[] = [
     { label: "Feed", href: "/feed", note: `${stories.length} related stor${stories.length === 1 ? "y" : "ies"}` },
@@ -146,11 +133,9 @@ export function buildCrossIntel(ctx: IntelContext, { themes, clusters, deals, ep
       : theme
       ? `${cleanThemeName(theme.name)}: ${sector ? `a ${dir} read on ${sector}` : `a ${dir} market narrative`}, driven by ${drivers[0] ?? "the macro backdrop"}.`
       : `${ctx.label} is being tracked as a ${KIND_LABEL[ctx.kind].toLowerCase()}.`,
-    why: theme ? (firstSentence(theme.causal_narrative) || privateRead) : "Select where it appears to see how the read firms up.",
+    why: theme ? (firstSentence(theme.causal_narrative) || `${cleanThemeName(theme.name)} is an active tracked narrative.`) : "Select where it appears to see how the read firms up.",
     companies, sectors, drivers, stories, deals: relDeals, listen: relEpisodes,
-    privateRead,
     conviction, momentum: theme?.momentum_label ?? null, persistence: theme ? Math.round(theme.persistence_score ?? 0) : null, acceleration: accel,
-    risk, opportunity,
     nextWatch: theme ? themeWatch(theme) : "fresh confirmation before sizing conviction",
     relatedPages,
   };

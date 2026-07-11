@@ -10,7 +10,7 @@ import {
   type LifecycleState,
   type ThemeMomentumResult,
 } from "@/lib/themeMomentum";
-import { computeConvictionScore, convictionLabel } from "@/lib/themeImpact";
+import { convictionLabel } from "@/lib/themeImpact";
 import { generateIntelligenceAlerts, type IntelligenceAlert } from "@/lib/themeIntelligence";
 import { deriveMorningBriefDeltas, type MorningBriefDelta } from "@/lib/intelligenceDeltas";
 import { getTrackedThemes } from "@/lib/themeSnapshots";
@@ -169,7 +169,8 @@ export function ThemeTerminal({
   );
 
   const convictionMap = useMemo(
-    () => new Map(themes.map(t => [t.id, computeConvictionScore(t)] as const)),
+    // P2.7: conviction is the PIPELINE number (canonical owner).
+    () => new Map(themes.map(t => [t.id, Math.round(t.confidence ?? 0)] as const)),
     [themes],
   );
 

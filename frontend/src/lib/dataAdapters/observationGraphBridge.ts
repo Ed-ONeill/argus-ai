@@ -12,6 +12,7 @@
 import { intelligenceGraph as G } from "../intelligenceGraph";
 import type { NodeType, SourcePage } from "../intelligenceGraph";
 import { round } from "../intelligenceUtils";
+import { invalidateProfileCache } from "../profileCache";
 import type { FetchResult, ObservationQuality, ProviderObservation } from "./types";
 
 export interface IngestProviderStats {
@@ -276,6 +277,8 @@ export function ingestProviderObservations(observations: ProviderObservation[]):
   }
 
   const after = G.stats();
+  // A2 (P2.7): additive graph writes advance the graph version too.
+  invalidateProfileCache();
   return {
     nodesAdded: Math.max(0, after.nodes - before.nodes),
     relationshipsAdded: Math.max(0, after.edges - before.edges),

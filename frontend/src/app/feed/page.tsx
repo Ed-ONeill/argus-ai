@@ -14,7 +14,8 @@ import { FilterDrawer } from "@/components/layout/FilterDrawer";
 import { SettingsModal } from "@/components/layout/SettingsModal";
 import { TopNav } from "@/components/layout/TopNav";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
-import { useThemeAlerts } from "@/hooks/useThemeAlerts";
+import { deriveMorningBriefDeltas, type MorningBriefDelta } from "@/lib/intelligenceDeltas";
+import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from "@/lib/feedRanker";
 import { nodeToFocus, buildFocusMatcher, clusterMatchesFocus, wmnMatchesFocus, itemMatchesFocus, focusKindLabel } from "@/lib/feedFocus";
@@ -124,7 +125,21 @@ export default function FeedPage() {
   const { watchlist } = useWatchlist();
   const { watchedIds, toggle: toggleThemeWatch, isWatched: isThemeWatched } = useThemeWatchlist();
   const themes = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
-  const { hasAlert, alertFor, dismiss: dismissAlert } = useThemeAlerts(themes);
+  // D13 (P2.7): alert badges are CANONICAL ledger records - the device
+  // signal-transition store (useThemeAlerts) is deleted.
+  const ledgerAlert = useMemo(() => {
+    const dr = deriveMorningBriefDeltas({ themes, previouslyTracked: getTrackedThemes() });
+    const m = new Map<string, MorningBriefDelta>();
+    const byName = new Map(themes.map(t => [t.name.toLowerCase(), t.id]));
+    for (const d of dr.deltas) { const id = byName.get(d.entity.toLowerCase()); if (id && !m.has(id)) m.set(id, d); }
+    return m;
+  }, [themes]);
+  const hasAlert = useCallback((id: string) => ledgerAlert.has(id), [ledgerAlert]);
+  const alertDirectionFor = useCallback((id: string): "up" | "down" | undefined => {
+    const d = ledgerAlert.get(id);
+    if (!d) return undefined;
+    return d.kind === "STRENGTHENED" || d.kind === "NEW" || d.kind === "EXPANDED" ? "up" : "down";
+  }, [ledgerAlert]);
   const ms = useMarketState();
   const { prefs } = useUserPreferences();
   const isPanic      = ms.regimeTransition && ms.riskRegime === "risk-off";
@@ -280,8 +295,8 @@ export default function FeedPage() {
           deals={[]}
           isWatched={isThemeWatched(selectedTheme.id)}
           hasAlert={hasAlert(selectedTheme.id)}
-          alertDirection={alertFor(selectedTheme.id)?.direction}
-          onToggleWatch={() => { toggleThemeWatch(selectedTheme.id); dismissAlert(selectedTheme.id); }}
+          alertDirection={alertDirectionFor(selectedTheme.id)}
+          onToggleWatch={() => toggleThemeWatch(selectedTheme.id)}
           onClose={() => setSelectedTheme(null)}
         />
       )}

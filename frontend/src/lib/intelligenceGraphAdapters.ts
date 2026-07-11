@@ -17,6 +17,7 @@ import { intelligenceGraph as G } from "./intelligenceGraph";
 import type { SourcePage, IntelNode } from "./intelligenceGraph";
 import { tickerInfo } from "./tickerMetadata";
 import type { ThemeIntelligence, StoryCluster, FeedItem, Episode } from "./types";
+import { matchEpisodeThemesDetailed } from "./listenIntelligence";
 import type { ThemeSnapshot } from "./themeSnapshots";
 import type { MADeal } from "@/hooks/useMAIntelligence";
 
@@ -232,8 +233,12 @@ export function ingestListen(
 ): IngestStats {
   if (!episodes?.length) return { ...EMPTY_STATS };
 
-  // Resolve the matched-theme labels once.
-  const globalThemes = matchedThemes.map(t => (typeof t === "string" ? s(t) : themeLabel(t))).filter(Boolean);
+  // D14 fix (P2.7): each Podcast node links only to ITS OWN matched themes
+  // (the deterministic per-episode matcher over the canonical theme set),
+  // never the global matched-theme set - so Podcast->Theme edges carry real
+  // per-episode signal. Edges stay "mentions" (metadata-level matching can
+  // never record support).
+  const themeObjs = matchedThemes.filter((t): t is ThemeIntelligence => typeof t !== "string");
 
   return runIngest(fail => {
     for (const ep of episodes) {
@@ -247,8 +252,11 @@ export function ingestListen(
           metadata: { show: ep.show_name, publisher: ep.publisher, published: ep.published_at, url: ep.external_url },
         }).id;
 
-        // Themes: episode topics + any globally matched themes.
-        const epThemes = [...new Set([...(ep.topics ?? []).map(s), ...globalThemes])].filter(Boolean);
+        // Themes: episode topics + THIS episode's matched canonical themes.
+        const perEpisode = themeObjs.length > 0
+          ? matchEpisodeThemesDetailed(ep, themeObjs, 3).map(m => themeLabel(m.theme))
+          : [];
+        const epThemes = [...new Set([...(ep.topics ?? []).map(s), ...perEpisode])].filter(Boolean);
         const themeIds: string[] = [];
         for (const label of epThemes) {
           const th = G.addNode({ label, type: "Theme", aliases: [label], sources: [PAGE_LISTEN] }).id;

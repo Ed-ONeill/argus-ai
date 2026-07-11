@@ -2,10 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import {
-  generateBullBearCases,
-  generateInvalidationSignals, themeBeneficiaries, explainMechanism,
-} from "@/lib/themeIntelligence";
+import { themeBeneficiaries } from "@/lib/themeIntelligence";
 import { buildRiskRead } from "@/lib/riskRead";
 import { deriveDriver, deriveSector, dirOf, themeWatch } from "@/lib/themeTransmission";
 import { focusedThemes, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
@@ -71,7 +68,6 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   // (bestExpressions/themeLosers winWhy/loseWhy) is deleted.
   const beneficiaries = themeBeneficiaries(theme, 6);
   const negSectors = (theme.related_industries ?? []).filter(s => theme.relationship_weights?.[s]?.direction === "negative");
-  const cases = generateBullBearCases(theme);
   // Phase 2.4: catalyst and invalidation are the shared per-entity risk read
   // (verified dateless catalysts + the prediction engine's condition - the
   // same records Explorer shows). The keyword-template invalidation survives
@@ -79,9 +75,8 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   const shared = buildRiskRead(theme.name, theme);
   const hasShared = shared.basis === "graph";
   const catalyst = hasShared ? (shared.catalysts[0] ?? null) : null;
-  const invalidation = hasShared
-    ? shared.invalidation
-    : (generateInvalidationSignals(theme)[0]?.condition ?? null);
+  // P2.7 (D12): shared records only - the keyword fallback is deleted.
+  const invalidation = hasShared ? shared.invalidation : null;
   const mem = theme.memory;
 
   // 1, What changed?
@@ -102,20 +97,17 @@ function buildReasoning(theme: ThemeIntelligence, clusters: StoryCluster[]) {
   else if (stories[0]) whatChanged += `; the latest read: “${stories[0].primary.title}”`;
   whatChanged += ".";
 
-  // 2, Why does it matter?
-  const whyMatters = explainMechanism(theme)
-    || firstSentence(theme.causal_narrative)
-    || `${driver} is transmitting into ${sector ?? "the broader tape"}; ${dir === "bearish" ? "that pressures" : "that rewards"} the names with the most direct exposure, and the move tends to spread before it is fully priced.`;
+  // 2, Why does it matter? Pipeline narrative or a factual driver line only
+  // (P2.7: the mechanism template library is deleted).
+  const whyMatters = firstSentence(theme.causal_narrative)
+    || `${driver} is the recorded driver${sector ? ` into ${sector}` : ""} (pipeline fields).`;
 
-  // 3, Who benefits? (recorded exposure; stored-field re-voice as fallback)
-  const benefitsText = cases.bull
-    || `Most direct recorded exposure sits with ${beneficiaries.slice(0, 2).join(" and ") || `the leaders in ${sector ?? "the theme's core sector"}`}.`;
+  // 3, Who benefits? Recorded exposure only (P2.7: bull-case template deleted).
+  const benefitsText = `Most direct recorded exposure sits with ${beneficiaries.slice(0, 2).join(" and ") || `the leaders in ${sector ?? "the theme's core sector"}`}.`;
 
-  // 4, Who is hurt? Recorded negative-weight sectors only - never dictionary risk prose.
+  // 4, Who is hurt? Recorded negative-weight sectors only - never template prose.
   const hurt = negSectors.length > 0
     ? { text: `Recorded negative exposure: ${negSectors.slice(0, 2).join(", ")} (pipeline relationship weights).`, tickers: [] as string[], label: negSectors[0] as string | null }
-    : cases.bear
-    ? { text: cases.bear, tickers: [] as string[], label: null as string | null }
     : null;
 
   return {

@@ -132,9 +132,9 @@ function relationOfEdge(relationshipType: string): EpisodeRelation {
 }
 
 /** Recorded graph attachments for one episode: the Podcast node's edges to
-    Companies/ETFs (per-episode-specific). Theme edges are excluded: the
-    canonical adapter links episodes to the GLOBAL matched-theme set (D14), so
-    they carry no per-episode signal. */
+    Companies/ETFs AND Themes (D14 fixed in P2.7: the adapter records only
+    THIS episode's matched themes, so Podcast->Theme edges carry real
+    per-episode signal). */
 function graphAttachments(ep: Episode): EpisodeAttachment[] {
   const node = G.getNode(ep.id) ?? G.getNode(ep.title);
   if (!node) return [];
@@ -142,7 +142,7 @@ function graphAttachments(ep: Episode): EpisodeAttachment[] {
   const seen = new Set<string>();
   for (const { node: n, edge } of G.getNeighbors(node.id)) {
     const ty = String(n.type);
-    if (ty !== "Company" && ty !== "ETF") continue;
+    if (ty !== "Company" && ty !== "ETF" && ty !== "Theme" && ty !== "Narrative") continue;
     if (seen.has(n.id)) continue;
     seen.add(n.id);
     out.push({

@@ -13,7 +13,6 @@
 import { intelligenceGraph as G } from "./intelligenceGraph";
 import { num, round } from "./intelligenceUtils";
 import { formatRelativeAge, secondsSince } from "./utils";
-import { predictThemeTrajectory, predictCompanyTrajectory, predictSectorRotation } from "./predictionEngine";
 import {
   recordSnapshot, getEntityHistory, compareSnapshots, detectHistoricalPatterns,
   summarizeEvolution, findHistoricalAnalogs,
@@ -70,29 +69,9 @@ export interface ForecastVM {
   invalidation: string | null;
 }
 
-/**
- * Forward-looking forecast, normalized across theme / company / sector predictions.
- * Returns null when the prediction did not resolve or is insufficient_signal.
- */
-export function buildForecast(kind: IntelKind, label: string, graphKey: string): ForecastVM | null {
-  if (kind === "company" || kind === "etf") {
-    const p = predictCompanyTrajectory(graphKey);
-    if (!p.found || p.expectedDirection === "insufficient_signal") return null;
-    return { direction: p.expectedDirection, probability: p.probability, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: p.invalidation || null };
-  }
-  if (kind === "sector") {
-    const p = predictSectorRotation(label);
-    if (!p.found || p.currentRotation === "insufficient_signal") return null;
-    const inflow = p.companiesBenefiting.length >= p.companiesAtRisk.length;
-    return { direction: inflow ? "rotating in" : "rotating out", probability: null, confidence: p.confidence, timeframe: null, reasons: p.reasoningSteps.map(s => s.claim).slice(0, 3), invalidation: null };
-  }
-  if (kind === "theme" || kind === "driver" || kind === "narrative") {
-    const p = predictThemeTrajectory(graphKey);
-    if (!p.found || p.predictedDirection === "insufficient_signal") return null;
-    return { direction: p.predictedDirection, probability: p.probability, confidence: p.confidence, timeframe: p.expectedTimeframe, reasons: p.why.slice(0, 3), invalidation: p.invalidationConditions[0] || null };
-  }
-  return null;
-}
+// buildForecast: DELETED (Phase 2.7, D8). The Intelligence Profile forward
+// view (prediction engine, assembled centrally, A2-cached) is the one source;
+// ForecastVM survives as a render shape only.
 
 /* ---- Intelligence Timeline (Memory Engine, read-only) ---- */
 

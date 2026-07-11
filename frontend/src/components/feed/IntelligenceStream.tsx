@@ -6,7 +6,7 @@ import { ChevronDown, ExternalLink, Bookmark, BookmarkCheck, Radio, ArrowRight, 
 import { catColor, timeAgo } from "@/lib/utils";
 import { classifyImpact } from "@/lib/types";
 import { transmissionPath, dirOf, themeWatch } from "@/lib/themeTransmission";
-import { themeBeneficiaries, generateThesis, generateBullBearCases } from "@/lib/themeIntelligence";
+import { themeBeneficiaries } from "@/lib/themeIntelligence";
 import { buildRiskRead } from "@/lib/riskRead";
 import { Beam, useBeam } from "@/lib/feedHighlight";
 import { TickerChip } from "@/components/common/TickerChip";
@@ -139,7 +139,6 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
   const companies = [...new Set([...(item.affected_entities ?? []), ...themeBeneficiaries(theme, 4)])].slice(0, 8);
   const sectors = (theme.related_industries ?? []).slice(0, 4);
   const related = [...cluster.related].sort((a, b) => (b.published_ts ?? "").localeCompare(a.published_ts ?? ""));
-  const cases = generateBullBearCases(theme);
   // Phase 2.4: catalyst + contradiction come from the shared risk read
   // (verified dateless catalysts; evidence-engine records). Templates remain
   // only as the graphless fallback.
@@ -272,14 +271,16 @@ function LeadDossier({ cluster, theme, isSaved, onSave, isNew, watchedEntities }
               <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.62)" }}>
                 {sharedContradiction
                   ? <>{sharedContradiction.detail} <span style={{ color: "rgba(255,255,255,0.35)" }}>sev {sharedContradiction.severity} (evidence engine)</span></>
-                  : (cases.bear || "No material counter-signal in the current evidence, confirmation is one-sided, which itself is a crowding risk.")}
+                  : "No recorded contradiction against this theme; one-sided confirmation is itself a crowding risk."}
               </p>
             </div>
 
             {/* Block 7, Prediction (emphasised) */}
             <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.05)", borderLeft: `2px solid ${dc}` }}>
               <BlockLabel>Prediction</BlockLabel>
-              <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}>{generateThesis(theme)}</p>
+              <p className="text-[11.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}>
+                {(theme.causal_narrative ?? "").replace(/→/g, ", ").split(". ")[0] || "No recorded thesis narrative from the pipeline."}
+              </p>
               {catalyst && (
                 <p className="text-[9.5px] mt-1.5 flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.46)" }} title={catalyst.detail}>
                   <span className="font-bold uppercase tracking-wide" style={{ color: `${dc}c0` }}>Test</span>

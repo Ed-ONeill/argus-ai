@@ -8,12 +8,13 @@ import { X, ArrowUpRight, Maximize2 } from "lucide-react";
 import { TickerChip } from "@/components/common/TickerChip";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildCrossIntel } from "@/lib/crossIntel";
+import { cachedProfile } from "@/lib/profileCache";
 import { getThemeMemory, themeKey } from "@/lib/themeSnapshots";
 import { evaluateEvidenceForNode } from "@/lib/evidenceEngine";
 import { resolveDrawerEntity, type DrawerEntity } from "@/lib/drawerEntity";
 import {
   dirColor as sharedDirColor, nodeColor, NODE_COLOR, evColor, fmtDate, fmtDay, fmtCompact, trunc,
-  buildForecast, buildTimeline, buildMarketStructure, buildRelationshipMap, collectCurrentThemes,
+  buildTimeline, buildMarketStructure, buildRelationshipMap, collectCurrentThemes,
   recordDailyMemorySnapshot, explorerHref,
   EMPTY_TIMELINE, EMPTY_MAP,
   type ForecastVM, type TimelineVM, type MarketStructureVM, type MapNode, type MapVM,
@@ -153,8 +154,15 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
 
   // Forward-looking forecast, normalized across theme / company / sector predictions.
   // Renders only when the prediction resolved and is not insufficient_signal.
+  // D8 (P2.7): buildForecast is deleted - the drawer reads the SAME cached
+  // profile forward view Explorer holds (one entity, one forward view).
   const forecast = useMemo<ForecastVM | null>(
-    () => (graph.ready ? buildForecast(ctx.kind, ctx.label, entity.graphKey) : null),
+    () => {
+      if (!graph.ready) return null;
+      const p = cachedProfile(entity.graphKey);
+      const f = p.thesis.data?.forward;
+      return f ? { direction: f.direction, probability: f.probability, confidence: f.confidence, timeframe: f.timeframe, reasons: f.reasons, invalidation: p.risks.data?.invalidation ?? null } : null;
+    },
     [graph, ctx.kind, ctx.label, entity.graphKey],
   );
 
@@ -225,12 +233,16 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
     <div>
       <div className="grid grid-cols-2 gap-px" style={{ background: A(0.06) }}>
         <div className="px-4 py-2.5" style={{ background: "#0b0f18" }}>
-          <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(52,211,153,0.7)" }}>Opportunity</p>
-          <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>{intel.opportunity}</p>
+          <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(52,211,153,0.7)" }}>Forward View · prediction engine</p>
+          <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>
+            {forecast ? `${forecast.direction}${forecast.reasons[0] ? ` - ${forecast.reasons[0]}` : ""}` : "No resolvable forward view yet."}
+          </p>
         </div>
         <div className="px-4 py-2.5" style={{ background: "#0b0f18" }}>
-          <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(248,113,113,0.75)" }}>Risk</p>
-          <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>{intel.risk}</p>
+          <p className="text-[8px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: "rgba(248,113,113,0.75)" }}>Risk · shared engines</p>
+          <p className="text-[10.5px] leading-snug" style={{ color: A(0.66) }}>
+            {(graph.ready && (cachedProfile(entity.graphKey).risks.data?.contradictions[0]?.detail ?? cachedProfile(entity.graphKey).risks.data?.invalidation)) || "No recorded risk records yet."}
+          </p>
         </div>
       </div>
       {isSymbol && forecast?.invalidation && (
@@ -288,9 +300,11 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
       ))}</ul>
     </Section>
   );
-  const privateReadSec = (
-    <Section label="Private capital read"><p className="text-[11px] leading-snug" style={{ color: A(0.7) }}>{intel.privateRead}</p></Section>
-  );
+  // P2.7 (D8): the templated "private capital read" is deleted; the section
+  // now shows the shared forward view when one resolves.
+  const privateReadSec = forecast ? (
+    <Section label="Forward view · prediction engine"><p className="text-[11px] leading-snug" style={{ color: A(0.7) }}>{forecast.direction}{forecast.reasons[0] ? ` - ${forecast.reasons[0]}` : ""}</p></Section>
+  ) : null;
   const recentChangeSec = (
     <Section label="Recent change">
       {memory.hasHistory
@@ -577,12 +591,14 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
               </Section>
             )}
 
-            <Section label="Opportunity / Risk">
+            <Section label="Forward / Risk · shared engines">
               <p className="text-[10.5px] leading-snug flex gap-1.5" style={{ color: A(0.7) }}>
-                <span className="shrink-0 font-bold" style={{ color: "#34d399" }}>+</span>{intel.opportunity}
+                <span className="shrink-0 font-bold" style={{ color: "#34d399" }}>+</span>
+                {forecast ? `${forecast.direction}${forecast.reasons[0] ? ` - ${forecast.reasons[0]}` : ""}` : "No resolvable forward view yet."}
               </p>
               <p className="text-[10.5px] leading-snug flex gap-1.5 mt-1" style={{ color: A(0.7) }}>
-                <span className="shrink-0 font-bold" style={{ color: "#f87171" }}>-</span>{intel.risk}
+                <span className="shrink-0 font-bold" style={{ color: "#f87171" }}>-</span>
+                {(graph.ready && (cachedProfile(entity.graphKey).risks.data?.contradictions[0]?.detail ?? cachedProfile(entity.graphKey).risks.data?.invalidation)) || "No recorded risk records yet."}
               </p>
             </Section>
 

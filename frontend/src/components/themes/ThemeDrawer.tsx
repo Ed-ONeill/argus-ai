@@ -12,7 +12,7 @@ import {
 } from "@/lib/themeMomentum";
 import {
   computeCrossAssetImpact,
-  computeConvictionScore, convictionLabel,
+  convictionLabel,
   type CrossAssetImpact,
 } from "@/lib/themeImpact";
 import {
@@ -21,12 +21,19 @@ import {
   type SignalDelta, type AssetExposure,
 } from "@/lib/themeSignalDelta";
 import {
-  generateBullBearCases, generateWatchSignals,
-  generateEvidenceItems, explainConviction, computeThemeHealth, generateInvalidationSignals,
-  generateThesis, generateIntelligenceBriefing, computeIntelligenceScore, memorySentences,
-  type BullBearCases, type WatchSignal,
-  type EvidenceItem, type ConvictionExplanation, type ThemeHealthScore, type InvalidationSignal,
+  generateEvidenceItems, explainConviction, computeThemeHealth, memorySentences,
+  type EvidenceItem, type ConvictionExplanation, type ThemeHealthScore,
 } from "@/lib/themeIntelligence";
+import { cachedProfile } from "@/lib/profileCache";
+
+// P2.7 (D12): the generateThesis / bull-bear / briefing / keyword watch &
+// invalidation templates are deleted. Prose below is PIPELINE fields
+// (causal_narrative) or shared-engine records - never generated meaning.
+function pipelineSentences(narrative?: string | null, max = 2): string[] {
+  if (!narrative) return [];
+  return narrative.replace(/→/g, ", ").replace(/ {2,}/g, " ").split(/(?<=\.)\s+/).map(s => s.trim()).filter(s => s.length > 12).slice(0, max);
+}
+
 import { buildRiskRead } from "@/lib/riskRead";
 import {
   computeCompanyExposures, computeTransmissionPaths,
@@ -179,19 +186,22 @@ export function ThemeDrawer({
   }, [theme]);
   const industryExposure                                             = useMemo(() => computeIndustryExposureRanking(theme), [theme]);
   const assetExposure:     AssetExposure[]                          = useMemo(() => computeAssetExposure(theme), [theme]);
-  const conviction                                                   = useMemo(() => computeConvictionScore(theme), [theme]);
+  // P2.7: conviction is the PIPELINE number (canonical owner) - the local composite is retired.
+  const conviction                                                   = Math.round(theme.confidence ?? 0);
   const cvLabel                                                      = convictionLabel(conviction);
   const catalysts                                                    = useMemo(() => (hasShared ? shared.catalysts : []), [hasShared, shared.catalysts]);
-  const bullBear:          BullBearCases                            = useMemo(() => generateBullBearCases(theme),   [theme]);
-  const watchSignals:      WatchSignal[]                            = useMemo(() => (hasShared ? [] : generateWatchSignals(theme)), [hasShared, theme]);
+
   const evidenceItems:     EvidenceItem[]                           = useMemo(() => generateEvidenceItems(theme),   [theme]);
   const convictionExpl:    ConvictionExplanation                    = useMemo(() => explainConviction(theme, conviction), [theme, conviction]);
   const themeHealth:       ThemeHealthScore                         = useMemo(() => computeThemeHealth(theme),      [theme]);
-  const invalidation:      InvalidationSignal[]                     = useMemo(() => (hasShared ? [] : generateInvalidationSignals(theme)), [hasShared, theme]);
-  const invalidationLine                                             = hasShared ? shared.invalidation : (invalidation[0]?.condition ?? null);
-  const thesis                                                       = useMemo(() => generateThesis(theme),                [theme]);
-  const briefing                                                     = useMemo(() => generateIntelligenceBriefing(theme),  [theme]);
-  const intelligenceScore                                            = useMemo(() => computeIntelligenceScore(theme),       [theme]);
+  const invalidationLine                                             = hasShared ? shared.invalidation : null;
+  const thesis                                                       = pipelineSentences(theme.causal_narrative, 1)[0] ?? null;
+  const briefing                                                     = useMemo(() => pipelineSentences(theme.causal_narrative, 3), [theme.causal_narrative]);
+  const sharedVerdict = useMemo(() => {
+    if (!hasShared) return null;
+    const p = cachedProfile(theme.name);
+    return p.evidence.data ? { verdict: p.evidence.data.verdict, trust: p.evidence.data.overallTrust } : null;
+  }, [hasShared, theme.name]);
   const topPodcasts                                                  = connectedEpisodes.slice(0, 3);
   const companyExposures:  CompanyExposure[]                        = useMemo(() => computeCompanyExposures(theme), [theme]);
   const transmissionPaths: TransmissionPath[]                       = useMemo(
@@ -228,10 +238,9 @@ export function ThemeDrawer({
     // Shared watch items first (profile watch + the derived dateless line);
     // stored-field keyword signals only as the graphless fallback.
     if (shared.watchItems.length > 0) return shared.watchItems[0];
-    if (watchSignals.length > 0) return watchSignals[0].variable;
     if (catalysts.length > 0) return catalysts[0].label;
     return (theme.related_macro_factors ?? [])[0] ?? null;
-  }, [shared.watchItems, catalysts, watchSignals, theme.related_macro_factors]);
+  }, [shared.watchItems, catalysts, theme.related_macro_factors]);
 
   const bearishItems = useMemo(() => {
     const hws   = companyExposures.filter(c => c.direction === "headwind");
@@ -572,7 +581,7 @@ export function ThemeDrawer({
             {/* ── What Breaks the Thesis: prediction-engine invalidation +
                    evidence-engine contradictions (shared), or the labeled
                    stored-field fallback when the graph was unavailable ── */}
-            {(invalidationLine || shared.contradictions.length > 0 || invalidation.length > 0) && (
+            {(invalidationLine || shared.contradictions.length > 0) && (
               <div
                 className="rounded-xl p-3.5"
                 style={{ background: "rgba(239,68,68,0.022)", border: "1px solid rgba(239,68,68,0.08)" }}
@@ -603,14 +612,6 @@ export function ThemeDrawer({
                       </p>
                     </div>
                   ))}
-                  {!hasShared && invalidation.slice(0, 3).map((sig, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold shrink-0 leading-snug"
-                        style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
-                      <p className="text-[11.5px] leading-snug font-medium"
-                        style={{ color: "rgba(255,255,255,0.65)" }}>{sig.condition}</p>
-                    </div>
-                  ))}
                 </div>
               </div>
             )}
@@ -622,22 +623,22 @@ export function ThemeDrawer({
             >
               <div>
                 <p className="text-[9px] font-bold uppercase tracking-[0.14em] mb-1"
-                  style={{ color: "rgba(255,255,255,0.26)" }}>Intelligence Score</p>
+                  style={{ color: "rgba(255,255,255,0.26)" }}>Evidence Verdict · shared engines</p>
                 <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.42)" }}>
-                  {intelligenceScore.label}
+                  {sharedVerdict ? `${sharedVerdict.verdict.replace(/_/g, " ")} (same verdict Explorer shows)` : "Evidence engine unresolved for this theme."}
                 </p>
               </div>
               <div className="flex items-end gap-1.5">
                 <span
                   className="text-[32px] font-black tabular-nums leading-none"
                   style={{
-                    color: intelligenceScore.score >= 70 ? "#10B981"
-                         : intelligenceScore.score >= 50 ? "#F59E0B" : "#6B7280",
+                    color: (sharedVerdict?.trust ?? 0) >= 70 ? "#10B981"
+                         : (sharedVerdict?.trust ?? 0) >= 50 ? "#F59E0B" : "#6B7280",
                   }}
                 >
-                  {intelligenceScore.score}
+                  {sharedVerdict ? sharedVerdict.trust : "-"}
                 </span>
-                <span className="text-[11px] mb-0.5" style={{ color: "rgba(255,255,255,0.26)" }}>/100</span>
+                <span className="text-[11px] mb-0.5" style={{ color: "rgba(255,255,255,0.26)" }}>trust</span>
               </div>
             </div>
 
@@ -919,14 +920,18 @@ export function ThemeDrawer({
               <div className="rounded-xl p-3"
                 style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.10)" }}>
                 <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
-                  style={{ color: "rgba(16,185,129,0.55)" }}>Bull Case</p>
-                <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>{bullBear.bull}</p>
+                  style={{ color: "rgba(16,185,129,0.55)" }}>Pipeline Thesis</p>
+                <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
+                  {thesis ?? "No recorded thesis narrative from the pipeline."}
+                </p>
               </div>
               <div className="rounded-xl p-3"
                 style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.10)" }}>
                 <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] mb-1.5"
-                  style={{ color: "rgba(239,68,68,0.55)" }}>Bear Case</p>
-                <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>{bullBear.bear}</p>
+                  style={{ color: "rgba(239,68,68,0.55)" }}>What Breaks It · shared engines</p>
+                <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}>
+                  {invalidationLine ?? shared.contradictions[0]?.detail ?? "No recorded invalidation or contradiction yet."}
+                </p>
               </div>
             </div>
 
@@ -1494,7 +1499,7 @@ export function ThemeDrawer({
           {/* ── RISKS ────────────────────────────────────────────────────── */}
           {activeTab === "Risks" && (<>
 
-            {(shared.watchItems.length > 0 || watchSignals.length > 0) && (
+            {shared.watchItems.length > 0 && (
               <Section title={hasShared ? "Watch · derived" : "Watch · stored-field read"}>
                 <div className="space-y-2">
                   {hasShared && shared.watchItems.map((item, i) => (
@@ -1505,24 +1510,11 @@ export function ThemeDrawer({
                       </p>
                     </div>
                   ))}
-                  {!hasShared && watchSignals.map(sig => (
-                    <div key={sig.variable} className="flex items-start gap-2">
-                      <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full" style={{ background: "rgba(82,176,200,0.55)" }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-semibold leading-snug" style={{ color: "rgba(255,255,255,0.65)" }}>
-                          {sig.variable}
-                        </p>
-                        <p className="text-[10px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.32)" }}>
-                          {sig.condition}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </Section>
             )}
 
-            {(invalidationLine || shared.contradictions.length > 0 || invalidation.length > 0) && (
+            {(invalidationLine || shared.contradictions.length > 0) && (
               <div
                 className="rounded-xl p-3.5"
                 style={{ background: "rgba(239,68,68,0.022)", border: "1px solid rgba(239,68,68,0.08)" }}
@@ -1547,15 +1539,6 @@ export function ThemeDrawer({
                       <p className="text-[11.5px] leading-snug font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>
                         {c.detail} <span style={{ color: "rgba(255,255,255,0.32)" }}>sev {c.severity}</span>
                       </p>
-                    </div>
-                  ))}
-                  {!hasShared && invalidation.map((sig, i) => (
-                    <div key={i} className="space-y-0.5">
-                      <div className="flex items-start gap-2">
-                        <span className="text-[10px] font-bold shrink-0 leading-snug" style={{ color: "rgba(239,68,68,0.55)" }}>-</span>
-                        <p className="text-[11.5px] leading-snug font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>{sig.condition}</p>
-                      </div>
-                      <p className="text-[10.5px] leading-snug ml-4" style={{ color: "rgba(255,255,255,0.30)" }}>{sig.impact}</p>
                     </div>
                   ))}
                 </div>

@@ -12,14 +12,14 @@ import {
   THEME_LIFECYCLE_META,
   type ThemeLifecycleStage,
 } from "@/lib/themeEvolution";
-import {
-  generateIntelligenceBriefing,
-  generateBullBearCases,
-  generateWatchSignals,
-  generateInvalidationSignals,
-  computeThemeHealth,
-  themeBeneficiaries,
-} from "@/lib/themeIntelligence";
+import { computeThemeHealth, themeBeneficiaries } from "@/lib/themeIntelligence";
+
+// P2.7 (D12): the briefing / bull-bear / keyword watch & invalidation
+// templates are deleted; prose is pipeline fields or shared records only.
+function pipelineSentences(narrative?: string | null, max = 2): string[] {
+  if (!narrative) return [];
+  return narrative.replace(/→/g, ", ").replace(/ {2,}/g, " ").split(/(?<=\.)\s+/).map(x => x.trim()).filter(x => x.length > 12).slice(0, max);
+}
 import {
   cleanThemeName,
   cleanMacroLabel,
@@ -173,19 +173,16 @@ export function ThemeDetailDrawer({
 
   const bColor  = borderColorForTheme(t, evState);
   const health  = computeThemeHealth(t);
-  const bbCases = generateBullBearCases(t);
   // Phase 2.4: catalysts / invalidation / watch / conflicts come from the
   // shared risk read (lib/riskRead - the same engine records Explorer and the
   // Morning Brief show). The stored-field keyword generators survive ONLY as
   // the labeled fallback when the graph was unavailable at open time.
   const hasShared      = shared !== null && shared.basis === "graph";
   const catalysts      = hasShared ? shared.catalysts : [];
-  const watchSignals   = hasShared ? [] : generateWatchSignals(t);
   const sharedWatch    = hasShared ? shared.watchItems : [];
-  const invalidations  = hasShared ? [] : generateInvalidationSignals(t);
   const sharedInvalidation = hasShared ? shared.invalidation : null;
   const sharedConflicts    = hasShared ? shared.contradictions : [];
-  const briefingSents  = generateIntelligenceBriefing(t);
+  const briefingSents  = pipelineSentences(t.causal_narrative, 3);
   // P2.5 (D11): recorded exposure only - the curated securities dictionary
   // (bestExpressions winWhy / themeLosers loseWhy) is deleted. Downside
   // exposure = shared weakening edges, else recorded negative-weight sectors.
@@ -432,13 +429,17 @@ export function ThemeDetailDrawer({
                 <div className="grid grid-cols-2">
                   <div className="px-3.5 py-3 border-r border-edge"
                        style={{ borderLeft: "2px solid rgba(16,185,129,0.35)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-400/60 mb-1.5">{"What's Working"}</p>
-                    <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bull}</p>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-emerald-400/60 mb-1.5">Pipeline Thesis</p>
+                    <p className="text-[12px] text-ink-secondary leading-relaxed">
+                      {briefingSents[0] ?? "No recorded thesis narrative from the pipeline."}
+                    </p>
                   </div>
                   <div className="px-3.5 py-3"
                        style={{ borderLeft: "2px solid rgba(239,68,68,0.30)" }}>
-                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-400/60 mb-1.5">{"What's Breaking"}</p>
-                    <p className="text-[12px] text-ink-secondary leading-relaxed">{bbCases.bear}</p>
+                    <p className="text-[7.5px] font-bold uppercase tracking-[0.18em] text-red-400/60 mb-1.5">What Breaks It · shared engines</p>
+                    <p className="text-[12px] text-ink-secondary leading-relaxed">
+                      {sharedInvalidation ?? sharedConflicts[0]?.detail ?? "No recorded invalidation or contradiction yet."}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -522,24 +523,16 @@ export function ThemeDetailDrawer({
 
               {/* What Changes Our View - shared watch items (derived, dateless),
                   or the labeled stored-field fallback when the graph was down */}
-              {(sharedWatch.length > 0 || watchSignals.length > 0) && (
+              {sharedWatch.length > 0 && (
                 <div className="rounded-lg border border-amber-500/25 overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-amber-500/25 bg-amber-500/12 flex items-center justify-between">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-600/80">What Changes Our View</p>
-                    <p className="text-[7.5px] font-bold tracking-[0.1em] text-amber-600/55">
-                      {sharedWatch.length > 0 ? "DERIVED" : "STORED-FIELD READ"}
-                    </p>
+                    <p className="text-[7.5px] font-bold tracking-[0.1em] text-amber-600/55">DERIVED</p>
                   </div>
                   <div className="divide-y divide-amber-500/15">
                     {sharedWatch.map((item, i) => (
                       <div key={`sw-${i}`} className="px-4 py-3">
                         <p className="text-[11px] text-ink-secondary leading-snug">{item}</p>
-                      </div>
-                    ))}
-                    {watchSignals.map((sig, i) => (
-                      <div key={i} className="px-4 py-3">
-                        <p className="text-[11px] font-semibold text-ink mb-0.5">{sig.variable}</p>
-                        <p className="text-[11px] text-ink-secondary leading-snug">{sig.condition}</p>
                       </div>
                     ))}
                   </div>
@@ -677,13 +670,11 @@ export function ThemeDetailDrawer({
               {/* Thesis Invalidation - the prediction engine's recorded
                   condition (same record as Explorer/profile risks), or the
                   labeled keyword-template fallback without the graph */}
-              {(sharedInvalidation || invalidations.length > 0) && (
+              {sharedInvalidation && (
                 <div className="rounded-lg border border-edge overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-edge bg-raised/60 flex items-center justify-between">
                     <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-ink-secondary">Thesis Invalidation</p>
-                    <p className="text-[8px] text-ink-muted/45 font-bold tracking-[0.1em]">
-                      {sharedInvalidation ? "PREDICTION ENGINE" : "STORED-FIELD READ"}
-                    </p>
+                    <p className="text-[8px] text-ink-muted/45 font-bold tracking-[0.1em]">PREDICTION ENGINE</p>
                   </div>
                   <div className="divide-y divide-edge/50">
                     {sharedInvalidation && (
@@ -692,12 +683,6 @@ export function ThemeDetailDrawer({
                         <p className="text-[10.5px] text-ink-secondary leading-snug">Recorded invalidation condition for the forward view of this theme.</p>
                       </div>
                     )}
-                    {invalidations.map((inv, i) => (
-                      <div key={i} className="px-4 py-3">
-                        <p className="text-[11px] font-semibold text-ink mb-1">{inv.condition}</p>
-                        <p className="text-[10.5px] text-ink-secondary leading-snug">{inv.impact}</p>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}

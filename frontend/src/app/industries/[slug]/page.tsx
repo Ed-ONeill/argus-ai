@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -31,7 +32,8 @@ import {
 } from "@/lib/sectorIntelligence";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildIndustriesIntel, type SectorIntelVM } from "@/lib/industriesIntel";
-import { buildIntelligenceProfile, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { cachedProfile } from "@/lib/profileCache";
 import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
 import { deriveNarratives } from "@/lib/narrativeDerivation";
 import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
@@ -53,7 +55,8 @@ import {
   type IndustrySponsor,
 } from "@/lib/industryIntelligence";
 import { computeThemeEvolutionState, THEME_EVOLUTION_META } from "@/lib/themeEvolution";
-import { ThemeDrawer } from "@/components/themes/ThemeDrawer";
+// P2.7 perf: the drawer only mounts on open - load it on demand.
+const ThemeDrawer = dynamic(() => import("@/components/themes/ThemeDrawer").then(m => m.ThemeDrawer), { ssr: false });
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { IndustryArtwork, industryIcon } from "@/components/industries/industryIdentity";
 import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
@@ -725,7 +728,7 @@ export default function IndustryDetailPage() {
     if (!sectorKey) return null;
     const profiles = new Map<string, IntelligenceProfile>();
     const risks = new Map<string, RiskRead>();
-    if (argus.ready) profiles.set(sectorKey.toLowerCase(), buildIntelligenceProfile(sectorKey));
+    if (argus.ready) profiles.set(sectorKey.toLowerCase(), cachedProfile(sectorKey));
     risks.set(sectorKey.toLowerCase(), buildRiskRead(sectorKey));
     const dr = deriveMorningBriefDeltas({ themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready });
     const vm = buildIndustriesIntel({

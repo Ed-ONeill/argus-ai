@@ -9,7 +9,8 @@ import { cn, formatRelativeAge } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildIndustriesIntel, type SectorIntelVM } from "@/lib/industriesIntel";
-import { buildIntelligenceProfile, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { cachedProfile } from "@/lib/profileCache";
 import { buildRiskRead, type RiskRead } from "@/lib/riskRead";
 import { deriveNarratives } from "@/lib/narrativeDerivation";
 import { deriveMorningBriefDeltas } from "@/lib/intelligenceDeltas";
@@ -224,7 +225,7 @@ export default function SectorsPage() {
     const risks = new Map<string, RiskRead>();
     for (const n of names) {
       const k = n.toLowerCase();
-      if (argus.ready) profiles.set(k, buildIntelligenceProfile(n));
+      if (argus.ready) profiles.set(k, cachedProfile(n));
       risks.set(k, buildRiskRead(n));
     }
     const dr = deriveMorningBriefDeltas({ themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready });
