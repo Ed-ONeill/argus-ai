@@ -140,9 +140,9 @@ class TransitionEvent:
     to_value: dict | None = None
     magnitude: float | None = None
 
-    def to_row(self) -> dict:
+    def to_row(self, uid_column: str = "entity_uid") -> dict:
         return {
-            "entity_uid": self.entity_uid,
+            uid_column: self.entity_uid,
             "transition_type": self.transition_type,
             "effective_at": self.effective_at,
             "from_snapshot_id": self.from_snapshot_id,
@@ -153,6 +153,120 @@ class TransitionEvent:
             "basis": self.basis,
             "schema_version": self.schema_version,
             "event_key": self.event_key,
+        }
+
+
+@dataclass
+class RelationshipRecord:
+    """Row shape for institutional_relationships (identity registry)."""
+    rel_uid: str
+    source_uid: str
+    target_uid: str
+    relationship_type: str
+    direction: str                     # directed | symmetric
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+
+
+@dataclass
+class RelationshipSnapshotRecord:
+    """Row shape for relationship_snapshots. Same payload discipline as
+    entity snapshots: payload_hash covers payload['state'] only."""
+    rel_uid: str
+    snapshot_date: str
+    observed_at: str
+    snapshot_kind: str
+    schema_version: int
+    source_uid: str
+    target_uid: str
+    relationship_type: str
+    direction: str
+    completeness_status: str
+    provenance: dict
+    payload: dict
+    payload_hash: str
+    strength: float | None = None      # backend graph weight, 0-1 scale, verbatim
+    confidence: float | None = None    # backend graph confidence, 0-1 scale
+    evidence_count: int | None = None
+    source_count: int | None = None
+    evidence_refs: list | None = None
+    active: bool = True
+    graph_version: str | None = None
+
+    def to_row(self) -> dict:
+        return {
+            "rel_uid": self.rel_uid,
+            "snapshot_date": self.snapshot_date,
+            "observed_at": self.observed_at,
+            "snapshot_kind": self.snapshot_kind,
+            "schema_version": self.schema_version,
+            "source_uid": self.source_uid,
+            "target_uid": self.target_uid,
+            "relationship_type": self.relationship_type,
+            "direction": self.direction,
+            "strength": self.strength,
+            "confidence": self.confidence,
+            "evidence_count": self.evidence_count,
+            "source_count": self.source_count,
+            "evidence_refs": self.evidence_refs,
+            "active": self.active,
+            "graph_version": self.graph_version,
+            "completeness_status": self.completeness_status,
+            "provenance": self.provenance,
+            "payload": self.payload,
+            "payload_hash": self.payload_hash,
+        }
+
+
+@dataclass
+class NarrativeSnapshotRecord:
+    """Row shape for narrative_snapshots. Member convictions are listed
+    individually — never blended into a narrative-level conviction."""
+    entity_uid: str
+    snapshot_date: str
+    observed_at: str
+    snapshot_kind: str
+    schema_version: int
+    driver_set_key: str
+    member_uids: list
+    completeness_status: str
+    provenance: dict
+    payload: dict
+    payload_hash: str
+    title: str | None = None
+    thesis: str | None = None          # null in M3.2: no deterministic backend thesis
+    member_convictions: list | None = None
+    coherence: float | None = None
+    coherence_components: dict | None = None
+    evidence_refs: list | None = None
+    contradictions: dict | None = None
+    dominance_status: str | None = None
+    rank: int | None = None
+    graph_version: str | None = None
+
+    def to_row(self) -> dict:
+        return {
+            "entity_uid": self.entity_uid,
+            "snapshot_date": self.snapshot_date,
+            "observed_at": self.observed_at,
+            "snapshot_kind": self.snapshot_kind,
+            "schema_version": self.schema_version,
+            "driver_set_key": self.driver_set_key,
+            "title": self.title,
+            "thesis": self.thesis,
+            "member_uids": self.member_uids,
+            "member_convictions": self.member_convictions,
+            "coherence": self.coherence,
+            "coherence_components": self.coherence_components,
+            "evidence_refs": self.evidence_refs,
+            "contradictions": self.contradictions,
+            "dominance_status": self.dominance_status,
+            "rank": self.rank,
+            "graph_version": self.graph_version,
+            "completeness_status": self.completeness_status,
+            "provenance": self.provenance,
+            "payload": self.payload,
+            "payload_hash": self.payload_hash,
         }
 
 
@@ -176,6 +290,9 @@ class WriteRunResult:
     transitions_inserted: int = 0
     error_count: int = 0
     errors: list[str] = field(default_factory=list)
+    # M3.2 stage counters (relationships/narratives/industries) — reported via
+    # memory_write_runs.metadata so the M3.1 column contract stays unchanged.
+    extra: dict = field(default_factory=dict)
 
     def add_error(self, message: str) -> None:
         self.error_count += 1

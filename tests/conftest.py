@@ -45,7 +45,8 @@ def make_theme(**overrides) -> SimpleNamespace:
         related_macro_factors=["Power Load Growth", "AI Capex Supercycle"],
         second_order_effects=["PPA pricing power", "Gas peaker demand"],
         contributing_cluster_ids=["c2", "c1"],
-        relationship_weights={"Utilities": {"weight": 0.85}},
+        relationship_weights={"Utilities": {"weight": 0.85, "type": "indirect",
+                                            "direction": "positive"}},
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -56,10 +57,28 @@ class FakeRepository:
 
     def __init__(self) -> None:
         self.entities: dict[str, dict] = {}
-        self.snapshots: dict[str, dict] = {}          # id -> row
+        self.snapshots: dict[str, dict] = {}          # entity_snapshots: id -> row
         self.transitions: dict[str, dict] = {}        # event_key -> row
         self.runs: dict[str, dict] = {}               # run_key -> row
         self.fail_on: set[str] = set()                # method names that raise
+        # M3.2 tables
+        self.relationships: dict[str, dict] = {}      # rel_uid -> registry row
+        self.rel_snapshots: dict[str, dict] = {}      # id -> row
+        self.narr_snapshots: dict[str, dict] = {}     # id -> row
+        self.rel_transitions: dict[str, dict] = {}    # event_key -> row
+
+    def _table(self, table: str) -> dict[str, dict]:
+        return {
+            "entity_snapshots": self.snapshots,
+            "relationship_snapshots": self.rel_snapshots,
+            "narrative_snapshots": self.narr_snapshots,
+        }[table]
+
+    _UID_COL = {
+        "entity_snapshots": "entity_uid",
+        "relationship_snapshots": "rel_uid",
+        "narrative_snapshots": "entity_uid",
+    }
 
     def _maybe_fail(self, method: str) -> None:
         if method in self.fail_on:
@@ -92,46 +111,125 @@ class FakeRepository:
                 }
         return len(entities)
 
-    # snapshots
-    def _natural_key(self, row: dict) -> tuple:
-        return (row["entity_uid"], row["snapshot_date"],
+    # snapshots (generic over the three snapshot tables, like the real repo)
+    def _natural_key(self, row: dict, uid_col: str) -> tuple:
+        return (row[uid_col], row["snapshot_date"],
                 row["snapshot_kind"], row["schema_version"])
 
-    def fetch_snapshots_for_date(self, snapshot_date, snapshot_kind, schema_version,
-                                 select="id,entity_uid,payload_hash"):
-        self._maybe_fail("fetch_snapshots_for_date")
+    def fetch_table_snapshots_for_date(self, table, uid_col, snapshot_date,
+                                       snapshot_kind, schema_version):
+        self._maybe_fail("fetch_table_snapshots_for_date")
         return {
-            r["entity_uid"]: r for r in self.snapshots.values()
+            r[uid_col]: r for r in self._table(table).values()
             if r["snapshot_date"] == snapshot_date
             and r["snapshot_kind"] == snapshot_kind
             and r["schema_version"] == schema_version
         }
 
-    def fetch_snapshots_between(self, date_from, date_to, snapshot_kind, schema_version):
-        self._maybe_fail("fetch_snapshots_between")
+    def fetch_table_snapshots_between(self, table, date_from, date_to,
+                                      snapshot_kind, schema_version):
+        self._maybe_fail("fetch_table_snapshots_between")
         rows = [
-            r for r in self.snapshots.values()
+            r for r in self._table(table).values()
             if date_from <= r["snapshot_date"] <= date_to
             and r["snapshot_kind"] == snapshot_kind
             and r["schema_version"] == schema_version
         ]
         return sorted(rows, key=lambda r: r["snapshot_date"])
 
+    def insert_table_snapshot(self, table, uid_col, row) -> None:
+        self._maybe_fail("insert_table_snapshot")
+        row = dict(row)
+        row["id"] = str(uuid.uuid4())
+        store = self._table(table)
+        for existing in store.values():
+            if self._natural_key(existing, uid_col) == self._natural_key(row, uid_col):
+                return   # ignore-duplicates
+        store[row["id"]] = row
+
+    def update_table_snapshot(self, table, snapshot_id, row, now_iso) -> None:
+        self._maybe_fail("update_table_snapshot")
+        row = dict(row)
+        row["id"] = snapshot_id
+        row["updated_at"] = now_iso
+        self._table(table)[snapshot_id] = row
+
+    # M3.1 signatures preserved (delegate, mirroring the real repository)
+    def fetch_snapshots_for_date(self, snapshot_date, snapshot_kind, schema_version,
+                                 select="id,entity_uid,payload_hash"):
+        self._maybe_fail("fetch_snapshots_for_date")
+        return self.fetch_table_snapshots_for_date(
+            "entity_snapshots", "entity_uid", snapshot_date, snapshot_kind, schema_version)
+
+    def fetch_snapshots_between(self, date_from, date_to, snapshot_kind, schema_version):
+        self._maybe_fail("fetch_snapshots_between")
+        return self.fetch_table_snapshots_between(
+            "entity_snapshots", date_from, date_to, snapshot_kind, schema_version)
+
     def insert_snapshot(self, snapshot: SnapshotRecord) -> None:
         self._maybe_fail("insert_snapshot")
-        row = snapshot.to_row()
-        row["id"] = str(uuid.uuid4())
-        for existing in self.snapshots.values():
-            if self._natural_key(existing) == self._natural_key(row):
-                return   # ignore-duplicates
-        self.snapshots[row["id"]] = row
+        self.insert_table_snapshot("entity_snapshots", "entity_uid", snapshot.to_row())
 
     def update_snapshot(self, snapshot_id, snapshot: SnapshotRecord, now_iso) -> None:
         self._maybe_fail("update_snapshot")
-        row = snapshot.to_row()
-        row["id"] = snapshot_id
-        row["updated_at"] = now_iso
-        self.snapshots[snapshot_id] = row
+        self.update_table_snapshot("entity_snapshots", snapshot_id, snapshot.to_row(), now_iso)
+
+    # relationships (M3.2)
+    def fetch_relationships(self, rel_uids):
+        self._maybe_fail("fetch_relationships")
+        return {u: self.relationships[u] for u in rel_uids if u in self.relationships}
+
+    def upsert_relationships(self, relationships, now_iso):
+        self._maybe_fail("upsert_relationships")
+        for r in relationships:
+            if r.rel_uid in self.relationships:
+                row = self.relationships[r.rel_uid]
+                row["last_seen_at"] = r.last_seen_at or now_iso
+                row["status"] = "active"
+            else:
+                self.relationships[r.rel_uid] = {
+                    "rel_uid": r.rel_uid, "source_uid": r.source_uid,
+                    "target_uid": r.target_uid,
+                    "relationship_type": r.relationship_type,
+                    "direction": r.direction, "status": "active",
+                    "first_seen_at": r.first_seen_at or now_iso,
+                    "last_seen_at": r.last_seen_at or now_iso,
+                }
+        return len(relationships)
+
+    def relationships_for_entity(self, entity_uid, limit=200):
+        self._maybe_fail("relationships_for_entity")
+        rows = [r for r in self.relationships.values()
+                if r["source_uid"] == entity_uid or r["target_uid"] == entity_uid]
+        return sorted(rows, key=lambda r: r["rel_uid"])[:limit]
+
+    def insert_relationship_transitions(self, events) -> int:
+        self._maybe_fail("insert_relationship_transitions")
+        for e in events:
+            row = e.to_row(uid_column="rel_uid")
+            if row["event_key"] not in self.rel_transitions:   # ignore-duplicates
+                row["id"] = str(uuid.uuid4())
+                self.rel_transitions[row["event_key"]] = row
+        return len(events)
+
+    def list_table_snapshots(self, table, uid_col, uid, *, date_from, date_to,
+                             order_desc, limit):
+        self._maybe_fail("list_table_snapshots")
+        rows = [r for r in self._table(table).values() if r[uid_col] == uid]
+        if date_from:
+            rows = [r for r in rows if r["snapshot_date"] >= date_from]
+        if date_to:
+            rows = [r for r in rows if r["snapshot_date"] <= date_to]
+        rows.sort(key=lambda r: r["snapshot_date"], reverse=order_desc)
+        return rows[:limit]
+
+    def list_table_transitions(self, table, uid_col, uid, *, date_from, date_to,
+                               order_desc, limit):
+        self._maybe_fail("list_table_transitions")
+        store = self.rel_transitions if table == "relationship_transitions" else self.transitions
+        rows = [r for r in store.values() if r.get(uid_col) == uid]
+        rows.sort(key=lambda r: r["effective_at"], reverse=order_desc)
+        return rows[:limit]
 
     def bootstrap_snapshot_exists(self, entity_uid) -> bool:
         self._maybe_fail("bootstrap_snapshot_exists")
@@ -163,12 +261,15 @@ class FakeRepository:
                 "status": "running", "metadata": metadata,
             }
 
-    def finish_run(self, run_key, *, status, completed_at, counters, errors):
+    def finish_run(self, run_key, *, status, completed_at, counters, errors,
+                   metadata=None):
         self._maybe_fail("finish_run")
         row = self.runs.setdefault(run_key, {"run_key": run_key})
         row.update(counters)
         row.update({"status": status, "completed_at": completed_at,
                     "error_count": len(errors), "errors": errors or None})
+        if metadata is not None:
+            row["metadata"] = metadata
 
     # read API
     def list_snapshots(self, entity_uid, *, date_from, date_to, order_desc, limit):
@@ -199,6 +300,10 @@ class FakeRepository:
             "entity_snapshots": len(self.snapshots),
             "transition_events": len(self.transitions),
             "memory_write_runs": len(self.runs),
+            "institutional_relationships": len(self.relationships),
+            "relationship_snapshots": len(self.rel_snapshots),
+            "relationship_transitions": len(self.rel_transitions),
+            "narrative_snapshots": len(self.narr_snapshots),
         }[table]
 
     def latest_run(self, status=None):
@@ -216,6 +321,48 @@ class FakeRepository:
         rows = [r for r in self.runs.values() if r.get("status") == "failed"]
         rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
         return rows[:limit]
+
+
+def make_activation(**overrides) -> SimpleNamespace:
+    """An IndustryActivation-shaped object."""
+    base = dict(
+        industry="Utilities",
+        score=62,
+        sentiment="bullish",
+        active_story_count=5,
+        momentum_label="strengthening",
+        confidence_label="Elevated",
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def make_feed(themes=None, activations=None, regime="AI Capex Expansion") -> SimpleNamespace:
+    """A ProcessedFeed-shaped object sufficient for build_narrative_graph."""
+    if themes is None:
+        themes = [
+            make_theme(),
+            make_theme(id="treasury-yield-pressure", name="Higher-for-Longer",
+                       confidence=60, momentum_direction="bearish",
+                       related_industries=["Financials", "Utilities", "Real Estate"],
+                       related_assets=["TLT", "JPM"],
+                       related_macro_factors=["Power Load Growth", "Terminal Rate"],
+                       relationship_weights={"Financials": {"weight": 0.7,
+                                                            "direction": "positive"}},
+                       causal_narrative="Rates → duration repricing",
+                       contributing_cluster_ids=["c9"]),
+        ]
+    if activations is None:
+        activations = [make_activation(),
+                       make_activation(industry="Semiconductors", score=48)]
+    return SimpleNamespace(
+        theme_intelligence=themes,
+        industry_activation=activations,
+        sector_data=SimpleNamespace(derived_regime=regime, dominant_sector=None,
+                                    rotation_signals=[]),
+        market_brief=None,
+        items=[],
+    )
 
 
 @pytest.fixture

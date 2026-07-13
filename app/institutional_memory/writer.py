@@ -49,6 +49,9 @@ from app.institutional_memory.identity import parse_uid
 from app.institutional_memory.repository import RepositoryError, SupabaseRepository
 from app.institutional_memory.snapshot_builder import build_theme_snapshot
 from app.institutional_memory.transitions import (
+    derive_narrative_transitions,
+    derive_presence_transitions,
+    derive_relationship_transitions,
     derive_status_transitions,
     derive_theme_transitions,
 )
@@ -94,8 +97,13 @@ class InstitutionalMemoryWriter:
 
     # ── entry point ──────────────────────────────────────────────────────────
 
-    def record_cycle(self, themes: list, now: datetime | None = None) -> WriteRunResult | None:
-        """Persist this cycle's canonical theme state. Never raises."""
+    def record_cycle(self, themes: list, now: datetime | None = None,
+                     feed: object | None = None) -> WriteRunResult | None:
+        """Persist this cycle's canonical state. Never raises.
+
+        `feed` (the assembled ProcessedFeed) enables the M3.2 stage: entity /
+        narrative / relationship history derived from the backend graph. When
+        feed is None only the M3.1 theme stage runs (bootstrap parity)."""
         enabled, reason = memory_config_status()
         if not enabled:
             if not self._disabled_logged:
@@ -105,13 +113,14 @@ class InstitutionalMemoryWriter:
 
         with self._lock:
             try:
-                return self._record_cycle_locked(themes or [], now or utc_now())
+                return self._record_cycle_locked(themes or [], now or utc_now(), feed)
             except Exception:
                 # Absolute backstop: the memory layer must never break the pipeline.
                 log.exception("[institutional-memory] write_failed unexpected error")
                 return None
 
-    def _record_cycle_locked(self, themes: list, now: datetime) -> WriteRunResult:
+    def _record_cycle_locked(self, themes: list, now: datetime,
+                             feed: object | None) -> WriteRunResult:
         from app import theme_memory as tm
 
         today = now.date().isoformat()
@@ -120,6 +129,7 @@ class InstitutionalMemoryWriter:
         # ── build deterministic snapshots ─────────────────────────────────────
         snapshots: list[SnapshotRecord] = []
         entities: list[EntityRecord] = []
+        summaries: dict[str, dict] = {}
         for theme in themes:
             tid = getattr(theme, "id", None)
             if not tid:
@@ -128,6 +138,8 @@ class InstitutionalMemoryWriter:
                 summary = tm.summarize_theme(tid)
             except Exception:
                 summary = None
+            if summary:
+                summaries[tid] = summary
             try:
                 snap = build_theme_snapshot(theme, summary, now,
                                             provenance_extra={"cycle_id": cycle_id})
@@ -147,7 +159,23 @@ class InstitutionalMemoryWriter:
                 last_seen_at=now.isoformat(),
             ))
 
-        run_key = run_key_for(today, [(s.entity_uid, s.payload_hash) for s in snapshots])
+        # ── M3.2: derive graph/narrative/relationship state from the feed ────
+        graph_state = None
+        if feed is not None:
+            try:
+                from app.institutional_memory.graph_adapter import build_graph_cycle_state
+                graph_state = build_graph_cycle_state(
+                    feed, now, memory_summaries=summaries,
+                    provenance_extra={"cycle_id": cycle_id})
+            except Exception:
+                # M3.2 derivation failure must never block M3.1 writes.
+                log.exception("[institutional-memory:m3.2] graph state derivation FAILED "
+                              "— continuing with theme-only write")
+
+        pairs = [(s.entity_uid, s.payload_hash) for s in snapshots]
+        if graph_state is not None:
+            pairs += graph_state.uid_hash_pairs()
+        run_key = run_key_for(today, pairs)
         result = WriteRunResult(run_key=run_key, themes_seen=len(snapshots))
 
         try:
@@ -204,6 +232,16 @@ class InstitutionalMemoryWriter:
             self._finish_run_best_effort(repo, result, now)
             return result
 
+        # ── M3.2: entity / narrative / relationship writes ────────────────────
+        if graph_state is not None:
+            try:
+                self._write_graph_state(repo, graph_state, result, now, today)
+            except RepositoryError as exc:
+                # M3.2 failure must not break M3.1 writes (already durable) or
+                # the pipeline; record, log, retry next cycle.
+                log.error("[institutional-memory:m3.2] write_failed: %s", exc)
+                result.add_error(str(exc))
+
         # ── sealed-boundary transitions (once per UTC day) ────────────────────
         if self._transitions_done_for != today:
             try:
@@ -224,7 +262,76 @@ class InstitutionalMemoryWriter:
             result.snapshots_updated, result.snapshots_unchanged,
             result.transitions_inserted, result.status,
         )
+        if graph_state is not None and result.extra:
+            x = result.extra
+            log.info(
+                "[institutional-memory:m3.2] graph_version=%s entities=%d "
+                "industries=%s relationships=%s narratives=%s",
+                graph_state.graph_version, x.get("entities_upserted", 0),
+                x.get("industry_snapshots"), x.get("relationship_snapshots"),
+                x.get("narrative_snapshots"),
+            )
         return result
+
+    def _upsert_daily_rows(self, repo: SupabaseRepository, table: str, uid_col: str,
+                           rows: list[tuple[str, str, dict]], today: str,
+                           now_iso: str) -> dict:
+        """Generic mutable-until-sealed upsert for one snapshot table.
+        rows = [(uid, payload_hash, row_dict)]. Returns counter dict."""
+        counters = {"inserted": 0, "updated": 0, "unchanged": 0}
+        if not rows:
+            return counters
+        existing = repo.fetch_table_snapshots_for_date(
+            table, uid_col, today, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+        for uid, phash, row in rows:
+            prev = existing.get(uid)
+            if prev is None:
+                repo.insert_table_snapshot(table, uid_col, row)
+                counters["inserted"] += 1
+            elif prev.get("payload_hash") == phash:
+                counters["unchanged"] += 1
+            else:
+                repo.update_table_snapshot(table, prev["id"], row, now_iso)
+                counters["updated"] += 1
+        return counters
+
+    def _write_graph_state(self, repo: SupabaseRepository, state, result: WriteRunResult,
+                           now: datetime, today: str) -> None:
+        """Persist the M3.2 records: entities, relationship registry, and the
+        three daily snapshot families. Raises RepositoryError on failure."""
+        now_iso = now.isoformat()
+
+        n_entities = repo.upsert_entities(state.entities, now_iso)
+        result.entities_upserted += n_entities
+        repo.upsert_relationships(state.relationships, now_iso)
+
+        industry = self._upsert_daily_rows(
+            repo, "entity_snapshots", "entity_uid",
+            [(s.entity_uid, s.payload_hash, s.to_row()) for s in state.industry_snapshots],
+            today, now_iso)
+        rels = self._upsert_daily_rows(
+            repo, "relationship_snapshots", "rel_uid",
+            [(s.rel_uid, s.payload_hash, s.to_row()) for s in state.relationship_snapshots],
+            today, now_iso)
+        narratives = self._upsert_daily_rows(
+            repo, "narrative_snapshots", "entity_uid",
+            [(s.entity_uid, s.payload_hash, s.to_row()) for s in state.narrative_snapshots],
+            today, now_iso)
+
+        # industry rows share the entity_snapshots M3.1 counters
+        result.snapshots_inserted += industry["inserted"]
+        result.snapshots_updated += industry["updated"]
+        result.snapshots_unchanged += industry["unchanged"]
+        result.extra = {
+            "stage": "m3.2",
+            "graph_version": state.graph_version,
+            "regime": state.regime_label,
+            "entities_upserted": n_entities,
+            "relationships_registered": len(state.relationships),
+            "industry_snapshots": industry,
+            "relationship_snapshots": rels,
+            "narrative_snapshots": narratives,
+        }
 
     def _finish_run_best_effort(self, repo: SupabaseRepository,
                                 result: WriteRunResult, now: datetime) -> None:
@@ -240,56 +347,120 @@ class InstitutionalMemoryWriter:
                                 "snapshots_unchanged": result.snapshots_unchanged,
                                 "transitions_inserted": result.transitions_inserted,
                             },
-                            errors=result.errors)
+                            errors=result.errors,
+                            metadata=result.extra or None)
         except RepositoryError as exc:
             log.error("[institutional-memory] could not close run ledger: %s", exc)
 
     # ── sealed-boundary transition derivation ─────────────────────────────────
 
-    def _seal_transitions(self, repo: SupabaseRepository, now: datetime) -> int:
-        """Derive transitions for the most recently sealed UTC day (D-1).
+    @staticmethod
+    def _sealed_maps(rows: list[dict], uid_col: str, d1: str,
+                     allow_empty_curr: bool = False):
+        """Group sealed rows → (curr_by_uid at D-1, latest prior per uid,
+        previous sealed day's rows). None when nothing can be compared.
 
-        Value transitions compare each theme's D-1 snapshot against its most
-        recent prior sealed snapshot within a 14-day lookback (gap-tolerant).
-        Presence transitions (active_status_changed) compare D-1 against the
-        previous sealed day that has any snapshots at all, so absence fires
-        exactly once, not every day of the lookback.
-        """
-        d1 = (now.date() - timedelta(days=1)).isoformat()
-        lookback_start = (now.date() - timedelta(days=1 + _ABSENCE_LOOKBACK_DAYS)).isoformat()
-
-        rows = repo.fetch_snapshots_between(lookback_start, d1,
-                                            SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+        allow_empty_curr distinguishes a data gap from genuine absence: when
+        the writer verifiably ran on D-1 (theme rows exist), an empty D-1 for
+        narratives/relationships means they truly vanished, and presence
+        events must still fire. Without that liveness signal, an empty D-1 is
+        treated as a gap and produces no events."""
         by_date: dict[str, dict[str, dict]] = {}
         for r in rows:
-            by_date.setdefault(r["snapshot_date"], {})[r["entity_uid"]] = r
-
+            by_date.setdefault(r["snapshot_date"], {})[r[uid_col]] = r
         curr = by_date.get(d1)
-        if not curr:
-            return 0   # nothing sealed for D-1 (first day of operation, or gap)
-
+        if not curr and not allow_empty_curr:
+            return None
         prior_dates = sorted(d for d in by_date if d < d1)
         if not prior_dates:
-            return 0   # no earlier sealed history to compare against
-
-        # latest prior sealed row per uid (value comparisons, gap-tolerant)
+            return None
         latest_prior: dict[str, dict] = {}
         for d in prior_dates:
             for uid, r in by_date[d].items():
                 latest_prior[uid] = r   # dates ascend, so the last write wins
+        return curr or {}, latest_prior, by_date[prior_dates[-1]]
 
-        events = []
-        for uid, curr_row in curr.items():
-            prev_row = latest_prior.get(uid)
-            if prev_row is not None:
-                events.extend(derive_theme_transitions(prev_row, curr_row))
+    def _seal_transitions(self, repo: SupabaseRepository, now: datetime) -> int:
+        """Derive transitions for the most recently sealed UTC day (D-1),
+        across themes (M3.1, unchanged semantics), narratives, and
+        relationships.
 
-        # presence flips: previous sealed day with data vs D-1
-        prev_day_rows = by_date[prior_dates[-1]]
-        effective_at = next(iter(curr.values()))["observed_at"]
-        events.extend(derive_status_transitions(prev_day_rows, curr, d1, effective_at))
+        Value transitions compare each subject's D-1 snapshot against its most
+        recent prior sealed snapshot within a 14-day lookback (gap-tolerant).
+        Presence transitions compare D-1 against the previous sealed day that
+        has any snapshots at all, so absence fires exactly once. Industry
+        entity snapshots accrue history but produce NO transitions in M3.2
+        (activation churns daily; a threshold model is future work).
+        """
+        d1 = (now.date() - timedelta(days=1)).isoformat()
+        lookback_start = (now.date() - timedelta(days=1 + _ABSENCE_LOOKBACK_DAYS)).isoformat()
+        total = 0
 
-        return repo.insert_transitions(events)
+        # ── themes (M3.1 semantics, scoped to theme:* uids) ──────────────────
+        rows = [r for r in repo.fetch_snapshots_between(
+                    lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+                if str(r.get("entity_uid", "")).startswith("theme:")]
+        maps = self._sealed_maps(rows, "entity_uid", d1)
+        writer_alive_d1 = False
+        seal_effective_at = f"{d1}T23:59:59+00:00"
+        if maps:
+            curr, latest_prior, prev_day = maps
+            writer_alive_d1 = bool(curr)
+            events = []
+            for uid, curr_row in curr.items():
+                prev_row = latest_prior.get(uid)
+                if prev_row is not None:
+                    events.extend(derive_theme_transitions(prev_row, curr_row))
+            effective_at = next(iter(curr.values()))["observed_at"]
+            seal_effective_at = effective_at
+            events.extend(derive_status_transitions(prev_day, curr, d1, effective_at))
+            total += repo.insert_transitions(events)
+
+        # ── narratives ────────────────────────────────────────────────────────
+        # allow_empty_curr: a day with theme writes but zero narratives means
+        # every narrative genuinely dissolved (not a data gap).
+        n_rows = repo.fetch_table_snapshots_between(
+            "narrative_snapshots", lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+        maps = self._sealed_maps(n_rows, "entity_uid", d1,
+                                 allow_empty_curr=writer_alive_d1)
+        if maps:
+            curr, latest_prior, prev_day = maps
+            events = []
+            for uid, curr_row in curr.items():
+                prev_row = latest_prior.get(uid)
+                if prev_row is not None:
+                    events.extend(derive_narrative_transitions(prev_row, curr_row))
+            effective_at = (next(iter(curr.values()))["observed_at"]
+                            if curr else seal_effective_at)
+            events.extend(derive_presence_transitions(
+                prev_day, curr, d1, effective_at,
+                appeared_type="narrative_appeared",
+                disappeared_type="narrative_disappeared",
+                uid_field="entity_uid"))
+            total += repo.insert_transitions(events)
+
+        # ── relationships (separate ledger table) ─────────────────────────────
+        r_rows = repo.fetch_table_snapshots_between(
+            "relationship_snapshots", lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+        maps = self._sealed_maps(r_rows, "rel_uid", d1,
+                                 allow_empty_curr=writer_alive_d1)
+        if maps:
+            curr, latest_prior, prev_day = maps
+            events = []
+            for uid, curr_row in curr.items():
+                prev_row = latest_prior.get(uid)
+                if prev_row is not None:
+                    events.extend(derive_relationship_transitions(prev_row, curr_row))
+            effective_at = (next(iter(curr.values()))["observed_at"]
+                            if curr else seal_effective_at)
+            events.extend(derive_presence_transitions(
+                prev_day, curr, d1, effective_at,
+                appeared_type="relationship_appeared",
+                disappeared_type="relationship_disappeared",
+                uid_field="rel_uid"))
+            total += repo.insert_relationship_transitions(events)
+
+        return total
 
 
 # ── Module-level singleton + convenience wrapper ───────────────────────────────
@@ -297,6 +468,8 @@ class InstitutionalMemoryWriter:
 institutional_memory_writer = InstitutionalMemoryWriter()
 
 
-def record_cycle(themes: list, now: datetime | None = None) -> WriteRunResult | None:
-    """Persist this cycle's canonical theme state (non-raising)."""
-    return institutional_memory_writer.record_cycle(themes, now)
+def record_cycle(themes: list, now: datetime | None = None,
+                 feed: object | None = None) -> WriteRunResult | None:
+    """Persist this cycle's canonical state (non-raising). Pass the assembled
+    ProcessedFeed to enable the M3.2 entity/narrative/relationship stage."""
+    return institutional_memory_writer.record_cycle(themes, now, feed)

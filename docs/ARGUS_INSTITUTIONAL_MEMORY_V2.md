@@ -787,7 +787,120 @@ audited in `memory_write_runs`. Browser localStorage histories are NOT imported 
 
 ---
 
+## 16. M3.2 implementation record (BUILT — enablement pending migration 005)
+
+Entity, narrative, and relationship history on top of the M3.1 foundation. M3.1 behavior,
+tables, identity, idempotency, security, and failure policy are UNCHANGED.
+
+### 16.1 Sourcing rule (audit outcome)
+
+All persisted values are backend-computed. The relationship source is the deterministic
+backend graph (`app/narrative_graph.py::build_narrative_graph`, ≤18 nodes / ≤25 edges, edge
+types recorded VERBATIM: `drives, pressures, supports, correlates, rotates_into`) plus
+theme→company `exposed_to` links from curated `related_assets`. Frontend-only engine outputs
+(IntelEdge evidence counters, edge trends, member driver-link strengths, prediction reads)
+have no backend equivalent and are NOT copied; where the schema has a slot for them the value
+is an honest null. Narrative derivation is a backend re-implementation of the frontend
+driver-set algorithm (`app/institutional_memory/graph_adapter.py::_derive_narrative_snapshots`)
+over `related_macro_factors` — the shared contract is the driver-set key construction.
+
+### 16.2 Identity (migration 005 widens the M3.1 vocabulary)
+
+| Type | UID form | Key source |
+|---|---|---|
+| company | `company:ticker:<SYMBOL>` | curated tradeable tickers (companies, ETFs, index proxies) |
+| industry | `industry:taxonomy:<slug>` | curated industry taxonomy (theme ontology labels) |
+| sector | `sector:taxonomy:<slug>` | GICS-style curated sectors — **reserved, no writer yet** |
+| driver | `driver:ontology:<slug>` | `related_macro_factors` strings curated in the ontology |
+| regime | `regime:taxonomy:<slug>` | curated regime catalogue (`narrative_graph._REGIME_SENTIMENT`) |
+| narrative | `narrative:driverset:<sha256[:16] of key>` | key = sorted canonical driver UIDs joined `+` |
+| relationship | `rel:{source_uid}\|{type}\|{target_uid}` | symmetric types (`correlates`) order endpoints lexically; all others are directional |
+| unresolved | `<type>:unresolved:<slug>` | strict-validation failures — never guessed |
+
+Ticker changes/mergers use `institutional_entities.aliases` + `status`/lifecycle fields via a
+manual runbook procedure (no automatic detection source exists). Story/evidence entities are
+NOT minted: cluster ids (stable `md5(title+url)[:12]` content hashes) are persisted as
+evidence *references* only.
+
+### 16.3 New tables (migration `005_entity_narrative_relationship_history.sql`)
+
+`institutional_relationships` (identity registry: first/last seen, active/aged_out),
+`relationship_snapshots` (daily_utc, mutable-until-sealed, natural key
+`(rel_uid, snapshot_date, kind, schema_version)`), `relationship_transitions` (separate
+ledger — rel UIDs are not entity rows, keeping the M3.1 FK strict),
+`narrative_snapshots` (daily_utc; driver_set_key, title-at-time, thesis (null in M3.2 — no
+deterministic backend thesis), member_uids, member convictions listed INDIVIDUALLY (never
+blended), coherence + components (structural measure, not a confidence), evidence refs,
+count-based contradictions, dominant/secondary + rank). Same RLS/revoke security model.
+Widened check constraints are strict supersets — M3.1 rows remain valid.
+
+### 16.4 Graph version
+
+`graph_version = "gv1-" + sha256(canonical_json(topology))[:16]` where topology = regime +
+sorted (node id, type) + sorted (source, type, target). Same input → same version; topology
+or regime change → new version; strength/confidence drift does NOT churn it (that is state,
+captured by snapshots). Distinct from the frontend profile-cache version (a process-lifetime
+invalidation counter) — the two must never be conflated. Stamped on industry, narrative, and
+relationship snapshots; M3.1 theme snapshots keep `graph_version=null` (pre-stamping era).
+
+### 16.5 Writers and cycle order
+
+`run_pipeline`: themes → ThemeMemory → feed assembly → `record_cycle(themes, feed=feed)` →
+cache publish. Inside the writer: M3.1 theme stage (unchanged) → M3.2 stage (entities,
+relationship registry, industry/narrative/relationship daily snapshots) → sealed-boundary
+transitions for all families. The deterministic `run_key` now covers ALL families' (uid,
+payload_hash) pairs. M3.2 counters are reported via `memory_write_runs.metadata`
+(`stage: "m3.2"`) so M3.1 columns keep their meaning. M3.2 derivation or write failure is
+recorded and logged but never blocks M3.1 writes or the pipeline.
+
+### 16.6 Transition semantics (all compare SEALED daily snapshots; typed values only —
+JSON ordering can never fire an event)
+
+| Family | Types | Thresholds |
+|---|---|---|
+| narrative | appeared/disappeared, member_added/removed (set diff, stable UIDs in basis), dominant_status_changed, coherence_strengthened/weakened, contradiction_added/removed, thesis_changed | coherence ±5 pts; contradictions count-based; thesis fires only when both sides exist and differ (never in M3.2) |
+| relationship | appeared/disappeared, relationship_strengthened/weakened, confidence_changed, evidence_added/removed | strength ±0.10 and confidence ±0.10 (0-1 scale); evidence ±2 identifiers; `relationship_type_changed` deliberately unmodeled — a type change is a new rel_uid (disappear + appear) |
+| industry | **none in M3.2** | activation churns daily; snapshots accrue, threshold model is future work |
+
+Genuine-absence rule: presence events for narratives/relationships fire on an empty D-1 only
+when theme writes prove the writer ran that day (data gap ≠ dissolution).
+
+### 16.7 Read API additions
+
+```
+GET /api/memory/v2/entities/{uid}/snapshots
+GET /api/memory/v2/entities/{uid}/relationships
+GET /api/memory/v2/narratives/{uid}/snapshots
+GET /api/memory/v2/narratives/{uid}/transitions
+GET /api/memory/v2/relationships/{rel_uid}/snapshots    (URL-encode '|')
+GET /api/memory/v2/relationships/{rel_uid}/transitions
+GET /api/memory/v2/graph/at?date=YYYY-MM-DD
+```
+
+`/status` gains an `m3_2` count block that reports null (not an error) until migration 005 is
+applied. Replay contract: `HistoricalIntelligenceState`
+(`app/institutional_memory/replay.py`) — latest sealed records at or before the date,
+31-day lookback, labeled `daily_historical_reconstruction`, future never leaks, unsealed
+"today" is clamped and noted, completeness ∈ {daily, partial, empty}. See
+ARGUS_HISTORICAL_REPLAY_V1.md.
+
+### 16.8 Known limitations
+
+1. Relationship coverage = the curated backend graph (top ~6 themes, ≤25 edges) + exposure
+   links — not the full frontend Explorer graph.
+2. Edge-level evidence is theme-scoped (`evidence_scope: "theme_level"`); per-edge evidence
+   records do not exist in the backend.
+3. Narrative coherence components: driver-link strength is null (frontend-only input);
+   coherence = mean of asset/sector Jaccard overlaps.
+4. No narrative thesis, no company/driver/regime daily snapshots (no real per-entity backend
+   state yet — identity + relationships only), no industry transitions.
+5. Replay is daily reconstruction, never intraday; subjects idle beyond the 31-day lookback
+   are treated as inactive at that date.
+
+---
+
 *Related: ARGUS_INTELLIGENCE_MODEL_V1.md (ontology + confidence vocabulary),
 ARGUS_INTELLIGENCE_PROFILE_V1.md (the projection snapshots persist),
 ARGUS_INTELLIGENCE_SURFACES_V1.md (surface ownership), ARGUS_INTELLIGENCE_EVERYWHERE_V1.md
-(Phase 2 closure this design builds on), ARGUS_MEMORY_OPERATIONS_V1.md (runbook).*
+(Phase 2 closure this design builds on), ARGUS_MEMORY_OPERATIONS_V1.md (runbook),
+ARGUS_HISTORICAL_REPLAY_V1.md (replay contract).*

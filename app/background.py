@@ -451,20 +451,7 @@ def run_pipeline(
     except Exception:
         log.exception("[bg] theme_memory update FAILED — continuing (feed unaffected)")
 
-    # ── Institutional memory (M3.1) ────────────────────────────────────────────
-    # Persist the canonical daily theme snapshot to Supabase AFTER the
-    # ThemeMemory update, and only for the full-feed target so the Markets-only
-    # warm run (a subset of themes) never writes a partial market state.
-    # record_cycle() is a no-op when disabled and never raises — a Supabase
-    # outage logs an error and retries on the next eligible cycle.
-    if not categories and not sources:
-        try:
-            from app.institutional_memory import record_cycle
-            record_cycle(theme_intelligence)
-        except Exception:
-            log.exception("[bg] institutional memory write FAILED — continuing (feed unaffected)")
-
-    return ProcessedFeed(
+    feed = ProcessedFeed(
         items=items,
         top_stories=top,
         market_take=take,
@@ -479,6 +466,22 @@ def run_pipeline(
         theme_intelligence=theme_intelligence,
         industry_activation=industry_activation,
     )
+
+    # ── Institutional memory (M3.1 themes + M3.2 graph/narratives) ─────────────
+    # Persist the canonical daily snapshots to Supabase AFTER the ThemeMemory
+    # update and full feed assembly, before the cache publish in _refresh_all —
+    # and only for the full-feed target so the Markets-only warm run (a subset
+    # of themes) never writes a partial market state. record_cycle() is a no-op
+    # when disabled and never raises — a Supabase outage logs an error and
+    # retries on the next eligible cycle.
+    if not categories and not sources:
+        try:
+            from app.institutional_memory import record_cycle
+            record_cycle(theme_intelligence, feed=feed)
+        except Exception:
+            log.exception("[bg] institutional memory write FAILED — continuing (feed unaffected)")
+
+    return feed
 
 
 # ── Daemon thread ──────────────────────────────────────────────────────────────

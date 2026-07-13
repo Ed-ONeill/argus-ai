@@ -137,24 +137,24 @@ class SupabaseRepository:
                           prefer="return=minimal")
         return len(entities)
 
-    # ── snapshots ────────────────────────────────────────────────────────────
+    # ── snapshots (generic over the three snapshot tables) ───────────────────
 
-    def fetch_snapshots_for_date(self, snapshot_date: str, snapshot_kind: str,
-                                 schema_version: int,
-                                 select: str = "id,entity_uid,payload_hash") -> dict[str, dict]:
-        resp = self._request("GET", "entity_snapshots", params={
+    def fetch_table_snapshots_for_date(self, table: str, uid_col: str,
+                                       snapshot_date: str, snapshot_kind: str,
+                                       schema_version: int) -> dict[str, dict]:
+        resp = self._request("GET", table, params={
             "snapshot_date": f"eq.{snapshot_date}",
             "snapshot_kind": f"eq.{snapshot_kind}",
             "schema_version": f"eq.{schema_version}",
-            "select": select,
+            "select": f"id,{uid_col},payload_hash",
         })
-        return {r["entity_uid"]: r for r in self._rows(resp)}
+        return {r[uid_col]: r for r in self._rows(resp)}
 
-    def fetch_snapshots_between(self, date_from: str, date_to: str,
-                                snapshot_kind: str, schema_version: int) -> list[dict]:
+    def fetch_table_snapshots_between(self, table: str, date_from: str, date_to: str,
+                                      snapshot_kind: str, schema_version: int) -> list[dict]:
         """All daily snapshots with date_from <= snapshot_date <= date_to,
-        full rows, oldest first. Used for sealed-boundary transition derivation."""
-        resp = self._request("GET", "entity_snapshots", params={
+        full rows, oldest first. Used for sealed-boundary transitions + replay."""
+        resp = self._request("GET", table, params={
             "and": f"(snapshot_date.gte.{date_from},snapshot_date.lte.{date_to})",
             "snapshot_kind": f"eq.{snapshot_kind}",
             "schema_version": f"eq.{schema_version}",
@@ -163,20 +163,101 @@ class SupabaseRepository:
         })
         return self._rows(resp)
 
-    def insert_snapshot(self, snapshot: SnapshotRecord) -> None:
-        self._request("POST", "entity_snapshots", json_body=snapshot.to_row(),
-                      params={"on_conflict": "entity_uid,snapshot_date,snapshot_kind,schema_version"},
+    def insert_table_snapshot(self, table: str, uid_col: str, row: dict) -> None:
+        self._request("POST", table, json_body=row,
+                      params={"on_conflict": f"{uid_col},snapshot_date,snapshot_kind,schema_version"},
                       prefer="resolution=ignore-duplicates,return=minimal")
+
+    def update_table_snapshot(self, table: str, snapshot_id: str, row: dict,
+                              now_iso: str) -> None:
+        """Mutable-until-sealed daily update. Callers must never pass a row
+        whose snapshot_date is before the current UTC date."""
+        row = dict(row)
+        row["updated_at"] = now_iso
+        self._request("PATCH", table,
+                      params={"id": f"eq.{snapshot_id}"}, json_body=row,
+                      prefer="return=minimal")
+
+    # M3.1 signatures preserved (delegate to the generic helpers)
+
+    def fetch_snapshots_for_date(self, snapshot_date: str, snapshot_kind: str,
+                                 schema_version: int,
+                                 select: str = "id,entity_uid,payload_hash") -> dict[str, dict]:
+        return self.fetch_table_snapshots_for_date(
+            "entity_snapshots", "entity_uid", snapshot_date, snapshot_kind, schema_version)
+
+    def fetch_snapshots_between(self, date_from: str, date_to: str,
+                                snapshot_kind: str, schema_version: int) -> list[dict]:
+        return self.fetch_table_snapshots_between(
+            "entity_snapshots", date_from, date_to, snapshot_kind, schema_version)
+
+    def insert_snapshot(self, snapshot: SnapshotRecord) -> None:
+        self.insert_table_snapshot("entity_snapshots", "entity_uid", snapshot.to_row())
 
     def update_snapshot(self, snapshot_id: str, snapshot: SnapshotRecord,
                         now_iso: str) -> None:
-        """Mutable-until-sealed daily update. Callers must never pass a row
-        whose snapshot_date is before the current UTC date."""
-        row = snapshot.to_row()
-        row["updated_at"] = now_iso
-        self._request("PATCH", "entity_snapshots",
-                      params={"id": f"eq.{snapshot_id}"}, json_body=row,
-                      prefer="return=minimal")
+        self.update_table_snapshot("entity_snapshots", snapshot_id, snapshot.to_row(), now_iso)
+
+    # ── relationships (M3.2) ─────────────────────────────────────────────────
+
+    def fetch_relationships(self, rel_uids: list[str]) -> dict[str, dict]:
+        if not rel_uids:
+            return {}
+        resp = self._request("GET", "institutional_relationships", params={
+            "rel_uid": f"in.({','.join(rel_uids)})",
+            "select": "rel_uid,status,first_seen_at,last_seen_at",
+        })
+        return {r["rel_uid"]: r for r in self._rows(resp)}
+
+    def upsert_relationships(self, relationships: list, now_iso: str) -> int:
+        """Insert unseen relationship identities; refresh last_seen_at and
+        reactivate on known ones. first_seen_at is set only on insert."""
+        if not relationships:
+            return 0
+        existing = self.fetch_relationships([r.rel_uid for r in relationships])
+        inserts = []
+        for r in relationships:
+            if r.rel_uid in existing:
+                self._request("PATCH", "institutional_relationships",
+                              params={"rel_uid": f"eq.{r.rel_uid}"},
+                              json_body={"last_seen_at": r.last_seen_at or now_iso,
+                                         "status": "active",
+                                         "updated_at": now_iso},
+                              prefer="return=minimal")
+            else:
+                inserts.append({
+                    "rel_uid": r.rel_uid,
+                    "source_uid": r.source_uid,
+                    "target_uid": r.target_uid,
+                    "relationship_type": r.relationship_type,
+                    "direction": r.direction,
+                    "status": "active",
+                    "first_seen_at": r.first_seen_at or now_iso,
+                    "last_seen_at": r.last_seen_at or now_iso,
+                })
+        if inserts:
+            self._request("POST", "institutional_relationships", json_body=inserts,
+                          params={"on_conflict": "rel_uid"},
+                          prefer="resolution=ignore-duplicates,return=minimal")
+        return len(relationships)
+
+    def relationships_for_entity(self, entity_uid: str, limit: int = 200) -> list[dict]:
+        resp = self._request("GET", "institutional_relationships", params={
+            "or": f"(source_uid.eq.{entity_uid},target_uid.eq.{entity_uid})",
+            "select": "*",
+            "order": "rel_uid.asc",
+            "limit": str(limit),
+        })
+        return self._rows(resp)
+
+    def insert_relationship_transitions(self, events: list) -> int:
+        if not events:
+            return 0
+        self._request("POST", "relationship_transitions",
+                      json_body=[e.to_row(uid_column="rel_uid") for e in events],
+                      params={"on_conflict": "event_key"},
+                      prefer="resolution=ignore-duplicates,return=minimal")
+        return len(events)
 
     def bootstrap_snapshot_exists(self, entity_uid: str) -> bool:
         resp = self._request("GET", "entity_snapshots", params={
@@ -222,7 +303,8 @@ class SupabaseRepository:
             prefer="resolution=ignore-duplicates,return=minimal")
 
     def finish_run(self, run_key: str, *, status: str, completed_at: str,
-                   counters: dict, errors: list[str]) -> None:
+                   counters: dict, errors: list[str],
+                   metadata: dict | None = None) -> None:
         body = dict(counters)
         body.update({
             "status": status,
@@ -230,16 +312,19 @@ class SupabaseRepository:
             "error_count": len(errors),
             "errors": errors or None,
         })
+        if metadata is not None:
+            body["metadata"] = metadata
         self._request("PATCH", "memory_write_runs",
                       params={"run_key": f"eq.{run_key}"}, json_body=body,
                       prefer="return=minimal")
 
     # ── read API + status queries ────────────────────────────────────────────
 
-    def list_snapshots(self, entity_uid: str, *, date_from: str | None,
-                       date_to: str | None, order_desc: bool, limit: int) -> list[dict]:
+    def list_table_snapshots(self, table: str, uid_col: str, uid: str, *,
+                             date_from: str | None, date_to: str | None,
+                             order_desc: bool, limit: int) -> list[dict]:
         params: dict[str, str] = {
-            "entity_uid": f"eq.{entity_uid}",
+            uid_col: f"eq.{uid}",
             "select": "*",
             "order": f"snapshot_date.{'desc' if order_desc else 'asc'},observed_at.{'desc' if order_desc else 'asc'}",
             "limit": str(limit),
@@ -251,12 +336,13 @@ class SupabaseRepository:
             conds.append(f"snapshot_date.lte.{date_to}")
         if conds:
             params["and"] = f"({','.join(conds)})"
-        return self._rows(self._request("GET", "entity_snapshots", params=params))
+        return self._rows(self._request("GET", table, params=params))
 
-    def list_transitions(self, entity_uid: str, *, date_from: str | None,
-                         date_to: str | None, order_desc: bool, limit: int) -> list[dict]:
+    def list_table_transitions(self, table: str, uid_col: str, uid: str, *,
+                               date_from: str | None, date_to: str | None,
+                               order_desc: bool, limit: int) -> list[dict]:
         params: dict[str, str] = {
-            "entity_uid": f"eq.{entity_uid}",
+            uid_col: f"eq.{uid}",
             "select": "*",
             "order": f"effective_at.{'desc' if order_desc else 'asc'}",
             "limit": str(limit),
@@ -268,7 +354,19 @@ class SupabaseRepository:
             conds.append(f"effective_at.lte.{date_to}T23:59:59Z")
         if conds:
             params["and"] = f"({','.join(conds)})"
-        return self._rows(self._request("GET", "transition_events", params=params))
+        return self._rows(self._request("GET", table, params=params))
+
+    def list_snapshots(self, entity_uid: str, *, date_from: str | None,
+                       date_to: str | None, order_desc: bool, limit: int) -> list[dict]:
+        return self.list_table_snapshots("entity_snapshots", "entity_uid", entity_uid,
+                                         date_from=date_from, date_to=date_to,
+                                         order_desc=order_desc, limit=limit)
+
+    def list_transitions(self, entity_uid: str, *, date_from: str | None,
+                         date_to: str | None, order_desc: bool, limit: int) -> list[dict]:
+        return self.list_table_transitions("transition_events", "entity_uid", entity_uid,
+                                           date_from=date_from, date_to=date_to,
+                                           order_desc=order_desc, limit=limit)
 
     def latest_snapshot(self, entity_uid: str) -> dict | None:
         rows = self.list_snapshots(entity_uid, date_from=None, date_to=None,

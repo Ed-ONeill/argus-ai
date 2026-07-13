@@ -1,15 +1,68 @@
-# ARGUS MEMORY OPERATIONS V1 — Institutional Memory Runbook (M3.1)
+# ARGUS MEMORY OPERATIONS V1 — Institutional Memory Runbook (M3.1 + M3.2)
 
 Operational procedures for the canonical persistence foundation
-(`app/institutional_memory/`, design record: ARGUS_INSTITUTIONAL_MEMORY_V2.md §15).
+(`app/institutional_memory/`, design record: ARGUS_INSTITUTIONAL_MEMORY_V2.md §15-§16).
 
 Architecture in one line:
 
 ```
 5-min pipeline cycle → ThemeMemory (Railway volume, rolling intraday)
-                     → institutional memory writer → Supabase Postgres (permanent archive)
-                     → GET /api/memory/v2/* (read-only)
+                     → institutional memory writer (themes + graph/narratives/relationships)
+                     → Supabase Postgres (permanent archive)
+                     → GET /api/memory/v2/* (read-only, incl. /graph/at replay)
 ```
+
+---
+
+## 0. M3.2 rollout (entity/narrative/relationship history)
+
+M3.2 needs NO new environment variables and no flag change — it activates automatically once
+its tables exist. Order matters:
+
+**0-A. Apply migration 005. [YOU]**
+Supabase SQL Editor → paste the full contents of
+`supabase/migrations/005_entity_narrative_relationship_history.sql` → Run (must be AFTER
+004). Confirm four new tables exist: `institutional_relationships`,
+`relationship_snapshots`, `relationship_transitions`, `narrative_snapshots`, and that
+`institutional_entities` accepts the widened entity types.
+
+**0-B. Deploy the M3.2 code.**
+Order-independent with 0-A: code deployed before the migration writes themes only and logs
+`[institutional-memory:m3.2] write_failed … HTTP 404` for graph writes (M3.1 unaffected, run
+status `failed` with recorded errors) — apply 005 promptly, or apply it first to avoid the
+noise. `/api/memory/v2/status` reports `m3_2: null` until 005 is applied — that is a rollout
+signal, not an error.
+
+**0-C. Verify.**
+- Cycle log shows: `[institutional-memory:m3.2] graph_version=gv1-… entities=… industries=…
+  relationships=… narratives=…`
+- `/api/memory/v2/status` → `m3_2` block has non-null counts that grow.
+- No duplicates:
+
+```sql
+select rel_uid, snapshot_date, count(*) from relationship_snapshots
+group by 1, 2 having count(*) > 1;          -- zero rows
+select entity_uid, snapshot_date, count(*) from narrative_snapshots
+group by 1, 2 having count(*) > 1;          -- zero rows
+```
+
+- After the first UTC boundary: `select transition_type, count(*) from
+  relationship_transitions group by 1;` shows `relationship_appeared` rows.
+- Replay: `GET /api/memory/v2/graph/at?date=<yesterday>` returns
+  `completeness.status: "daily"` once a full sealed day of M3.2 records exists
+  (`"partial"` before that — honest, expected).
+
+**0-D. Rollback strategy.**
+M3.2 is additive. To stop M3.2 writes without losing M3.1: redeploy the previous backend
+build (M3.1 writer ignores the new tables). Do NOT drop the 005 tables — sealed history is
+append-only; if the tables must be abandoned, leave them in place and stop writing. There is
+no data migration to reverse.
+
+**0-E. Ticker change / merger procedure (manual — no automatic source exists).**
+On a ticker change (e.g. FB→META): keep the existing `company:ticker:<OLD>` row, append the
+old symbol to `aliases`, update `display_label`, and mint nothing new — history stays under
+the mint-time UID. On a merger/delisting: set `status='absorbed'` (or `'retired'`) on the
+target entity row; forward accrual stops naturally when the ticker leaves `related_assets`.
 
 ---
 

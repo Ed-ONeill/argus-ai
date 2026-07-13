@@ -40,8 +40,8 @@ def test_parse_uid_roundtrip_and_validation():
     assert parse_uid("theme:ontology:ai-energy-demand") == (
         "theme", "ontology", "ai-energy-demand")
     assert parse_uid("theme:legacy:old-slug") == ("theme", "legacy", "old-slug")
-    for bad in ("company:ticker:NVDA", "theme:ontology:", "theme:bogus:x",
-                "not-a-uid", "", "theme:ontology:UPPER"):
+    for bad in ("company:ontology:NVDA", "theme:ontology:", "theme:bogus:x",
+                "not-a-uid", "", "theme:ontology:UPPER", "person:name:powell"):
         with pytest.raises(ValueError):
             parse_uid(bad)
 
