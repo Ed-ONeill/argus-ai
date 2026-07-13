@@ -88,7 +88,10 @@ class InstitutionalMemoryWriter:
         self._repo: SupabaseRepository | None = None
         self._lock = threading.Lock()
         self._disabled_logged = False
+        self._ledger_disabled_logged = False
         self._transitions_done_for: str | None = None   # UTC date transitions were sealed for
+        self._issuance_done_for: str | None = None      # UTC date predictions were issued for
+        self._resolution_done_for: str | None = None    # UTC date outcomes were resolved for
 
     def _repository(self) -> SupabaseRepository:
         if self._repo is None:
@@ -193,6 +196,9 @@ class InstitutionalMemoryWriter:
                 log.debug("[institutional-memory] run=%s already completed — skipping", run_key)
                 result.status = "skipped"
                 result.snapshots_unchanged = len(snapshots)
+                # the prediction ledger has its own daily idempotency and must
+                # still get its once-per-day chance on identical-state cycles
+                self._prediction_stage(repo, snapshots, graph_state, result, now)
                 return result
             repo.start_run(run_key, WRITER_VERSION, now.isoformat(), cycle_id,
                            metadata={"snapshot_date": today, "themes": len(snapshots)})
@@ -252,6 +258,9 @@ class InstitutionalMemoryWriter:
                 log.error("[institutional-memory] transition derivation failed "
                           "(will retry next cycle): %s", exc)
                 result.add_error(str(exc))
+
+        # ── prediction issuance + outcome resolution (M3.3, once per UTC day) ─
+        self._prediction_stage(repo, snapshots, graph_state, result, now)
 
         result.status = "completed" if result.error_count == 0 else "failed"
         self._finish_run_best_effort(repo, result, now)
@@ -332,6 +341,47 @@ class InstitutionalMemoryWriter:
             "relationship_snapshots": rels,
             "narrative_snapshots": narratives,
         }
+
+    def _prediction_stage(self, repo: SupabaseRepository, theme_snapshots: list,
+                          graph_state, result: WriteRunResult, now: datetime) -> None:
+        """M3.3: issue structural predictions and resolve due outcomes, each at
+        most once per UTC day. Failure is recorded and retried next cycle; it
+        never blocks M3.1/M3.2 writes (which have already happened) or raises."""
+        from app.institutional_memory.predictions import (
+            build_candidates,
+            enabled_prediction_types,
+            issue_predictions,
+            prediction_ledger_status,
+        )
+        from app.institutional_memory.resolution import run_resolution
+
+        enabled, reason = prediction_ledger_status()
+        if not enabled:
+            if not self._ledger_disabled_logged:
+                log.info("[prediction-ledger] disabled reason=%s", reason)
+                self._ledger_disabled_logged = True
+            return
+
+        today = now.date().isoformat()
+        if self._issuance_done_for != today:
+            try:
+                candidates = build_candidates(graph_state, theme_snapshots, now,
+                                              enabled_prediction_types())
+                counters = issue_predictions(repo, candidates, now)
+                result.extra["m3_3_issuance"] = counters
+                self._issuance_done_for = today
+            except RepositoryError as exc:
+                log.error("[prediction-ledger] issuance failed (retry next cycle): %s", exc)
+                result.add_error(str(exc))
+
+        if self._resolution_done_for != today:
+            try:
+                res = run_resolution(repo, now)
+                result.extra["m3_3_resolution"] = res
+                self._resolution_done_for = today
+            except RepositoryError as exc:
+                log.error("[outcome-ledger] resolution_failed (retry next cycle): %s", exc)
+                result.add_error(str(exc))
 
     def _finish_run_best_effort(self, repo: SupabaseRepository,
                                 result: WriteRunResult, now: datetime) -> None:

@@ -66,6 +66,10 @@ class FakeRepository:
         self.rel_snapshots: dict[str, dict] = {}      # id -> row
         self.narr_snapshots: dict[str, dict] = {}     # id -> row
         self.rel_transitions: dict[str, dict] = {}    # event_key -> row
+        # M3.3 tables
+        self.predictions: dict[str, dict] = {}        # prediction_uid -> row
+        self.outcomes: dict[str, dict] = {}           # outcome_uid -> row
+        self.resolution_runs: dict[str, dict] = {}    # run_key -> row
 
     def _table(self, table: str) -> dict[str, dict]:
         return {
@@ -312,6 +316,130 @@ class FakeRepository:
         rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
         return rows[0] if rows else None
 
+    # prediction & outcome ledger (M3.3)
+    def insert_predictions(self, rows):
+        self._maybe_fail("insert_predictions")
+        for row in rows:
+            row = dict(row)
+            if row["prediction_uid"] in self.predictions:
+                continue   # ignore-duplicates on prediction_uid
+            boundary_key = (row["subject_uid"], row["prediction_type"],
+                            row["scope_key"], row["issuance_boundary"],
+                            row["schema_version"])
+            for existing in self.predictions.values():
+                if (existing["subject_uid"], existing["prediction_type"],
+                        existing["scope_key"], existing["issuance_boundary"],
+                        existing["schema_version"]) == boundary_key:
+                    raise RepositoryError(
+                        "supabase POST prediction_records failed: HTTP 409 duplicate "
+                        "(subject_uid, prediction_type, scope_key, issuance_boundary)")
+            row["id"] = str(uuid.uuid4())
+            self.predictions[row["prediction_uid"]] = row
+        return len(rows)
+
+    def fetch_predictions_issued_on(self, boundary):
+        self._maybe_fail("fetch_predictions_issued_on")
+        return {(r["subject_uid"], r["prediction_type"], r["scope_key"])
+                for r in self.predictions.values()
+                if r["issuance_boundary"] == boundary}
+
+    def fetch_due_predictions(self, now_iso, limit=500):
+        self._maybe_fail("fetch_due_predictions")
+        rows = [r for r in self.predictions.values()
+                if r["status"] == "active" and r["resolve_after"] <= now_iso]
+        return sorted(rows, key=lambda r: r["resolve_after"])[:limit]
+
+    def get_prediction(self, prediction_uid):
+        self._maybe_fail("get_prediction")
+        return self.predictions.get(prediction_uid)
+
+    def list_predictions(self, *, subject_uid=None, prediction_type=None,
+                         status=None, date_from=None, date_to=None,
+                         order_desc=True, limit=90):
+        self._maybe_fail("list_predictions")
+        rows = list(self.predictions.values())
+        if subject_uid:
+            rows = [r for r in rows if r["subject_uid"] == subject_uid]
+        if prediction_type:
+            rows = [r for r in rows if r["prediction_type"] == prediction_type]
+        if status:
+            rows = [r for r in rows if r["status"] == status]
+        if date_from:
+            rows = [r for r in rows if r["issuance_boundary"] >= date_from]
+        if date_to:
+            rows = [r for r in rows if r["issuance_boundary"] <= date_to]
+        rows.sort(key=lambda r: r["issued_at"], reverse=order_desc)
+        return rows[:limit]
+
+    def update_prediction_status(self, prediction_uid, status, now_iso):
+        self._maybe_fail("update_prediction_status")
+        row = self.predictions[prediction_uid]
+        row["status"] = status                     # status columns ONLY
+        row["status_updated_at"] = now_iso
+
+    def insert_outcomes(self, rows):
+        self._maybe_fail("insert_outcomes")
+        for row in rows:
+            if row["outcome_uid"] in self.outcomes:
+                continue   # ignore-duplicates
+            row = dict(row)
+            row["id"] = str(uuid.uuid4())
+            self.outcomes[row["outcome_uid"]] = row
+        return len(rows)
+
+    def get_outcome_for_prediction(self, prediction_uid):
+        self._maybe_fail("get_outcome_for_prediction")
+        for r in self.outcomes.values():
+            if r["prediction_uid"] == prediction_uid:
+                return r
+        return None
+
+    def list_outcomes(self, *, prediction_type=None, verdict=None,
+                      subject_uid=None, order_desc=True, limit=90):
+        self._maybe_fail("list_outcomes")
+        rows = list(self.outcomes.values())
+        if prediction_type:
+            rows = [r for r in rows if r["prediction_type"] == prediction_type]
+        if verdict:
+            rows = [r for r in rows if r["verdict"] == verdict]
+        if subject_uid:
+            rows = [r for r in rows if r["subject_uid"] == subject_uid]
+        rows.sort(key=lambda r: r["observed_at"], reverse=order_desc)
+        return rows[:limit]
+
+    def fetch_calibration_rows(self, prediction_type=None, limit=2000):
+        self._maybe_fail("fetch_calibration_rows")
+        rows = []
+        for o in self.outcomes.values():
+            p = self.predictions.get(o["prediction_uid"], {})
+            if prediction_type and o["prediction_type"] != prediction_type:
+                continue
+            rows.append({"prediction_type": o["prediction_type"],
+                         "verdict": o["verdict"],
+                         "probability": p.get("probability"),
+                         "score": o.get("score"),
+                         "schema_version": o.get("schema_version")})
+        return rows[:limit]
+
+    def get_resolution_run(self, run_key):
+        self._maybe_fail("get_resolution_run")
+        return self.resolution_runs.get(run_key)
+
+    def start_resolution_run(self, run_key, started_at, metadata):
+        self._maybe_fail("start_resolution_run")
+        if run_key not in self.resolution_runs:
+            self.resolution_runs[run_key] = {
+                "run_key": run_key, "started_at": started_at,
+                "status": "running", "metadata": metadata,
+            }
+
+    def finish_resolution_run(self, run_key, *, status, completed_at, counters, errors):
+        self._maybe_fail("finish_resolution_run")
+        row = self.resolution_runs.setdefault(run_key, {"run_key": run_key})
+        row.update(counters)
+        row.update({"status": status, "completed_at": completed_at,
+                    "errors": errors or None})
+
     def latest_snapshot_date(self):
         self._maybe_fail("latest_snapshot_date")
         dates = sorted(r["snapshot_date"] for r in self.snapshots.values())
@@ -378,6 +506,15 @@ def enabled_settings(monkeypatch):
     monkeypatch.setattr(settings, "supabase_url", "https://example.supabase.co")
     monkeypatch.setattr(settings, "supabase_service_role_key", "test-service-role-key")
     return settings
+
+
+@pytest.fixture
+def ledger_settings(enabled_settings, monkeypatch):
+    """Institutional memory + prediction ledger enabled, all M3.3 types on."""
+    monkeypatch.setattr(enabled_settings, "prediction_ledger_enabled", True)
+    monkeypatch.setattr(enabled_settings, "prediction_types_enabled",
+                        "relationship_persistence,narrative_membership,conviction_threshold")
+    return enabled_settings
 
 
 @pytest.fixture

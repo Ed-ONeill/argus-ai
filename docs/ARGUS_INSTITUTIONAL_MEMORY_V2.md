@@ -899,8 +899,42 @@ ARGUS_HISTORICAL_REPLAY_V1.md.
 
 ---
 
+## 17. M3.3 implementation record (BUILT — issuance disabled pending rollout)
+
+The Prediction & Outcome Ledger (section 2.E/2.F realized for structural,
+intelligence-state predictions). Full contract: ARGUS_PREDICTION_OUTCOME_LEDGER_V1.md.
+
+**Audit outcome:** the backend produces zero predictions today — all prediction logic is
+frontend TypeScript (`predictionEngine.ts`) and was NOT ported. The ledger therefore ships
+with an admission contract (`PredictionCandidate`) separating generation from persistence,
+plus three deterministic structural rule generators over recorded canonical state:
+`relationship_persistence`, `narrative_membership`, `conviction_threshold` (threshold = the
+canonical ThemeMemory 3-pt deadband). No price forecasting: no reliable adjusted-price
+source exists; outcomes resolve exclusively against Argus's own sealed daily records.
+
+Key contracts: migration `006_prediction_outcome_ledger.sql` (`prediction_records` immutable
+after issuance with status-only updates, `outcome_records` with verdict + stored resolution
+rules, `prediction_resolution_runs`, `prediction_calibration_view`; same RLS/revoke model);
+identity `prediction:v1:<sha256[:32]>` over semantic content excluding wording; issuance
+once per subject/type/**scope**/UTC day (scope_key = rel_uid / narrative UID / 'conviction'
+— required because one subject legitimately carries many relationship predictions); resolver
+runs once per UTC day after M3.1/M3.2 writes, resolves only sealed boundaries, and uses the
+M3.2 theme-liveness discriminator so a writer gap is `unresolvable_data_gap`, never a
+verdict. Invalidation (identity retired/absorbed) is distinct from contradiction and never
+hidden. Scoring (1.0/0.5/0.0) applies only to tested verdicts; everything else scores null.
+Calibration is gated (≥30 tested per type, ≤20% untested, per-bucket minimums, stable rules)
+and labeled "diagnostics, not an accuracy claim" until gates pass. Probability is null in
+all M3.3 predictions (no decomposable canonical confidence method exists).
+
+Flags: `PREDICTION_LEDGER_ENABLED` (default false) + `PREDICTION_TYPES_ENABLED` (default
+`relationship_persistence`). M3.3 counters ride in `memory_write_runs.metadata`
+(`m3_3_issuance` / `m3_3_resolution`); M3.1/M3.2 reporting is unchanged.
+
+---
+
 *Related: ARGUS_INTELLIGENCE_MODEL_V1.md (ontology + confidence vocabulary),
 ARGUS_INTELLIGENCE_PROFILE_V1.md (the projection snapshots persist),
 ARGUS_INTELLIGENCE_SURFACES_V1.md (surface ownership), ARGUS_INTELLIGENCE_EVERYWHERE_V1.md
 (Phase 2 closure this design builds on), ARGUS_MEMORY_OPERATIONS_V1.md (runbook),
-ARGUS_HISTORICAL_REPLAY_V1.md (replay contract).*
+ARGUS_HISTORICAL_REPLAY_V1.md (replay contract),
+ARGUS_PREDICTION_OUTCOME_LEDGER_V1.md (M3.3 ledger contract).*

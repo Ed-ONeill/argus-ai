@@ -279,6 +279,150 @@ class SupabaseRepository:
                       prefer="resolution=ignore-duplicates,return=minimal")
         return len(events)
 
+    # ── prediction & outcome ledger (M3.3) ───────────────────────────────────
+
+    def insert_predictions(self, rows: list[dict]) -> int:
+        """Idempotent issuance: duplicates on prediction_uid are ignored, and
+        the (subject, type, boundary) unique constraint is the DB backstop."""
+        if not rows:
+            return 0
+        self._request("POST", "prediction_records", json_body=rows,
+                      params={"on_conflict": "prediction_uid"},
+                      prefer="resolution=ignore-duplicates,return=minimal")
+        return len(rows)
+
+    def fetch_predictions_issued_on(self, boundary: str) -> set[tuple[str, str, str]]:
+        resp = self._request("GET", "prediction_records", params={
+            "issuance_boundary": f"eq.{boundary}",
+            "select": "subject_uid,prediction_type,scope_key",
+        })
+        return {(r["subject_uid"], r["prediction_type"], r["scope_key"])
+                for r in self._rows(resp)}
+
+    def fetch_due_predictions(self, now_iso: str, limit: int = 500) -> list[dict]:
+        resp = self._request("GET", "prediction_records", params={
+            "status": "eq.active",
+            "resolve_after": f"lte.{now_iso}",
+            "select": "*",
+            "order": "resolve_after.asc",
+            "limit": str(limit),
+        })
+        return self._rows(resp)
+
+    def get_prediction(self, prediction_uid: str) -> dict | None:
+        resp = self._request("GET", "prediction_records", params={
+            "prediction_uid": f"eq.{prediction_uid}",
+            "select": "*", "limit": "1",
+        })
+        rows = self._rows(resp)
+        return rows[0] if rows else None
+
+    def list_predictions(self, *, subject_uid: str | None = None,
+                         prediction_type: str | None = None,
+                         status: str | None = None,
+                         date_from: str | None = None, date_to: str | None = None,
+                         order_desc: bool = True, limit: int = 90) -> list[dict]:
+        params: dict[str, str] = {
+            "select": "*",
+            "order": f"issued_at.{'desc' if order_desc else 'asc'}",
+            "limit": str(limit),
+        }
+        if subject_uid:
+            params["subject_uid"] = f"eq.{subject_uid}"
+        if prediction_type:
+            params["prediction_type"] = f"eq.{prediction_type}"
+        if status:
+            params["status"] = f"eq.{status}"
+        conds = []
+        if date_from:
+            conds.append(f"issuance_boundary.gte.{date_from}")
+        if date_to:
+            conds.append(f"issuance_boundary.lte.{date_to}")
+        if conds:
+            params["and"] = f"({','.join(conds)})"
+        return self._rows(self._request("GET", "prediction_records", params=params))
+
+    def update_prediction_status(self, prediction_uid: str, status: str,
+                                 now_iso: str) -> None:
+        """Status columns ONLY — the issued prediction payload is immutable."""
+        self._request("PATCH", "prediction_records",
+                      params={"prediction_uid": f"eq.{prediction_uid}"},
+                      json_body={"status": status, "status_updated_at": now_iso},
+                      prefer="return=minimal")
+
+    def insert_outcomes(self, rows: list[dict]) -> int:
+        if not rows:
+            return 0
+        self._request("POST", "outcome_records", json_body=rows,
+                      params={"on_conflict": "outcome_uid"},
+                      prefer="resolution=ignore-duplicates,return=minimal")
+        return len(rows)
+
+    def get_outcome_for_prediction(self, prediction_uid: str) -> dict | None:
+        resp = self._request("GET", "outcome_records", params={
+            "prediction_uid": f"eq.{prediction_uid}",
+            "select": "*", "limit": "1",
+        })
+        rows = self._rows(resp)
+        return rows[0] if rows else None
+
+    def list_outcomes(self, *, prediction_type: str | None = None,
+                      verdict: str | None = None, subject_uid: str | None = None,
+                      order_desc: bool = True, limit: int = 90) -> list[dict]:
+        params: dict[str, str] = {
+            "select": "*",
+            "order": f"observed_at.{'desc' if order_desc else 'asc'}",
+            "limit": str(limit),
+        }
+        if prediction_type:
+            params["prediction_type"] = f"eq.{prediction_type}"
+        if verdict:
+            params["verdict"] = f"eq.{verdict}"
+        if subject_uid:
+            params["subject_uid"] = f"eq.{subject_uid}"
+        return self._rows(self._request("GET", "outcome_records", params=params))
+
+    def fetch_calibration_rows(self, prediction_type: str | None = None,
+                               limit: int = 2000) -> list[dict]:
+        """Rows from prediction_calibration_view that HAVE an outcome, mapped
+        to the shape compute_calibration expects."""
+        params: dict[str, str] = {
+            "select": "prediction_type,verdict,probability,score,outcome_schema_version",
+            "verdict": "not.is.null",
+            "limit": str(limit),
+        }
+        if prediction_type:
+            params["prediction_type"] = f"eq.{prediction_type}"
+        rows = self._rows(self._request("GET", "prediction_calibration_view",
+                                        params=params))
+        return [{"prediction_type": r["prediction_type"], "verdict": r["verdict"],
+                 "probability": r["probability"], "score": r["score"],
+                 "schema_version": r["outcome_schema_version"]} for r in rows]
+
+    def get_resolution_run(self, run_key: str) -> dict | None:
+        resp = self._request("GET", "prediction_resolution_runs", params={
+            "run_key": f"eq.{run_key}", "select": "run_key,status", "limit": "1",
+        })
+        rows = self._rows(resp)
+        return rows[0] if rows else None
+
+    def start_resolution_run(self, run_key: str, started_at: str,
+                             metadata: dict | None) -> None:
+        self._request("POST", "prediction_resolution_runs", json_body={
+            "run_key": run_key, "started_at": started_at,
+            "status": "running", "metadata": metadata,
+        }, params={"on_conflict": "run_key"},
+            prefer="resolution=ignore-duplicates,return=minimal")
+
+    def finish_resolution_run(self, run_key: str, *, status: str, completed_at: str,
+                              counters: dict, errors: list[str]) -> None:
+        body = dict(counters)
+        body.update({"status": status, "completed_at": completed_at,
+                     "errors": errors or None})
+        self._request("PATCH", "prediction_resolution_runs",
+                      params={"run_key": f"eq.{run_key}"}, json_body=body,
+                      prefer="return=minimal")
+
     # ── write runs ───────────────────────────────────────────────────────────
 
     def get_run(self, run_key: str) -> dict | None:

@@ -64,6 +64,34 @@ old symbol to `aliases`, update `display_label`, and mint nothing new — histor
 the mint-time UID. On a merger/delisting: set `status='absorbed'` (or `'retired'`) on the
 target entity row; forward accrual stops naturally when the ticker leaves `related_assets`.
 
+**0-F. M3.3 prediction & outcome ledger rollout.**
+Staged and flag-gated (full contract: ARGUS_PREDICTION_OUTCOME_LEDGER_V1.md §11):
+
+1. Apply `supabase/migrations/006_prediction_outcome_ledger.sql` (after 005). **[YOU]**
+2. Deploy. Issuance stays OFF (`PREDICTION_LEDGER_ENABLED` unset → startup logs
+   `[prediction-ledger] disabled reason=disabled_by_flag` on the first eligible cycle).
+3. Verify `/api/memory/v2/calibration/status` → `ledger_enabled: false` and no 502.
+4. Railway backend variables: `PREDICTION_LEDGER_ENABLED=true` (leave
+   `PREDICTION_TYPES_ENABLED` unset — defaults to `relationship_persistence` only). **[YOU]**
+5. Observe 24h: `[prediction-ledger] issued=… skipped_duplicate=… rejected=…` once per
+   UTC day; duplicate check:
+   `select subject_uid, prediction_type, scope_key, issuance_boundary, count(*)
+    from prediction_records group by 1,2,3,4 having count(*) > 1;` → zero rows.
+6. The resolver activates automatically two UTC days after first issuance
+   (`[outcome-ledger] due=… resolved=… unresolved=…`). Manually audit the first 10
+   outcomes: `select verdict, resolution_rules from outcome_records order by created_at
+   limit 10;` — each rule must match the sealed snapshots it references. **[YOU]**
+7. Only then widen: `PREDICTION_TYPES_ENABLED=relationship_persistence,narrative_membership,conviction_threshold`. **[YOU]**
+8. Never expose an accuracy metric publicly; `/calibration/*` responses stay labeled
+   "diagnostics, not an accuracy claim" until the credibility gates pass (≥30 tested
+   per type, ≤20% untested) — expect weeks of accrual before that.
+
+To stop issuance safely at any time: set `PREDICTION_LEDGER_ENABLED=false` and restart.
+Already-issued predictions remain (immutable, never deleted); the resolver also stops —
+re-enabling resumes resolution of anything due. Do not delete ledger rows; a defective
+prediction is marked `withdrawn_due_to_data_error` via a service-role SQL update to the
+status column only, with the reason recorded in the next run's metadata.
+
 ---
 
 ## 1. Production rollout (exact manual steps)

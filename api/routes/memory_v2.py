@@ -340,6 +340,156 @@ def relationship_transitions(
     return {"rel_uid": uid, "count": len(rows), "transitions": rows}
 
 
+# ── M3.3: prediction & outcome ledger (read-only) ─────────────────────────────
+
+_PREDICTION_UID_RE = re.compile(r"^prediction:v1:[0-9a-f]{32}$")
+
+_SUPPORTED_PREDICTION_TYPES = {"relationship_persistence", "narrative_membership",
+                               "conviction_threshold"}
+_VERDICTS = {"confirmed", "partially_confirmed", "contradicted", "invalidated",
+             "unresolved", "unresolvable_data_gap", "expired_without_test"}
+_STATUSES = {"active", "pending_resolution", "resolved", "expired_unresolved",
+             "invalidated", "withdrawn_due_to_data_error"}
+
+
+def _prediction_uid_or_400(value: str) -> str:
+    if not _PREDICTION_UID_RE.match((value or "").strip()):
+        raise HTTPException(status_code=400,
+                            detail=f"Invalid prediction UID: {value!r}. "
+                                   "Expected prediction:v1:<32 hex>.")
+    return value.strip()
+
+
+def _enum_or_400(value: str | None, allowed: set[str], name: str) -> str | None:
+    if value is not None and value not in allowed:
+        raise HTTPException(status_code=400,
+                            detail=f"Invalid {name}: {value!r}. Allowed: {sorted(allowed)}.")
+    return value
+
+
+@router.get("/predictions")
+def list_predictions(
+    subject_uid: str | None = Query(default=None),
+    prediction_type: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    limit: int = Query(default=90, ge=1, le=1000),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+) -> dict:
+    subject = _entity_uid_or_400(subject_uid) if subject_uid else None
+    ptype = _enum_or_400(prediction_type, _SUPPORTED_PREDICTION_TYPES, "prediction_type")
+    pstatus = _enum_or_400(status_filter, _STATUSES, "status")
+    dfrom, dto = _date_or_400(date_from, "date_from"), _date_or_400(date_to, "date_to")
+    repo = _repository()
+    rows = _guarded(
+        lambda: repo.list_predictions(subject_uid=subject, prediction_type=ptype,
+                                      status=pstatus, date_from=dfrom, date_to=dto,
+                                      order_desc=(order == "desc"), limit=limit),
+        "list_predictions",
+    )
+    return {"count": len(rows), "predictions": rows}
+
+
+@router.get("/predictions/{prediction_uid}")
+def get_prediction(prediction_uid: str) -> dict:
+    uid = _prediction_uid_or_400(prediction_uid)
+    repo = _repository()
+    row = _guarded(lambda: repo.get_prediction(uid), "get_prediction")
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"No prediction {uid}.")
+    return {"prediction": row}
+
+
+@router.get("/predictions/{prediction_uid}/outcome")
+def get_prediction_outcome(prediction_uid: str) -> dict:
+    uid = _prediction_uid_or_400(prediction_uid)
+    repo = _repository()
+    row = _guarded(lambda: repo.get_outcome_for_prediction(uid), "get_outcome")
+    if row is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No outcome for {uid} yet (unresolved or not due).")
+    return {"outcome": row}
+
+
+@router.get("/entities/{uid}/predictions")
+def entity_predictions(
+    uid: str,
+    limit: int = Query(default=90, ge=1, le=1000),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+) -> dict:
+    entity_uid = _entity_uid_or_400(uid)
+    repo = _repository()
+    rows = _guarded(
+        lambda: repo.list_predictions(subject_uid=entity_uid,
+                                      order_desc=(order == "desc"), limit=limit),
+        "entity list_predictions",
+    )
+    return {"entity_uid": entity_uid, "count": len(rows), "predictions": rows}
+
+
+@router.get("/outcomes")
+def list_outcomes(
+    prediction_type: str | None = Query(default=None),
+    verdict: str | None = Query(default=None),
+    subject_uid: str | None = Query(default=None),
+    limit: int = Query(default=90, ge=1, le=1000),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+) -> dict:
+    ptype = _enum_or_400(prediction_type, _SUPPORTED_PREDICTION_TYPES, "prediction_type")
+    v = _enum_or_400(verdict, _VERDICTS, "verdict")
+    subject = _entity_uid_or_400(subject_uid) if subject_uid else None
+    repo = _repository()
+    rows = _guarded(
+        lambda: repo.list_outcomes(prediction_type=ptype, verdict=v,
+                                   subject_uid=subject,
+                                   order_desc=(order == "desc"), limit=limit),
+        "list_outcomes",
+    )
+    return {"count": len(rows), "outcomes": rows}
+
+
+@router.get("/calibration/status")
+def calibration_status() -> dict:
+    """Calibration prerequisites and gate status. Deliberately NOT an accuracy
+    metric: figures are labeled diagnostics until the credibility gates pass."""
+    from app.institutional_memory.outcomes import compute_calibration
+    from app.institutional_memory.predictions import (
+        enabled_prediction_types,
+        prediction_ledger_status,
+    )
+    enabled, reason = prediction_ledger_status()
+    repo = _repository()
+
+    def collect() -> dict:
+        rows = repo.fetch_calibration_rows()
+        overall = compute_calibration(rows)
+        open_predictions = repo.list_predictions(status="active", limit=1000)
+        return {
+            "ledger_enabled": enabled,
+            "reason": reason,
+            "enabled_prediction_types": sorted(enabled_prediction_types()),
+            "open_predictions": len(open_predictions),
+            "overall": overall,
+        }
+
+    return _guarded(collect, "calibration_status")
+
+
+@router.get("/calibration/by-type")
+def calibration_by_type(
+    prediction_type: str = Query(alias="type"),
+) -> dict:
+    from app.institutional_memory.outcomes import compute_calibration
+    ptype = _enum_or_400(prediction_type, _SUPPORTED_PREDICTION_TYPES, "prediction_type")
+    repo = _repository()
+    rows = _guarded(lambda: repo.fetch_calibration_rows(ptype), "calibration_by_type")
+    result = compute_calibration(rows, ptype)
+    if not result["credible"]:
+        log.info("[calibration] type=%s n=%d credible=false", ptype, result["sample_size"])
+    return result
+
+
 @router.get("/graph/at")
 def graph_at(date_param: str = Query(alias="date")) -> dict:
     """Daily historical reconstruction of the recorded intelligence state at

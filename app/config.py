@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     supabase_service_role_key: str  = ""
     institutional_memory_enabled: bool = False
 
+    # ── Prediction & outcome ledger (M3.3) ────────────────────────────────────
+    # Issuance/resolution run only when BOTH institutional memory and this flag
+    # are enabled. prediction_types_enabled is a comma-separated allowlist so
+    # types can be rolled out one at a time (runbook: start with
+    # relationship_persistence only).
+    prediction_ledger_enabled: bool = False
+    prediction_types_enabled:  str  = "relationship_persistence"
+
     @field_validator("documents_dir", "embeddings_dir", "models_dir",
                      "chroma_dir", "conversations_dir", "log_file", mode="after")
     @classmethod
