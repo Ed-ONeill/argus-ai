@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { Play, Pause } from "lucide-react";
-import NetworkGraph from "@/components/graph/NetworkGraph";
-import { buildMarketMap, type MarketSnapshot } from "@/lib/marketMap";
+import { useMemo } from "react";
+import IntelligenceNetwork from "@/components/network/IntelligenceNetwork";
+import { buildNetworkModel } from "@/lib/network/model";
+import type { MarketSnapshot } from "@/lib/marketMap";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildTheRead } from "@/lib/theRead";
 import { buildMarketStoryVM } from "@/lib/feedNarrative";
@@ -14,9 +14,15 @@ import type { GraphNode } from "@/lib/graph/types";
 import type { ThemeIntelligence } from "@/lib/types";
 
 /**
- * ArgusMarketMap, the Feed hero. A live capital-transmission map (macro driver →
- * theme → sector → assets) rendered on the reusable graph engine, plus a compact
- * "Today's Market Story" desk note. The signature first-screen experience.
+ * ArgusMarketMap — the Feed hero, now rendered on the M4.1 Intelligence
+ * Network (components/network/IntelligenceNetwork): deterministic staged
+ * causal layout, institutional node/edge grammar, no ambient motion.
+ *
+ * M4.1 removals (ARGUS_INTELLIGENCE_NETWORK_V1.md Task 1): the previous
+ * intraday playback control was a fabricated reconstruction (stage +
+ * confidence + hash — not historical observations) and has been REMOVED, not
+ * substituted with another estimate. Real daily reconstruction over the M3
+ * history API lands in M4.4 through this same integration point.
  */
 
 interface Props {
@@ -29,42 +35,15 @@ interface Props {
   onFocusChange?: (node: GraphNode | null) => void;
   /** Increment to release the selection from outside (exit Focus mode). */
   clearNonce?: number;
-  /** Global market energy 0..1, modulates the graph's motion temperament. */
+  /** Accepted for page compatibility; the M4.1 network is deliberately still
+      (no ambient-motion temperament), so energy no longer drives rendering. */
   energy?: number;
 }
 
-// Replay clock: 0 → "9:30 AM", 1 → "Now" (illustrative reconstruction of the day).
-function replayClock(p: number): string {
-  if (p >= 0.999) return "Now";
-  const mins = 570 + p * 390;            // 9:30 (570') → 16:00 (960')
-  const h = Math.floor(mins / 60), m = Math.floor(mins % 60);
-  return `${((h + 11) % 12) + 1}:${m.toString().padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
-}
-
-export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChange, clearNonce, energy }: Props) {
+export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChange, clearNonce }: Props) {
   const beam = useActiveBeamTokens();
 
-  // ── Market Replay ──────────────────────────────────────────────────────────
-  const [replaying, setReplaying] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  useEffect(() => {
-    if (!playing) return;
-    let raf = 0, last = performance.now();
-    const tick = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      setProgress(p => (p + dt / 14 >= 1 ? 1 : p + dt / 14));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing]);
-  useEffect(() => { if (progress >= 1) setPlaying(false); }, [progress]);
-  const startReplay = () => { setReplaying(true); setProgress(0); setPlaying(true); };
-  const togglePlay = () => { if (progress >= 1) setProgress(0); setPlaying(p => !p); };
-  const exitReplay = () => { setReplaying(false); setPlaying(false); };
-
-  const model = useMemo(() => buildMarketMap(themes, snapshot), [themes, snapshot]);
+  const model = useMemo(() => buildNetworkModel(themes, snapshot), [themes, snapshot]);
 
   // Today's Market Story = the SAME DerivedNarrative thesis The Read shows on
   // the Morning Brief, phrased in feed voice (P2 Feed unification, D6). Built
@@ -110,43 +89,14 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
       </div>
 
       <div className="grid lg:grid-cols-3 gap-3.5">
-        {/* The map */}
+        {/* The network */}
         <div className="lg:col-span-2">
           {isLoading ? (
-            <div className="w-full rounded-xl border animate-pulse" style={{ height: 440, borderColor: "rgba(82,176,200,0.2)", background: "rgba(5,9,16,0.6)" }} />
+            <div className="w-full rounded-xl border animate-pulse" style={{ height: 440, borderColor: "rgba(148,163,184,0.18)", background: "rgba(5,9,16,0.6)" }} />
           ) : (
-            <>
-              <NetworkGraph model={model} height={440} title="Argus Market Map" subtitle="Capital Flow" showTimeline={false} showFilters={false}
-                onFocusChange={onFocusChange} clearNonce={clearNonce} beamTokens={beam} energy={energy}
-                replayProgress={replaying ? progress : null}
-                onHoverChange={n => n ? setBeacon(nodeTokens(n)) : releaseBeacon()} />
-
-              {/* Market Replay, scrub how today's narrative built from the open */}
-              {hasMap && (
-                <div className="mt-2 flex items-center gap-2.5 min-h-[26px]">
-                  {!replaying ? (
-                    <button onClick={startReplay}
-                      className="flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-md transition-colors hover:bg-white/[0.05]"
-                      style={{ color: "rgba(124,199,216,0.9)", border: "1px solid rgba(82,176,200,0.22)" }}>
-                      <Play size={9} className="translate-x-px" /> Replay the day
-                    </button>
-                  ) : (
-                    <>
-                      <span className="text-[8px] font-black uppercase tracking-[0.16em] shrink-0" style={{ color: "#7cc7d8" }}>Replay</span>
-                      <button onClick={togglePlay} className="flex items-center justify-center rounded-full shrink-0 transition-colors hover:bg-white/10" style={{ background: "rgba(82,176,200,0.16)", color: "#7cc7d8", width: 22, height: 22 }}>
-                        {playing ? <Pause size={10} /> : <Play size={10} className="translate-x-px" />}
-                      </button>
-                      <span className="text-[8.5px] font-bold tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>9:30</span>
-                      <input type="range" min={0} max={1} step={0.001} value={progress}
-                        onChange={e => { setProgress(parseFloat(e.target.value)); setPlaying(false); }}
-                        className="flex-1 h-1 cursor-pointer" style={{ accentColor: "#52b0c8" }} />
-                      <span className="text-[10px] font-black tabular-nums shrink-0 text-right" style={{ color: "#7cc7d8", minWidth: 50 }}>{replayClock(progress)}</span>
-                      <button onClick={exitReplay} className="text-[9px] font-semibold shrink-0 transition-colors hover:text-white" style={{ color: "rgba(255,255,255,0.5)" }}>Live →</button>
-                    </>
-                  )}
-                </div>
-              )}
-            </>
+            <IntelligenceNetwork model={model} height={440}
+              onFocusChange={onFocusChange} clearNonce={clearNonce} beamTokens={beam}
+              onHoverChange={n => n ? setBeacon(nodeTokens(n)) : releaseBeacon()} />
           )}
         </div>
 
@@ -191,7 +141,7 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
               )}
               <p className="text-[8.5px] mt-auto pt-3" style={{ color: "rgba(255,255,255,0.28)" }}>
                 {focus
-                  ? "The feed below is filtered to this node · click the map background to return to Global Market"
+                  ? "The feed below is filtered to this node · click the map background or press Esc to return to Global Market"
                   : "Select any node to drive the feed · hover to trace its transmission"}
               </p>
             </>
