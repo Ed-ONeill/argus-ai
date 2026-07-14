@@ -340,6 +340,29 @@ def relationship_transitions(
     return {"rel_uid": uid, "count": len(rows), "transitions": rows}
 
 
+# ── M3.4: institutional reasoning (read-only, gated) ──────────────────────────
+
+@router.get("/themes/{theme_uid}/historical-context")
+def theme_historical_context(
+    theme_uid: str,
+    window: int = Query(default=5, ge=2, le=30),
+    horizon: int = Query(default=10, ge=1, le=30),
+    limit: int = Query(default=5, ge=1, le=10),
+) -> dict:
+    """Similar historical episodes + what happened next, computed from sealed
+    institutional records only. Returns status=insufficient_history (with the
+    exact gate shortfalls) until the pre-registered credibility gates pass —
+    analog output is suppressed, never estimated."""
+    from app.institutional_memory.reasoning import build_historical_context
+    uid = _uid_or_400(theme_uid)
+    repo = _repository()
+    return _guarded(
+        lambda: build_historical_context(repo, uid, window=window,
+                                         horizon=horizon, max_episodes=limit),
+        "historical_context",
+    )
+
+
 # ── M3.3: prediction & outcome ledger (read-only) ─────────────────────────────
 
 _PREDICTION_UID_RE = re.compile(r"^prediction:v1:[0-9a-f]{32}$")

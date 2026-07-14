@@ -932,9 +932,33 @@ Flags: `PREDICTION_LEDGER_ENABLED` (default false) + `PREDICTION_TYPES_ENABLED` 
 
 ---
 
+## 18. M3.4 implementation record (BUILT — gated until the archive matures)
+
+The Institutional Reasoning Engine: similar historical episodes, decomposed similarity (the
+"why"), and "what happened next" outcome summaries — computed exclusively from sealed
+institutional records. Full contract: ARGUS_INSTITUTIONAL_REASONING_V1.md.
+
+Realized: `app/institutional_memory/reasoning.py` + `GET
+/api/memory/v2/themes/{uid}/historical-context`. Episodes = (theme, anchor date) pairs with
+fully sealed follow-up horizons; similarity is a weighted decomposition over conviction
+level/trajectory, typed relationship sets, narrative driver sets, transition types, and
+recorded regime (null components excluded, never inflated); outcomes count recorded facts
+("activation strengthened in N of M episodes", follow-up narratives that first emerged in
+the horizon, durations in observed UTC days with censoring flags). The §9 credibility gate
+is enforced in code (≥60 archive days, ≥2 recorded regimes, ≥10 tested M3.3 outcomes) —
+until it passes, responses are `insufficient_history` with exact shortfalls, and no analog
+is ever estimated in their place. No price data anywhere: "outperformed" claims are
+impossible by construction. Read-only; no new tables, writers, or flags. Archive-wide reads
+are paged (`fetch_table_snapshots_between_paged`) so the PostgREST row cap cannot truncate
+history silently. The theme-page UI panel (pitch Sprint 2) is deliberately deferred to a
+frontend sprint over this payload.
+
+---
+
 *Related: ARGUS_INTELLIGENCE_MODEL_V1.md (ontology + confidence vocabulary),
 ARGUS_INTELLIGENCE_PROFILE_V1.md (the projection snapshots persist),
 ARGUS_INTELLIGENCE_SURFACES_V1.md (surface ownership), ARGUS_INTELLIGENCE_EVERYWHERE_V1.md
 (Phase 2 closure this design builds on), ARGUS_MEMORY_OPERATIONS_V1.md (runbook),
 ARGUS_HISTORICAL_REPLAY_V1.md (replay contract),
-ARGUS_PREDICTION_OUTCOME_LEDGER_V1.md (M3.3 ledger contract).*
+ARGUS_PREDICTION_OUTCOME_LEDGER_V1.md (M3.3 ledger contract),
+ARGUS_INSTITUTIONAL_REASONING_V1.md (M3.4 reasoning contract).*

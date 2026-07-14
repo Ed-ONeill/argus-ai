@@ -316,6 +316,27 @@ class FakeRepository:
         rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
         return rows[0] if rows else None
 
+    # archive-wide reads (M3.4 reasoning)
+    def fetch_table_snapshots_between_paged(self, table, date_from, date_to,
+                                            snapshot_kind, schema_version,
+                                            page_size=1000, max_rows=50000):
+        self._maybe_fail("fetch_table_snapshots_between_paged")
+        return self.fetch_table_snapshots_between(
+            table, date_from, date_to, snapshot_kind, schema_version)
+
+    def fetch_transitions_between(self, table, uid_col, date_from, date_to,
+                                  page_size=1000, max_rows=50000):
+        self._maybe_fail("fetch_transitions_between")
+        store = self.rel_transitions if table == "relationship_transitions" else self.transitions
+        rows = [r for r in store.values()
+                if date_from <= str(r["effective_at"])[:10] <= date_to]
+        return sorted(rows, key=lambda r: r["effective_at"])
+
+    def earliest_snapshot_date(self):
+        self._maybe_fail("earliest_snapshot_date")
+        dates = sorted(r["snapshot_date"] for r in self.snapshots.values())
+        return dates[0] if dates else None
+
     # prediction & outcome ledger (M3.3)
     def insert_predictions(self, rows):
         self._maybe_fail("insert_predictions")

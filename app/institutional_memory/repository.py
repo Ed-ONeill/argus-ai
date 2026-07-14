@@ -163,6 +163,64 @@ class SupabaseRepository:
         })
         return self._rows(resp)
 
+    def fetch_table_snapshots_between_paged(self, table: str, date_from: str,
+                                            date_to: str, snapshot_kind: str,
+                                            schema_version: int,
+                                            page_size: int = 1000,
+                                            max_rows: int = 50000) -> list[dict]:
+        """Like fetch_table_snapshots_between but pages past the PostgREST
+        response cap — required for archive-wide reads (reasoning/replay over
+        months of history). Ordered (snapshot_date, id) for stable paging."""
+        rows: list[dict] = []
+        offset = 0
+        while offset < max_rows:
+            resp = self._request("GET", table, params={
+                "and": f"(snapshot_date.gte.{date_from},snapshot_date.lte.{date_to})",
+                "snapshot_kind": f"eq.{snapshot_kind}",
+                "schema_version": f"eq.{schema_version}",
+                "select": "*",
+                "order": "snapshot_date.asc,id.asc",
+                "limit": str(page_size),
+                "offset": str(offset),
+            })
+            page = self._rows(resp)
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return rows
+
+    def fetch_transitions_between(self, table: str, uid_col: str, date_from: str,
+                                  date_to: str, page_size: int = 1000,
+                                  max_rows: int = 50000) -> list[dict]:
+        """All transition rows with date_from <= effective_at::date <= date_to,
+        paged, oldest first. table ∈ {transition_events, relationship_transitions}."""
+        rows: list[dict] = []
+        offset = 0
+        while offset < max_rows:
+            resp = self._request("GET", table, params={
+                "and": (f"(effective_at.gte.{date_from}T00:00:00Z,"
+                        f"effective_at.lte.{date_to}T23:59:59Z)"),
+                "select": "*",
+                "order": "effective_at.asc,id.asc",
+                "limit": str(page_size),
+                "offset": str(offset),
+            })
+            page = self._rows(resp)
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return rows
+
+    def earliest_snapshot_date(self) -> str | None:
+        rows = self._rows(self._request("GET", "entity_snapshots", params={
+            "select": "snapshot_date",
+            "order": "snapshot_date.asc",
+            "limit": "1",
+        }))
+        return rows[0]["snapshot_date"] if rows else None
+
     def insert_table_snapshot(self, table: str, uid_col: str, row: dict) -> None:
         self._request("POST", table, json_body=row,
                       params={"on_conflict": f"{uid_col},snapshot_date,snapshot_kind,schema_version"},

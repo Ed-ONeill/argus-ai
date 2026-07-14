@@ -92,6 +92,18 @@ re-enabling resumes resolution of anything due. Do not delete ledger rows; a def
 prediction is marked `withdrawn_due_to_data_error` via a service-role SQL update to the
 status column only, with the reason recorded in the next run's metadata.
 
+**0-G. M3.4 reasoning engine.**
+No migration, no writers, no flags — `GET /api/memory/v2/themes/{uid}/historical-context`
+is available as soon as the M3.4 code deploys. Expected behavior for the first ~2 months:
+`status: "insufficient_history"` with the gate report (needs ≥60 sealed archive days, ≥2
+recorded regimes, ≥10 tested prediction outcomes) — this is correct, not a fault. Verify
+after deploy: the endpoint returns 200 with `credibility.gates.min_archive_days.actual`
+equal to `select count(distinct snapshot_date) from entity_snapshots where snapshot_kind =
+'daily_utc';`. When the gates eventually pass, spot-check the first episodes: every
+`episodes[].why` line must trace to real rows (shared relationships → relationship_snapshots
+on both anchor dates; regime → the regime:taxonomy:* edge that day). Any surface consuming
+this API must render insufficient_history verbatim — never substitute an estimate.
+
 ---
 
 ## 1. Production rollout (exact manual steps)
