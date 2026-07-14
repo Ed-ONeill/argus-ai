@@ -14,7 +14,10 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { buildNetworkModel, tracePath, transitionMs } from "./model";
-import { computeLayout, boxesOverlap, COLUMN_ORDER, type NetworkLayout } from "./layout";
+import {
+  computeLayout, boxesOverlap, contentBounds, focalNodeId, tierOf, wrapLabel,
+  COLUMN_ORDER, type NetworkLayout,
+} from "./layout";
 import type { ThemeIntelligence } from "@/lib/types";
 import type { MarketSnapshot } from "@/lib/marketMap";
 
@@ -211,6 +214,110 @@ export async function runNetworkTests(): Promise<{ total: number; passed: number
     for (const cls of ["driver", "theme", "industry", "asset"])
       assert(JSON.stringify(orderOf(wide, cls)) === JSON.stringify(orderOf(narrow, cls)),
         `${cls} row order changed on resize`);
+  });
+
+  // ── M4.1A constellation tests ─────────────────────────────────────────────
+
+  test("dominant node receives Tier 1 placement near the visual center", () => {
+    const m = buildNetworkModel(themeSet(5), SNAP);
+    const focal = focalNodeId(m);
+    assert(focal, "no focal node");
+    const focalNode = m.nodes.find(n => n.id === focal)!;
+    const top = Math.max(...m.nodes.filter(n => n.cls === "theme").map(n => n.confidence ?? 0));
+    assert(focalNode.confidence === top, "focal is not the highest-conviction theme");
+    const l = computeLayout(m, 960, 440);
+    const fb = l.boxes.get(focal!)!;
+    assert(fb.tier === 1, "focal box is not tier 1");
+    for (const b of l.boxes.values())
+      if (b.cls === "theme" && b.id !== focal) assert(b.w * b.h < fb.w * fb.h, `theme ${b.id} outsizes the focal`);
+    assert(Math.abs(fb.x - 960 / 2) < 960 * 0.32 && Math.abs(fb.y - 440 / 2) < 440 * 0.32,
+      `focal not near center (${fb.x.toFixed(0)},${fb.y.toFixed(0)})`);
+  });
+
+  test("node tiers map consistently from canonical fields", () => {
+    const m = buildNetworkModel(themeSet(4), SNAP);
+    const focal = focalNodeId(m)!;
+    for (const n of m.nodes) {
+      const t = tierOf(n, n.id === focal);
+      if (n.id === focal) assert(t === 1, "focal must be tier 1");
+      else if (n.cls === "theme" || n.cls === "driver") assert(t === 2, `${n.cls} must be tier 2`);
+      else if (n.cls === "industry") assert(t === 3, "industry must be tier 3");
+      else assert(t === 4, "asset must be tier 4");
+    }
+  });
+
+  test("assets form local constellations around their primary industry", () => {
+    const m = buildNetworkModel(themeSet(5), SNAP);
+    const l = computeLayout(m, 960, 440);
+    const industries = [...l.boxes.values()].filter(b => b.cls === "industry");
+    assert(industries.length >= 2, "need multiple industries for this test");
+    const clusters = new Map<string, { xs: number[]; ys: number[] }>();
+    for (const a of [...l.boxes.values()].filter(b => b.cls === "asset")) {
+      const homeId = m.edges.filter(e => e.target === a.id && e.source.startsWith("sec:"))
+        .sort((x, y) => y.strength - x.strength)[0]?.source;
+      if (!homeId) continue;
+      const home = l.boxes.get(homeId)!;
+      const d = Math.hypot(a.x - home.x, a.y - home.y);
+      assert(d <= 170, `${a.id} strayed ${d.toFixed(0)}px from its home ${homeId}`);
+      assert(a.x > home.x - home.w / 2, `${a.id} not downstream of its home industry`);
+      const c = clusters.get(homeId) ?? clusters.set(homeId, { xs: [], ys: [] }).get(homeId)!;
+      c.xs.push(a.x); c.ys.push(a.y);
+    }
+    for (const [homeId, c] of clusters) {
+      const home = l.boxes.get(homeId)!;
+      const cx = c.xs.reduce((s, v) => s + v, 0) / c.xs.length;
+      const cy = c.ys.reduce((s, v) => s + v, 0) / c.ys.length;
+      assert(Math.hypot(cx - home.x, cy - home.y) <= 120,
+        `cluster centroid of ${homeId} drifted from its hub`);
+    }
+  });
+
+  test("content uses the canvas effectively and sparse graphs center", () => {
+    const dense = computeLayout(buildNetworkModel(themeSet(5), SNAP), 960, 440);
+    const db = contentBounds(dense);
+    assert(Math.max(db.w / 960, db.h / 440) >= 0.7,
+      `dense content underuses canvas (${(db.w / 960).toFixed(2)} x ${(db.h / 440).toFixed(2)})`);
+    assert(Math.min(db.w / 960, db.h / 440) >= 0.45, "dense content too flat");
+    const sparseL = computeLayout(buildNetworkModel(themeSet(1), SNAP), 960, 440);
+    const sb = contentBounds(sparseL);
+    const cx = sb.x + sb.w / 2, cy = sb.y + sb.h / 2;
+    assert(Math.abs(cx - 480) < 960 * 0.15 && Math.abs(cy - 220) < 440 * 0.15,
+      `sparse content not centered (${cx.toFixed(0)},${cy.toFixed(0)})`);
+  });
+
+  test("long theme names wrap with adequate node width", () => {
+    // constructed directly: builder labels pass through cleanThemeName, which
+    // canonicalizes most long strings — the layout must still handle the rest
+    const m = buildNetworkModel([theme()], SNAP);
+    const longLabel = "Institutional Duration Positioning Across Regional Bank Balance Sheets";
+    m.nodes.filter(n => n.cls === "theme").forEach(n => { n.label = longLabel; });
+    const l = computeLayout(m, 960, 440);
+    const tb = [...l.boxes.values()].find(b => b.cls === "theme")!;
+    assert(tb.lines.length === 2, `long name did not wrap (${tb.lines.length} lines: ${tb.lines})`);
+    assert(tb.w >= 190, "tier-1 node too narrow for a long name");
+    const wrapped = wrapLabel("Higher-for-Longer Duration Repricing", 11, 150, 2);
+    assert(wrapped.lines.length === 2 && !wrapped.truncated, "wrapLabel should prefer wrapping over truncation");
+  });
+
+  test("stable nodes do not move materially after unrelated insertion", () => {
+    const before = computeLayout(buildNetworkModel(themeSet(4), SNAP), 960, 440);
+    const after = computeLayout(buildNetworkModel(themeSet(5), SNAP), 960, 440);
+    for (const [id, b] of before.boxes) {
+      if (b.cls !== "theme" && b.cls !== "driver") continue;
+      const a = after.boxes.get(id);
+      if (!a) continue;
+      assert(Math.abs(a.x - b.x) < 960 * 0.22 && Math.abs(a.y - b.y) < 440 * 0.32,
+        `${id} moved materially: (${b.x.toFixed(0)},${b.y.toFixed(0)}) → (${a.x.toFixed(0)},${a.y.toFixed(0)})`);
+    }
+  });
+
+  test("renderer keeps the render-on-demand contract (no permanent loop)", () => {
+    const src = readFileSync(join(process.cwd(), "src/components/network/IntelligenceNetwork.tsx"), "utf-8");
+    assert(!src.includes("setInterval"), "renderer must not poll on an interval");
+    assert(src.includes("if (animating)"), "continuation frames must be gated on active animation");
+    assert(src.includes("prefers-reduced-motion"), "reduced motion must be honored");
+    // constellation replaced the flowchart: no column rails/headers remain
+    assert(!src.includes("col.label") && !src.includes("DRIVERS"), "column headers should be gone");
   });
 
   const results: TestResult[] = [];
