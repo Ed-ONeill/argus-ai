@@ -281,6 +281,7 @@ class MarketEventSchema(BaseModel):
     source_count:        int
     evidence:            list[EventEvidenceSchema] = []
     companies:           list[str] = []
+    companies_direct:    list[str] = []   # named by the event itself (strict subset)
     industries:          list[str] = []
     theme_ids:           list[str] = []
     confidence:          int = 0
@@ -496,6 +497,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
                 for e in ev.evidence
             ],
             companies           = ev.companies,
+            companies_direct    = getattr(ev, "companies_direct", []),
             industries          = ev.industries,
             theme_ids           = ev.theme_ids,
             confidence          = ev.confidence,

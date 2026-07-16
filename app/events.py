@@ -189,6 +189,11 @@ class MarketEvent:
     source_count: int             # distinct sources of any tier
     evidence: list[EventEvidence] = field(default_factory=list)
     companies: list[str] = field(default_factory=list)
+    # Companies NAMED by the event itself (registry resolver over the event's
+    # own text/hints) — a strict subset of `companies`, which also carries
+    # theme-transmitted assets. Attribution must never conflate the two: being
+    # on a linked theme's asset list is exposure, not involvement.
+    companies_direct: list[str] = field(default_factory=list)
     industries: list[str] = field(default_factory=list)
     theme_ids: list[str] = field(default_factory=list)       # internal only
     narrative_keys: list[str] = field(default_factory=list)  # reserved (M3.2 records own narrative links)
@@ -209,7 +214,9 @@ class MarketEvent:
             "corroboration_count": self.corroboration_count,
             "source_count": self.source_count,
             "evidence": [vars(e) for e in self.evidence],
-            "companies": self.companies, "industries": self.industries,
+            "companies": self.companies,
+            "companies_direct": self.companies_direct,
+            "industries": self.industries,
             "theme_ids": self.theme_ids, "narrative_keys": self.narrative_keys,
             "confidence": self.confidence,
             "editorial_score": self.editorial_score,
@@ -330,6 +337,9 @@ def _merge_into(keeper: MarketEvent, ev: MarketEvent) -> None:
     for c in ev.companies:
         if c not in keeper.companies:
             keeper.companies.append(c)
+    for c in ev.companies_direct:
+        if c not in keeper.companies_direct:
+            keeper.companies_direct.append(c)
     for ind in ev.industries:
         if ind not in keeper.industries:
             keeper.industries.append(ind)
@@ -500,7 +510,8 @@ def build_market_events(clusters: list, themes: list,
             ent for m in members
             for ent in (getattr(m, "affected_entities", None) or [])
         ]
-        companies: list[str] = resolve_companies(member_text, entities=entity_hints)
+        named = resolve_companies(member_text, entities=entity_hints)
+        companies: list[str] = list(named)
         industries: list[str] = []
         for t in linked:
             for a in (getattr(t, "related_assets", None) or []):
@@ -522,6 +533,7 @@ def build_market_events(clusters: list, themes: list,
             source_count=len(sources),
             evidence=evidence,
             companies=companies[:8],
+            companies_direct=named[:8],
             industries=industries[:6],
             theme_ids=[t.id for t in linked],
             confidence=int(getattr(strongest, "confidence", 0) or 0) if strongest else 0,

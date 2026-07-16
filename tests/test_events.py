@@ -584,6 +584,34 @@ def test_class_weight_desk_ordering():
             > CLASS_WEIGHT["price_echo"])
 
 
+# ── EI1.1: direct-company provenance (attribution must never conflate) ────────
+
+def test_companies_direct_excludes_theme_transmitted_assets():
+    """A theme-linked event carries the theme's assets in `companies` (exposure)
+    but `companies_direct` holds only companies the event itself names."""
+    c = _cluster("attr00000001", _item("Datacenter power demand accelerates", "Reuters", 1))
+    linked = _theme("power_infra", 78, ["attr00000001"], assets=["VRT", "ETN"])
+    (event,) = build_market_events([c], [linked], now=NOW)
+    assert "VRT" in event.companies and "ETN" in event.companies   # exposure preserved
+    assert event.companies_direct == []                            # nothing named → no involvement
+
+
+def test_companies_direct_holds_named_companies():
+    c = _cluster("attr00000002", _item("Nvidia posts record quarterly revenue", "Reuters", 1))
+    linked = _theme("ai_infra", 70, ["attr00000002"], assets=["NVDA", "AMD"])
+    (event,) = build_market_events([c], [linked], now=NOW)
+    assert event.companies_direct == ["NVDA"]                      # named in the event text
+    assert "AMD" in event.companies                                # theme exposure rides along
+    assert set(event.companies_direct) <= set(event.companies)     # strict subset invariant
+
+
+def test_companies_direct_survives_earnings_fold():
+    a = _cluster("attr00000003", _item("Apple fiscal third-quarter results top estimates", "Reuters", 2))
+    b = _cluster("attr00000004", _item("Apple Q3 earnings: iPhone revenue beats", "Bloomberg Markets", 1))
+    (event,) = build_market_events([a, b], [], now=NOW)
+    assert event.companies_direct == ["AAPL"]
+
+
 # ── The IBM acceptance scenario (F1 spec, Phase E) ────────────────────────────
 
 def test_ibm_earnings_acceptance():

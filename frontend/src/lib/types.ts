@@ -63,6 +63,10 @@ export interface MarketEvent {
   source_count:        number;
   evidence:            EventEvidence[];
   companies:           string[];
+  // Named by the event itself (registry resolver) — strict subset of
+  // `companies`, which also carries theme-transmitted assets. Attribution
+  // (what happened to X vs what may affect X) keys on this field.
+  companies_direct:    string[];
   industries:          string[];
   theme_ids:           string[];
   confidence:          number;   // max linked theme conviction (0 when unthemed)

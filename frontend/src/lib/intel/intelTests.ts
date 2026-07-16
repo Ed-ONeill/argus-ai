@@ -10,7 +10,7 @@
  * view honesty, watch derivation), and determinism.
  */
 
-import { parseUid, admitUid, companyUid, buildCompanyDossier } from "./dossier";
+import { parseUid, admitUid, companyUid, buildCompanyDossier, classifyAttribution } from "./dossier";
 import type { FeedResponse, MarketEvent, ThemeIntelligence, EventEvidence } from "@/lib/types";
 
 interface TestResult { name: string; ok: boolean; detail?: string }
@@ -71,6 +71,7 @@ function event(over: Partial<MarketEvent> = {}): MarketEvent {
     source_count: 2,
     evidence: [evidence("Reuters", 1), evidence("Bloomberg Markets", 1)],
     companies: ["VRT"],
+    companies_direct: ["VRT"],
     industries: ["Utilities"],
     theme_ids: ["power-infra"],
     confidence: 78,
@@ -127,24 +128,25 @@ const tests: Array<[string, () => void]> = [
     assert(d.standing.onDominantPath === true, "on dominant path");
   }],
 
-  ["event record: only events naming the company, engine order preserved", () => {
-    const other = event({ id: "ccc333ddd444", title: "Fed decision", companies: [], theme_ids: [] });
+  ["event record: only direct events, engine order preserved", () => {
+    const other = event({ id: "ccc333ddd444", title: "Fed decision", companies: [], companies_direct: [], theme_ids: [] });
     const second = event({ id: "eee555fff666", editorial_score: 12, title: "Vertiv follow-up" });
     const d = buildCompanyDossier("VRT", feed([theme()], [event(), other, second]));
     assert(d, "built");
-    assert(d.events.length === 2, "only VRT events");
-    assert(d.events[0].id === "aaa111bbb222" && d.events[1].id === "eee555fff666",
+    assert(d.record.length === 2, "only VRT-named events");
+    assert(d.record[0].event.id === "aaa111bbb222" && d.record[1].event.id === "eee555fff666",
            "engine rank order preserved, never re-sorted");
+    assert(d.record.every(r => r.attribution === "direct"), "the record is direct-only");
   }],
 
-  ["coverage counts events, evidence, corroboration, earliest first_seen", () => {
+  ["coverage counts direct events, evidence, corroboration, earliest first_seen", () => {
     const older = event({ id: "eee555fff666", first_seen: "2026-07-15T08:00:00Z",
                           corroboration_count: 1, evidence: [evidence("Reuters", 1)] });
     const d = buildCompanyDossier("VRT", feed([theme()], [event(), older]));
     assert(d, "built");
-    assert(d.coverage.events === 2, "event count");
-    assert(d.coverage.evidence === 3, "evidence count sums");
-    assert(d.coverage.corroborated === 1, "corroborated = events with >=2 qualified");
+    assert(d.coverage.events === 2, "direct event count");
+    assert(d.coverage.evidence === 3, "evidence count sums over the direct record");
+    assert(d.coverage.corroborated === 1, "corroborated = direct events with >=2 qualified");
     assert(d.coverage.firstSeen === "2026-07-15T08:00:00Z", "earliest first_seen wins");
     assert(d.coverage.themes === 1, "linked themes counted");
   }],
@@ -154,26 +156,134 @@ const tests: Array<[string, () => void]> = [
     assert(d, "built");
     assert(!d.standing.hasThesis, "no thesis");
     assert(d.standing.sentences[0].includes("No standing thesis names"), "absence stated plainly");
-    assert(d.standing.sentences.some(s => s.includes("none currently transmit")),
-           "events without transmission stated");
+    assert(d.standing.sentences.some(s => s.includes("no standing thesis transmits")),
+           "direct events without transmission stated");
     assert(d.exposures.length === 0, "no exposures");
   }],
 
-  ["standing view carries conviction figure and recorded transmission when themed", () => {
-    const d = buildCompanyDossier("VRT", feed([theme()], [event()]));
+  ["standing view explains the connection in investor language (because-clause)", () => {
+    const t = theme({ description: "AI data-center growth increases demand for electricity and grid investment." });
+    const d = buildCompanyDossier("VRT", feed([t], [event()]));
     assert(d, "built");
     assert(d.standing.hasThesis, "has thesis");
     assert(d.standing.sentences[0].includes("conviction 78"), "figure over adjective");
-    assert(d.standing.sentences.some(s => s.includes("Datacenter Capex →")), "recorded causal narrative shown");
+    assert(d.standing.sentences[0].includes("because AI data-center growth increases demand"),
+           "the WHY is stated, not just the theme name");
+    const x = d.exposures[0];
+    assert(x.meaning.includes("AI data-center growth"), "exposure carries what the thesis means");
+    assert(x.whyConnected.includes("because") && x.whyConnected.includes("Vertiv"),
+           "exposure explains why THIS company connects");
+    assert(x.connection === "recorded", "ontology asset membership is a recorded connection");
   }],
 
-  ["watch derives from linked themes only — no page-local speculation", () => {
+  ["watch derives company-specific questions from the exposure chain", () => {
     const d = buildCompanyDossier("VRT", feed([theme()], []));
     assert(d, "built");
     assert(d.watch.length === 1 && d.watch[0].sourceTheme === "Power Infrastructure",
            "watch item cites its generating theme");
+    assert(d.watch[0].text.includes("Datacenter Capex") && d.watch[0].text.includes("Grid equipment makers"),
+           "question is built from the recorded chain, not generic fallback");
+    assert(d.watch[0].text.includes("Vertiv"), "question names the company");
     const bare = buildCompanyDossier("VRT", feed([], []));
     assert(bare && bare.watch.length === 0, "no themes, no watch — empty, not invented");
+  }],
+
+  ["watch deduplicates: themes whose chains share head and tail share one question", () => {
+    const a = theme({ id: "t-a", name: "Theme A", confidence: 75 });
+    const b = theme({ id: "t-b", name: "Theme B", confidence: 56,
+                      causal_narrative: "Datacenter Capex → Compute Arms Race → Grid equipment makers" });
+    const c = theme({ id: "t-c", name: "Theme C", confidence: 40,
+                      causal_narrative: "Rates → Duration → Growth equities" });
+    const d = buildCompanyDossier("VRT", feed([a, b, c], []));
+    assert(d, "built");
+    assert(d.watch.length === 2, "shared head+tail folds; the distinct chain stays separate");
+    const folded = d.watch.find(w => w.sourceTheme.includes("Theme A"));
+    assert(folded, "folded item exists");
+    assert(folded.sourceTheme.includes("Theme B"), "folded item cites both generating themes");
+    assert(folded.text.includes("Theme A (75)") && folded.text.includes("Theme B (56)"),
+           "one question names every thesis riding the chain, with figures");
+    assert(!folded.text.includes("Theme C"), "the distinct chain is not swallowed");
+  }],
+
+  // ── EI1.1 attribution acceptance (the NVDA defects, pinned) ────────────────
+
+  ["a Micron story is a peer event for Nvidia, never a direct one", () => {
+    const micron = event({
+      id: "micron000001", title: "Micron beats estimates on HBM demand",
+      event_type: "earnings", companies: ["MU", "NVDA"], companies_direct: ["MU"],
+      theme_ids: ["semi-capex"], industries: [],
+    });
+    const semi = theme({ id: "semi-capex", name: "Semiconductor Capex", related_assets: ["NVDA", "MU"] });
+    const d = buildCompanyDossier("NVDA", feed([semi], [micron]));
+    assert(d, "built");
+    assert(d.record.length === 0, "Micron earnings are NOT an Nvidia event");
+    assert(d.related.length === 1, "it appears as a related development");
+    assert(d.related[0].attribution === "peer", "attributed as peer");
+    assert(d.related[0].reason === "Peer event: Micron Technology", "the reason names the peer");
+  }],
+
+  ["an Anthropic IPO story never enters Nvidia's direct record", () => {
+    const ipo = event({
+      id: "anthropic001", title: "Anthropic inches toward a mega-IPO",
+      event_type: "market_event", companies: ["NVDA"], companies_direct: [],
+      theme_ids: ["ai-infra"], industries: [],
+    });
+    const ai = theme({ id: "ai-infra", name: "AI Infrastructure", related_assets: ["NVDA"] });
+    const d = buildCompanyDossier("NVDA", feed([ai], [ipo]));
+    assert(d, "built");
+    assert(d.record.length === 0, "theme membership never implies involvement");
+    assert(d.related[0].attribution === "theme_exposure", "attributed as theme exposure");
+    assert(d.related[0].reason === "Theme exposure: AI Infrastructure", "the connecting theme is stated");
+  }],
+
+  ["a semiconductor selloff is industry exposure with the relationship stated", () => {
+    const selloff = event({
+      id: "selloff00001", title: "Chip stocks slide as AI spending fears mount",
+      event_type: "market_event", companies: ["NVDA"], companies_direct: [],
+      theme_ids: ["other-theme"], industries: ["Semiconductors"],
+    });
+    const semi = theme({ id: "semi-capex", name: "Semiconductor Capex",
+                         related_assets: ["NVDA"], related_industries: ["Semiconductors"] });
+    const d = buildCompanyDossier("NVDA", feed([semi], [selloff]));
+    assert(d, "built");
+    assert(d.record.length === 0, "a sector selloff is not an Nvidia event");
+    assert(d.related[0].attribution === "industry_exposure", "attributed as industry exposure");
+    assert(d.related[0].reason === "Industry exposure: Semiconductors", "the industry is stated");
+  }],
+
+  ["direct Nvidia news lands in the direct record", () => {
+    const earnings = event({
+      id: "nvdadirect01", title: "Nvidia reports Q2 earnings, data center revenue surges",
+      event_type: "earnings", companies: ["NVDA"], companies_direct: ["NVDA"], theme_ids: [],
+    });
+    const d = buildCompanyDossier("NVDA", feed([], [earnings]));
+    assert(d, "built");
+    assert(d.record.length === 1 && d.record[0].attribution === "direct", "named → direct record");
+    assert(d.related.length === 0, "nothing mislabeled as related");
+  }],
+
+  ["pre-EI1.1 events without provenance are labeled, not guessed", () => {
+    const legacy = event({ id: "legacy000001" });
+    delete (legacy as Partial<MarketEvent>).companies_direct;
+    const d = buildCompanyDossier("VRT", feed([theme()], [legacy]));
+    assert(d, "built");
+    assert(d.record.length === 0, "unknown provenance never claims direct");
+    assert(d.related[0].attribution === "unattributed", "labeled unattributed");
+    assert(d.related[0].reason.includes("predates provenance"), "the reason says why");
+  }],
+
+  ["too-weak connections are excluded entirely", () => {
+    const stray = event({
+      id: "stray0000001", companies: ["VRT"], companies_direct: [],
+      theme_ids: ["unrelated-theme"], industries: ["Airlines"],
+    });
+    const noOverlap = classifyAttribution(stray, {
+      ticker: "VRT", sector: "Industrials",
+      industries: new Set(["industrials", "utilities"]),
+      themeIds: new Set(["power-infra"]),
+      themeNameById: new Map([["power-infra", "Power Infrastructure"]]),
+    });
+    assert(noOverlap === null, "no direct, no peer, no industry, no theme → excluded");
   }],
 
   ["unknown ticker stays honest: name falls back to the ticker, identity unresolved", () => {
