@@ -266,6 +266,7 @@ class EventEvidenceSchema(BaseModel):
     published: str | None = None
     tier:      int = 4
     kind:      str = "news"   # sec_filing | transcript | ir_release | news
+    qualified: bool = False   # counts toward corroboration
 
 
 class MarketEventSchema(BaseModel):
@@ -490,6 +491,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
                     source=e.source, title=e.title, url=e.url,
                     published=e.published, tier=e.tier,
                     kind=getattr(e, "kind", "news"),
+                    qualified=getattr(e, "qualified", False),
                 )
                 for e in ev.evidence
             ],

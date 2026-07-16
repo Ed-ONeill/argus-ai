@@ -117,15 +117,18 @@ def test_same_source_rereport_does_not_raise_score():
 
 def test_corroborated_macro_outranks_fresh_single_source_echo():
     """The E1 fix: a 4-hour-old corroborated macro shock still leads over a
-    minutes-old single-source price-move echo."""
+    minutes-old single-source price-move echo — and an unqualified aggregator
+    echo does not enter the feed at all (F2 admission)."""
     macro = _cluster("macro0000001",
                      _item("CPI comes in far above expectations", "Reuters", 4),
                      [_item("Inflation data shocks markets", "Bloomberg Markets", 3.8),
                       _item("Hot CPI print jolts bond market", "Financial Times", 3.5)])
     echo = _cluster("echo00000001",
-                    _item("Shares jump in premarket trading", "Zonebourse", 0.2))
-    events = build_market_events([macro, echo], [], now=NOW)
-    assert events[0].id == "macro0000001"
+                    _item("Shares jump in premarket trading", "Reuters", 0.2))
+    junk_echo = _cluster("junk00000001",
+                         _item("Stocks making the biggest moves premarket", "Zonebourse", 0.1))
+    events = build_market_events([macro, echo, junk_echo], [], now=NOW)
+    assert [e.id for e in events] == ["macro0000001", "echo00000001"]   # junk never admitted
     assert events[0].editorial_score > events[1].editorial_score
 
 
@@ -154,14 +157,21 @@ def test_first_seen_is_earliest_member():
 
 
 def test_price_echo_dies_faster_than_macro():
-    """Same source, same age: the echo's 3h half-life buries it; the macro
-    event's 18h half-life keeps it alive."""
-    ages = 6
-    macro = _cluster("hl0000000001", _item("Fed rate decision surprises", "Reuters", ages))
-    echo = _cluster("hl0000000002", _item("Shares surge after news", "Reuters", ages))
-    events = build_market_events([macro, echo], [], now=NOW)
-    by_id = {e.id: e for e in events}
+    """Same source: at 1h the echo already trails the macro event badly; by 6h
+    the echo's 3h half-life has dropped it below the admission floor entirely,
+    while the macro event's 18h half-life keeps it in the feed."""
+    fresh = build_market_events(
+        [_cluster("hl0000000001", _item("Fed rate decision surprises", "Reuters", 1)),
+         _cluster("hl0000000002", _item("Shares surge after news", "Reuters", 1))],
+        [], now=NOW)
+    by_id = {e.id: e for e in fresh}
     assert by_id["hl0000000001"].editorial_score > by_id["hl0000000002"].editorial_score * 2
+
+    aged = build_market_events(
+        [_cluster("hl0000000001", _item("Fed rate decision surprises", "Reuters", 6)),
+         _cluster("hl0000000002", _item("Shares surge after news", "Reuters", 6))],
+        [], now=NOW)
+    assert [e.id for e in aged] == ["hl0000000001"]   # the echo died by lunch
 
 
 # ── Classification (routers, not scorers) ─────────────────────────────────────
@@ -436,6 +446,142 @@ def test_evidence_kind_classification():
     assert evidence_kind("Motley Fool", "Acme earnings call transcript") == "transcript"
     assert evidence_kind("PR Newswire", "Acme announces results") == "ir_release"
     assert evidence_kind("Reuters", "Acme beats estimates") == "news"
+
+
+# ── F2: admission floors & the quiet-day rule ─────────────────────────────────
+
+def test_unqualified_only_events_never_admitted():
+    """A cluster with zero qualified sources — aggregator restatements only —
+    does not enter the feed at any rank."""
+    events = build_market_events(
+        [_cluster("noqual000001",
+                  _item("Markets wrap: what moved today", "SomeAggregator", 0.5),
+                  [_item("Today's market movers roundup", "AnotherBlog", 0.4)])],
+        [], now=NOW)
+    assert events == []
+
+
+def test_quiet_day_yields_short_feed():
+    """The floor does not flex with supply: junk does not rise to fill a quiet
+    tape — one real event means a one-event feed."""
+    real = _cluster("quietreal001",
+                    _item("ECB holds rates, signals patience", "Reuters", 1))
+    junk = [
+        _cluster(f"quietjunk{i:03d}",
+                 _item(f"Weekend read {i}: markets in review", "SomeAggregator", 1))
+        for i in range(6)
+    ]
+    events = build_market_events([real, *junk], [], now=NOW)
+    assert [e.id for e in events] == ["quietreal001"]
+
+
+def test_stale_single_name_expires_below_floor():
+    """An unthemed single-company catalyst fades out of the feed on its own
+    clock instead of lingering at the bottom."""
+    fresh = build_market_events(
+        [_cluster("stale0000001", _item("Acme wins defense contract", "Reuters", 1))],
+        [], now=NOW)
+    assert len(fresh) == 1
+    stale = build_market_events(
+        [_cluster("stale0000001", _item("Acme wins defense contract", "Reuters", 14))],
+        [], now=NOW)
+    assert stale == []
+
+
+# ── F2: the developing lane ───────────────────────────────────────────────────
+
+def test_tier3_specific_scoop_qualifies_as_developing():
+    """A tier-3 specialist scoop with named parties and hard figures enters
+    the developing lane; the same source's vague take does not qualify."""
+    scoop = _cluster("scoop0000001",
+                     _item("Broadcom wins $10 billion custom chip order, "
+                           "according to a term sheet", "SemiAnalysis", 1))
+    (event,) = build_market_events([scoop], [], now=NOW)
+    assert event.developing is True
+    assert event.corroboration_count == 1
+    assert event.evidence[0].qualified is True
+
+    vague = _cluster("vague0000001",
+                     _item("Why custom silicon is the next big thing",
+                           "SemiAnalysis", 1))
+    assert build_market_events([vague], [], now=NOW) == []
+
+
+def test_developing_promotes_on_second_qualified_source():
+    """The moment a second qualified source lands, the event leaves the
+    developing lane — corroboration is spent, not just counted."""
+    single = build_market_events(
+        [_cluster("prom00000001",
+                  _item("Exclusive: MegaCorp weighs $30 billion takeover", "Reuters", 1))],
+        [], now=NOW)[0]
+    confirmed = build_market_events(
+        [_cluster("prom00000001",
+                  _item("Exclusive: MegaCorp weighs $30 billion takeover", "Reuters", 1),
+                  [_item("MegaCorp considering major acquisition", "Bloomberg Markets", 0.5)])],
+        [], now=NOW)[0]
+    assert single.developing is True
+    assert confirmed.developing is False
+    assert confirmed.editorial_score > single.editorial_score
+
+
+def test_tier4_echo_does_not_promote_developing():
+    """An aggregator repeating a scoop is not confirmation."""
+    (event,) = build_market_events(
+        [_cluster("noecho000001",
+                  _item("Exclusive: MegaCorp weighs $30 billion takeover", "Reuters", 1),
+                  [_item("Report: MegaCorp eyeing takeover", "SomeAggregator", 0.5)])],
+        [], now=NOW)
+    assert event.developing is True
+    assert event.corroboration_count == 1
+    assert event.source_count == 2
+
+
+# ── F2: one event appears once (near-duplicate folding) ───────────────────────
+
+def test_split_coverage_of_same_event_folds():
+    """When the clusterer splits one real-world event across clusters, the
+    events fold: one appearance, evidence united, corroboration earned."""
+    a = _cluster("split0000001",
+                 _item("Fed raises rates by 25 basis points", "Reuters", 2))
+    b = _cluster("split0000002",
+                 _item("Fed raises rates 25 basis points in unanimous vote",
+                       "Bloomberg Markets", 1.5))
+    events = build_market_events([a, b], [], now=NOW)
+    assert len(events) == 1
+    event = events[0]
+    assert event.corroboration_count == 2
+    assert event.developing is False
+    assert len(event.evidence) == 2
+    assert event.merged_event_ids != []
+
+
+def test_distinct_macro_events_do_not_fold():
+    a = _cluster("dist00000001",
+                 _item("CPI rises 3.1 percent in June, above forecasts", "Reuters", 2))
+    b = _cluster("dist00000002",
+                 _item("Fed raises rates by 25 basis points", "Bloomberg Markets", 1))
+    events = build_market_events([a, b], [], now=NOW)
+    assert len(events) == 2
+
+
+def test_same_company_different_stories_do_not_fold():
+    """Same company, same class, different facts: two events."""
+    a = _cluster("difs00000001",
+                 _item("Apple unveils new AI features at developer event", "Reuters", 2))
+    b = _cluster("difs00000002",
+                 _item("Apple faces EU probe into App Store rules", "Bloomberg Markets", 1))
+    events = build_market_events([a, b], [], now=NOW)
+    assert len(events) == 2
+
+
+# ── F2: class-weight ordering (the desk's priorities, pinned) ─────────────────
+
+def test_class_weight_desk_ordering():
+    from app.events import CLASS_WEIGHT
+    assert (CLASS_WEIGHT["macro"] > CLASS_WEIGHT["policy"]
+            > CLASS_WEIGHT["earnings"] > CLASS_WEIGHT["ma"]
+            > CLASS_WEIGHT["market_event"] > CLASS_WEIGHT["single_name"]
+            > CLASS_WEIGHT["price_echo"])
 
 
 # ── The IBM acceptance scenario (F1 spec, Phase E) ────────────────────────────

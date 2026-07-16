@@ -21,8 +21,10 @@ EDITORIAL SCORE (ARGUS_FEED_EDITORIAL_STANDARD_V1 §3.1):
                  (0-30). Keywords ROUTE to a class; they never add points
                  (the E4 fix — headline stuffing pays nothing).
   Corroboration  1 + min(log2(distinct qualified sources), 2) × 0.25, ≤1.5×.
-                 Qualified = source tier ≤ 2. Two independent confirmations
-                 are a different animal; five are not much more than three.
+                 Qualified = source tier ≤ 2, or a tier-3 specialist with
+                 specificity (named party + hard figures / quoted documents).
+                 Two independent confirmations are a different animal; five
+                 are not much more than three.
   Relevance      theme linkage at the spine: 0.6 + 0.4·(max linked
                  conviction/100) when the event feeds an active theme;
                  floored at 0.6 for macro/policy classes so a genuine
@@ -33,9 +35,24 @@ EDITORIAL SCORE (ARGUS_FEED_EDITORIAL_STANDARD_V1 §3.1):
                  fix: recency belongs to events, and "latest article wins"
                  is dead), with class-specific half-lives.
 
+ADMISSION (F2): an event enters the Feed only with at least one qualified
+source AND an editorial score at or above ADMISSION_FLOOR — a constant that
+never flexes with supply. On a quiet day the event list is short and honest,
+not padded. Below-floor events do not appear at any rank.
+
+LANES (F2): corroboration ≥ 2 → confirmed; exactly 1 → developing ("One
+source; not yet corroborated" — visible, never the lead, promoted
+automatically the cycle a second qualified source lands); 0 → not admitted.
+
+ONE EVENT, ONCE (F2): beyond one-event-per-cluster, near-duplicate events the
+clusterer split (same class, same companies, heavily overlapping headlines —
+or company-less headlines that all but repeat) fold into the strongest
+telling, evidence united, merged ids preserved.
+
 Suppression (opinion/retail/PR) remains upstream at stage 1 — an article
 that score_item killed never reaches a cluster, so events inherit the
-events-not-articles doctrine for free.
+events-not-articles doctrine for free. Commentary is therefore the bottom of
+the class ordering by construction: it is never admitted at all.
 """
 
 from __future__ import annotations
@@ -53,18 +70,23 @@ log = logging.getLogger(__name__)
 EVENT_SCHEMA_VERSION = 1
 
 # ── Event classes: weights + half-lives (routing, not scoring — E4) ───────────
-# Ranked as a markets desk ranks them. price_echo decays by lunch; a macro
-# shock still leads the afternoon.
+# Desk ordering (F2): macro / central bank > policy > earnings > M&A >
+# sector-level market news > single-company catalyst > price echo. Central
+# bank actions route into the macro class (one taxonomy, no new types);
+# commentary never reaches this table — stage-1 suppression kills it upstream.
 
 CLASS_WEIGHT: dict[str, float] = {
-    "macro":       30.0,   # central bank / hard macro release
+    "macro":       30.0,   # hard macro release / central bank decision
     "policy":      26.0,   # policy, regulation, geopolitics
-    "ma":          24.0,   # confirmed transaction events
-    "earnings":    20.0,   # earnings / guidance events
-    "single_name": 12.0,   # company catalyst
-    "price_echo":   6.0,   # market-move echo coverage
-    "market_event": 10.0,  # corroborated but unclassified market news
+    "earnings":    24.0,   # earnings / guidance / reporting events
+    "ma":          22.0,   # confirmed transaction events
+    "market_event": 12.0,  # corroborated sector / market-level news
+    "single_name": 10.0,   # company catalyst
+    "price_echo":   4.0,   # market-move echo coverage — dies by lunch
 }
+
+# Admission floor — absolute; never flexes with supply (quiet-day rule E8)
+ADMISSION_FLOOR = 10.0
 
 CLASS_HALF_LIFE_H: dict[str, float] = {
     "macro": 18.0, "policy": 18.0, "ma": 24.0, "earnings": 12.0,
@@ -153,6 +175,7 @@ class EventEvidence:
     published: str | None
     tier: int                     # 1 (wire) … 4 (aggregator)
     kind: str = "news"            # sec_filing | transcript | ir_release | news
+    qualified: bool = False       # counts toward corroboration (tier ≤2, or tier-3 + specificity)
 
 
 @dataclass
@@ -223,6 +246,29 @@ def reporting_period(text: str) -> str | None:
     return None
 
 
+# ── Specificity (qualifies tier-3 specialists; gates the developing lane) ─────
+# A scoop is specific when it names a party AND carries hard substance —
+# figures with units or a quoted document. "Chip stocks look interesting"
+# never qualifies; "SemiAnalysis: Broadcom wins $10bn order, per term sheet"
+# does.
+
+_FIGURE_RE = re.compile(
+    r"(\$\s?\d|\d+(?:\.\d+)?\s?(?:billion|million|trillion|bn\b|mn\b|%)"
+    r"|\bper share\b|\bbasis points?\b)", re.I)
+_DOC_QUOTE_RE = re.compile(
+    r"\baccording to (?:a |the )?(?:filings?|memos?|letters?|documents?"
+    r"|people familiar|term sheets?)\b"
+    r"|\b(?:per|citing) (?:a |the )?(?:filings?|memos?|documents?|term sheets?)\b",
+    re.I)
+
+
+def is_specific(text: str) -> bool:
+    """Named party + (hard figures or a quoted document)."""
+    if not resolve_companies(text, limit=1):
+        return False
+    return bool(_FIGURE_RE.search(text) or _DOC_QUOTE_RE.search(text))
+
+
 # ── The editorial engine ────────────────────────────────────────────────────────
 
 def _source_tier(source: str) -> int:
@@ -236,7 +282,12 @@ def _members(cluster) -> list:
 
 def editorial_score(event: MarketEvent, now: datetime) -> float:
     """EventScore = Base × Corroboration × Relevance × Decay (0-100)."""
-    best_tier = min((e.tier for e in event.evidence), default=4)
+    # a tier-3 specialist whose reporting qualified (named party + hard
+    # substance) earns the tier-2 desk treatment — the E5 scoop principle:
+    # specificity, not masthead prestige, is what upgrades authority
+    best_tier = min(
+        (2 if (e.tier == 3 and e.qualified) else e.tier for e in event.evidence),
+        default=4)
     base_source = {1: 40.0, 2: 30.0, 3: 18.0, 4: 8.0}[best_tier]
     base = base_source + CLASS_WEIGHT.get(event.event_type, 10.0)
 
@@ -260,6 +311,34 @@ def editorial_score(event: MarketEvent, now: datetime) -> float:
     return round(min(100.0, base * corroboration * relevance * decay), 1)
 
 
+def _merge_into(keeper: MarketEvent, ev: MarketEvent) -> None:
+    """Fold ev into keeper: evidence union (by url), clocks, counts, linkage.
+    The keeper must be rescored afterwards."""
+    known_urls = {e.url for e in keeper.evidence}
+    keeper.evidence.extend(e for e in ev.evidence if e.url not in known_urls)
+    keeper.merged_event_ids.append(ev.id)
+    keeper.merged_event_ids.extend(ev.merged_event_ids)
+    keeper.first_seen = min(keeper.first_seen, ev.first_seen)
+    keeper.last_updated = max(keeper.last_updated, ev.last_updated)
+    keeper.source_count = len({e.source for e in keeper.evidence})
+    keeper.corroboration_count = len(
+        {e.source for e in keeper.evidence if e.qualified})
+    keeper.developing = keeper.corroboration_count == 1
+    for tid in ev.theme_ids:
+        if tid not in keeper.theme_ids:
+            keeper.theme_ids.append(tid)
+    for c in ev.companies:
+        if c not in keeper.companies:
+            keeper.companies.append(c)
+    for ind in ev.industries:
+        if ind not in keeper.industries:
+            keeper.industries.append(ind)
+    keeper.confidence = max(keeper.confidence, ev.confidence)
+    keeper.dominant = keeper.dominant or ev.dominant
+    keeper.transmission = keeper.transmission or ev.transmission
+    keeper.why_it_matters = keeper.why_it_matters or ev.why_it_matters
+
+
 def _fold_duplicate_earnings(events: list[MarketEvent],
                              now: datetime) -> list[MarketEvent]:
     """One company, one reporting period, one Feed appearance: fold earnings
@@ -281,27 +360,77 @@ def _fold_duplicate_earnings(events: list[MarketEvent],
             keepers[key] = ev
             out.append(ev)
             continue
-        # fold ev into keeper: evidence union (by url), clocks, linkage
-        known_urls = {e.url for e in keeper.evidence}
-        keeper.evidence.extend(e for e in ev.evidence if e.url not in known_urls)
-        keeper.merged_event_ids.append(ev.id)
-        keeper.first_seen = min(keeper.first_seen, ev.first_seen)
-        keeper.last_updated = max(keeper.last_updated, ev.last_updated)
-        keeper.source_count = len({e.source for e in keeper.evidence})
-        keeper.corroboration_count = len(
-            {e.source for e in keeper.evidence if e.tier <= 2})
-        keeper.developing = keeper.corroboration_count <= 1 and keeper.source_count <= 1
-        for tid in ev.theme_ids:
-            if tid not in keeper.theme_ids:
-                keeper.theme_ids.append(tid)
-        keeper.confidence = max(keeper.confidence, ev.confidence)
-        keeper.dominant = keeper.dominant or ev.dominant
-        keeper.transmission = keeper.transmission or ev.transmission
-        keeper.why_it_matters = keeper.why_it_matters or ev.why_it_matters
+        _merge_into(keeper, ev)
     for keeper in keepers.values():
         if keeper.merged_event_ids:
             keeper.editorial_score = editorial_score(keeper, now)
     return out
+
+
+# stopwords stripped before headline-overlap comparison — connective tissue,
+# not meaning
+_TITLE_STOPWORDS = frozenset(
+    "the a an of to in on at as for and or but with by from over after amid "
+    "its is are was were be been has have had will would could new says said "
+    "say".split())
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _title_tokens(title: str) -> frozenset[str]:
+    return frozenset(
+        t for t in _TOKEN_RE.findall(title.lower()) if t not in _TITLE_STOPWORDS)
+
+
+def _fold_near_duplicates(events: list[MarketEvent],
+                          now: datetime) -> list[MarketEvent]:
+    """One event appears once no matter how the clusterer split its coverage:
+    two events of the same class fold when they name the same companies and
+    their headlines substantially overlap (Jaccard ≥ 0.5), or — for
+    company-less events like macro releases — when the headlines all but
+    repeat (≥ 0.7). Higher-scored telling wins; evidence unites."""
+    kept: list[MarketEvent] = []
+    merged_any = False
+    for ev in sorted(events, key=lambda e: (-e.editorial_score, e.id)):
+        target = None
+        ev_tokens = _title_tokens(ev.title)
+        for k in kept:
+            if k.event_type != ev.event_type:
+                continue
+            if k.companies and ev.companies and set(k.companies) == set(ev.companies):
+                threshold = 0.5
+            elif not k.companies and not ev.companies:
+                threshold = 0.7
+            else:
+                continue
+            k_tokens = _title_tokens(k.title)
+            union = len(k_tokens | ev_tokens)
+            if union and len(k_tokens & ev_tokens) / union >= threshold:
+                target = k
+                break
+        if target is None:
+            kept.append(ev)
+        else:
+            _merge_into(target, ev)
+            merged_any = True
+    if merged_any:
+        for k in kept:
+            if k.merged_event_ids:
+                k.editorial_score = editorial_score(k, now)
+    return kept
+
+
+def _admit(events: list[MarketEvent]) -> list[MarketEvent]:
+    """The admission floor (E8) — absolute, never flexed by supply. An event
+    needs at least one qualified source and a score at the floor; everything
+    else dies at the door, and a quiet day yields a short feed."""
+    admitted = [
+        e for e in events
+        if e.corroboration_count >= 1 and e.editorial_score >= ADMISSION_FLOOR
+    ]
+    dropped = len(events) - len(admitted)
+    if dropped:
+        log.info("[events] admission floor dropped %d of %d events", dropped, len(events))
+    return admitted
 
 
 def build_market_events(clusters: list, themes: list,
@@ -334,13 +463,19 @@ def build_market_events(clusters: list, themes: list,
             seen_urls.add(url)
             src = getattr(m, "source", "") or "?"
             ttl = getattr(m, "title", "") or ""
+            tier = _source_tier(src)
+            # qualification: tier 1-2 stands on its own; a tier-3 specialist
+            # counts only when its reporting is specific (named party + hard
+            # figures / quoted documents); tier 4 never corroborates
+            member_txt = f"{ttl} {getattr(m, 'snippet', '') or ''}"
             evidence.append(EventEvidence(
                 source=src,
                 title=ttl,
                 url=url,
                 published=m.published_dt.isoformat() if getattr(m, "published_dt", None) else None,
-                tier=_source_tier(src),
+                tier=tier,
                 kind=evidence_kind(src, ttl),
+                qualified=tier <= 2 or (tier == 3 and is_specific(member_txt)),
             ))
 
         published = [m.published_dt for m in members if getattr(m, "published_dt", None)]
@@ -348,7 +483,7 @@ def build_market_events(clusters: list, themes: list,
         last_updated = max(published).isoformat() if published else now.isoformat()
 
         sources = {e.source for e in evidence}
-        qualified = {e.source for e in evidence if e.tier <= 2}
+        qualified = {e.source for e in evidence if e.qualified}
 
         linked = sorted(themes_by_event.get(cluster.id, []),
                         key=lambda t: -(getattr(t, "confidence", 0) or 0))
@@ -393,13 +528,15 @@ def build_market_events(clusters: list, themes: list,
             why_it_matters=getattr(cluster.primary, "why_it_matters", "") or "",
             transmission=(getattr(strongest, "causal_narrative", "") or None) if strongest else None,
             dominant=bool(strongest and top_theme_id and strongest.id == top_theme_id),
-            developing=len(qualified) == 1 and len(sources) == 1,
+            developing=len(qualified) == 1,
             reporting_period=reporting_period(member_text) if etype == "earnings" else None,
         )
         event.editorial_score = editorial_score(event, now)
         events.append(event)
 
     events = _fold_duplicate_earnings(events, now)
+    events = _fold_near_duplicates(events, now)
+    events = _admit(events)
     events.sort(key=lambda e: (-e.editorial_score, e.id))
     if events:
         log.info("[events] built %d market events  top=%r score=%.1f type=%s sources=%d",

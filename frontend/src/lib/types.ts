@@ -50,6 +50,7 @@ export interface EventEvidence {
   // Document kind — the only honest basis for "management said":
   // a transcript/filing/ir_release must exist before commentary is attributed.
   kind:      "sec_filing" | "transcript" | "ir_release" | "news";
+  qualified: boolean;         // counts toward corroboration (tier ≤2, or tier-3 + specificity)
 }
 
 export interface MarketEvent {
