@@ -4,7 +4,7 @@ import { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { X, ArrowUpRight, Maximize2 } from "lucide-react";
+import { X, ArrowUpRight, Maximize2, FileText } from "lucide-react";
 import { TickerChip } from "@/components/common/TickerChip";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildCrossIntel } from "@/lib/crossIntel";
@@ -517,6 +517,15 @@ function DrawerBody({ ctx, onClose }: { ctx: IntelContext; onClose: () => void }
               <p className="text-[34px] font-black tabular-nums leading-none tracking-tight" style={{ color: confColor(evidence.overallTrust) }}>{signalValue}</p>
               <p className="text-[7px] font-bold uppercase tracking-[0.2em] mt-1" style={{ color: A(0.42) }}>Signal</p>
             </div>
+          )}
+          {/* EI1: the drawer is the travel-size dossier — this hands off to the
+              full company file (Entity Intelligence, company kind). */}
+          {isSymbol && (
+            <Link href={`/company/${encodeURIComponent(ctx.id)}`} onClick={onClose} title="Open the company file"
+              className="shrink-0 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded transition-colors hover:opacity-90"
+              style={{ color: "#0A0F1C", background: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)" }}>
+              <FileText size={9} /> Dossier
+            </Link>
           )}
           <Link href={explorerHref(ctx)} onClick={onClose} title="Open Explorer"
             className="shrink-0 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded transition-colors hover:bg-white/10"

@@ -404,7 +404,11 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
   }, [layout, model, nodeById, size, reducedMotion, atmosphere, restingPath]);
 
   useEffect(() => { drawRef.current = draw; schedule(); }, [draw, schedule]);
-  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  // Cancelling the pending frame must also release the render-on-demand gate:
+  // under StrictMode's dev double-mount the first mount's frame is cancelled
+  // after needRef was set, and a stale true would swallow every later
+  // schedule() — a permanently blank canvas on pages with no other state churn.
+  useEffect(() => () => { cancelAnimationFrame(rafRef.current); needRef.current = false; }, []);
 
   useEffect(() => {
     const el = containerRef.current;

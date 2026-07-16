@@ -273,6 +273,7 @@ routing matrix does it touch?* A proposal that cannot answer all three is not re
 | Version | Date | Change |
 |---|---|---|
 | V1.0 | 2026-07-16 | First approved master architecture: the spine, the event taxonomy and routing matrix, surface responsibilities, non-negotiables. |
+| V1.1 | 2026-07-16 | §4.4 amended by ARGUS_ENTITY_INTELLIGENCE_V1: the per-entity research surface is re-founded as **Entity Intelligence** ("What does Argus know about this?") rendering every admitted kind (theme, company, industry, narrative, regime, driver; events as records) through one dossier grammar with kind facets. Company Intelligence becomes the company kind (richest facets). Added must-nevers: no kind without identity + resolver + engine; no meaning computed in facets; no second dossier grammar. |
 
 ---
 

@@ -140,10 +140,25 @@ export interface PredictionRow {
 }
 
 /** Per-entity prediction ledger rows (M3.3). Null on transport/service error. */
-export async function fetchEntityPredictions(uid: string): Promise<PredictionRow[] | null> {
+export async function fetchEntityPredictions(uid: string, limit = 5): Promise<PredictionRow[] | null> {
   try {
     const res = await get<{ predictions: PredictionRow[] }>(
-      `/memory/v2/entities/${encodeURIComponent(uid)}/predictions?limit=5`);
+      `/memory/v2/entities/${encodeURIComponent(uid)}/predictions?limit=${limit}`);
     return res.predictions ?? [];
+  } catch { return null; }
+}
+
+export interface EntitySnapshotRow {
+  snapshot_date?: string;
+  snapshot_kind?: string;
+  [k: string]: unknown;
+}
+export interface EntityMemory { entity_uid: string; count: number; snapshots: EntitySnapshotRow[] }
+
+/** Per-entity archived snapshots (M3.2). Null on transport/service error. */
+export async function fetchEntityMemory(uid: string, limit = 90): Promise<EntityMemory | null> {
+  try {
+    return await get<EntityMemory>(
+      `/memory/v2/entities/${encodeURIComponent(uid)}/snapshots?limit=${limit}`);
   } catch { return null; }
 }
