@@ -36,6 +36,44 @@ export interface MarketBrief {
   confidence:        number;   // 50–95
 }
 
+// ── Market Events (F1) ────────────────────────────────────────────────────────
+// The canonical editorial unit: one real-world event, its articles demoted to
+// evidence. id === StoryCluster.id — the same id themes record in
+// contributing_cluster_ids, so events, themes, and archive evidence refs join.
+
+export interface EventEvidence {
+  source:    string;
+  title:     string;
+  url:       string;
+  published: string | null;
+  tier:      number;          // 1 (wire) … 4 (aggregator)
+  // Document kind — the only honest basis for "management said":
+  // a transcript/filing/ir_release must exist before commentary is attributed.
+  kind:      "sec_filing" | "transcript" | "ir_release" | "news";
+}
+
+export interface MarketEvent {
+  id:                  string;
+  title:               string;
+  event_type:          "macro" | "policy" | "ma" | "earnings" | "single_name" | "price_echo" | "market_event";
+  first_seen:          string;   // ISO-8601 — earliest evidence publish time
+  last_updated:        string;
+  corroboration_count: number;   // distinct qualified (tier ≤ 2) sources
+  source_count:        number;
+  evidence:            EventEvidence[];
+  companies:           string[];
+  industries:          string[];
+  theme_ids:           string[];
+  confidence:          number;   // max linked theme conviction (0 when unthemed)
+  editorial_score:     number;
+  why_it_matters:      string;
+  transmission:        string | null;
+  dominant:            boolean;  // feeds the current dominant thesis
+  developing:          boolean;  // single-source, awaiting corroboration
+  reporting_period:    string | null;   // earnings: "Q1".."Q4" | "FY" when stated
+  merged_event_ids:    string[];        // cluster ids folded into this event
+}
+
 export interface FeedResponse {
   items:              FeedItem[];
   top_stories:        TopStories;
@@ -54,6 +92,8 @@ export interface FeedResponse {
   theme_intelligence: ThemeIntelligence[];
   // Industry activation signals
   industry_activation: IndustryActivation[];
+  // Market Events (F1) — ranked editorial units (may be absent on stale caches)
+  events?:            MarketEvent[];
   // Cache metadata
   is_stale:           boolean;
   generated_at:       string;   // ISO-8601

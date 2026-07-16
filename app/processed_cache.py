@@ -24,6 +24,7 @@ from app.clustering import StoryCluster, WhatMattersNowItem
 from app.summarizer import MarketBrief
 from app.sectors import SectorData
 from app.theme_graph import ThemeIntelligence, IndustryActivation
+from app.events import MarketEvent
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,8 @@ class ProcessedFeed:
     theme_intelligence: list[ThemeIntelligence] = field(default_factory=list)
     # Industry activation (added in Phase 7 — server-side per-industry signal aggregation)
     industry_activation: list[IndustryActivation] = field(default_factory=list)
+    # Market Events (F1 — the editorial unit: ranked events, articles demoted to evidence)
+    events: list[MarketEvent] = field(default_factory=list)
 
 
 class ProcessedFeedCache:
@@ -129,6 +132,8 @@ class ProcessedFeedCache:
                         feed.theme_intelligence = []
                     if not hasattr(feed, "industry_activation"):
                         feed.industry_activation = []
+                    if not hasattr(feed, "events"):
+                        feed.events = []
                     # Phase 5: ThemeIntelligence objects gained new fields.
                     # Clear stale pickled theme data so the first pipeline run
                     # recomputes them cleanly (they regenerate every 5 min anyway).

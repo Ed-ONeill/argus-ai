@@ -114,6 +114,8 @@ class FeedResponse(BaseModel):
     theme_intelligence: list[ThemeIntelligenceSchema] = []
     # Industry activation signals (empty until first pipeline run)
     industry_activation: list[IndustryActivationSchema] = []
+    # Market Events (F1) — ranked editorial units; empty until first pipeline run
+    events:             list["MarketEventSchema"] = []
     # Cache metadata
     is_stale:           bool
     generated_at:       str
@@ -254,6 +256,40 @@ class IndustryActivationSchema(BaseModel):
     related_assets:      list[str] = []
     momentum_label:      str       = "emerging"
     confidence_label:    str       = "Developing"
+
+
+class EventEvidenceSchema(BaseModel):
+    """One article inside a Market Event — evidence, not a feed unit."""
+    source:    str
+    title:     str
+    url:       str
+    published: str | None = None
+    tier:      int = 4
+    kind:      str = "news"   # sec_filing | transcript | ir_release | news
+
+
+class MarketEventSchema(BaseModel):
+    """F1 — the canonical Market Event. id == StoryCluster.id, which is also
+    the id themes and the institutional archive record as evidence refs."""
+    id:                  str
+    title:               str
+    event_type:          str
+    first_seen:          str
+    last_updated:        str
+    corroboration_count: int
+    source_count:        int
+    evidence:            list[EventEvidenceSchema] = []
+    companies:           list[str] = []
+    industries:          list[str] = []
+    theme_ids:           list[str] = []
+    confidence:          int = 0
+    editorial_score:     float = 0.0
+    why_it_matters:      str = ""
+    transmission:        str | None = None
+    dominant:            bool = False
+    developing:          bool = False
+    reporting_period:    str | None = None   # earnings: "Q1".."Q4" | "FY" when stated
+    merged_event_ids:    list[str] = []      # cluster ids folded into this event
 
 
 class FeedStatusResponse(BaseModel):
@@ -439,6 +475,39 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         for ia in raw_activations
     ]
 
+    raw_events = getattr(entry, "events", []) or []
+    event_schemas = [
+        MarketEventSchema(
+            id                  = ev.id,
+            title               = ev.title,
+            event_type          = ev.event_type,
+            first_seen          = ev.first_seen,
+            last_updated        = ev.last_updated,
+            corroboration_count = ev.corroboration_count,
+            source_count        = ev.source_count,
+            evidence            = [
+                EventEvidenceSchema(
+                    source=e.source, title=e.title, url=e.url,
+                    published=e.published, tier=e.tier,
+                    kind=getattr(e, "kind", "news"),
+                )
+                for e in ev.evidence
+            ],
+            companies           = ev.companies,
+            industries          = ev.industries,
+            theme_ids           = ev.theme_ids,
+            confidence          = ev.confidence,
+            editorial_score     = ev.editorial_score,
+            why_it_matters      = ev.why_it_matters,
+            transmission        = ev.transmission,
+            dominant            = ev.dominant,
+            developing          = ev.developing,
+            reporting_period    = getattr(ev, "reporting_period", None),
+            merged_event_ids    = getattr(ev, "merged_event_ids", []),
+        )
+        for ev in raw_events
+    ]
+
     log.info(
         "[feed] _build_response  themes=%d  activations=%d  active_industries=%d  scored_sectors=%d",
         len(raw_themes),
@@ -470,6 +539,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         top_stories_debug=entry.debug_log,
         clusters=cluster_schemas,
         what_matters_now=wmn_schemas,
+        events=event_schemas,
         is_stale=entry.is_refreshing,
         generated_at=entry.generated_at.isoformat(),
         cache_age_seconds=round(age, 1),

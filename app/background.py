@@ -451,6 +451,18 @@ def run_pipeline(
     except Exception:
         log.exception("[bg] theme_memory update FAILED — continuing (feed unaffected)")
 
+    # ── Market Events (F1) ─────────────────────────────────────────────────────
+    # Elevate story clusters into ranked Market Events — the Feed's editorial
+    # unit; articles become evidence. Event.id == cluster.id, so theme
+    # contributing_cluster_ids and the M3 archive's evidence refs already point
+    # at these events. Wrapped so an event-build failure never breaks the feed.
+    try:
+        from app.events import build_market_events
+        events = build_market_events(clusters, theme_intelligence)
+    except Exception:
+        log.exception("[bg] market event build FAILED — continuing (feed unaffected)")
+        events = []
+
     feed = ProcessedFeed(
         items=items,
         top_stories=top,
@@ -465,6 +477,7 @@ def run_pipeline(
         sector_data=sector_data,
         theme_intelligence=theme_intelligence,
         industry_activation=industry_activation,
+        events=events,
     )
 
     # ── Institutional memory (M3.1 themes + M3.2 graph/narratives) ─────────────
