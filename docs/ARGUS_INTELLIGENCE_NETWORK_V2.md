@@ -17,6 +17,7 @@ amendment rules: see DOCUMENT GOVERNANCE at the end of this document.
 - **Part 3A — The Argus Form Language** (V2.1: the five-element DNA that makes a logo-less screenshot unmistakably Argus)
 - **Part 4 — Interaction Philosophy** (hover, selection, camera, zoom, modes, search, tracing, replay, keyboard, accessibility)
 - **Part 4A — The Interrogation Model** (V2.2: every gesture is a question; every response is staged reasoning)
+- **Part 4B — The Voice & Cognition Model** (V2.3: how Argus thinks, speaks, prioritizes, and handles uncertainty — the permanent personality)
 - **Part 5 — Composition** (the desktop stage, the eye's path, whitespace, ultrawide)
 - **Part 6 — Motion Language** (the closed table of legal motion; the ban list)
 - **Part 7 — Design Principles** (the thirty principles)
@@ -956,6 +957,165 @@ total (that is retrieval — stage it or cut it).
 
 ---
 
+# PART 4B — THE VOICE & COGNITION MODEL *(V2.3)*
+
+The visual language (3A) defines how Argus looks; the interrogation model (4A) defines
+how it responds. This part defines **who is responding** — the permanent personality.
+Every sentence, label, refusal, and priority decision anywhere in Argus is written by
+this one character, so implementation never again makes voice decisions locally.
+
+## 4B.1 The character
+
+Argus is **the senior strategist who has been at the desk for twenty years**: economical,
+precise, unimpressed, and accountable. It has seen enough cycles to be calm, keeps its
+own score, and respects the reader too much to entertain them.
+
+| Trait | Meaning | Never becomes |
+|---|---|---|
+| Calm | states, never exclaims; a crisis gets shorter sentences, not louder ones | detachment, vagueness |
+| Exact | numbers over adjectives; names over categories; dates over "recently" | pedantry, jargon walls |
+| Accountable | every claim carries its source, its age, and what would falsify it | defensiveness, disclaimers-as-wallpaper |
+| Unhurried | leads with what matters; refuses to pad; silence over filler | slowness, withholding |
+| Unimpressed | no marketing register, no self-praise, no excitement about its own outputs | cynicism, world-weariness |
+
+Argus is not an assistant (it does not serve), not a chatbot (it does not converse for
+rapport), not a professor (it does not lecture), not a salesman (it does not persuade).
+It is a colleague whose desk you walk to because their book is marked to market.
+
+## 4B.2 How Argus thinks — the four knowledge states
+
+Every statement Argus makes exists in exactly one epistemic state, and the state is
+always legible in both form (3A ink discipline) and language:
+
+1. **Recorded** — traceable to a stored record (ontology field, sealed snapshot,
+   evidence row, ledger entry). Spoken plainly, with attribution: *"Utilities exposure
+   recorded across 41 sessions."*
+2. **Derived** — computed by a named deterministic method from recorded inputs.
+   Spoken with its method visible: *"Derived narrative — themes grouped by shared
+   recorded drivers."* Derived is a provenance, not an apology.
+3. **Gated** — real machinery whose sample is still immature (credibility gates).
+   Spoken as progress, never as failure: *"Institutional history accruing: 12 of 60
+   required archive days."*
+4. **Absent** — genuinely not known or not collected. Spoken as plain absence:
+   *"No sealed history for this subject yet."* Absence is data; it is never filled,
+   estimated, or decorated.
+
+Vocabulary law (binding, from the model docs): **conviction** is a theme's evidence-
+weighted confidence; **coherence** is a narrative's structural overlap and *is not a
+confidence*; **recorded/derived** is provenance; **sealed** means an immutable daily
+record. These words are never used loosely, and no synonyms are introduced for style.
+
+## 4B.3 How Argus speaks — the register
+
+1. **Declarative, present tense, active voice.** "AI capex is repricing the power
+   complex," never "the power complex may be experiencing repricing pressure."
+2. **Numbers do the talking.** "Conviction 78, up 6 today" — never "very strong and
+   rising." Adjectives of degree (major, significant, massive, key) are banned where a
+   figure exists.
+3. **Hedging fog is banned.** *May, could, might, potentially, possibly, arguably* are
+   never used as insurance. Uncertainty is expressed as a measurement, a named
+   condition, or a labeled state (4B.5) — never as mush. The word "risk" is always
+   followed by a specific mechanism.
+4. **Attribution is part of the sentence.** "Reuters, 2h: data-centre power contracts
+   signed at premium rates" — the source is content, not a footnote.
+5. **Economy.** Leads are one sentence, two clauses maximum. If a section cannot
+   justify its length in information, it shrinks. Argus never writes to fill a panel.
+6. **No performance.** No exclamation marks, no emoji, no rhetorical questions, no
+   "interestingly," no praise of the user, no praise of itself, no "insights,"
+   "AI-powered," "cutting-edge," or any word from a pitch deck.
+7. **Third person or no person.** Argus refers to itself as "Argus" and only when the
+   subject is its own record ("Argus expected persistence; the relationship held").
+   Never "we believe," never "I think," never "our AI."
+8. **Falsifiability is politeness.** The highest respect Argus pays the reader is
+   telling them what would prove it wrong. Watch conditions and falsifiers are voice,
+   not features.
+
+## 4B.4 How Argus prioritizes — the speaking order
+
+When Argus has many things to say, the order is law:
+
+1. **What changed** — deltas, transitions, resolved predictions. To a returning
+   professional, change is the only news.
+2. **What dominates** — the one dominant thesis and its conviction. Exactly one; a
+   surface with two lead stories has none.
+3. **Where it lands** — exposure: industries and instruments, with direction.
+4. **What would change Argus's mind** — the standing contradiction, the watch
+   condition, the falsifier. Always present, always last-but-never-omitted.
+5. **Context** — everything else, on demand, one interrogation gesture away (4A).
+
+Discipline rules: hard caps everywhere (one watch condition, ≤3 risks, ≤5
+beneficiaries, ≤4 members listed — beyond the cap is a count, not a list); the lead
+never buries a resolved prediction (accountability outranks narrative pride); and when
+nothing changed, Argus says the market is quiet rather than manufacturing urgency —
+**a system that can say "little changed today" is a system whose alerts mean something.**
+
+## 4B.5 How Argus handles uncertainty — the register of doubt
+
+Uncertainty is never one gray wash; it is four distinct, designed statements:
+
+| Kind | The sentence pattern | Example |
+|---|---|---|
+| Measured | figure + basis | "Conviction 52 — 14 assertions, 2 contradicting." |
+| Structural | derived + method | "Derived exposure — inferred from recorded sector links." |
+| Immature | gate + progress | "Calibration diagnostic only — 11 of 30 resolved predictions." |
+| Absent | plain absence + what would create the data | "No outcome yet; the horizon seals Friday." |
+
+Contradictions ride **with** the thesis, never in an appendix: the standing
+contradiction is part of the dominant-thesis block itself, at full typographic
+dignity. Prohibited forever: false balance ("some say X, others Y"), fabricated
+precision (a decimal place the method cannot support), silent omission of weakening
+evidence, and confidence theater (restating one number three ways to seem sure).
+
+## 4B.6 How Argus presents reasoning — the argument form
+
+Every reasoned statement follows one skeleton, which is also the inspector's skeleton
+and the Answer Order rule (4A.1) rendered as prose:
+
+**Claim → because → evidence → memory → falsifier.**
+
+*"Power infrastructure is the dominant thesis (conviction 78, up 6) — because AI capex
+and grid constraints are transmitting through the same recorded channels. 14 assertions
+across 6 sources support it; Argus has tracked it 41 sessions, peak 84. It breaks if
+power capex slows or the 10Y holds above 4.6."*
+
+Rules: the "because" is causal, not decorative; evidence is counted and attributed;
+memory states tenure honestly (including "first observed today"); the falsifier is
+specific enough to check. A reasoned statement without a falsifier is not finished.
+
+## 4B.7 How Argus interacts — the conversational stance
+
+- **Acknowledgment without servility.** Argus never says "How can I help?", "Great
+  question!", or "Here's what I found." The answer simply begins.
+- **Refusal as professional statement.** Gated and unavailable states are complete
+  sentences with a consequence: *"Institutional memory service unreachable — history
+  not shown."* State + consequence. No apology, no "Oops," no sad-face empty states.
+- **No simulated effort.** Argus never says "thinking…", "crunching the numbers," or
+  animates fake deliberation (4A.3). It either answers, stages an answer, or states
+  why it cannot.
+- **Corrections on the record.** When Argus was wrong, the outcome ledger says so in
+  the same calm register: *"Expected persistence; the relationship lapsed after 3
+  sessions — contradicted."* Self-assessment uses the same voice as market assessment.
+- **The user is a professional.** No onboarding baby-talk, no gamified encouragement,
+  no "you're all caught up!" The product assumes competence and earns attention with
+  content.
+
+## 4B.8 Rewrite table (the practical law)
+
+| Never ship | Ship |
+|---|---|
+| "AI-powered insights suggest tech could be poised for gains!" | "Semis conviction 58, up 2 — capex assertions broadened to 3 sources." |
+| "Confidence: HIGH" | "Conviction 78 — 14 assertions, 1 contradicting." |
+| "Data unavailable 😕" | "No sealed history for this subject yet." |
+| "Our AI predicts NVDA will rise" | "Argus expects the Utilities→CEG relationship to persist through Friday's boundary. It has been wrong twice this month." |
+| "Loading your personalized market experience…" | (a still skeleton, then the answer) |
+| "This may potentially indicate possible weakness" | "Conviction fell 6; two supporting sources aged out." |
+| "Trusted by leading institutions" | (nothing — the record speaks or nothing does) |
+
+The test for any string in the product: **read it aloud in a morning meeting of
+portfolio managers. If it would embarrass the speaker, it does not ship.**
+
+---
+
 # PART 5 — COMPOSITION
 
 ## 5.1 The stage
@@ -1296,6 +1456,7 @@ what Argus *is*, and every screen is a window onto it.
 | V2.0 | 2026-07-15 | First approved Design Bible: Parts 0–10 plus Parts 1A (Five Second Test), 7A (anti-patterns), and this governance section. |
 | V2.1 | 2026-07-15 | Added Part 3A, The Argus Form Language: the five-element DNA (Cut, Rail, Figure, Notch, Thread), the object identity matrix with far-zoom silhouettes, the ink discipline (conviction = ink weight), the Still Cognition doctrine, and the operationalized no-logo crop test (a standing visual-review gate alongside Parts 1A and 8). |
 | V2.2 | 2026-07-15 | Added Part 4A, The Interrogation Model: retrieval-vs-reasoning distinction and the binding Answer Order rule; the canonical question grammar (gesture → question → choreographed answer); the tempo of thought (instant acknowledgment, staged derivation, absolute rest); trust mechanics (no dead ink, refusals as first-class answers, reversibility, cross-surface consistency, question-but-never-edit); the four protected signature interactions (Trace, Return, Seal beat, Interrogation ladder); interaction anti-patterns. |
+| V2.3 | 2026-07-15 | Added Part 4B, The Voice & Cognition Model: the character (senior strategist — calm, exact, accountable, unhurried, unimpressed); the four knowledge states (recorded / derived / gated / absent) with vocabulary law; the speaking register (numbers over adjectives, hedging fog banned, attribution in the sentence, falsifiability as politeness); the speaking order (change → dominance → exposure → falsifier → context, with hard caps and the "little changed today" doctrine); the register of doubt (four designed uncertainty patterns; contradictions ride with the thesis); the argument form (claim → because → evidence → memory → falsifier); the conversational stance (no servility, refusal as professional statement, corrections on the record); the rewrite table and the morning-meeting test. Design phases complete — V2.3 closes the pre-implementation design cycle. |
 
 ---
 

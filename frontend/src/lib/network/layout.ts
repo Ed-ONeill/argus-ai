@@ -28,6 +28,7 @@
  */
 
 import type { NetworkModel, NetworkNode, NodeClass } from "./model";
+import { TYPE, SPACE } from "./tokens";
 
 export interface LayoutBox {
   id: string;
@@ -60,13 +61,15 @@ const ZONE_LABEL: Record<NodeClass, string> = {
 };
 
 // Tiered node metrics — prominence comes from canonical standing, not physics.
+// Heights and gaps sit on the shared spacing scale; fonts on the type ramp.
+// Tier 1 carries ~2× tier-2 area so the focal object wins the squint test.
 const TIER_METRICS = {
-  1: { h: 64, minW: 190, maxW: 236, font: 12 },   // focal theme/narrative
-  2: { h: 48, minW: 148, maxW: 186, font: 11 },   // themes, major drivers
-  3: { h: 32, minW: 100, maxW: 148, font: 10.5 }, // industries
-  4: { h: 20, minW: 50,  maxW: 84,  font: 9.5 },  // assets
+  1: { h: 72, minW: 216, maxW: 264, font: TYPE.lg, gap: SPACE.s4 },  // focal narrative/theme
+  2: { h: 48, minW: 144, maxW: 184, font: TYPE.sm, gap: SPACE.s4 },  // themes
+  3: { h: 32, minW: 96,  maxW: 144, font: TYPE.sm, gap: SPACE.s3 },  // industries
+  4: { h: 20, minW: 48,  maxW: 88,  font: TYPE.xs, gap: SPACE.s2 },  // assets
 } as const;
-const DRIVER_BOX = { h: 24, minW: 88, maxW: 150, font: 10 };
+const DRIVER_BOX = { h: 24, minW: 88, maxW: 152, font: TYPE.sm };
 
 /** Pure text-width heuristic (avg glyph ≈ 0.62em for the UI sans stack). */
 export function approxTextWidth(text: string, font: number): number {
@@ -148,18 +151,25 @@ export function computeLayout(model: NetworkModel, width: number, height: number
   };
 
   // ── themes: focal + elliptical constellation slots ──────────────────────────
-  const themes = [...byClass("theme"), ...byClass("narrative")]
-    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0) || a.id.localeCompare(b.id));
+  // When the focal is a narrative, its MEMBER themes take the inner slots
+  // (spatially organized by their thesis); non-members take the outer slots.
+  const focalNode = model.nodes.find(n => n.id === focalId);
+  const memberSet = new Set(focalNode?.cls === "narrative" ? focalNode.members ?? [] : []);
+  const themePool = [...byClass("theme"), ...byClass("narrative")]
+    .sort((a, b) =>
+      (memberSet.has(b.id) ? 1 : 0) - (memberSet.has(a.id) ? 1 : 0) ||
+      (b.confidence ?? 0) - (a.confidence ?? 0) || a.id.localeCompare(b.id));
   const fx = width * 0.40, fy = height * 0.46;
-  // deterministic slots around the focal: alternating above/below, drifting
-  // right so causal depth still reads left→right, never a column
+  // deterministic slots around the focal: inner ring first (members), then
+  // outer; alternating above/below, drifting right so causal depth still
+  // reads left→right, never a column
   const SLOTS: [number, number][] = [
-    [-0.07, -0.33], [-0.03, 0.34], [0.13, -0.26], [0.10, 0.24],
-    [-0.16, 0.06], [0.18, -0.02], [-0.11, -0.16], [0.04, 0.14],
+    [0.02, -0.26], [0.04, 0.27], [0.15, -0.14], [0.14, 0.12],
+    [-0.10, -0.33], [-0.07, 0.34], [0.22, -0.28], [0.20, 0.26],
   ];
-  themes.forEach(t => {
+  themePool.forEach(t => {
     if (t.id === focalId) { place(t, fx, fy); return; }
-    const slotIdx = themes.filter(x => x.id !== focalId).indexOf(t);
+    const slotIdx = themePool.filter(x => x.id !== focalId).indexOf(t);
     const [dx, dy] = SLOTS[slotIdx % SLOTS.length];
     const spill = Math.floor(slotIdx / SLOTS.length) * 0.06;
     place(t, fx + (dx + spill) * width, fy + dy * height);
@@ -220,7 +230,7 @@ export function computeLayout(model: NetworkModel, width: number, height: number
 
   // ── deterministic collision separation (bounded passes, sorted order) ───────
   const all = [...boxes.values()].sort((a, b) => a.id.localeCompare(b.id));
-  const padX = 14, padY = 10;
+  const padX = SPACE.s4, padY = SPACE.s3;
   const separate = () => {
     for (let pass = 0; pass < 32; pass++) {
       let moved = false;

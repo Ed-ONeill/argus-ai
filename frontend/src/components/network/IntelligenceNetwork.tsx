@@ -33,6 +33,7 @@ import type { NetworkModel, NetworkNode, NodeClass } from "@/lib/network/model";
 import { tracePath, transitionMs } from "@/lib/network/model";
 import { computeLayout, type LayoutBox } from "@/lib/network/layout";
 import type { GraphNode } from "@/lib/graph/types";
+import { TYPE, INK, SPACE, FONT_MONO, canvasFont, lineHeight } from "@/lib/network/tokens";
 
 export { buildNetworkModel };
 
@@ -52,16 +53,26 @@ const verbColor = (verb: string) => verb === "supports" ? C.bullish : verb === "
 
 export interface IntelligenceNetworkProps {
   model: NetworkModel;
+  /** Minimum canvas height; the canvas stretches to match the aside column so
+      the instrument always reads as ONE housing. */
   height?: number;
   onFocusChange?: (node: GraphNode | null) => void;
   clearNonce?: number;
   onHoverChange?: (node: GraphNode | null) => void;
   beamTokens?: Set<string> | null;
+  /** Programmatic navigation (inspector chain hops): selects this node as if
+      clicked. The canvas remains the single selection owner. */
+  focusId?: string | null;
+  /** The Intelligence Inspector column, rendered INSIDE the instrument frame
+      (M5.2 single housing): shared rail, shared baseline, hairline divider. */
+  aside?: React.ReactNode;
+  /** Status content for the right side of the shared rail (regime, conviction). */
+  railMeta?: React.ReactNode;
 }
 
 interface Cam { x: number; y: number; s: number; tx: number; ty: number; ts: number }
 
-export default function IntelligenceNetwork({ model, height = 440, onFocusChange, clearNonce, onHoverChange, beamTokens }: IntelligenceNetworkProps) {
+export default function IntelligenceNetwork({ model, height = 440, onFocusChange, clearNonce, onHoverChange, beamTokens, focusId, aside, railMeta }: IntelligenceNetworkProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [size, setSize] = useState({ w: 960, h: height });
@@ -75,6 +86,12 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
 
   const nodeById = useMemo(() => new Map(model.nodes.map(n => [n.id, n])), [model]);
   const layout = useMemo(() => computeLayout(model, size.w, size.h), [model, size.w, size.h]);
+  // The dominant transmission chain — the default visual reading path. At
+  // rest (no hover/selection) its edges carry a quiet standing emphasis so
+  // the first thing read is today's thesis and its flow, not raw topology.
+  const restingPath = useMemo(
+    () => (layout.focalId ? tracePath(model, layout.focalId) : null),
+    [model, layout.focalId]);
 
   // ── position tween + node entry fade ─────────────────────────────────────────
   const posRef = useRef(new Map<string, { x: number; y: number }>());
@@ -132,6 +149,14 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // programmatic navigation from the inspector (chain hops, exposure chips)
+  useEffect(() => {
+    if (!focusId) return;
+    const node = nodeById.get(focusId);
+    if (node) setSelected(prev => (prev?.id === focusId ? prev : node));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
+
   // ── render-on-demand ──────────────────────────────────────────────────────────
   const rafRef = useRef(0);
   const needRef = useRef(false);
@@ -187,6 +212,14 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
   }, []);
 
   const draw = useCallback((now: number) => {
+    try { drawInner(now); } catch (e) {
+      const ctx = canvasRef.current?.getContext("2d");
+      if (ctx) { ctx.fillStyle = "#f87171"; ctx.font = "12px monospace"; ctx.fillText(String(e).slice(0, 160), 12, 20); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, model, nodeById, size, reducedMotion, atmosphere, restingPath]);
+
+  const drawInner = useCallback((now: number) => {
     needRef.current = false;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -267,12 +300,6 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
       lum(bx, by, 96 * cam.s, "#64748b", 0.035);
     }
 
-    // subtle causal cue — no column headers, no rails
-    ctx.font = "600 7.5px ui-sans-serif, system-ui";
-    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-    ctx.fillStyle = C.textFaint;
-    ctx.fillText("CAUSE → EFFECT", w - 12, h - 8);
-
     const activeSet = tracing ? trace.path!.nodes : beamSet;
     const activeEdges = tracing ? trace.path!.edges : null;
 
@@ -290,11 +317,15 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
       const targetCls = nodeById.get(e.target)?.cls ?? "asset";
       const reveal = lit ? revealOf(targetCls) : 1;
       const strong = e.strength >= 0.65 && e.confidence >= 0.65;
+      // standing emphasis on the dominant chain when nothing is focused
+      const onRestingPath = !activeSet && restingPath?.edges.has(e.id);
 
       let alpha = e.provenance === "recorded" ? (strong ? 0.3 : 0.18) : 0.1;
       if (faded) alpha = 0.03;
       else if (lit) alpha = 0.85 * (0.15 + 0.85 * reveal);
-      const width = (0.5 + e.strength * (strong ? 1.1 : 0.7)) * cam.s * (lit ? 1.6 : 1);
+      else if (onRestingPath) alpha = Math.min(0.5, alpha * 2.1);
+      const width = (0.5 + e.strength * (strong ? 1.1 : 0.7)) * cam.s
+        * (lit ? 1.6 : onRestingPath ? 1.25 : 1);
       const entry = Math.min(enterAlpha(e.source), enterAlpha(e.target));
 
       ctx.save();
@@ -327,7 +358,7 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
       if (lit && cam.s > 0.75 && reveal > 0.6) {
         const [lx, ly] = [(ax + bx) / 2, (ay + by) / 2 + bow * 0.4];
         ctx.save();
-        ctx.font = "600 7.5px ui-sans-serif, system-ui";
+        ctx.font = canvasFont(TYPE.xs, 600, 0.85);
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         const lbl = e.verb.replace("_", " ").toUpperCase();
         const twd = ctx.measureText(lbl).width;
@@ -370,7 +401,7 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
     }
 
     if (animating) { needRef.current = true; rafRef.current = requestAnimationFrame(t => drawRef.current(t)); }
-  }, [layout, model, nodeById, size, reducedMotion, atmosphere]);
+  }, [layout, model, nodeById, size, reducedMotion, atmosphere, restingPath]);
 
   useEffect(() => { drawRef.current = draw; schedule(); }, [draw, schedule]);
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
@@ -378,9 +409,12 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: height }));
+    // both dimensions are live: the canvas stretches with the aside column so
+    // the two panels always share one bottom edge (single housing)
+    const measure = () => setSize({ w: el.clientWidth, h: Math.max(height, el.clientHeight) });
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setSize({ w: el.clientWidth, h: height });
+    measure();
     return () => ro.disconnect();
   }, [height]);
 
@@ -441,15 +475,16 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
 
   return (
     <div className="rounded-xl border overflow-hidden" style={{ borderColor: "rgba(148,163,184,0.16)", background: "radial-gradient(130% 110% at 42% 40%, rgba(17,26,43,0.72), rgba(5,9,16,0.96))" }}>
-      {/* compact workstation rail */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b" style={{ borderColor: "rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.015)" }}>
-        <span className="text-[8.5px] font-black uppercase tracking-[0.16em]" style={{ color: "rgba(82,176,200,0.85)" }}>Intelligence Network</span>
-        <span className="text-[8px] tabular-nums" style={{ color: C.textFaint }}>{model.nodes.length} entities · {model.edges.length} relationships</span>
+      {/* the shared rail — ONE name, ONE status line, spanning both panels */}
+      <div className="flex items-center border-b" style={{ gap: SPACE.s2, padding: `${SPACE.s2}px ${SPACE.s3}px`, borderColor: "rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.015)" }}>
+        <span className="font-black uppercase" style={{ fontSize: TYPE.xs, letterSpacing: "0.14em", color: "rgba(82,176,200,0.85)" }}>Intelligence Network</span>
+        <span className="tabular-nums hidden sm:inline" style={{ fontSize: TYPE.xs, fontFamily: FONT_MONO, color: INK.whisper }}>{model.nodes.length} entities · {model.edges.length} relationships</span>
+        {railMeta && <div className="flex items-center" style={{ gap: SPACE.s2, marginLeft: SPACE.s2 }}>{railMeta}</div>}
         <div className="relative ml-auto">
           <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: C.textFaint }} />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search entity…"
-            className="w-32 sm:w-40 text-[11px] rounded-md pl-6 pr-2 py-1 outline-none focus:w-44 transition-all"
-            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: C.text }} />
+            className="w-32 sm:w-40 rounded-md pl-6 pr-2 py-1 outline-none focus:w-44 transition-all"
+            style={{ fontSize: TYPE.sm, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: INK.secondary }} />
         </div>
         <div className="flex items-center gap-0.5">
           <button onClick={() => zoom(-1)} aria-label="Zoom out" className="p-1 rounded hover:bg-white/5" style={{ color: C.textDim }}><Minus size={12} /></button>
@@ -458,56 +493,67 @@ export default function IntelligenceNetwork({ model, height = 440, onFocusChange
         </div>
       </div>
 
-      <div ref={containerRef} className="relative" style={{ height }}>
-        {sparse ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
-            <p className="text-[11px] font-semibold" style={{ color: C.textDim }}>Limited signal</p>
-            <p className="text-[9.5px] leading-snug max-w-[280px] mt-1" style={{ color: C.textFaint }}>
-              The transmission network renders once enough corroborated themes are active this cycle.
-            </p>
-          </div>
-        ) : (
-          <canvas ref={canvasRef} onMouseMove={onMove} onMouseDown={onDown} onMouseUp={onUp} onWheel={onWheel}
-            onMouseLeave={() => { setHovered(null); dragRef.current = null; schedule(); }}
-            className="block" style={{ cursor: "grab" }} />
-        )}
-
-        {!sparse && hovered && (
-          <div className="pointer-events-none absolute z-30 w-max max-w-[250px]"
-            style={{ left: Math.min(hovered.sx + 14, size.w - 260), top: Math.max(8, hovered.sy - 10) }}>
-            <div className="rounded-lg border px-3 py-2" style={{ background: "rgba(8,12,20,0.98)", borderColor: "rgba(255,255,255,0.13)", boxShadow: "0 12px 34px rgba(0,0,0,0.6)" }}>
-              <span className="text-[11.5px] font-semibold" style={{ color: C.text }}>{hovered.node.name ?? hovered.node.label}</span>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-[8.5px] font-bold uppercase tracking-wide" style={{ color: C.textDim }}>{CLASS_LABEL[hovered.node.cls]}</span>
-                {typeof hovered.node.confidence === "number" && (
-                  <span className="text-[8.5px]" style={{ color: C.textDim }}>Conviction <b style={{ color: C.text }}>{hovered.node.confidence}</b></span>
-                )}
-                {typeof hovered.node.delta === "number" && hovered.node.delta !== 0 && (
-                  <span className="text-[8.5px] font-semibold" style={{ color: hovered.node.delta > 0 ? C.bullish : C.bearish }}>
-                    {hovered.node.delta > 0 ? "▲" : "▼"} {Math.abs(hovered.node.delta)} today
-                  </span>
-                )}
-                {typeof hovered.node.supportCount === "number" && hovered.node.supportCount > 0 && (
-                  <span className="text-[8.5px]" style={{ color: C.textDim }}>{hovered.node.supportCount} supporting theme{hovered.node.supportCount > 1 ? "s" : ""}</span>
-                )}
+      {/* one body: canvas column + inspector column, divided by a hairline */}
+      <div className="flex items-stretch">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div ref={containerRef} className="relative flex-1" style={{ minHeight: height }}>
+            {sparse ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+                <p className="font-semibold" style={{ fontSize: TYPE.md, color: INK.secondary }}>Limited signal</p>
+                <p className="max-w-[280px] mt-1" style={{ fontSize: TYPE.sm, lineHeight: 1.45, color: INK.support }}>
+                  The transmission network renders once enough corroborated themes are active this cycle.
+                </p>
               </div>
-              {hovered.node.reason && <p className="text-[9.5px] leading-snug mt-1.5" style={{ color: C.textDim }}>{hovered.node.reason}</p>}
-            </div>
-          </div>
-        )}
+            ) : (
+              <canvas ref={canvasRef} onMouseMove={onMove} onMouseDown={onDown} onMouseUp={onUp} onWheel={onWheel}
+                onMouseLeave={() => { setHovered(null); dragRef.current = null; schedule(); }}
+                className="block absolute inset-0" style={{ cursor: "grab" }} />
+            )}
 
-        {/* whisper legend — relationship meaning, no box */}
-        {!sparse && (
-          <div className="absolute bottom-1.5 left-2.5 z-10 flex items-center gap-x-3">
+            {!sparse && hovered && (
+              <div className="pointer-events-none absolute z-30 w-max max-w-[250px]"
+                style={{ left: Math.min(hovered.sx + 14, size.w - 260), top: Math.max(8, hovered.sy - 10) }}>
+                <div className="rounded-lg border px-3 py-2" style={{ background: "rgba(8,12,20,0.98)", borderColor: "rgba(255,255,255,0.13)", boxShadow: "0 12px 34px rgba(0,0,0,0.6)" }}>
+                  <span className="font-semibold" style={{ fontSize: TYPE.md, color: INK.primary }}>{hovered.node.name ?? hovered.node.label}</span>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="font-bold uppercase" style={{ fontSize: TYPE.xs, letterSpacing: "0.08em", color: INK.support }}>{CLASS_LABEL[hovered.node.cls]}</span>
+                    {typeof hovered.node.confidence === "number" && (
+                      <span className="tabular-nums" style={{ fontSize: TYPE.xs, color: INK.support }}>Conviction <b style={{ fontFamily: FONT_MONO, color: INK.primary }}>{hovered.node.confidence}</b></span>
+                    )}
+                    {typeof hovered.node.delta === "number" && hovered.node.delta !== 0 && (
+                      <span className="font-semibold tabular-nums" style={{ fontSize: TYPE.xs, fontFamily: FONT_MONO, color: hovered.node.delta > 0 ? C.bullish : C.bearish }}>
+                        {hovered.node.delta > 0 ? "▲" : "▼"} {Math.abs(hovered.node.delta)} today
+                      </span>
+                    )}
+                    {typeof hovered.node.supportCount === "number" && hovered.node.supportCount > 0 && (
+                      <span style={{ fontSize: TYPE.xs, color: INK.support }}>{hovered.node.supportCount} supporting theme{hovered.node.supportCount > 1 ? "s" : ""}</span>
+                    )}
+                  </div>
+                  {hovered.node.reason && <p className="mt-2" style={{ fontSize: TYPE.sm, lineHeight: 1.45, color: INK.support }}>{hovered.node.reason}</p>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* anchored baseline strip — legend left, causal cue right */}
+          <div className="flex items-center border-t" style={{ gap: SPACE.s3, padding: `${SPACE.s1}px ${SPACE.s3}px`, borderColor: "rgba(255,255,255,0.05)" }}>
             <span className="flex items-center gap-1">
               <span style={{ width: 13, height: 0, borderTop: "2px solid rgba(148,163,184,0.45)" }} />
-              <span className="text-[7.5px]" style={{ color: C.textFaint }}>recorded</span>
+              <span style={{ fontSize: TYPE.xs, color: INK.whisper }}>recorded</span>
             </span>
             <span className="flex items-center gap-1">
               <span style={{ width: 13, height: 0, borderTop: "1px dashed rgba(148,163,184,0.35)" }} />
-              <span className="text-[7.5px]" style={{ color: C.textFaint }}>derived</span>
+              <span style={{ fontSize: TYPE.xs, color: INK.whisper }}>derived</span>
             </span>
-            <span className="text-[7.5px]" style={{ color: C.textFaint }}>▲ supportive · ▼ pressured</span>
+            <span style={{ fontSize: TYPE.xs, color: INK.whisper }}>▲ supportive · ▼ pressured</span>
+            <span className="ml-auto font-semibold uppercase" style={{ fontSize: TYPE.xs, letterSpacing: "0.1em", color: INK.whisper }}>Cause → effect</span>
+          </div>
+        </div>
+
+        {aside && (
+          <div className="hidden lg:flex flex-col shrink-0 border-l"
+            style={{ width: 336, padding: SPACE.s4, gap: SPACE.s3, borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.012)" }}>
+            {aside}
           </div>
         )}
       </div>
@@ -535,7 +581,11 @@ function drawNode(ctx: CanvasRenderingContext2D, n: NetworkNode, box: LayoutBox,
                   x: number, y: number, w: number, h: number, scale: number,
                   alpha: number, active: boolean, isFocal: boolean) {
   const stateCol = dirColor(n.direction);
-  const font = (px: number) => `${px * Math.min(scale, 1.3)}px ui-sans-serif, system-ui`;
+  const s = Math.min(scale, 1.3);
+  const inkA = (base: string, boost = 1) => {
+    const m = base.match(/rgba\((\d+),(\d+),(\d+),([0-9.]+)\)/)!;
+    return `rgba(${m[1]},${m[2]},${m[3]},${Math.min(1, parseFloat(m[4]) * boost * alpha)})`;
+  };
 
   if (n.cls === "driver") {
     // external force entering the system: diamond + authority line + label
@@ -549,9 +599,9 @@ function drawNode(ctx: CanvasRenderingContext2D, n: NetworkNode, box: LayoutBox,
     ctx.moveTo(lx + r, y - r); ctx.lineTo(lx + 2 * r, y);
     ctx.lineTo(lx + r, y + r); ctx.lineTo(lx, y);
     ctx.closePath(); ctx.fill();
-    ctx.font = `700 ${font(10)}`;
+    ctx.font = canvasFont(TYPE.sm, 600, s);
     ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-    ctx.fillStyle = hexA("#e2e8f0", 0.88 * alpha);
+    ctx.fillStyle = inkA(INK.secondary);
     ctx.fillText(box.lines[0], lx + 2 * r + 6 * scale, y - 3 * scale);
     if (active) {
       ctx.strokeStyle = hexA(C.focus, 0.8);
@@ -562,8 +612,8 @@ function drawNode(ctx: CanvasRenderingContext2D, n: NetworkNode, box: LayoutBox,
   }
 
   if (n.cls === "theme" || n.cls === "narrative") {
-    // faceted Argus intelligence object: notched top-right corner, conviction
-    // rail on the left spine, intentional numerals — not a dashboard card
+    // faceted Argus intelligence object: notched top-right corner, measure
+    // rail on the left spine, tabular figures — not a dashboard card
     const notch = Math.min(11 * scale, h * 0.32);
     const left = x - w / 2, top = y - h / 2, right = x + w / 2, bottom = y + h / 2;
     ctx.beginPath();
@@ -581,55 +631,88 @@ function drawNode(ctx: CanvasRenderingContext2D, n: NetworkNode, box: LayoutBox,
     body.addColorStop(0, hexA("#16223a", 0.96 * alpha));
     body.addColorStop(1, hexA("#0b1424", 0.96 * alpha));
     ctx.fillStyle = body; ctx.fill();
-    ctx.strokeStyle = active ? hexA(C.focus, 0.95) : hexA(isFocal ? C.accent : "#334155", (isFocal ? 0.75 : 0.9) * alpha);
-    ctx.lineWidth = (active ? 1.6 : isFocal ? 1.3 : 1) * Math.min(scale, 1.4);
+    ctx.strokeStyle = active ? hexA(C.focus, 0.95) : hexA(isFocal ? C.accent : "#334155", (isFocal ? 0.8 : 0.9) * alpha);
+    ctx.lineWidth = (active ? 1.6 : isFocal ? 1.4 : 1) * Math.min(scale, 1.4);
     ctx.stroke();
     // inner top highlight — restrained depth
     ctx.strokeStyle = hexA("#e2e8f0", 0.06 * alpha);
     ctx.beginPath(); ctx.moveTo(left + 5, top + 1.5); ctx.lineTo(right - notch - 2, top + 1.5); ctx.stroke();
-    // conviction rail — left spine, filled by conviction
-    const frac = Math.max(0.05, Math.min(1, (n.confidence ?? 0) / 100));
+    // measure rail — left spine (coherence for narratives, conviction for themes)
+    const railFrac = n.cls === "narrative"
+      ? Math.max(0.05, Math.min(1, (n.coherence ?? 0) / 100))
+      : Math.max(0.05, Math.min(1, (n.confidence ?? 0) / 100));
+    const railCol = n.cls === "narrative" ? C.accent : stateCol;
     ctx.fillStyle = hexA("#1e293b", 0.9 * alpha);
     ctx.fillRect(left + 3, top + 5, 2.5 * scale, h - 10);
-    ctx.fillStyle = hexA(stateCol, 0.95 * alpha);
-    ctx.fillRect(left + 3, top + 5 + (h - 10) * (1 - frac), 2.5 * scale, (h - 10) * frac);
+    ctx.fillStyle = hexA(railCol, 0.95 * alpha);
+    ctx.fillRect(left + 3, top + 5 + (h - 10) * (1 - railFrac), 2.5 * scale, (h - 10) * railFrac);
 
     const tx = left + 12 * scale;
+    if (n.cls === "narrative") {
+      // the dominant thesis object: eyebrow, title, coherence figure + members.
+      // Coherence is a structural measure — labeled, never shown as conviction.
+      ctx.font = canvasFont(TYPE.xs, 800, s * 0.85);
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.fillStyle = hexA(C.accent, 0.9 * alpha);
+      ctx.fillText("DOMINANT NARRATIVE", tx, top + 7 * scale);
+      ctx.font = canvasFont(TYPE.lg, 700, s);
+      ctx.fillStyle = inkA(INK.primary);
+      const nTitleTop = top + 18 * scale;
+      box.lines.forEach((line, i) => ctx.fillText(line, tx, nTitleTop + i * lineHeight(TYPE.lg, s)));
+      // figure-first bottom row: the numeral dominates, labels whisper
+      ctx.textBaseline = "alphabetic";
+      if (typeof n.coherence === "number") {
+        ctx.font = canvasFont(TYPE.lg, 800, s, true);
+        ctx.fillStyle = hexA(C.accent, 0.95 * alpha);
+        const fig = `${n.coherence}`;
+        ctx.fillText(fig, tx, bottom - 8 * scale);
+        const figW = ctx.measureText(fig).width;
+        ctx.font = canvasFont(TYPE.xs, 700, s * 0.85);
+        ctx.fillStyle = inkA(INK.whisper, 1.5);
+        ctx.fillText(`COHERENCE · ${n.members?.length ?? 0} THEMES`, tx + figW + 6 * scale, bottom - 8 * scale);
+      } else {
+        ctx.font = canvasFont(TYPE.xs, 700, s * 0.85);
+        ctx.fillStyle = inkA(INK.whisper, 1.5);
+        ctx.fillText(`${n.members?.length ?? 0} THEMES`, tx, bottom - 8 * scale);
+      }
+      return;
+    }
     if (isFocal) {
-      ctx.font = `800 ${font(6.8)}`;
+      ctx.font = canvasFont(TYPE.xs, 800, s * 0.85);
       ctx.textAlign = "left"; ctx.textBaseline = "top";
       ctx.fillStyle = hexA(C.accent, 0.85 * alpha);
-      // honest label: dominant THEME until the M4.2 narrative class exists
-      ctx.fillText("DOMINANT THEME", tx, top + 6 * scale);
+      // honest label: a theme standing in as focal when no narrative derives
+      ctx.fillText("DOMINANT THEME", tx, top + 7 * scale);
     }
-    ctx.font = `${isFocal ? 700 : 600} ${font(isFocal ? 12 : 10.8)}`;
+    ctx.font = canvasFont(isFocal ? TYPE.lg : TYPE.sm, isFocal ? 700 : 600, s);
     ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.fillStyle = hexA("#f8fafc", 0.96 * alpha);
-    const titleTop = top + (isFocal ? 15 : 7) * scale;
-    box.lines.forEach((line, i) => ctx.fillText(line, tx, titleTop + i * (isFocal ? 14 : 12.5) * scale));
-    // conviction numeral + delta + momentum, bottom row
-    ctx.font = `800 ${font(isFocal ? 14 : 12)}`;
+    ctx.fillStyle = inkA(isFocal ? INK.primary : INK.secondary);
+    const titleTop = top + (isFocal ? 18 : 7) * scale;
+    box.lines.forEach((line, i) =>
+      ctx.fillText(line, tx, titleTop + i * lineHeight(isFocal ? TYPE.lg : TYPE.sm, s)));
+    // the Figure: the conviction numeral is the boldest ink on the plate
+    ctx.font = canvasFont(isFocal ? TYPE.xl : TYPE.lg, 800, s, true);
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = hexA(stateCol, 0.98 * alpha);
     const conv = `${n.confidence ?? "—"}`;
-    ctx.fillText(conv, tx, bottom - 7 * scale);
+    ctx.fillText(conv, tx, bottom - 8 * scale);
     const convW = ctx.measureText(conv).width;
     if (typeof n.delta === "number" && n.delta !== 0) {
-      ctx.font = `700 ${font(8.5)}`;
+      ctx.font = canvasFont(TYPE.xs, 700, s, true);
       ctx.fillStyle = hexA(n.delta > 0 ? C.bullish : C.bearish, 0.9 * alpha);
-      ctx.fillText(`${n.delta > 0 ? "▲" : "▼"}${Math.abs(n.delta)}`, tx + convW + 5 * scale, bottom - 7 * scale);
+      ctx.fillText(`${n.delta > 0 ? "▲" : "▼"}${Math.abs(n.delta)}`, tx + convW + 5 * scale, bottom - 8 * scale);
     }
     if (n.momentumLabel && (isFocal || scale > 1.15)) {
-      ctx.font = `600 ${font(7)}`;
+      ctx.font = canvasFont(TYPE.xs, 600, s * 0.85);
       ctx.textAlign = "right";
-      ctx.fillStyle = hexA("#94a3b8", 0.7 * alpha);
-      ctx.fillText(n.momentumLabel.toUpperCase(), right - 8 * scale, bottom - 7 * scale);
+      ctx.fillStyle = inkA(INK.whisper, 1.4);
+      ctx.fillText(n.momentumLabel.toUpperCase(), right - 8 * scale, bottom - 8 * scale);
     }
     return;
   }
 
   if (n.cls === "industry") {
-    // downstream junction: squared object with a directional edge tab
+    // downstream junction: squared plate with a directional edge tab
     const left = x - w / 2, top = y - h / 2;
     ctx.beginPath();
     ctx.rect(left, top, w, h);
@@ -638,23 +721,22 @@ function drawNode(ctx: CanvasRenderingContext2D, n: NetworkNode, box: LayoutBox,
     ctx.strokeStyle = active ? hexA(C.focus, 0.95) : hexA("#334155", 0.85 * alpha);
     ctx.lineWidth = (active ? 1.5 : 1) * Math.min(scale, 1.3);
     ctx.stroke();
-    // direction tab on the left edge
     ctx.fillStyle = hexA(stateCol, 0.85 * alpha);
     ctx.fillRect(left, top, 2.5 * scale, h);
-    ctx.font = `600 ${font(10.2)}`;
+    ctx.font = canvasFont(TYPE.sm, 600, s);
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillStyle = hexA("#e2e8f0", 0.94 * alpha);
+    ctx.fillStyle = inkA(INK.secondary);
     ctx.fillText(box.lines[0], left + 8 * scale, y);
     ctx.textAlign = "right";
     const glyph = n.direction === "bearish" ? "▼" : n.direction === "bullish" ? "▲" : "•";
     const breadth = (n.supportCount ?? 0) > 1 ? ` ×${n.supportCount}` : "";
     ctx.fillStyle = hexA(stateCol, 0.92 * alpha);
-    ctx.font = `700 ${font(8.5)}`;
+    ctx.font = canvasFont(TYPE.xs, 700, s, true);
     ctx.fillText(glyph + breadth, x + w / 2 - 6 * scale, y);
     return;
   }
 
-  // asset chip: quiet pill, monospace ticker, state-colored direction glyph
+  // asset chip: quiet pill, tabular ticker, state-colored direction glyph
   const rr = h / 2;
   ctx.beginPath();
   ctx.moveTo(x - w / 2 + rr, y - h / 2);
@@ -668,20 +750,20 @@ function drawNode(ctx: CanvasRenderingContext2D, n: NetworkNode, box: LayoutBox,
   ctx.strokeStyle = active ? hexA(C.focus, 0.95) : hexA(stateCol, 0.4 * alpha);
   ctx.lineWidth = (active ? 1.4 : 0.8) * Math.min(scale, 1.3);
   ctx.stroke();
-  ctx.font = `700 ${9.2 * Math.min(scale, 1.3)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.font = canvasFont(TYPE.xs, 700, s, true);
   ctx.textBaseline = "middle";
   const label = box.lines[0];
   const glyph = n.direction === "bearish" ? " ▼" : n.direction === "bullish" ? " ▲" : "";
   if (glyph) {
     const base = ctx.measureText(label).width, gw = ctx.measureText(glyph).width;
     ctx.textAlign = "left";
-    ctx.fillStyle = hexA("#f1f5f9", 0.94 * alpha);
+    ctx.fillStyle = inkA(INK.primary);
     ctx.fillText(label, x - (base + gw) / 2, y + 0.5);
     ctx.fillStyle = hexA(stateCol, 0.95 * alpha);
     ctx.fillText(glyph, x - (base + gw) / 2 + base, y + 0.5);
   } else {
     ctx.textAlign = "center";
-    ctx.fillStyle = hexA("#f1f5f9", 0.94 * alpha);
+    ctx.fillStyle = inkA(INK.primary);
     ctx.fillText(label, x, y + 0.5);
   }
 }

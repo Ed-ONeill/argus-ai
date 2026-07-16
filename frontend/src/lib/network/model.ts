@@ -27,13 +27,14 @@
 
 import type { ThemeIntelligence } from "@/lib/types";
 import type { GraphNode } from "@/lib/graph/types";
+import type { DerivedNarrative } from "@/lib/narrativeDerivation";
 import { themeBeneficiaries } from "@/lib/themeIntelligence";
-import { cleanThemeName } from "@/app/markets/marketsShared";
+import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
 import { dirOf, deriveDriver, deriveSector } from "@/lib/themeTransmission";
 import type { MarketSnapshot } from "@/lib/marketMap";
 
 export type NodeClass = "driver" | "narrative" | "theme" | "industry" | "asset";
-export type EdgeVerb = "drives" | "supports" | "pressures" | "exposed_to";
+export type EdgeVerb = "drives" | "supports" | "pressures" | "exposed_to" | "member_of";
 export type EdgeProvenance = "recorded" | "derived";
 export type Direction = "bullish" | "bearish" | "neutral";
 
@@ -45,6 +46,11 @@ export interface NetworkNode extends GraphNode {
   /** Industries: number of themes transmitting into this node. */
   supportCount?: number;
   momentumLabel?: string;
+  /** Narrative only: structural coherence 0-100 (NOT a confidence — the
+      canonical model forbids blending member convictions into one number). */
+  coherence?: number;
+  /** Narrative only: member theme node ids. */
+  members?: string[];
 }
 
 export interface NetworkEdge {
@@ -77,10 +83,17 @@ function contentKey(parts: string[]): string {
 
 /**
  * Build the Intelligence Network model from live theme intelligence.
- * Functionally equivalent content to the old Market Map (top-6 themes,
- * driver → theme → industry → assets) minus the fabricated pieces.
+ *
+ * M4.2: when the canonical dominant DerivedNarrative is supplied (from
+ * narrativeDerivation over the provisioned graph — the SAME derivation The
+ * Read projects), it is projected as the single focal narrative object with
+ * member_of edges to its member themes and drives edges from its driver set.
+ * Exactly one dominant thesis is ever projected. With no derivable narrative
+ * the highest-conviction theme honestly stands in as the focal object
+ * (temporary until a canonical narrative entity class exists platform-wide).
  */
-export function buildNetworkModel(themes: ThemeIntelligence[], snap: MarketSnapshot): NetworkModel {
+export function buildNetworkModel(themes: ThemeIntelligence[], snap: MarketSnapshot,
+                                  opts?: { narrative?: DerivedNarrative | null }): NetworkModel {
   const nodes = new Map<string, NetworkNode>();
   const edges = new Map<string, NetworkEdge>();
 
@@ -148,11 +161,56 @@ export function buildNetworkModel(themes: ThemeIntelligence[], snap: MarketSnaps
     });
   }
 
+  // ── M4.2: project the dominant narrative (one focal thesis, never more) ────
+  const narrative = opts?.narrative ?? null;
+  if (narrative) {
+    // map derivation member labels → this projection's theme node ids
+    const themeIdByName = new Map<string, string>();
+    for (const n of nodes.values()) {
+      if (n.cls === "theme") themeIdByName.set(n.label.toLowerCase(), n.id);
+    }
+    const memberIds = (narrative.members.data ?? [])
+      .map(m => themeIdByName.get(cleanThemeName(m.label).toLowerCase())
+             ?? themeIdByName.get(m.label.toLowerCase()))
+      .filter((id): id is string => !!id);
+
+    // a one-theme narrative is a theme (canonical rule) — only project with >= 2
+    if (memberIds.length >= 2) {
+      const narId = `nar:${slug(narrative.key).slice(0, 40) || "dominant"}`;
+      const memberNames = memberIds
+        .map(id => nodes.get(id)!.label)
+        .sort();
+      addNode({
+        id: narId, label: narrative.label, kind: "theme", role: "theme",
+        cls: "narrative",
+        coherence: narrative.coherence.data ? Math.round(narrative.coherence.data.score) : undefined,
+        members: [...memberIds].sort(),
+        themes: memberNames,   // selecting the narrative focuses its member themes
+        reason: "Derived dominant narrative — themes grouped by their shared recorded drivers",
+      });
+      for (const mid of [...memberIds].sort()) {
+        addEdge({ source: narId, target: mid, verb: "member_of",
+                  strength: 0.7, confidence: narrative.coherence.data
+                    ? Math.max(0.2, Math.min(1, narrative.coherence.data.score / 100)) : 0.5,
+                  provenance: "derived" });
+      }
+      // driver set → narrative (reuse existing driver nodes where labels match)
+      for (const d of narrative.driverSet.data ?? []) {
+        const dLabel = cleanMacroLabel(d.label);
+        const dId = `drv:${slug(dLabel)}`;
+        addNode({ id: dId, label: dLabel, kind: "group", role: "cross-sector",
+                  cls: "driver", reason: "Macro driver feeding the narrative" });
+        addEdge({ source: dId, target: narId, verb: "drives",
+                  strength: 0.7, confidence: 0.6, provenance: "derived" });
+      }
+    }
+  }
+
   const regimeLabel = snap.regimeLabel || (snap.riskRegime === "risk-on" ? "Risk-On" : snap.riskRegime === "risk-off" ? "Risk-Off" : "Mixed");
   const nodeList = [...nodes.values()];
   const edgeList = [...edges.values()];
   return {
-    key: contentKey([...nodeList.map(n => `${n.id}:${n.cls}:${n.confidence ?? ""}`),
+    key: contentKey([...nodeList.map(n => `${n.id}:${n.cls}:${n.confidence ?? ""}:${n.coherence ?? ""}`),
                      ...edgeList.map(e => `${e.id}:${e.strength.toFixed(2)}:${e.provenance}`)]),
     regimeLabel,
     nodes: nodeList,
@@ -194,4 +252,54 @@ export function tracePath(model: NetworkModel, nodeId: string): TracedPath {
 /** Transition duration honoring prefers-reduced-motion (0 when reduced). */
 export function transitionMs(reducedMotion: boolean): number {
   return reducedMotion ? 0 : 240;
+}
+
+/** The projection's node id for a theme — shared with the inspector so the
+    dossier and the canvas always agree on identity. */
+export function themeNodeId(themeName: string): string {
+  return `th:${slug(cleanThemeName(themeName))}`;
+}
+
+export interface ChainHop { id: string; label: string; cls: NodeClass;
+                            relationship: string | null }
+
+/** One ordered representative causal path through a node: strongest upstream
+    edge per hop back to the originating force, then strongest downstream edge
+    per hop to a terminal asset. Deterministic (strength, then edge id). Each
+    hop's relationship is the recorded verb of the edge leading INTO it. */
+export function representativeChain(model: NetworkModel, nodeId: string): ChainHop[] {
+  const byId = new Map(model.nodes.map(n => [n.id, n]));
+  if (!byId.has(nodeId)) return [];
+  const strongest = (edges: NetworkEdge[]) =>
+    [...edges].sort((a, b) => b.strength - a.strength || a.id.localeCompare(b.id))[0];
+
+  const ids: string[] = [nodeId];
+  let cursor = nodeId;
+  for (let i = 0; i < 8; i++) {                       // upstream to the force
+    const incoming = model.edges.filter(e => e.target === cursor);
+    if (!incoming.length) break;
+    const src = strongest(incoming).source;
+    if (ids.includes(src)) break;
+    ids.unshift(src);
+    cursor = src;
+  }
+  cursor = nodeId;
+  for (let i = 0; i < 8; i++) {                       // downstream to a terminal
+    const outgoing = model.edges.filter(e => e.source === cursor);
+    if (!outgoing.length) break;
+    const tgt = strongest(outgoing).target;
+    if (ids.includes(tgt)) break;
+    ids.push(tgt);
+    cursor = tgt;
+  }
+  return ids.map((id, i) => {
+    const n = byId.get(id)!;
+    const prev = i > 0 ? ids[i - 1] : null;
+    return {
+      id, label: n.label, cls: n.cls,
+      relationship: prev
+        ? model.edges.find(e => e.source === prev && e.target === id)?.verb ?? null
+        : null,
+    };
+  });
 }

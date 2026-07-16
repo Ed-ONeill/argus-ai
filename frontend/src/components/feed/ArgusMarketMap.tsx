@@ -1,17 +1,31 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import IntelligenceNetwork from "@/components/network/IntelligenceNetwork";
+import NetworkInspector from "@/components/network/NetworkInspector";
 import { buildNetworkModel } from "@/lib/network/model";
+import { buildDominantInspector, buildEntityDossier, entityUid } from "@/lib/network/inspector";
 import type { MarketSnapshot } from "@/lib/marketMap";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildTheRead } from "@/lib/theRead";
+import { deriveNarratives } from "@/lib/narrativeDerivation";
 import { buildMarketStoryVM } from "@/lib/feedNarrative";
-import { buildFocusStory, focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
+import { focusKindLabel, type FeedFocus } from "@/lib/feedFocus";
 import { useActiveBeamTokens, setBeacon, releaseBeacon, nodeTokens } from "@/lib/feedHighlight";
 import { confColor, convScore } from "@/app/markets/marketsShared";
+import {
+  fetchHistoricalContext, fetchCalibrationStatus, fetchEntityPredictions,
+  type HistoricalContext, type CalibrationStatus, type PredictionRow,
+} from "@/lib/api";
 import type { GraphNode } from "@/lib/graph/types";
+import { TYPE, INK, FONT_MONO } from "@/lib/network/tokens";
 import type { ThemeIntelligence } from "@/lib/types";
+
+// session caches: memory context per theme, predictions per uid, calibration
+// once — the inspector must never hammer the M3 APIs on re-render
+const ctxCache = new Map<string, HistoricalContext | null>();
+const predCache = new Map<string, PredictionRow[] | null>();
+let calCache: CalibrationStatus | null | undefined;
 
 /**
  * ArgusMarketMap — the Feed hero, now rendered on the M4.1 Intelligence
@@ -43,13 +57,24 @@ interface Props {
 export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChange, clearNonce }: Props) {
   const beam = useActiveBeamTokens();
 
-  const model = useMemo(() => buildNetworkModel(themes, snapshot), [themes, snapshot]);
+  // The dominant DerivedNarrative — the SAME canonical derivation The Read
+  // projects (narrativeDerivation over the provisioned graph). It becomes the
+  // network's focal object; the projection never re-derives it.
+  const argus = useArgusIntelligence();
+  const narrative = useMemo(
+    () => (argus.ready ? deriveNarratives()[0] ?? null : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [argus.ready, argus.themes],
+  );
+
+  const model = useMemo(
+    () => buildNetworkModel(themes, snapshot, { narrative }),
+    [themes, snapshot, narrative]);
 
   // Today's Market Story = the SAME DerivedNarrative thesis The Read shows on
   // the Morning Brief, phrased in feed voice (P2 Feed unification, D6). Built
   // over the canonically provisioned graph (P2.0) from canonical themes, never
   // the personalized ordering - prioritization is never truth.
-  const argus = useArgusIntelligence();
   const read = useMemo(
     () => buildTheRead({ themes: argus.themes, graphReady: argus.ready }),
     [argus.themes, argus.ready],
@@ -58,8 +83,70 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
     () => buildMarketStoryVM(read, argus.themes, { riskRegime: snapshot.riskRegime }),
     [read, argus.themes, snapshot.riskRegime],
   );
-  const focusStory = useMemo(() => (focus ? buildFocusStory(focus, themes) : null), [focus, themes]);
-  const story = focus ? focusStory : globalStory;
+  // ── M3 memory + prediction accountability (session-cached, honest on failure)
+  // The active subject: the selected entity when the graph has navigated,
+  // else the dominant thesis's anchor theme.
+  const selectedNode = useMemo(
+    () => (focus ? model.nodes.find(n => n.id === focus.nodeId) ?? null : null),
+    [focus, model]);
+  const anchorThemeId = useMemo(() => {
+    const name = read.thesis.data?.members[0]?.name?.toLowerCase();
+    return name ? themes.find(t => t.name.toLowerCase() === name)?.id ?? null : null;
+  }, [read, themes]);
+  const activeThemeId = useMemo(() => {
+    if (!selectedNode) return anchorThemeId;
+    if (selectedNode.cls !== "theme") return null;
+    return themes.find(t => t.name.toLowerCase() === selectedNode.label.toLowerCase())?.id ?? null;
+  }, [selectedNode, anchorThemeId, themes]);
+  const activeUid = useMemo(() => {
+    if (selectedNode) return entityUid(selectedNode, themes);
+    return anchorThemeId ? `theme:ontology:${anchorThemeId}` : null;
+  }, [selectedNode, anchorThemeId, themes]);
+
+  const [memoryCtx, setMemoryCtx] = useState<HistoricalContext | null | undefined>(undefined);
+  const [predictions, setPredictions] = useState<PredictionRow[] | null | undefined>(undefined);
+  const [calibration, setCalibration] = useState<CalibrationStatus | null | undefined>(calCache);
+  useEffect(() => {
+    let alive = true;
+    if (activeThemeId) {
+      if (ctxCache.has(activeThemeId)) setMemoryCtx(ctxCache.get(activeThemeId));
+      else fetchHistoricalContext(activeThemeId).then(ctx => {
+        ctxCache.set(activeThemeId, ctx);
+        if (alive) setMemoryCtx(ctx);
+      });
+    } else setMemoryCtx(null);
+    if (activeUid) {
+      if (predCache.has(activeUid)) setPredictions(predCache.get(activeUid));
+      else fetchEntityPredictions(activeUid).then(rows => {
+        predCache.set(activeUid, rows);
+        if (alive) setPredictions(rows);
+      });
+    } else setPredictions(null);
+    if (calCache === undefined) {
+      fetchCalibrationStatus().then(cal => { calCache = cal; if (alive) setCalibration(cal); });
+    }
+    return () => { alive = false; };
+  }, [activeThemeId, activeUid]);
+
+  const dominantVM = useMemo(
+    () => buildDominantInspector({
+      read, story: globalStory, themes, model, regimeLabel:
+        snapshot.regimeLabel || (snapshot.riskRegime === "risk-on" ? "Risk-On" : snapshot.riskRegime === "risk-off" ? "Risk-Off" : "Mixed"),
+      historicalContext: focus ? undefined : memoryCtx,
+      calibration, predictions: focus ? undefined : predictions,
+    }),
+    [read, globalStory, themes, model, snapshot, memoryCtx, calibration, predictions, focus]);
+  const entityVM = useMemo(
+    () => (focus ? buildEntityDossier({
+      nodeId: focus.nodeId, model, themes,
+      historicalContext: memoryCtx, calibration, predictions,
+    }) : null),
+    [focus, model, themes, memoryCtx, calibration, predictions]);
+  const inspectorVM = entityVM ?? dominantVM;
+
+  // inspector → canvas navigation (chain hops, exposure chips)
+  const [navId, setNavId] = useState<string | null>(null);
+  useEffect(() => { if (!focus) setNavId(null); }, [focus]);
 
   const mapped = useMemo(() =>
     [...themes].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)).slice(0, 6).filter(t => (t.related_industries ?? []).length),
@@ -74,82 +161,52 @@ export function ArgusMarketMap({ themes, snapshot, isLoading, focus, onFocusChan
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-5">
-      {/* Signature header */}
-      <div className="flex items-center gap-3 mb-2.5">
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="tg-live-dot absolute inline-flex h-full w-full rounded-full" style={{ background: "#34d399" }} />
-          <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: "#34d399" }} />
-        </span>
-        <span className="text-[12px] font-black uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.96)" }}>Argus Market Map</span>
-        <span className="h-px flex-1" style={{ background: "rgba(255,255,255,0.07)" }} />
-        <span className="text-[9.5px] font-bold uppercase tracking-[0.08em] shrink-0" style={{ color: regimeColor }}>{regimeLabel}</span>
-        {!isLoading && avgConv > 0 && (
-          <span className="text-[9.5px] font-bold tabular-nums shrink-0" style={{ color: confColor(avgConv) }}>Conv {convScore(avgConv)}</span>
-        )}
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-3.5">
-        {/* The network */}
-        <div className="lg:col-span-2">
-          {isLoading ? (
-            <div className="w-full rounded-xl border animate-pulse" style={{ height: 440, borderColor: "rgba(148,163,184,0.18)", background: "rgba(5,9,16,0.6)" }} />
-          ) : (
-            <IntelligenceNetwork model={model} height={440}
-              onFocusChange={onFocusChange} clearNonce={clearNonce} beamTokens={beam}
-              onHoverChange={n => n ? setBeacon(nodeTokens(n)) : releaseBeacon()} />
-          )}
-        </div>
-
-        {/* Today's Market Story, floats beside the map; depth from a soft wash, no frame */}
-        <div className="relative px-1 pt-1 flex flex-col">
-          <div aria-hidden className="absolute -inset-x-2 -top-3 bottom-0 -z-10 pointer-events-none rounded-2xl"
-            style={{ background: "radial-gradient(120% 80% at 100% 0%, rgba(30,42,64,0.35), transparent 70%)" }} />
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: focus ? "#7cc7d8" : "rgba(255,255,255,0.5)" }}>
-              {focus ? "Focus Read" : "Today's Market Story"}
-            </span>
-            <span className="ml-auto text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
-              style={focus
-                ? { color: "#7cc7d8", background: "rgba(82,176,200,0.14)" }
-                : { color: regimeColor, background: `${regimeColor}1a` }}>
-              {focus ? focusKindLabel(focus.kind) : regimeLabel}
-            </span>
-          </div>
-
-          {/* Focus headline, what the selected node is */}
-          {!isLoading && focus && (
-            <p className="text-[13px] font-bold leading-tight mb-2" style={{ color: "rgba(255,255,255,0.94)" }}>{focus.label}</p>
-          )}
-
-          {isLoading ? (
-            <div className="space-y-2 animate-pulse">
-              {[0, 1, 2, 3].map(i => <div key={i} className="h-3 rounded" style={{ background: "rgba(255,255,255,0.05)", width: `${90 - i * 8}%` }} />)}
-            </div>
-          ) : story ? (
+      {isLoading ? (
+        <div className="w-full rounded-xl border animate-pulse" style={{ height: 500, borderColor: "rgba(148,163,184,0.16)", background: "rgba(5,9,16,0.6)" }} />
+      ) : (
+        <IntelligenceNetwork model={model} height={480}
+          onFocusChange={onFocusChange} clearNonce={clearNonce} beamTokens={beam}
+          focusId={navId}
+          onHoverChange={n => n ? setBeacon(nodeTokens(n)) : releaseBeacon()}
+          railMeta={
             <>
-              <p className="text-[12.5px] leading-relaxed" style={{ color: "rgba(255,255,255,0.82)" }}>{story.paragraph}</p>
-              <div className="mt-3 pt-3 border-t flex items-start gap-2" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-                <span className="text-[8px] font-bold uppercase tracking-wide shrink-0 mt-0.5" style={{ color: regimeColor }}>Watch</span>
-                <p className="text-[11px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>{story.watch}</p>
-              </div>
-              {story.movers.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {story.movers.map(m => (
-                    <span key={m} className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.58)" }}>{m}</span>
-                  ))}
-                </div>
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="tg-live-dot absolute inline-flex h-full w-full rounded-full" style={{ background: "#34d399" }} />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ background: "#34d399" }} />
+              </span>
+              <span className="font-bold uppercase shrink-0" style={{ fontSize: TYPE.xs, letterSpacing: "0.08em", color: regimeColor }}>{regimeLabel}</span>
+              {avgConv > 0 && (
+                <span className="font-bold tabular-nums shrink-0" style={{ fontSize: TYPE.xs, fontFamily: FONT_MONO, color: confColor(avgConv) }}>Conv {convScore(avgConv)}</span>
               )}
-              <p className="text-[8.5px] mt-auto pt-3" style={{ color: "rgba(255,255,255,0.28)" }}>
-                {focus
-                  ? "The feed below is filtered to this node · click the map background or press Esc to return to Global Market"
-                  : "Select any node to drive the feed · hover to trace its transmission"}
-              </p>
             </>
-          ) : (
-            <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Reading the tape, the market story resolves as themes firm up.</p>
-          )}
-        </div>
-      </div>
+          }
+          aside={
+            <>
+              <div className="flex items-center">
+                <span className="ml-auto font-bold uppercase rounded"
+                  style={{ fontSize: TYPE.xs, letterSpacing: "0.06em", padding: "2px 8px",
+                           ...(focus
+                             ? { color: "#7cc7d8", background: "rgba(82,176,200,0.14)" }
+                             : { color: regimeColor, background: `${regimeColor}1a` }) }}>
+                  {focus ? focusKindLabel(focus.kind) : "Dominant Thesis"}
+                </span>
+              </div>
+              {inspectorVM ? (
+                <>
+                  <NetworkInspector vm={inspectorVM} onNavigate={setNavId} />
+                  <p className="mt-auto" style={{ fontSize: TYPE.xs, color: INK.whisper, paddingTop: 8 }}>
+                    {focus
+                      ? "The feed below is filtered to this node · Esc returns to the dominant thesis"
+                      : "Select any node for its dossier · hover to trace its transmission"}
+                  </p>
+                </>
+              ) : (
+                <p style={{ fontSize: TYPE.sm, color: INK.support }}>Reading the tape — the market story resolves as themes firm up.</p>
+              )}
+            </>
+          }
+        />
+      )}
     </section>
   );
 }
