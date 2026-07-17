@@ -1265,6 +1265,11 @@ _WIM: dict[str, str] = {
 }
 
 def _why_it_matters(topics: list[str], show_name: str) -> str:
+    # LEGACY-PATH (IRE-1): canned per-topic prose — exactly the "generic prose
+    # filling a gap" the reasoning contract bans (Part 8). Earliest safe
+    # removal: IRE-2, replacing the string with a designed absence on the
+    # episode card (Listen presents evidence density, not synthesized "why").
+    # Do not add topics or new consumers.
     for t in topics:
         if t in _WIM:
             return _WIM[t]

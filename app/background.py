@@ -480,6 +480,23 @@ def run_pipeline(
         events=events,
     )
 
+    # ── Canonical Explanations (IRE-1) ─────────────────────────────────────────
+    # One backend Explanation per admitted event (stages R0-R3 live; memory,
+    # stakes and falsifiers ship as honest gated sections). Also populates each
+    # event's typed transmission_chain — the legacy `transmission` prose string
+    # stays untouched for compatibility. Built from the same deterministic
+    # narrative graph the M3.2 recorder derives. Wrapped so an assembly failure
+    # never breaks the feed.
+    try:
+        from app.explanations import build_explanations
+        from app.narrative_graph import build_narrative_graph
+        explanations = build_explanations(
+            events, theme_intelligence, graph=build_narrative_graph(feed))
+        feed.explanations = {eid: ex.to_dict() for eid, ex in explanations.items()}
+    except Exception:
+        log.exception("[bg] explanation assembly FAILED — continuing (feed unaffected)")
+        feed.explanations = {}
+
     # ── Institutional memory (M3.1 themes + M3.2 graph/narratives) ─────────────
     # Persist the canonical daily snapshots to Supabase AFTER the ThemeMemory
     # update and full feed assembly, before the cache publish in _refresh_all —

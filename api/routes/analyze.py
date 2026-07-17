@@ -1,6 +1,14 @@
 """
 api/routes/analyze.py — On-demand AI analysis endpoint
 
+LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): these endpoints
+generate per-request LLM interpretation OUTSIDE the spine — no evidence
+linkage, no determinism, no decomposition. This is the parallel reasoning
+path the engine exists to retire: when the StoryCard/Analyze panels consume
+the canonical Explanation (FeedResponse.explanations, IRE-5), these endpoints
+are removed. Do not add fields or new consumers; new meaning lands in
+app/explanations.py.
+
 Two use-cases:
   POST /api/analyze/        — quick 3-field analysis (summary / why / impact)
   POST /api/analyze/deep    — lazy deep analysis (who benefits/loses + trade angle)

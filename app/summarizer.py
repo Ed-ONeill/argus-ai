@@ -1,6 +1,14 @@
 """
 app/summarizer.py — AI enrichment for Market Feed items
 
+LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1, audit R1/R2):
+WHY IT MATTERS and IMPACT are LLM-minted interpretation, superseded as
+reasoning by the canonical backend Explanation (app/explanations.py —
+evidence/position/delta sections). They survive strictly as labeled voice
+riding BESIDE the Explanation, never inside or as it, and are demoted when
+Feed cards consume Explanations (IRE-5). Do not add new interpretive fields
+here; new meaning lands in the reasoning engine.
+
 Produces three structured fields per article:
   SUMMARY       — 2-sentence factual "what happened"
   WHY IT MATTERS — 1-sentence investor implication

@@ -1,6 +1,13 @@
 /**
  * lib/evidenceEngine.ts - the Argus Evidence Engine.
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): this module is
+ * the session-scoped prototype of the engine's R1/R3 stages. Canonical
+ * reasoning now assembles on the backend (app/explanations.py), served per
+ * event as FeedResponse.explanations. During the IRE migration compare outputs
+ * against the backend sections; new reasoning capability lands in the backend
+ * engine, not here.
+ *
  * The graph stores facts, the inference engine reasons, the narrative engine explains
  * propagation. The Evidence Engine explains WHY Argus should believe a conclusion:
  * it scores the quality, freshness, independence, and cross-source confirmation of the

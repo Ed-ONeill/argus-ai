@@ -59,6 +59,9 @@ class ProcessedFeed:
     industry_activation: list[IndustryActivation] = field(default_factory=list)
     # Market Events (F1 — the editorial unit: ranked events, articles demoted to evidence)
     events: list[MarketEvent] = field(default_factory=list)
+    # Canonical Explanations (IRE-1 — one per admitted event, keyed by event id;
+    # stored as serialized dicts so old pickles deserialize without error)
+    explanations: dict[str, dict] = field(default_factory=dict)
 
 
 class ProcessedFeedCache:

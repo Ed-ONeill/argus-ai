@@ -71,12 +71,65 @@ export interface MarketEvent {
   theme_ids:           string[];
   confidence:          number;   // max linked theme conviction (0 when unthemed)
   editorial_score:     number;
+  // LEGACY (IRE-1): LLM-derived string; superseded by the Explanation's
+  // evidence/position sections. Do not build new consumers on it.
   why_it_matters:      string;
+  // LEGACY (IRE-1): prose transmission; superseded by transmission_chain.
   transmission:        string | null;
+  // IRE-1: typed transmission chain — recorded/curated hops with rel UIDs
+  // (the strongest linked theme's chain; [] when no recorded path exists).
+  transmission_chain?: TransmissionHop[];
   dominant:            boolean;  // feeds the current dominant thesis
   developing:          boolean;  // single-source, awaiting corroboration
   reporting_period:    string | null;   // earnings: "Q1".."Q4" | "FY" when stated
   merged_event_ids:    string[];        // cluster ids folded into this event
+}
+
+// ── Canonical Explanation (IRE-1) ────────────────────────────────────────────
+// ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1: the backend-assembled reasoning
+// contract, one per admitted event. Consumers render these sections; they
+// never compute their own reasoning. Frontend reasoning engines are
+// LEGACY-PATH prototypes during the IRE migration.
+
+export interface TransmissionHop {
+  source_uid:   string;          // canonical UID (driver:… | theme:… | regime:…)
+  relationship: string;          // recorded verb, verbatim (drives | pressures | exposed_to | …)
+  target_uid:   string;
+  rel_uid:      string;          // rel:{source}|{type}|{target}
+  basis:        "recorded_graph" | "curated_ontology";
+  strength:     number | null;   // null when the record carries none — never invented
+  confidence:   number | null;   // 0..1
+  source_label: string | null;
+}
+
+export type ExplanationStatus =
+  | "available" | "insufficient_evidence" | "not_applicable" | "conflicting"
+  | "unavailable" | "gated" | "unchanged" | "developing";
+
+export interface ExplanationSection {
+  status: ExplanationStatus;
+  data:   Record<string, unknown>;
+  note:   string;
+}
+
+export interface Explanation {
+  event_id:       string;
+  event_uid:      string;        // event:cluster:<id>
+  schema_version: number;
+  engine_version: string;        // "ire-1.0"
+  sections: {
+    identity:   ExplanationSection;
+    evidence:   ExplanationSection;
+    position:   ExplanationSection;
+    delta:      ExplanationSection;
+    counter:    ExplanationSection;
+    confidence: ExplanationSection;
+    memory:     ExplanationSection;   // gated until IRE-4
+    stakes:     ExplanationSection;   // gated until IRE-4/5
+    falsifiers: ExplanationSection;   // gated until IRE-2
+  };
+  provenance:   Record<string, unknown>;
+  content_hash: string;
 }
 
 export interface FeedResponse {
@@ -99,6 +152,9 @@ export interface FeedResponse {
   industry_activation: IndustryActivation[];
   // Market Events (F1) — ranked editorial units (may be absent on stale caches)
   events?:            MarketEvent[];
+  // Canonical Explanations (IRE-1) — keyed by event id; may be absent on
+  // stale caches. The reasoning contract consumers read instead of computing.
+  explanations?:      Record<string, Explanation>;
   // Cache metadata
   is_stale:           boolean;
   generated_at:       string;   // ISO-8601

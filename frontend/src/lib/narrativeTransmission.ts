@@ -1,6 +1,12 @@
 /**
  * lib/narrativeTransmission.ts - the Narrative Transmission Engine.
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): session-scoped
+ * prototype of the engine's R2 (Locate) stage. Canonical transmission for
+ * events is the typed transmission_chain assembled in app/explanations.py
+ * (recorded hops with relationship UIDs). Compare outputs during migration;
+ * new reasoning capability lands in the backend engine.
+ *
  * The graph stores facts, the inference engine draws conclusions. This engine
  * explains HOW a narrative moves through markets: where it originates, how it
  * spreads, what confirms it, who it affects, and what likely comes next. It reads

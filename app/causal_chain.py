@@ -4,6 +4,13 @@ app/causal_chain.py — Lightweight causal reasoning over active market themes.
 Walks causal_inputs/causal_outputs from THEME_ONTOLOGY to build directional
 narrative chains between active themes. Maximum chain depth: 4 nodes.
 Zero LLM calls.
+
+LEGACY-PATH at the EVENT level (IRE-1, audit R3): the prose chain string this
+module feeds into theme.causal_narrative — and from there into the legacy
+MarketEvent.transmission — is superseded for events by the typed
+transmission_chain assembled in app/explanations.py (recorded hops with
+relationship UIDs). Theme-level causal_narrative remains served until theme
+consumers migrate; do not extend the prose format.
 """
 
 from __future__ import annotations

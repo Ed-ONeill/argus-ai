@@ -116,6 +116,9 @@ class FeedResponse(BaseModel):
     industry_activation: list[IndustryActivationSchema] = []
     # Market Events (F1) — ranked editorial units; empty until first pipeline run
     events:             list["MarketEventSchema"] = []
+    # Canonical Explanations (IRE-1) — one per admitted event, keyed by event id.
+    # The reasoning contract every consumer reads instead of computing its own.
+    explanations:       dict[str, "ExplanationSchema"] = {}
     # Cache metadata
     is_stale:           bool
     generated_at:       str
@@ -287,11 +290,35 @@ class MarketEventSchema(BaseModel):
     confidence:          int = 0
     editorial_score:     float = 0.0
     why_it_matters:      str = ""
+    # LEGACY (IRE-1): prose transmission, retained for compatibility only.
     transmission:        str | None = None
+    # IRE-1: typed transmission chain — recorded/curated hops with rel UIDs.
+    transmission_chain:  list[dict[str, Any]] = []
     dominant:            bool = False
     developing:          bool = False
     reporting_period:    str | None = None   # earnings: "Q1".."Q4" | "FY" when stated
     merged_event_ids:    list[str] = []      # cluster ids folded into this event
+
+
+class ExplanationSectionSchema(BaseModel):
+    """One status-wrapped section of a canonical Explanation (IRE-1)."""
+    status: str            # available | insufficient_evidence | not_applicable |
+                           # conflicting | unavailable | gated | unchanged | developing
+    data:   dict[str, Any] = {}
+    note:   str = ""
+
+
+class ExplanationSchema(BaseModel):
+    """IRE-1 — the canonical backend Explanation for one admitted event
+    (ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1). Consumers read these sections;
+    they never compute their own reasoning."""
+    event_id:       str
+    event_uid:      str
+    schema_version: int
+    engine_version: str
+    sections:       dict[str, ExplanationSectionSchema]
+    provenance:     dict[str, Any] = {}
+    content_hash:   str = ""
 
 
 class FeedStatusResponse(BaseModel):
@@ -504,6 +531,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             editorial_score     = ev.editorial_score,
             why_it_matters      = ev.why_it_matters,
             transmission        = ev.transmission,
+            transmission_chain  = getattr(ev, "transmission_chain", []) or [],
             dominant            = ev.dominant,
             developing          = ev.developing,
             reporting_period    = getattr(ev, "reporting_period", None),
@@ -544,6 +572,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         clusters=cluster_schemas,
         what_matters_now=wmn_schemas,
         events=event_schemas,
+        explanations=getattr(entry, "explanations", None) or {},
         is_stale=entry.is_refreshing,
         generated_at=entry.generated_at.isoformat(),
         cache_age_seconds=round(age, 1),

@@ -13,6 +13,7 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import CompanyDossier from "@/components/intel/CompanyDossier";
+import EventDossier from "@/components/intel/EventDossier";
 import { admitUid } from "@/lib/intel/dossier";
 import { TYPE, INK, BORDER, FONT_MONO } from "@/lib/network/tokens";
 
@@ -46,6 +47,16 @@ export default function IntelPage() {
     return (
       <div className="relative" style={{ background: "#0A0F1C", minHeight: "calc(100vh - 3.5rem)" }}>
         <CompanyDossier ticker={admission.ticker} />
+      </div>
+    );
+  }
+
+  // IR-1: the event RECORD — the research note over one Market Event,
+  // consuming the canonical backend Explanation.
+  if (admission.state === "event") {
+    return (
+      <div className="relative" style={{ background: "#0A0F1C", minHeight: "calc(100vh - 3.5rem)" }}>
+        <EventDossier clusterId={admission.clusterId} />
       </div>
     );
   }

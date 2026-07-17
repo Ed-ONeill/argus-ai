@@ -2,6 +2,12 @@
  * lib/causalMap.ts - the causal intelligence layer behind the Explorer network
  * (Sprint 3B) and the drawer's relationship map.
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): the edge-trend
+ * derivation and edge explanations here are session-scoped prototypes of the
+ * engine's R2/R3 stages. Canonical event chains are served on the backend
+ * Explanation (position section); compare outputs during migration and land
+ * new reasoning capability in the backend engine, not here.
+ *
  * Read-only projection of the shared intelligence graph into the MapVM the
  * presentation layer renders. Three responsibilities, no UI:
  *

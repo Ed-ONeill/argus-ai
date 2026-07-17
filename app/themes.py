@@ -245,6 +245,11 @@ def _make_thesis(cluster: StoryCluster) -> str:
     """
     Return a 1-sentence interpretation of why this matters for markets.
 
+    LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1 §1.2 R1): this
+    prefers LLM-written prose as display voice. The canonical event reasoning
+    is the backend Explanation (app/explanations.py); this string survives as
+    labeled voice only and is demoted when WMN consumes Explanations (IRE-5).
+
     Priority:
       1. why_it_matters — LLM-written investment implication (most interpretive).
       2. First sentence of AI summary — factual fallback.

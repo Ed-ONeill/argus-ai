@@ -13,7 +13,7 @@
  * in anything that feeds layout or identity.
  */
 
-import type { FeedResponse, MarketEvent, ThemeIntelligence } from "@/lib/types";
+import type { Explanation, ExplanationSection, FeedResponse, MarketEvent, ThemeIntelligence, TransmissionHop } from "@/lib/types";
 import { tickerInfo } from "@/lib/tickerMetadata";
 import { themeWatch } from "@/lib/themeTransmission";
 import { cleanThemeName } from "@/app/markets/marketsShared";
@@ -43,10 +43,18 @@ export function companyUid(ticker: string): string {
  */
 export type UidAdmission =
   | { state: "company"; ticker: string; uid: string }
+  | { state: "event"; clusterId: string; uid: string }
   | { state: "reserved"; uid: string; kind: string }
   | { state: "invalid"; uid: string };
 
 const TICKER_SHAPE = /^[A-Z]{1,5}$/;
+// Cluster ids are exact content-hash keys (md5[:12] today) — matched, never
+// transformed: an id is an identity, not a display label.
+const CLUSTER_SHAPE = /^[A-Za-z0-9_-]{4,64}$/;
+
+export function eventUid(clusterId: string): string {
+  return `event:cluster:${clusterId}`;
+}
 
 export function admitUid(raw: string): UidAdmission {
   const parsed = parseUid(raw);
@@ -54,6 +62,15 @@ export function admitUid(raw: string): UidAdmission {
   if (parsed.type === "company" && parsed.namespace === "ticker") {
     const t = parsed.key.toUpperCase();
     if (TICKER_SHAPE.test(t)) return { state: "company", ticker: t, uid: companyUid(t) };
+    return { state: "invalid", uid: raw };
+  }
+  // IR-1: the event kind ships as a RECORD (EI V1 §2.2) — identity is the F1
+  // cluster id, resolver is exact-match against the live cycle, producing
+  // engine is the canonical Explanation assembler (app/explanations.py).
+  if (parsed.type === "event" && parsed.namespace === "cluster") {
+    if (CLUSTER_SHAPE.test(parsed.key)) {
+      return { state: "event", clusterId: parsed.key, uid: eventUid(parsed.key) };
+    }
     return { state: "invalid", uid: raw };
   }
   return { state: "reserved", uid: raw, kind: parsed.type };
@@ -377,5 +394,202 @@ export function buildCompanyDossier(ticker: string, feed: FeedResponse | null): 
     coverage,
     watch: buildWatch(linked, name),
     linkedThemes: linked,
+  };
+}
+
+// ── The event kind builder (IR-1) ───────────────────────────────────────────────
+// An event is a RECORD, not a file (EI V1 §2.2): a moment with identity,
+// evidence, corroboration, transmission, and model impact — no accruing
+// ledger, no personal watch list. The research note is a PURE PROJECTION of
+// the canonical backend Explanation (IRE-1, app/explanations.py): every
+// section below passes the engine's status and data through; nothing here
+// computes meaning, ranks evidence, or invents a sentence the records cannot
+// back. Composed prose (executive summary, watch conditions) is glue words
+// over recorded fields only, and renders under a `derived` provenance chip.
+
+// Typed views over Explanation section payloads (mirrors app/explanations.py).
+export interface XAttribution { company: string; uid: string; class: string; reason?: string | null }
+export interface XIdentity {
+  event_uid: string; title: string; event_type: string;
+  lane: "developing" | "corroborated";
+  first_seen: string; last_updated: string;
+  reporting_period: string | null;
+  subjects: { companies: string[]; industries: string[]; themes: string[] };
+  attribution: XAttribution[];
+}
+export interface XEvidenceItem {
+  source: string; title: string; url: string; published: string | null;
+  tier: number; kind: string; qualified: boolean;
+}
+export interface XEvidence {
+  items: XEvidenceItem[]; source_count: number; corroboration_count: number;
+  best_tier: number; evidence_refs: string[];
+}
+export interface XThemeRef {
+  uid: string; name: string; confidence: number;
+  momentum_label: string; signal_quality: string;
+}
+export interface XChain {
+  theme_uid: string; theme: string; hops: TransmissionHop[];
+  weakest_hop_confidence: number | null;
+}
+export interface XPosition {
+  themes: XThemeRef[]; chains: XChain[];
+  regime: { label: string; uid: string } | null;
+}
+export interface XDeltaChange {
+  theme_uid: string; theme: string; momentum_delta: number;
+  momentum_label: string; material: boolean;
+}
+export interface XDelta { changes: XDeltaChange[]; deadband: number }
+export interface XCounterItem {
+  kind: "recorded_pressure" | "recorded_weakening_trend";
+  rel_uid?: string; source_uid?: string; source_label?: string | null;
+  target_uid?: string; theme_uid?: string; theme: string;
+  strength?: number | null; confidence?: number | null;
+  momentum_delta?: number; momentum_label?: string; basis: string;
+}
+export interface XCounter { searched: string[]; items: XCounterItem[] }
+export interface XConfidenceFactor { factor: string; value: unknown; detail: string }
+export interface XConfidence {
+  band: "insufficient_signal" | "weak" | "moderate" | "strong";
+  factors: XConfidenceFactor[];
+  cap: { capped_to: string; reason: string } | null;
+  basis_sections: string[];
+  probability: null;
+}
+
+export function sectionData<T>(s: ExplanationSection | undefined): T | null {
+  if (!s || !s.data || Object.keys(s.data).length === 0) return null;
+  return s.data as unknown as T;
+}
+
+export interface EventWatchItem {
+  text: string;
+  source: string;               // where the condition is recorded
+  gated?: boolean;              // reserved engine sections rendered verbatim
+}
+
+export interface EventDossier {
+  kind: "event";
+  uid: string;
+  clusterId: string;
+  /** Whether the event is present in the current feed cycle. */
+  found: boolean;
+  event: MarketEvent | null;
+  /** The canonical backend Explanation — the record's reasoning, verbatim. */
+  explanation: Explanation | null;
+  /** Executive summary — deterministic glue over the Explanation's recorded
+      fields; renders as `derived`. Empty when no explanation exists. */
+  executive: string[];
+  /** Watch conditions — recorded thresholds and lane rules only, plus the
+      engine's gated sections rendered verbatim. Never invented analysis. */
+  watch: EventWatchItem[];
+}
+
+const CLASS_PROSE: Record<string, string> = {
+  macro: "Macro", policy: "Policy", earnings: "Earnings", ma: "M&A",
+  market_event: "Market", single_name: "Company", price_echo: "Price echo",
+};
+
+function executiveSummary(ex: Explanation): string[] {
+  const identity = sectionData<XIdentity>(ex.sections.identity);
+  const evidence = sectionData<XEvidence>(ex.sections.evidence);
+  const position = sectionData<XPosition>(ex.sections.position);
+  const delta = sectionData<XDelta>(ex.sections.delta);
+  const confidence = sectionData<XConfidence>(ex.sections.confidence);
+  const lines: string[] = [];
+
+  // 1 — what this record is, on what basis (identity + evidence)
+  if (identity && evidence) {
+    const cls = CLASS_PROSE[identity.event_type] ?? "Market";
+    const basis = identity.lane === "developing"
+      ? "reported by one qualified source; not yet corroborated"
+      : `corroborated by ${evidence.corroboration_count} distinct qualified sources (${evidence.source_count} total)`;
+    lines.push(`${cls} event, first recorded ${identity.first_seen.slice(0, 10)}, ${basis}.`);
+  }
+
+  // 2 — where it sits in the model (position)
+  if (ex.sections.position.status === "not_applicable") {
+    lines.push("It feeds no standing thesis — a finding, not a failure.");
+  } else if (position && position.themes.length) {
+    const top = position.themes[0];
+    const more = position.themes.length > 1 ? ` and ${position.themes.length - 1} further ${position.themes.length === 2 ? "thesis" : "theses"}` : "";
+    const regime = position.regime ? `, within the ${position.regime.label} regime` : "";
+    lines.push(`It feeds ${cleanThemeName(top.name)} (conviction ${top.confidence}, ${top.momentum_label})${more}${regime}.`);
+  }
+
+  // 3 — what it changed (delta — the quiet answer is a complete answer)
+  if (ex.sections.delta.status === "unchanged") {
+    lines.push("No linked thesis moved materially this cycle.");
+  } else if (delta) {
+    const material = delta.changes.filter(c => c.material);
+    if (material.length) {
+      lines.push(material.map(c =>
+        `${cleanThemeName(c.theme)} moved ${c.momentum_delta > 0 ? "+" : ""}${c.momentum_delta} — beyond the ±${delta.deadband} deadband`).join("; ") + ".");
+    }
+  }
+
+  // 4 — how sure, and what caps it (confidence + counter)
+  if (confidence) {
+    lines.push(confidence.cap
+      ? `Confidence: ${confidence.band} — capped by recorded counterevidence (detailed below).`
+      : `Confidence: ${confidence.band}, decomposed below.`);
+  }
+  return lines;
+}
+
+function eventWatch(ex: Explanation): EventWatchItem[] {
+  const identity = sectionData<XIdentity>(ex.sections.identity);
+  const position = sectionData<XPosition>(ex.sections.position);
+  const delta = sectionData<XDelta>(ex.sections.delta);
+  const items: EventWatchItem[] = [];
+
+  // Recorded lane rule: the developing promotion condition is engine law.
+  if (identity?.lane === "developing") {
+    items.push({
+      text: "A second qualified source. The event promotes out of the developing lane automatically the cycle one lands; until then it is excluded from the lead and the slots.",
+      source: "F2 corroboration lane — recorded rule",
+    });
+  }
+  // Recorded threshold: the material-change deadband per linked thesis.
+  const deadband = delta?.deadband ?? 3;
+  for (const t of (position?.themes ?? []).slice(0, 3)) {
+    items.push({
+      text: `A recorded move beyond ±${deadband} conviction points on ${cleanThemeName(t.name)} (now ${t.confidence}, ${t.momentum_label}) — the canonical bar for material change.`,
+      source: "ThemeMemory deadband — recorded threshold",
+    });
+  }
+  // The engine's reserved sections, verbatim — honest gates, never filler.
+  if (ex.sections.falsifiers.status === "gated" && ex.sections.falsifiers.note) {
+    items.push({ text: ex.sections.falsifiers.note, source: "falsifiers — engine section", gated: true });
+  }
+  if (ex.sections.stakes.status === "gated" && ex.sections.stakes.note) {
+    items.push({ text: ex.sections.stakes.note, source: "stakes — engine section", gated: true });
+  }
+  return items;
+}
+
+/**
+ * Build the event research note from the live feed cycle. Pure projection of
+ * (a) the admitted MarketEvent and (b) its canonical Explanation, keyed by the
+ * same cluster id. An id not in the current cycle returns found:false — the
+ * page renders the designed not-in-cycle state (event records persist as
+ * archive evidence references; a durable event archive is future work).
+ */
+export function buildEventDossier(clusterId: string, feed: FeedResponse | null): EventDossier | null {
+  if (!feed) return null;
+  const event = (feed.events ?? []).find(
+    e => e.id === clusterId || (e.merged_event_ids ?? []).includes(clusterId)) ?? null;
+  const explanation = feed.explanations?.[event?.id ?? clusterId] ?? null;
+  return {
+    kind: "event",
+    uid: eventUid(clusterId),
+    clusterId,
+    found: !!event,
+    event,
+    explanation,
+    executive: explanation ? executiveSummary(explanation) : [],
+    watch: explanation ? eventWatch(explanation) : [],
   };
 }

@@ -1,6 +1,12 @@
 /**
  * lib/crossIntel.ts - the cross-page thematic aggregator (Phase 3).
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1, audit R3): the
+ * firstSentence() string surgery over causal_narrative prose is exactly what
+ * the typed transmission_chain retires — read chains from the backend
+ * Explanation instead as consumers migrate (IRE-5). Do not extend the prose
+ * processing here.
+ *
  * Given the active intelligence context, resolve it to a live theme and gather
  * everything that connects to it across the product: related companies, sectors,
  * stories, M&A deals, private capital read, and Listen conversations, plus

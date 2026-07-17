@@ -200,7 +200,15 @@ class MarketEvent:
     confidence: int = 0           # max linked theme conviction (0 when unthemed)
     editorial_score: float = 0.0
     why_it_matters: str = ""
-    transmission: str | None = None   # strongest linked theme's causal narrative
+    # LEGACY (IRE-1): prose causal narrative of the strongest linked theme.
+    # Superseded by `transmission_chain`; retained for compatibility during
+    # the consumer migration, then removed.
+    transmission: str | None = None
+    # IRE-1: typed transmission chain — ordered hops of recorded graph edges /
+    # curated ontology associations, each carrying its relationship UID.
+    # Populated by app/explanations.py at the spine (the position section's
+    # strongest chain); [] when no recorded transmission path exists.
+    transmission_chain: list[dict] = field(default_factory=list)
     dominant: bool = False        # feeds the current dominant thesis
     developing: bool = False      # single qualified source, awaiting corroboration (F2 lane)
     reporting_period: str | None = None       # earnings events: "Q1".."Q4" | "FY" when stated
@@ -222,6 +230,7 @@ class MarketEvent:
             "editorial_score": self.editorial_score,
             "why_it_matters": self.why_it_matters,
             "transmission": self.transmission,
+            "transmission_chain": self.transmission_chain,
             "dominant": self.dominant, "developing": self.developing,
             "reporting_period": self.reporting_period,
             "merged_event_ids": self.merged_event_ids,

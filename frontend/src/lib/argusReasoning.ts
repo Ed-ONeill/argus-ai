@@ -1,6 +1,12 @@
 /**
  * lib/argusReasoning.ts, the Argus reasoning engine.
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): session-scoped
+ * deal reasoning (signal profiles, next-event likelihoods) computed locally.
+ * Canonical event reasoning assembles on the backend (app/explanations.py);
+ * M&A reads migrate to Explanation consumption in the EI/IRE-5 ordering.
+ * Do not extend; new reasoning capability lands in the backend engine.
+ *
  * Turns a single event (today: an M&A deal) into proprietary intelligence:
  * a narrative-propagation chain, a multi-axis signal profile, probabilistic
  * next-event predictions, and a historical-pattern memory, each with explicit

@@ -1,6 +1,13 @@
 /**
  * lib/inferenceEngine.ts - the Argus Inference Engine (v1).
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): this module is
+ * the session-scoped prototype of the engine's R2/R3 stages. Canonical
+ * reasoning now assembles on the backend (app/explanations.py), served per
+ * event as FeedResponse.explanations. During the IRE migration compare outputs
+ * against the backend sections; new reasoning capability lands in the backend
+ * engine, not here.
+ *
  * The Market Intelligence Graph stores facts (nodes + evidence-weighted edges).
  * This engine reads those facts and produces reasoned, explainable conclusions:
  * what is strengthening or weakening, why, what confirms it across sources, who

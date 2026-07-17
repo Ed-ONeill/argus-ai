@@ -10,8 +10,8 @@
  * view honesty, watch derivation), and determinism.
  */
 
-import { parseUid, admitUid, companyUid, buildCompanyDossier, classifyAttribution } from "./dossier";
-import type { FeedResponse, MarketEvent, ThemeIntelligence, EventEvidence } from "@/lib/types";
+import { parseUid, admitUid, companyUid, buildCompanyDossier, classifyAttribution, buildEventDossier, eventUid } from "./dossier";
+import type { Explanation, ExplanationSection, FeedResponse, MarketEvent, ThemeIntelligence, EventEvidence } from "@/lib/types";
 
 interface TestResult { name: string; ok: boolean; detail?: string }
 
@@ -86,8 +86,71 @@ function event(over: Partial<MarketEvent> = {}): MarketEvent {
   };
 }
 
-function feed(themes: ThemeIntelligence[], events: MarketEvent[]): FeedResponse {
-  return { theme_intelligence: themes, events } as unknown as FeedResponse;
+function feed(themes: ThemeIntelligence[], events: MarketEvent[],
+              explanations?: Record<string, Explanation>): FeedResponse {
+  return { theme_intelligence: themes, events, explanations } as unknown as FeedResponse;
+}
+
+// ── IR-1 fixtures: a canonical Explanation shaped like app/explanations.py ─────
+
+function xs(status: ExplanationSection["status"], data: Record<string, unknown> = {},
+            note = ""): ExplanationSection {
+  return { status, data, note };
+}
+
+function explanation(over: {
+  event_id?: string;
+  identity?: ExplanationSection; evidence?: ExplanationSection;
+  position?: ExplanationSection; delta?: ExplanationSection;
+  counter?: ExplanationSection; confidence?: ExplanationSection;
+} = {}): Explanation {
+  const event_id = over.event_id ?? "aaa111bbb222";
+  return {
+    event_id,
+    event_uid: `event:cluster:${event_id}`,
+    schema_version: 1,
+    engine_version: "ire-1.0",
+    sections: {
+      identity: over.identity ?? xs("available", {
+        event_uid: `event:cluster:${event_id}`, title: "Vertiv wins record datacenter order",
+        event_type: "single_name", lane: "corroborated",
+        first_seen: "2026-07-16T08:00:00+00:00", last_updated: "2026-07-16T10:00:00+00:00",
+        reporting_period: null,
+        subjects: { companies: ["company:ticker:VRT"], industries: [], themes: ["theme:legacy:power-infra"] },
+        attribution: [{ company: "VRT", uid: "company:ticker:VRT", class: "direct" }],
+      }),
+      evidence: over.evidence ?? xs("available", {
+        items: [], source_count: 2, corroboration_count: 2, best_tier: 1,
+        evidence_refs: [event_id],
+      }, "2 distinct qualified sources."),
+      position: over.position ?? xs("available", {
+        themes: [{ uid: "theme:legacy:power-infra", name: "Power Infrastructure",
+                   confidence: 78, momentum_label: "strengthening", signal_quality: "confirmed" }],
+        chains: [{ theme_uid: "theme:legacy:power-infra", theme: "Power Infrastructure",
+                   hops: [{ source_uid: "driver:ontology:datacenter-capex", relationship: "drives",
+                            target_uid: "theme:legacy:power-infra",
+                            rel_uid: "rel:driver:ontology:datacenter-capex|drives|theme:legacy:power-infra",
+                            basis: "recorded_graph", strength: 0.8, confidence: 0.75, source_label: "Datacenter Capex" }],
+                   weakest_hop_confidence: 0.75 }],
+        regime: { label: "AI Capex Expansion", uid: "regime:taxonomy:ai-capex-expansion" },
+      }),
+      delta: over.delta ?? xs("unchanged",
+        { changes: [{ theme_uid: "theme:legacy:power-infra", theme: "Power Infrastructure",
+                      momentum_delta: 2, momentum_label: "stable", material: false }], deadband: 3 },
+        "No material change: every linked theme is within the deadband."),
+      counter: over.counter ?? xs("insufficient_evidence",
+        { searched: ["recorded_pressures_edges", "recorded_theme_trend_deltas"], items: [] },
+        "Symmetric search executed; no recorded counterevidence found. Absence of recorded counterevidence is a coverage statement, not proof of consensus."),
+      confidence: over.confidence ?? xs("available", {
+        band: "moderate", factors: [], cap: null, basis_sections: [], probability: null,
+      }),
+      memory: xs("gated", {}, "Reserved (IRE-4): archive context is not consumed at assembly time."),
+      stakes: xs("gated", {}, "Reserved (IRE-4/5): prediction-ledger linkage."),
+      falsifiers: xs("gated", {}, "Reserved (IRE-2): no recorded falsifier is attached yet."),
+    },
+    provenance: { engine_version: "ire-1.0" },
+    content_hash: "abc123def456",
+  };
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────────
@@ -298,6 +361,102 @@ const tests: Array<[string, () => void]> = [
     const f = feed([theme()], [event()]);
     assert(JSON.stringify(buildCompanyDossier("VRT", f)) === JSON.stringify(buildCompanyDossier("VRT", f)),
            "deterministic");
+  }],
+
+  // ── IR-1: the event record (research note over the canonical Explanation) ───
+
+  ["admission law: the event kind is admitted as a record", () => {
+    const e = admitUid("event:cluster:aaa111bbb222");
+    assert(e.state === "event" && e.clusterId === "aaa111bbb222", "event admitted");
+    assert(e.state === "event" && e.uid === "event:cluster:aaa111bbb222", "canonical uid preserved");
+    assert(admitUid("event:cluster:!!bad!!").state === "invalid", "malformed cluster id invalid");
+    assert(admitUid("event:other:aaa111").state === "reserved", "unknown event namespace stays reserved");
+    assert(eventUid("abc") === "event:cluster:abc", "eventUid form");
+  }],
+
+  ["event record: pure projection of the canonical Explanation", () => {
+    const ex = explanation();
+    const d = buildEventDossier("aaa111bbb222", feed([theme()], [event()], { aaa111bbb222: ex }));
+    assert(d && d.found && d.event && d.explanation, "record built with explanation");
+    assert(d.explanation === ex, "the Explanation is passed through verbatim, never rebuilt");
+    assert(d.executive.length >= 3, "executive summary composed");
+    assert(d.executive[0].includes("corroborated by 2 distinct qualified sources"),
+           "lead states the basis from the evidence section");
+    assert(d.executive.some(s => s.includes("Power Infrastructure") && s.includes("conviction 78")),
+           "position voiced with figures");
+    assert(d.executive.some(s => s.includes("No linked thesis moved materially")),
+           "the quiet delta answer appears in the summary");
+    assert(d.executive.some(s => s.startsWith("Confidence: moderate")), "confidence band stated");
+  }],
+
+  ["event record: watch is recorded conditions plus verbatim gates — never invented", () => {
+    const d = buildEventDossier("aaa111bbb222", feed([theme()], [event()], { aaa111bbb222: explanation() }));
+    assert(d, "built");
+    assert(d.watch.some(w => w.text.includes("±3") && w.text.includes("Power Infrastructure")),
+           "the canonical deadband threshold is a watch condition");
+    const gated = d.watch.filter(w => w.gated);
+    assert(gated.length === 2, "falsifiers and stakes gates rendered");
+    assert(gated.every(w => w.text.startsWith("Reserved")), "engine notes verbatim");
+    const corroborated = d.watch.find(w => w.text.includes("second qualified source"));
+    assert(!corroborated, "corroborated events carry no promotion condition");
+  }],
+
+  ["event record: the developing lane adds the recorded promotion condition", () => {
+    const ex = explanation({
+      identity: xs("available", {
+        event_uid: "event:cluster:aaa111bbb222", title: "t", event_type: "single_name",
+        lane: "developing", first_seen: "2026-07-16T08:00:00+00:00",
+        last_updated: "2026-07-16T08:00:00+00:00", reporting_period: null,
+        subjects: { companies: [], industries: [], themes: [] }, attribution: [],
+      }),
+    });
+    const d = buildEventDossier("aaa111bbb222",
+      feed([theme()], [event({ developing: true, corroboration_count: 1 })], { aaa111bbb222: ex }));
+    assert(d, "built");
+    assert(d.executive[0].includes("one qualified source; not yet corroborated"),
+           "developing basis stated in the lead");
+    assert(d.watch.some(w => w.text.includes("second qualified source")),
+           "promotion condition is the first watch item");
+  }],
+
+  ["event record: material delta and counterevidence reach the summary honestly", () => {
+    const ex = explanation({
+      delta: xs("available",
+        { changes: [{ theme_uid: "t", theme: "Power Infrastructure", momentum_delta: 8,
+                      momentum_label: "strengthening", material: true }], deadband: 3 }),
+      counter: xs("conflicting", { searched: [], items: [{ kind: "recorded_pressure", theme: "Power Infrastructure", basis: "recorded_graph" }] }),
+      confidence: xs("conflicting", { band: "moderate", factors: [],
+        cap: { capped_to: "moderate", reason: "capped" }, basis_sections: [], probability: null }),
+    });
+    const d = buildEventDossier("aaa111bbb222", feed([theme()], [event()], { aaa111bbb222: ex }));
+    assert(d, "built");
+    assert(d.executive.some(s => s.includes("+8") && s.includes("±3")), "material move stated with the deadband");
+    assert(d.executive.some(s => s.includes("capped by recorded counterevidence")),
+           "the cap is in the summary, not hidden");
+  }],
+
+  ["event record: not in cycle is a designed state; missing explanation is honest", () => {
+    const gone = buildEventDossier("notincycle01", feed([theme()], [event()], {}));
+    assert(gone && !gone.found && gone.event === null, "not-in-cycle → found:false, nothing simulated");
+    assert(gone.uid === "event:cluster:notincycle01", "identity preserved for the state copy");
+    const bare = buildEventDossier("aaa111bbb222", feed([theme()], [event()]));   // no explanations map
+    assert(bare && bare.found && bare.explanation === null, "event without explanation stays renderable");
+    assert(bare.executive.length === 0 && bare.watch.length === 0,
+           "no explanation → nothing composed in its place");
+  }],
+
+  ["event record: merged cluster ids resolve to the surviving event", () => {
+    const merged = event({ merged_event_ids: ["folded0001"] });
+    const d = buildEventDossier("folded0001", feed([theme()], [merged], { aaa111bbb222: explanation() }));
+    assert(d && d.found && d.event?.id === "aaa111bbb222", "folded id lands on the keeper");
+    assert(d.explanation !== null, "keeper's explanation found via its own id");
+  }],
+
+  ["event record: deterministic for fixed inputs", () => {
+    const f = feed([theme()], [event()], { aaa111bbb222: explanation() });
+    assert(JSON.stringify(buildEventDossier("aaa111bbb222", f)) ===
+           JSON.stringify(buildEventDossier("aaa111bbb222", f)), "deterministic");
+    assert(buildEventDossier("aaa111bbb222", null) === null, "null feed → null (loading)");
   }],
 ];
 

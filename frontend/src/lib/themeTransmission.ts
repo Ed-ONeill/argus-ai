@@ -1,6 +1,11 @@
 /**
  * lib/themeTransmission.ts — lightweight theme → driver/sector/asset derivations.
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): these local
+ * driver/sector/path derivations are session-scoped prototypes of the
+ * engine's R2 stage; events now carry a canonical typed transmission_chain
+ * from app/explanations.py. Compare outputs during migration; do not extend.
+ *
  * Shared by the Argus Market Map (lib/marketMap.ts) and What Matters Now. Kept
  * free of heavy deps (no maIntelligence) so feed components that only need the
  * transmission path don't pull the M&A engine into First Load. Pure read of

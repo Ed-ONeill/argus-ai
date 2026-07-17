@@ -1,6 +1,12 @@
 /**
  * lib/predictionEngine.ts - the Argus Prediction Engine.
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1): session-scoped
+ * projection only. The canonical forward record is the M3.3 prediction ledger
+ * (backend); the canonical event reasoning is app/explanations.py, whose
+ * stakes section will report ledger entries in IRE-4/5. Outputs here are never
+ * records, never evidence, and new reasoning capability lands in the backend.
+ *
  * Forward-looking intelligence built strictly on top of the existing stack:
  * intelligenceGraph (facts), inferenceEngine (conclusions), narrativeTransmission
  * (propagation), and evidenceEngine (trust). It predicts the most likely evolution

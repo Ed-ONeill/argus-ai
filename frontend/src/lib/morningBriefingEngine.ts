@@ -1,6 +1,12 @@
 /**
  * morningBriefingEngine.ts — Morning Briefing Computation Layer
  *
+ * LEGACY-PATH (IRE-1, ARGUS_INSTITUTIONAL_REASONING_ENGINE_V1, audit R7): the
+ * "always return meaningful content" fallback-tier design below violates the
+ * quiet-day rule (fill never beats floor) and is scheduled for replacement by
+ * a quiet-capable Morning Brief built on backend Explanations (IRE-5). Do not
+ * add fallback tiers or new local reasoning here.
+ *
  * Pure functions, zero API calls. All outputs derived from ThemeIntelligence[].
  * All functions are designed to always return meaningful content — tiered
  * thresholds with fallbacks prevent blank sections.
