@@ -14,6 +14,11 @@ export interface FeedItem {
   why_it_matters:    string;
   impact:            string;
   snippet:           string;
+  // OP4.0 — canonical timestamps (additive). published_ts = publisher's
+  // publication time; fetched_at = when Argus first observed the URL. ISO-8601
+  // UTC; null/absent means honestly unknown — never fabricate a substitute.
+  published_ts?:     string | null;
+  fetched_at?:       string | null;
 }
 
 export interface TopStories {

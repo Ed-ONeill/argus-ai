@@ -521,6 +521,30 @@ def run_pipeline(
         except Exception:
             log.exception("[bg] institutional memory write FAILED — continuing (feed unaffected)")
 
+    # ── Observation ledger + identity authority (OP3.1a / OP2.1) ───────────────
+    # Full-feed cycles only [C6]: partial/Markets-only warm runs never write
+    # observation rows and never mutate identity — the same guard the memory
+    # writer uses. Both layers are best-effort and never break the pipeline.
+    if not categories and not sources:
+        _cycle_id = feed.generated_at.strftime("%Y%m%dT%H%M%SZ")
+        try:
+            from app.observation_ledger import observation_ledger
+            _n_obs = observation_ledger.record_observations(
+                items, now=feed.generated_at, cycle_id=_cycle_id)
+            observation_ledger.compress_old(now=feed.generated_at)
+            if _n_obs:
+                log.info("[ledger] %d observation row(s) appended (cycle %s)", _n_obs, _cycle_id)
+        except Exception:
+            log.exception("[bg] observation ledger FAILED — continuing (feed unaffected)")
+        try:
+            from app.event_identity import get_authority
+            _uid_map = get_authority().process_cycle(
+                events, now=feed.generated_at, cycle_id=_cycle_id, full_feed=True)
+            log.info("[identity] %d/%d admitted events carry a uid this cycle",
+                     len(_uid_map), len(events))
+        except Exception:
+            log.exception("[bg] identity authority FAILED — continuing (feed unaffected)")
+
     return feed
 
 

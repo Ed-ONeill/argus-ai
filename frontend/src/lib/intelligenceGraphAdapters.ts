@@ -15,6 +15,7 @@
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
 import type { SourcePage, IntelNode } from "./intelligenceGraph";
+import { observationEpochs } from "./timestamps";
 import { tickerInfo } from "./tickerMetadata";
 import type { ThemeIntelligence, StoryCluster, FeedItem, Episode } from "./types";
 import { matchEpisodeThemesDetailed } from "./listenIntelligence";
@@ -188,13 +189,23 @@ export function ingestStories(stories: StoryInput[], themes: ThemeIntelligence[]
       try {
         const item: FeedItem = isCluster(raw) ? raw.primary : raw;
         const themeLbl = isCluster(raw) ? raw.theme_label : "";
+        // OP4.0 — real observation times from the payload. When present they
+        // replace the Date.now() default that saturated freshness (audit C2);
+        // when absent, the default stands and the gap is the backend's to
+        // close — never fabricated here from display strings.
+        const epochs = observationEpochs(item);
         const storyId = G.addNode({
           label: s(item.title) || raw.id, type: "Story",
           aliases: [raw.id, s(item.title)],
           description: s(item.summary),
           importance: num(item.signal_score),
           sources: [PAGE_FEED],
-          metadata: { url: item.url, source: item.source, category: item.category, published: item.published },
+          ...(epochs ?? {}),
+          metadata: {
+            url: item.url, source: item.source, category: item.category,
+            published: item.published, published_ts: item.published_ts ?? null,
+            fetched_at: item.fetched_at ?? null,
+          },
         }).id;
 
         for (const entity of item.affected_entities ?? []) {

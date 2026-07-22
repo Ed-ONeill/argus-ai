@@ -60,6 +60,12 @@ class FeedItemSchema(BaseModel):
     why_it_matters:    str
     impact:            str
     snippet:           str
+    # OP4.0 — canonical timestamps (additive; B2/C2 fix). Distinct meanings:
+    # published_ts = publisher's publication time; fetched_at = when Argus
+    # first observed the URL. Both ISO-8601 UTC; null when honestly unknown —
+    # the frontend must never fabricate a substitute.
+    published_ts:      str | None = None
+    fetched_at:        str | None = None
 
     @classmethod
     def from_item(cls, item: FeedItem) -> "FeedItemSchema":
@@ -67,6 +73,7 @@ class FeedItemSchema(BaseModel):
         item_id = hashlib.md5(
             (item.title + item.url).encode("utf-8", errors="ignore")
         ).hexdigest()
+        fetched = getattr(item, "fetched_at", None)
         return cls(
             id=item_id,
             title=item.title,
@@ -81,6 +88,8 @@ class FeedItemSchema(BaseModel):
             why_it_matters=item.why_it_matters,
             impact=item.impact,
             snippet=item.snippet,
+            published_ts=item.published_dt.isoformat() if item.published_dt else None,
+            fetched_at=fetched.isoformat() if fetched else None,
         )
 
 

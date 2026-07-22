@@ -150,6 +150,11 @@ class StoryCluster:
     cluster_score: float            # 0–1, set by themes.select_what_matters_now()
     theme_label:   str              # e.g. "Japan Rate Shock"
     story_count:   int              # total items placed in this cluster (may exceed _MAX_RELATED)
+    # OP1.4 — members past _MAX_RELATED keep their identity as provenance rows
+    # (MergedSource) even though the full items are dropped; the event layer
+    # spends them as evidence so story_count == len(evidence) holds. Defaulted
+    # so pre-change pickles deserialize.
+    overflow_sources: list = field(default_factory=list)
 
 
 @dataclass
@@ -303,6 +308,21 @@ def _build_cluster(items: list) -> StoryCluster:
     primary     = items[0]
     all_related = items[1:]
     related     = all_related[:_MAX_RELATED]
+    # OP1.4 — truncated members survive as identity rows, not full items
+    overflow: list = []
+    if len(all_related) > _MAX_RELATED:
+        from app.feeds import MergedSource, _source_tier
+        overflow = [
+            MergedSource(
+                source=m.source,
+                title=m.title,
+                url=m.url,
+                published_dt=m.published_dt,
+                snippet=m.snippet,
+                tier=_source_tier(m.source),
+            )
+            for m in all_related[_MAX_RELATED:]
+        ]
     cid = hashlib.md5(
         (primary.title + primary.url).encode("utf-8", errors="ignore")
     ).hexdigest()[:12]
@@ -313,6 +333,7 @@ def _build_cluster(items: list) -> StoryCluster:
         cluster_score=0.0,
         theme_label=_make_theme_label(primary),
         story_count=len(items),
+        overflow_sources=overflow,
     )
 
 

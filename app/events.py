@@ -518,6 +518,25 @@ def build_market_events(clusters: list, themes: list,
                     qualified=row.tier <= 2 or (row.tier == 3 and is_specific(r_txt)),
                 ))
 
+        # OP1.4 — cluster overflow (members past the related cap) survives as
+        # identity rows; they attest like any provenance row, same bar, same
+        # URL guard, same distinct-source counting.
+        for row in (getattr(cluster, "overflow_sources", None) or []):
+            r_url = row.url or ""
+            if not r_url or r_url in seen_urls:
+                continue
+            seen_urls.add(r_url)
+            r_txt = f"{row.title} {row.snippet or ''}"
+            evidence.append(EventEvidence(
+                source=row.source,
+                title=row.title,
+                url=r_url,
+                published=row.published_dt.isoformat() if row.published_dt else None,
+                tier=row.tier,
+                kind=evidence_kind(row.source, row.title),
+                qualified=row.tier <= 2 or (row.tier == 3 and is_specific(r_txt)),
+            ))
+
         # First observation anchors to the earliest telling — including the
         # merged copies dedup used to delete (the E1/E2 fix finally fed by
         # real data); last_updated is the latest report wherever it lives.
@@ -527,6 +546,11 @@ def build_market_events(clusters: list, themes: list,
             row.published_dt
             for m in members
             for row in (getattr(m, "merged_sources", None) or [])
+            if row.published_dt
+        ]
+        published += [
+            row.published_dt
+            for row in (getattr(cluster, "overflow_sources", None) or [])
             if row.published_dt
         ]
         first_seen = min(published).isoformat() if published else now.isoformat()

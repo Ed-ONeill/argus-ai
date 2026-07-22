@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # rollback hatch, not a long-lived mode.
     merge_dedup: bool = True
 
+    # ── Event identity (OP2.1) ────────────────────────────────────────────────
+    # Master switch for the identity authority: uid minting, the identity
+    # journal, and the registry hot view. False → no journal writes, no uids,
+    # exact Sprint 2 behavior. This is the permanent kill switch, not a
+    # transition flag.
+    event_identity: bool = True
+
     # ── Institutional memory (M3.1, default flipped in OP3.3) ─────────────────
     # Backend-only Supabase credentials for the institutional-memory archive.
     # The service-role key must NEVER be exposed to the frontend or logged.
