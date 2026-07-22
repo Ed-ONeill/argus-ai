@@ -153,17 +153,46 @@ class LedgerStream:
                     log.warning("[ledger:%s] corrupt line %d skipped in %s",
                                 self.name, i + 1, path.name)
 
-    def read_rows(self, day: str | None = None) -> Iterator[tuple[str, dict]]:
-        """Yield (day, row) across all files (or one day), oldest first.
-        Unknown/extra fields ride through untouched — readers must tolerate
-        additive schema growth."""
-        if day is not None:
-            for row in self._read_file(self._path(day)):
-                yield (day, row)
-            return
+    def _day_paths(self) -> dict[str, list[Path]]:
+        """Files grouped by day, compressed first. A day can legitimately have
+        BOTH a .gz and a .jsonl (crash between compression and unlink, or an
+        append landing after compression) — readers merge them seq-deduped
+        (Sprint 3.1, verification Finding 1) so no row is ever read twice."""
+        by_day: dict[str, list[Path]] = {}
         for path in self._files():
-            d = self._file_day(path)
+            by_day.setdefault(self._file_day(path), []).append(path)
+        for paths in by_day.values():
+            paths.sort(key=lambda p: (0 if p.name.endswith(".gz") else 1, p.name))
+        return by_day
+
+    def _read_day(self, day: str, paths: list[Path]) -> Iterator[dict]:
+        """Merge a day's files, deduplicating by seq — the .gz twin (complete
+        by the atomic-rename discipline) wins; the .jsonl contributes only
+        rows the .gz does not carry (e.g. appends after compression)."""
+        seen_seqs: set[int] = set()
+        for path in paths:
             for row in self._read_file(path):
+                seq = row.get("seq")
+                if isinstance(seq, int):
+                    if seq in seen_seqs:
+                        continue
+                    seen_seqs.add(seq)
+                yield row
+
+    def read_rows(self, day: str | None = None) -> Iterator[tuple[str, dict]]:
+        """Yield (day, row) across all files (or one day), oldest first,
+        seq-deduped within each day. Unknown/extra fields ride through
+        untouched — readers must tolerate additive schema growth."""
+        by_day = self._day_paths()
+        days = [day] if day is not None else sorted(by_day)
+        for d in days:
+            paths = by_day.get(d)
+            if paths is None:
+                if day is not None:                      # single-day miss: try direct
+                    for row in self._read_file(self._path(d)):
+                        yield (d, row)
+                continue
+            for row in self._read_day(d, paths):
                 yield (d, row)
 
     # ── retention [C5]: compress, never delete ───────────────────────────────
@@ -171,7 +200,12 @@ class LedgerStream:
     def compress_old(self, *, now: datetime, days: int = _COMPRESS_AFTER_DAYS) -> int:
         """Gzip hot files older than `days`. The original is replaced by its
         compressed twin — content is preserved byte-for-byte; nothing is ever
-        deleted from history."""
+        deleted from history.
+
+        Replay-safe (Sprint 3.1, Finding 1): the .gz is written to a temp name
+        and atomically renamed, so a visible .gz is always COMPLETE. A crash
+        between rename and unlink leaves both twins — readers seq-dedupe them,
+        and the next pass completes the pending unlink here."""
         n = 0
         cutoff = _day(now - timedelta(days=days))
         try:
@@ -180,9 +214,28 @@ class LedgerStream:
                     continue
                 gz = path.with_suffix(path.suffix + ".gz")
                 if gz.exists():
+                    # crash-twin recovery: the visible .gz is complete by the
+                    # rename discipline. Finish the interrupted unlink ONLY if
+                    # the .jsonl holds nothing the .gz lacks — rows appended
+                    # after compression must never be destroyed; readers merge
+                    # the twins seq-deduped either way.
+                    gz_seqs = {r.get("seq") for r in self._read_file(gz)}
+                    jsonl_only = [r for r in self._read_file(path)
+                                  if r.get("seq") not in gz_seqs]
+                    if jsonl_only:
+                        log.warning("[ledger:%s] %s has %d row(s) beyond its .gz twin — "
+                                    "keeping both (readers merge seq-deduped)",
+                                    self.name, path.name, len(jsonl_only))
+                        continue
+                    path.unlink()
+                    log.warning("[ledger:%s] completed pending unlink of %s "
+                                "(compression was interrupted)", self.name, path.name)
+                    n += 1
                     continue
-                with open(path, "rb") as src, gzip.open(gz, "wb") as dst:
+                tmp = gz.with_name(gz.name + ".tmp")
+                with open(path, "rb") as src, gzip.open(tmp, "wb") as dst:
                     dst.write(src.read())
+                tmp.replace(gz)        # atomic: a visible .gz is never partial
                 path.unlink()          # the .gz twin now carries the history
                 n += 1
         except Exception as exc:
@@ -190,13 +243,34 @@ class LedgerStream:
         return n
 
 
+# ── Shared-stream factory (Sprint 3.1, verification Finding 2) ────────────────
+# One stream, one writer: a LedgerStream owns a per-day seq cache, so two
+# writer instances over the same files could assign duplicate seqs. All
+# production code obtains streams through this per-process factory — one
+# instance per (directory, name). Direct LedgerStream construction is reserved
+# for tests simulating a fresh process.
+
+_STREAMS: dict[tuple[str, str], LedgerStream] = {}
+_STREAMS_LOCK = threading.Lock()
+
+
+def shared_stream(name: str, directory: Path = LEDGER_DIR) -> LedgerStream:
+    key = (str(Path(directory).resolve()), name)
+    with _STREAMS_LOCK:
+        stream = _STREAMS.get(key)
+        if stream is None:
+            stream = LedgerStream(name, directory)
+            _STREAMS[key] = stream
+        return stream
+
+
 class ObservationLedger:
     """The substrate: observation + identity streams under one directory."""
 
     def __init__(self, directory: Path = LEDGER_DIR) -> None:
         self._dir = directory
-        self.observations = LedgerStream("observations", directory)
-        self.identity = LedgerStream("identity", directory)
+        self.observations = shared_stream("observations", directory)
+        self.identity = shared_stream("identity", directory)
         self._seen_urls: set[str] | None = None   # lazy-seeded from today's rows
 
     # ── observation stream (OP3.1a: admitted + folded dispositions) ──────────

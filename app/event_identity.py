@@ -40,7 +40,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from app.observation_ledger import LEDGER_DIR, LedgerStream
+from app.observation_ledger import LEDGER_DIR, LedgerStream, shared_stream
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +152,11 @@ class IdentityAuthority:
 
     def __init__(self, journal: LedgerStream | None = None,
                  snapshot_path: Path = SNAPSHOT_PATH) -> None:
-        self._journal = journal or LedgerStream("identity", LEDGER_DIR)
+        # Sprint 3.1 (Finding 2): the default journal is the process-wide
+        # shared identity stream — the same instance ObservationLedger holds —
+        # so one seq cache governs the stream. Explicit `journal` injection is
+        # for tests (fresh-process simulation).
+        self._journal = journal or shared_stream("identity", LEDGER_DIR)
         self._snapshot_path = snapshot_path
         self._lock = threading.RLock()
         self.entries: dict[str, RegistryEntry] = {}
@@ -264,6 +268,21 @@ class IdentityAuthority:
                 e.last_cluster_id = row.get("cluster_id", "") or e.last_cluster_id
             elif kind == "alias":
                 younger, canonical = row["uid"], row["canonical_uid"]
+                # Defensive mirror of _validate_alias for the replay path:
+                # journals written through this authority always pass, but a
+                # hand-edited or corrupted journal must not poison the view.
+                if younger == canonical:
+                    log.warning("[identity] replay skipped self-alias record for %s", younger)
+                    return
+                if younger in self.aliases and self.aliases[younger] != canonical:
+                    log.warning("[identity] replay skipped re-alias of %s (%s kept, %s refused) "
+                                "— identity is never rewritten",
+                                younger, self.aliases[younger], canonical)
+                    return
+                if self.resolve(canonical) == younger:
+                    log.warning("[identity] replay skipped cycle-closing alias %s → %s",
+                                younger, canonical)
+                    return
                 self.aliases[younger] = canonical
                 moved = self.entries.pop(younger, None)
                 canon = self.entries.get(canonical)
@@ -299,9 +318,44 @@ class IdentityAuthority:
         except Exception as exc:
             log.warning("[identity] journal record skipped (kind=%s, %s)", kind, exc)
 
+    def _validate_alias(self, record: dict) -> dict | None:
+        """Alias write-path validation (Sprint 3.1, verification Finding 3).
+
+        Rules, enforced BEFORE anything reaches the journal:
+          1. canonical_uid is resolved to its terminal uid at write time —
+             every stored alias is a single hop [C3];
+          2. self-aliases are rejected (uid == resolved canonical — this is
+             also the complete cycle guard: writing uid→canonical can only
+             create a cycle if canonical's chain terminates at uid, i.e.
+             resolve(canonical) == uid, because an un-aliased uid is always
+             a chain terminus);
+          3. re-aliasing is rejected — an aliased uid's identity is never
+             rewritten.
+        Returns the normalized record, or None to refuse the write."""
+        younger = record.get("uid") or ""
+        canonical_raw = record.get("canonical_uid") or ""
+        if not younger or not canonical_raw:
+            log.warning("[identity] alias refused: missing uid/canonical_uid")
+            return None
+        canonical = self.resolve(canonical_raw)
+        if canonical == younger:
+            log.warning("[identity] alias refused: %s → %s would self-alias or "
+                        "close a cycle", younger, canonical_raw)
+            return None
+        if younger in self.aliases:
+            log.warning("[identity] alias refused: %s is already aliased to %s — "
+                        "identity is never rewritten", younger, self.aliases[younger])
+            return None
+        return {**record, "canonical_uid": canonical}
+
     def _journal_apply(self, kind: str, record: dict, *, ts: datetime, cycle_id: str) -> bool:
         """Append-before-apply [C1]: the view mutates only after the journal
         accepted the record. A failed append means no state change."""
+        if kind == "alias":
+            validated = self._validate_alias(record)
+            if validated is None:
+                return False
+            record = validated
         pos = self._journal.append(kind, record, ts=ts, cycle_id=cycle_id)
         if pos is None:
             log.warning("[identity] journal append failed — %s NOT applied", kind)

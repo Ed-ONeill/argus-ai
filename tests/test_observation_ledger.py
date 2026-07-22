@@ -177,3 +177,82 @@ def test_record_observations_writes_admitted_and_folded_once(tmp_path):
     # a fresh process seeds its seen-set from disk — still no duplicates
     led2 = ObservationLedger(tmp_path)
     assert led2.record_observations(items, now=T0 + timedelta(minutes=10), cycle_id="c3") == 0
+
+
+# ── Sprint 3.1 Finding 1: replay-safe compression ─────────────────────────────
+
+def _gzip_twin(path):
+    """Simulate a crash between atomic gz-rename and jsonl unlink."""
+    gz = path.with_suffix(path.suffix + ".gz")
+    with open(path, "rb") as src, gzip.open(gz, "wb") as dst:
+        dst.write(src.read())
+    return gz
+
+
+def test_crash_twin_files_never_duplicate_rows(tmp_path):
+    s = LedgerStream("observations", tmp_path)
+    old = T0 - timedelta(days=10)
+    day = old.strftime("%Y-%m-%d")
+    s.append("observation", {"url": "u1"}, ts=old, cycle_id="c1")
+    s.append("observation", {"url": "u2"}, ts=old, cycle_id="c1")
+    _gzip_twin(tmp_path / f"observations-{day}.jsonl")   # both twins now exist
+
+    rows = [r for _, r in s.read_rows()]
+    assert [r["url"] for r in rows] == ["u1", "u2"]      # seq-deduped, not doubled
+    assert [r["seq"] for r in rows] == [1, 2]
+
+    # the next compression pass completes the interrupted unlink
+    assert s.compress_old(now=T0, days=7) == 1
+    assert not (tmp_path / f"observations-{day}.jsonl").exists()
+    assert (tmp_path / f"observations-{day}.jsonl.gz").exists()
+    assert [r["url"] for _, r in s.read_rows()] == ["u1", "u2"]
+
+
+def test_append_after_compression_is_merged_and_never_destroyed(tmp_path):
+    s = LedgerStream("observations", tmp_path)
+    old = T0 - timedelta(days=10)
+    day = old.strftime("%Y-%m-%d")
+    s.append("observation", {"url": "u1"}, ts=old, cycle_id="c1")
+    assert s.compress_old(now=T0, days=7) == 1           # day is now .gz only
+
+    # a late append to the compressed day continues the sequence in a new .jsonl
+    s2 = LedgerStream("observations", tmp_path)          # fresh process
+    assert s2.append("observation", {"url": "u2"}, ts=old, cycle_id="c2") == (day, 2)
+
+    rows = [r for _, r in s2.read_rows()]
+    assert [(r["seq"], r["url"]) for r in rows] == [(1, "u1"), (2, "u2")]
+
+    # recovery must NOT unlink a .jsonl holding rows the .gz lacks
+    assert s2.compress_old(now=T0, days=7) == 0
+    assert (tmp_path / f"observations-{day}.jsonl").exists()
+    assert [(r["seq"], r["url"]) for _, r in s2.read_rows()] == [(1, "u1"), (2, "u2")]
+
+
+def test_compression_is_atomic_no_tmp_left_behind(tmp_path):
+    s = LedgerStream("observations", tmp_path)
+    old = T0 - timedelta(days=10)
+    s.append("observation", {"url": "u1"}, ts=old, cycle_id="c1")
+    s.compress_old(now=T0, days=7)
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+# ── Sprint 3.1 Finding 2: one stream, one writer ──────────────────────────────
+
+def test_shared_stream_returns_one_instance_per_directory_and_name(tmp_path):
+    from app.observation_ledger import shared_stream
+    a = shared_stream("identity", tmp_path)
+    b = shared_stream("identity", tmp_path)
+    c = shared_stream("observations", tmp_path)
+    d = shared_stream("identity", tmp_path / "other")
+    assert a is b
+    assert a is not c and a is not d
+
+
+def test_observation_ledger_uses_the_shared_streams(tmp_path):
+    from app.observation_ledger import shared_stream
+    led = ObservationLedger(tmp_path)
+    assert led.identity is shared_stream("identity", tmp_path)
+    assert led.observations is shared_stream("observations", tmp_path)
+    # two ledgers over one directory share one seq cache — no duplicate seqs
+    led2 = ObservationLedger(tmp_path)
+    assert led2.identity is led.identity
