@@ -27,6 +27,7 @@ import {
 } from "@/lib/api";
 import { TYPE, INK, BORDER, FONT_MONO } from "@/lib/network/tokens";
 import { timeAgo } from "@/lib/utils";
+import { buildTransmissionView } from "@/lib/transmissionView";
 import type { MarketEvent } from "@/lib/types";
 // shared dossier grammar primitives (extracted for IR-1 — one form, two kinds)
 import { Section, Absence, Provenance, Fig, BODY, LEAD, CLASS_LABEL } from "@/components/intel/primitives";
@@ -106,6 +107,43 @@ function EventRow({ ev, reason }: { ev: MarketEvent; reason?: string }) {
               <Provenance kind="derived" /> <span>{ev.why_it_matters}</span>
             </p>
           )}
+          {/* OP4.2 — the event's typed transmission chain (IRE-1), compact.
+              Prose renders only when no typed chain exists, tagged so the
+              unverified narrative is never dressed as the recorded path. */}
+          {(() => {
+            const view = buildTransmissionView(ev.transmission_chain, ev.transmission);
+            if (view.kind === "chain") {
+              return (
+                <p className="mt-1.5 flex items-baseline gap-2 flex-wrap" style={{ fontSize: 10.5, lineHeight: 1.6 }}>
+                  <span className="uppercase font-bold shrink-0" style={{ fontSize: 8, letterSpacing: "0.08em", color: "#7cc7d8" }}>
+                    transmission
+                  </span>
+                  <span className="tabular-nums" style={{ fontFamily: FONT_MONO, color: INK.support }}>
+                    {view.hops.map(h =>
+                      `${(h.source_label ?? h.source_uid.split(":").pop() ?? "").replace(/-/g, " ")} —${h.relationship.replace(/_/g, " ")}→ ${(h.target_uid.split(":").pop() ?? "").replace(/-/g, " ")}`
+                    ).join("  ·  ")}
+                  </span>
+                  {view.weakestHopConfidence !== null && (
+                    <span className="tabular-nums shrink-0" style={{ fontFamily: FONT_MONO, fontSize: 9, color: INK.whisper }}>
+                      weakest hop {Math.round(view.weakestHopConfidence * 100)}
+                    </span>
+                  )}
+                </p>
+              );
+            }
+            if (view.kind === "prose") {
+              return (
+                <p className="mt-1.5 flex items-baseline gap-2" style={{ fontSize: 10.5, color: INK.whisper, lineHeight: 1.6 }}>
+                  <span className="uppercase font-bold shrink-0 rounded px-1.5 py-px"
+                    style={{ fontSize: 8, letterSpacing: "0.08em", color: "#f59e0b", border: `1px solid ${BORDER.hairline}` }}>
+                    unverified narrative
+                  </span>
+                  <span style={{ fontFamily: FONT_MONO }}>{view.text}</span>
+                </p>
+              );
+            }
+            return null;   // EventRow carried no transmission before; absent stays absent
+          })()}
         </div>
       )}
     </div>
@@ -234,8 +272,15 @@ export default function CompanyDossier({ ticker }: { ticker: string }) {
                   {x.whyConnected}
                 </p>
                 {x.transmission && (
-                  <p className="mt-1 tabular-nums" style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: INK.whisper }}>
-                    {x.transmission}
+                  <p className="mt-1 flex items-baseline gap-2" style={{ fontSize: 10.5, color: INK.whisper }}>
+                    {/* OP4.2 — theme-level causal narrative is prose, not the
+                        typed chain; it wears the unverified tag like every
+                        prose transmission. */}
+                    <span className="uppercase font-bold shrink-0 rounded px-1.5 py-px"
+                      style={{ fontSize: 8, letterSpacing: "0.08em", color: "#f59e0b", border: `1px solid ${BORDER.hairline}` }}>
+                      unverified narrative
+                    </span>
+                    <span className="tabular-nums" style={{ fontFamily: FONT_MONO }}>{x.transmission}</span>
                   </p>
                 )}
               </div>

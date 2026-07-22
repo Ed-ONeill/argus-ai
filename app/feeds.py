@@ -14,6 +14,7 @@ Key capabilities:
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import logging
 import re
 import time
@@ -571,6 +572,23 @@ def _reclassify_category(item: "FeedItem") -> str:
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
+@dataclass(frozen=True)
+class MergedSource:
+    """
+    Provenance row for an article folded into another during dedup (OP1.1).
+
+    Sprint 1 defines the shape only; nothing populates it until merge-dedup
+    (OP1.2) replaces delete-dedup. Snippets are capped at _MAX_SNIPPET by the
+    producer so provenance never re-inflates pickle size.
+    """
+    source:       str
+    title:        str
+    url:          str
+    published_dt: datetime | None = None
+    snippet:      str             = ""
+    tier:         int             = 4
+
+
 @dataclass
 class FeedItem:
     title:          str
@@ -596,6 +614,27 @@ class FeedItem:
     event_signal_bonus:     float     = 0.0  # +6 for concrete event verbs (guidance, beats, files…)
     institutional_score:    float     = 0.0  # composite institutional quality 0–100
     graph_alignment_score:  float     = 0.0  # set post-graph; 0–30 regime keyword match
+    # OP1.1 provenance (additive; all defaulted so pre-change pickles load).
+    # merged_sources stays empty until merge-dedup (OP1.2) populates it.
+    # first_seen_dt = earliest publish time across this item and everything
+    # merged into it (None until OP1.2). published_dt keeps its existing
+    # meaning (this copy's publish time) — recency scoring is untouched.
+    merged_sources: list[MergedSource] = field(default_factory=list)
+    first_seen_dt:  datetime | None    = None
+    fetched_at:     datetime | None    = None   # when Argus first observed this URL (this process)
+
+    def __setstate__(self, state: dict) -> None:
+        # Old pickles restore via __dict__ and would lack fields added after
+        # they were written; dataclass defaults only apply in __init__. Fill
+        # any missing field with its declared default so pre-change
+        # ProcessedFeed pickles yield fully-populated items.
+        self.__dict__.update(state)
+        for f in dataclasses.fields(self):
+            if f.name not in self.__dict__:
+                if f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+                    self.__dict__[f.name] = f.default_factory()   # type: ignore[misc]
+                elif f.default is not dataclasses.MISSING:
+                    self.__dict__[f.name] = f.default
 
 
 # ── Per-source audit statistics ───────────────────────────────────────────────
@@ -1483,6 +1522,12 @@ class FeedManager:
         self._cache: dict[str, tuple[float, list[FeedItem]]] = {}
         self.fetch_errors:   dict[str, str] = {}  # source → error msg, cleared each call
         self.promo_excluded: int            = 0   # items hard-excluded per fetch_all call
+        # OP1.1: first time this process observed each item URL. TTL re-fetches
+        # create new FeedItem objects for the same URL; this map keeps
+        # fetched_at stable at the first observation (process lifetime).
+        self._first_fetch: dict[str, datetime] = {}
+        # OP1.5: per-source funnel stats from the most recent fetch_all().
+        self.last_source_stats: dict[str, PerSourceStats] = {}
 
     # ── Public ────────────────────────────────────────────────────────────────
 
@@ -1536,6 +1581,25 @@ class FeedManager:
             self.fetch_errors["SEC Filings"] = str(exc)
             log.debug("SEC watchlist fetch failed: %s", exc)
 
+        # ── First-observation stamp (OP1.1) ───────────────────────────────────
+        # Stable per URL for the process lifetime; items returned from the
+        # per-feed cache keep the fetched_at their object was created with.
+        _now_utc = datetime.now(timezone.utc)
+        if len(self._first_fetch) > 20_000:   # bound process-lifetime growth
+            pruned = sorted(self._first_fetch.items(), key=lambda kv: kv[1])[10_000:]
+            self._first_fetch = dict(pruned)
+        for i in raw_items:
+            if i.fetched_at is None:
+                i.fetched_at = self._first_fetch.setdefault(i.url, _now_utc)
+
+        # ── Per-source funnel stats (OP1.5): raw counts before any filtering ──
+        stats: dict[str, PerSourceStats] = {}
+        for i in raw_items:
+            s = stats.setdefault(i.source, PerSourceStats(source=i.source))
+            s.raw_fetched += 1
+        for name, msg in self.fetch_errors.items():
+            stats.setdefault(name, PerSourceStats(source=name)).error = msg
+
         # ── Sort newest-first ─────────────────────────────────────────────────
         _epoch = datetime.min.replace(tzinfo=timezone.utc)
         raw_items.sort(key=lambda i: i.published_dt or _epoch, reverse=True)
@@ -1546,7 +1610,11 @@ class FeedManager:
             raw_items = [i for i in raw_items if i.published_dt and i.published_dt >= cutoff]
 
         # ── Deduplicate ───────────────────────────────────────────────────────
+        _pre_dedup_n = len(raw_items)
         items = _dedup_items(raw_items)
+        _dedup_removed = _pre_dedup_n - len(items)
+        for i in items:
+            stats.setdefault(i.source, PerSourceStats(source=i.source)).post_dedup += 1
 
         # ── Score, reclassify, and filter ─────────────────────────────────────
         self.promo_excluded = 0
@@ -1566,6 +1634,13 @@ class FeedManager:
             else:
                 if is_hard_promo:
                     self.promo_excluded += 1
+                s = stats.setdefault(item.source, PerSourceStats(source=item.source))
+                if is_hard_promo:
+                    s.hard_excluded += 1
+                else:
+                    s.below_threshold += 1
+                if len(s.dropped_titles) < 5:
+                    s.dropped_titles.append(item.title)
                 log.debug("Signal filter dropped [%.1f]%s: %.80s",
                           item.signal_score,
                           " [PROMO]" if is_hard_promo else "",
@@ -1606,6 +1681,27 @@ class FeedManager:
                 dropped_by_cap, len(capped), len(per_source),
             )
         scored = capped
+
+        # ── Funnel stats + per-cycle funnel line (OP1.5) ──────────────────────
+        # Observation only — populates the audit dataclass this module has
+        # promised since it was written, and one INFO line per fetch so the
+        # ingestion funnel is measurable without DEBUG logs.
+        for i in scored:
+            s = stats.setdefault(i.source, PerSourceStats(source=i.source))
+            s.kept += 1
+            s.by_category[i.category] = s.by_category.get(i.category, 0) + 1
+            if len(s.kept_titles) < 5:
+                s.kept_titles.append(i.title)
+        self.last_source_stats = stats
+        _raw_total = sum(s.raw_fetched for s in stats.values())
+        log.info(
+            "[feed] funnel: %d raw → %d post-dedup (%d duplicates removed) → %d kept "
+            "(%d hard-excluded, %d below threshold, %d capped) across %d sources",
+            _raw_total, _pre_dedup_n - _dedup_removed, _dedup_removed, len(scored),
+            sum(s.hard_excluded for s in stats.values()),
+            sum(s.below_threshold for s in stats.values()),
+            dropped_by_cap, len(per_source),
+        )
 
         return scored
 

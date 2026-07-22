@@ -172,6 +172,24 @@ class ThemeMemoryStore:
         except Exception as exc:
             log.warning("ThemeMemoryStore: save failed: %s", exc)
 
+    # ── momentum tracker state (OP3.2) ────────────────────────────────────────
+    # The ThemeMomentumTracker's rolling history rides in this store's file
+    # under its own top-level key — one persistence path, atomic write, shared
+    # lock. Absent key (pre-change files) simply means no state to restore.
+
+    def save_tracker_state(self, state: dict) -> None:
+        try:
+            with self._lock:
+                self._data["momentum_tracker"] = state
+                self._save()
+        except Exception as exc:
+            log.warning("ThemeMemoryStore: tracker-state save failed: %s", exc)
+
+    def load_tracker_state(self) -> dict | None:
+        with self._lock:
+            st = self._data.get("momentum_tracker")
+            return json.loads(json.dumps(st)) if isinstance(st, dict) else None
+
     # ── update (called after theme extraction, on the background thread) ─────────
 
     def update(self, themes: list, clusters: list, now: datetime | None = None) -> int:

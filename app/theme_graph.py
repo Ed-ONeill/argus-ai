@@ -206,9 +206,121 @@ class ThemeMomentumTracker:
         if n <= 20:  return 85
         return 95
 
+    # ── Persistence (OP3.2) ──────────────────────────────────────────────────
+    # The tracker's rolling history is serialized into theme_memory.json so a
+    # process restart resumes momentum/persistence instead of resetting mature
+    # themes to "emerging" and writing spurious state changes into the sealed
+    # archive. State is only ever what was recorded — nothing is synthesized.
+
+    def to_state(self, now: datetime | None = None) -> dict:
+        """Serializable snapshot of the full rolling history."""
+        now = now or datetime.now(timezone.utc)
+        return {
+            "version": 1,
+            "saved_at": now.isoformat(),
+            "history": {
+                tid: [
+                    {"c": s.confidence, "s": s.signal_strength,
+                     "ts": s.timestamp.isoformat(), "b": s.sector_spread}
+                    for s in snaps
+                ]
+                for tid, snaps in self._history.items()
+            },
+            "breadth": {tid: list(h) for tid, h in self._breadth_history.items()},
+        }
+
+    def restore_state(self, state: dict | None, now: datetime | None = None) -> bool:
+        """
+        Rehydrate from a to_state() snapshot. Returns True when history was
+        restored. Downtime policy (OP1_IMPLEMENTATION_PLAN §OP3.2):
+          gap ≤ 2h   — full restore (normal restart)
+          gap ≤ 24h  — restore, dropping the oldest int(gap_hours/2) snapshots
+                       per theme (continuity claims decay with downtime)
+          gap > 24h  — explicit cold start; nothing is inferred
+        Corrupt or unrecognized state cold-starts with a warning. Never raises,
+        and never writes anything — restoring is read-only with respect to
+        memory, so a restart alone can produce no new transition.
+        """
+        now = now or datetime.now(timezone.utc)
+        try:
+            if not isinstance(state, dict) or state.get("version") != 1:
+                if state is not None:
+                    log.warning("[momentum] unrecognized tracker state — cold start")
+                return False
+            saved_at = datetime.fromisoformat(state["saved_at"])
+            gap_sec = (now - saved_at).total_seconds()
+            if gap_sec < 0:
+                log.warning("[momentum] tracker state saved in the future — cold start")
+                return False
+            if gap_sec > 24 * 3600:
+                log.info(
+                    "[momentum] tracker state is %.1fh old (>24h) — explicit cold start",
+                    gap_sec / 3600,
+                )
+                return False
+            drop = int((gap_sec / 3600) // 2) if gap_sec > 2 * 3600 else 0
+
+            history: dict[str, list[_ThemeSnapshot]] = {}
+            for tid, rows in (state.get("history") or {}).items():
+                snaps = [
+                    _ThemeSnapshot(
+                        confidence=int(r["c"]),
+                        signal_strength=str(r["s"]),
+                        timestamp=datetime.fromisoformat(r["ts"]),
+                        sector_spread=int(r.get("b", 0)),
+                    )
+                    for r in rows
+                ][drop:]
+                if snaps:
+                    history[tid] = snaps[-self._max:]
+            breadth: dict[str, list[int]] = {}
+            for tid, rows in (state.get("breadth") or {}).items():
+                vals = [int(v) for v in rows][drop:]
+                if vals:
+                    breadth[tid] = vals[-self._max:]
+
+            self._history = history
+            self._breadth_history = breadth
+            log.info(
+                "[momentum] rehydrated %d theme histories (gap %.0fmin%s)",
+                len(history), gap_sec / 60,
+                f", decayed oldest {drop} snapshot(s)" if drop else "",
+            )
+            return True
+        except Exception as exc:
+            log.warning("[momentum] tracker state restore failed (%s) — cold start", exc)
+            self._history = {}
+            self._breadth_history = {}
+            return False
+
 
 # Module-level singleton — accumulates history across background refresh cycles
 _momentum_tracker = ThemeMomentumTracker()
+
+# OP3.2 wiring: rehydrate lazily on first extract (import-time IO avoided),
+# persist after each extract. Both piggyback on ThemeMemoryStore's lock and
+# atomic write path — one persistence file, not a second store.
+_momentum_rehydrated = False
+
+
+def _ensure_momentum_rehydrated(now: datetime) -> None:
+    global _momentum_rehydrated
+    if _momentum_rehydrated:
+        return
+    _momentum_rehydrated = True   # one attempt per process, restored or not
+    try:
+        from app.theme_memory import theme_memory
+        _momentum_tracker.restore_state(theme_memory.load_tracker_state(), now)
+    except Exception as exc:   # never let rehydration break extraction
+        log.warning("[momentum] rehydration skipped (%s)", exc)
+
+
+def _persist_momentum_state(now: datetime) -> None:
+    try:
+        from app.theme_memory import theme_memory
+        theme_memory.save_tracker_state(_momentum_tracker.to_state(now))
+    except Exception as exc:   # never let persistence break extraction
+        log.warning("[momentum] state persist failed (%s)", exc)
 
 
 # ── Theme catalog ─────────────────────────────────────────────────────────────
@@ -246,6 +358,9 @@ def extract_themes(
     if now is None:
         now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
+
+    # OP3.2 — restore tracker history once per process before anything records
+    _ensure_momentum_rehydrated(now)
 
     log.info("[theme] extract_themes START  clusters=%d  themes_catalog=%d", len(clusters), len(THEME_CATALOG))
     for _i, _c in enumerate(clusters[:5]):
@@ -543,6 +658,10 @@ def extract_themes(
             len(t.contributing_cluster_ids), t.contributing_story_count,
             t.causal_narrative or "",
         )
+
+    # OP3.2 — persist tracker history so the next process resumes, not resets
+    _persist_momentum_state(now)
+
     return results
 
 

@@ -26,6 +26,7 @@ import {
 import { Section, Absence, Provenance, Fig, BODY, LEAD, CLASS_LABEL } from "@/components/intel/primitives";
 import { TYPE, INK, BORDER, FONT_MONO } from "@/lib/network/tokens";
 import { timeAgo } from "@/lib/utils";
+import { buildTransmissionView } from "@/lib/transmissionView";
 import type { ExplanationSection, TransmissionHop } from "@/lib/types";
 
 const ACCENT = "#7cc7d8";
@@ -335,6 +336,8 @@ export default function EventDossier({ clusterId }: { clusterId: string }) {
               <div className="min-w-0 flex-1">
                 {position && position.chains.length > 0 ? (
                   <div>
+                    {/* OP4.2: the typed chain stands alone — prose never
+                        renders beside it; the two epistemologies don't mix. */}
                     {position.chains.map(c => (
                       <div key={c.theme_uid} className="mb-4">
                         <p className="uppercase font-bold mb-1" style={{ fontSize: 9, letterSpacing: "0.1em", color: INK.whisper }}>
@@ -348,16 +351,41 @@ export default function EventDossier({ clusterId }: { clusterId: string }) {
                         {c.hops.map((h, i) => <Hop key={h.rel_uid + i} hop={h} last={i === c.hops.length - 1} />)}
                       </div>
                     ))}
-                    {ev.transmission && (
-                      <p className="flex items-baseline gap-2 mt-1" style={{ fontSize: 10, color: INK.whisper }}>
-                        <span className="uppercase font-bold shrink-0" style={{ fontSize: 8, letterSpacing: "0.08em" }}>legacy prose</span>
-                        <span className="tabular-nums" style={{ fontFamily: FONT_MONO }}>{ev.transmission}</span>
-                      </p>
-                    )}
                   </div>
-                ) : (
-                  <EngineAbsence s={ex.sections.position} />
-                )}
+                ) : (() => {
+                  // OP4.2 fallback ladder: the event's own typed chain (the
+                  // strongest theme's, populated by build_explanations) →
+                  // legacy prose tagged as unverified → the engine's honest
+                  // absence note. Never both chain and prose.
+                  const view = buildTransmissionView(ev.transmission_chain, ev.transmission);
+                  if (view.kind === "chain") {
+                    return (
+                      <div>
+                        <p className="uppercase font-bold mb-1" style={{ fontSize: 9, letterSpacing: "0.1em", color: INK.whisper }}>
+                          event record chain — strongest linked theme
+                          {view.weakestHopConfidence !== null && (
+                            <span className="tabular-nums ml-2" style={{ fontFamily: FONT_MONO, letterSpacing: 0 }}>
+                              weakest hop {Math.round(view.weakestHopConfidence * 100)} — the chain is never stronger than this
+                            </span>
+                          )}
+                        </p>
+                        {view.hops.map((h, i) => <Hop key={h.rel_uid + i} hop={h} last={i === view.hops.length - 1} />)}
+                      </div>
+                    );
+                  }
+                  if (view.kind === "prose") {
+                    return (
+                      <p className="flex items-baseline gap-2" style={{ fontSize: BODY, color: INK.support, lineHeight: 1.6 }}>
+                        <span className="uppercase font-bold shrink-0 rounded px-1.5 py-px"
+                          style={{ fontSize: 8, letterSpacing: "0.08em", color: AMBER, border: `1px solid ${BORDER.hairline}` }}>
+                          unverified narrative
+                        </span>
+                        <span>{view.text}</span>
+                      </p>
+                    );
+                  }
+                  return <EngineAbsence s={ex.sections.position} />;
+                })()}
               </div>
             </div>
           </Section>

@@ -459,6 +459,16 @@ def run_pipeline(
     try:
         from app.events import build_market_events
         events = build_market_events(clusters, theme_intelligence)
+        # OP1.5 — corroboration histogram of admitted events, one line per
+        # cycle. The audit's OP1 success metrics are computed from this.
+        _hist: dict[str, int] = {"1": 0, "2": 0, "3+": 0}
+        for _e in events:
+            _c = getattr(_e, "corroboration_count", 0)
+            _hist["3+" if _c >= 3 else str(max(1, _c))] += 1
+        log.info(
+            "[events] corroboration histogram (admitted): 1-source=%d 2-source=%d 3+-source=%d of %d events",
+            _hist["1"], _hist["2"], _hist["3+"], len(events),
+        )
     except Exception:
         log.exception("[bg] market event build FAILED — continuing (feed unaffected)")
         events = []
