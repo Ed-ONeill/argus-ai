@@ -496,8 +496,39 @@ def build_market_events(clusters: list, themes: list,
                 kind=evidence_kind(src, ttl),
                 qualified=tier <= 2 or (tier == 3 and is_specific(member_txt)),
             ))
+            # OP1.3 — merged provenance is evidence. Articles folded into this
+            # member at ingestion (OP1.2) attest to the same event; each row
+            # passes the SAME qualification bar as a live member would. The
+            # url guard above already blocks duplicate pages, and the
+            # sources/qualified SETS below count distinct publishers, so
+            # same-source syndication can never inflate corroboration.
+            for row in (getattr(m, "merged_sources", None) or []):
+                r_url = row.url or ""
+                if not r_url or r_url in seen_urls:
+                    continue
+                seen_urls.add(r_url)
+                r_txt = f"{row.title} {row.snippet or ''}"
+                evidence.append(EventEvidence(
+                    source=row.source,
+                    title=row.title,
+                    url=r_url,
+                    published=row.published_dt.isoformat() if row.published_dt else None,
+                    tier=row.tier,
+                    kind=evidence_kind(row.source, row.title),
+                    qualified=row.tier <= 2 or (row.tier == 3 and is_specific(r_txt)),
+                ))
 
+        # First observation anchors to the earliest telling — including the
+        # merged copies dedup used to delete (the E1/E2 fix finally fed by
+        # real data); last_updated is the latest report wherever it lives.
         published = [m.published_dt for m in members if getattr(m, "published_dt", None)]
+        published += [m.first_seen_dt for m in members if getattr(m, "first_seen_dt", None)]
+        published += [
+            row.published_dt
+            for m in members
+            for row in (getattr(m, "merged_sources", None) or [])
+            if row.published_dt
+        ]
         first_seen = min(published).isoformat() if published else now.isoformat()
         last_updated = max(published).isoformat() if published else now.isoformat()
 

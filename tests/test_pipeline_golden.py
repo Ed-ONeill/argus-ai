@@ -5,11 +5,18 @@ harness for the observation pipeline.
 Drives canned feedparser payloads through the real pipeline
 (fetch_all → cluster_items → extract_themes → build_market_events →
 build_explanations) with no network and a fixed event-time clock, and pins
-the CURRENT behavior as the reviewable baseline:
+the CURRENT behavior as the reviewable baseline.
 
-  - delete-dedup removes cross-source duplicates keeping the freshest telling
-    (the audit's I4/I5 baseline — OP1.2 will consciously re-baseline this);
-  - the corroborated wire story therefore registers corroboration_count == 1;
+RE-BASELINED IN SPRINT 2 (OP1.2/OP1.3): the Sprint 1 baseline deliberately
+pinned the audit-I4 defect — the three-wire Fed story surviving dedup as one
+item with corroboration_count == 1. Merge-dedup now folds the duplicate
+tellings into the canonical survivor as MergedSource provenance, and the
+event layer spends it:
+
+  - one canonical item, best-tier survivor (tie → freshest), duplicates
+    preserved as provenance with true first_seen_dt;
+  - the three-wire story registers corroboration_count == 3, corroborated
+    lane (developing == False);
   - per-source funnel stats (PerSourceStats) reconcile with the funnel;
   - fetched_at is stamped and stable across re-fetches;
   - the pipeline is deterministic for fixed inputs.
@@ -121,22 +128,32 @@ def _run_feed(now: datetime) -> tuple[FeedManager, list]:
 
 # ── Golden: ingestion funnel ───────────────────────────────────────────────────
 
-def test_dedup_baseline_keeps_freshest_and_deletes_corroboration(pipeline):
+def test_merge_dedup_folds_corroboration_into_canonical_survivor(pipeline):
+    now = pipeline
     _, items = _run_feed(pipeline)
     titles = {i.title for i in items}
 
-    # I4/I5 baseline: one Fed telling survives — the FRESHEST (CNBC), not the
-    # earliest (Bloomberg). The other two wires are deleted, not merged.
+    # One event remains one event: a single Fed telling survives. All three
+    # wires are tier 1, so the tie-break keeps the freshest (CNBC) — but the
+    # other two are FOLDED, not deleted.
     assert FED_CNBC in titles
     assert FED_BB not in titles and FED_FT not in titles
-    # Distinct stories survive; the retail listicle does not.
     assert {NVDA, OIL, YIELDS} <= titles
     assert NOISE not in titles
     assert len(titles) == 4
 
-    # OP1.1 fields exist but nothing populates merge provenance yet (Sprint 1).
     fed = next(i for i in items if i.title == FED_CNBC)
-    assert fed.merged_sources == [] and fed.first_seen_dt is None
+    rows = {r.url: r for r in fed.merged_sources}
+    assert set(rows) == {"https://fixtures.test/ft/fed", "https://fixtures.test/bloomberg/fed"}
+    assert rows["https://fixtures.test/bloomberg/fed"].source == "Bloomberg Markets"
+    assert rows["https://fixtures.test/bloomberg/fed"].title == FED_BB
+    assert rows["https://fixtures.test/ft/fed"].tier == 1
+    # first observation anchors to the EARLIEST wire (Bloomberg, 120m ago);
+    # gmtime rounds to seconds, hence the tolerance
+    assert fed.first_seen_dt is not None
+    assert abs((fed.first_seen_dt - (now - timedelta(minutes=120))).total_seconds()) < 2
+    # published_dt semantics untouched: the survivor's own publish time
+    assert abs((fed.published_dt - (now - timedelta(minutes=30))).total_seconds()) < 2
 
 
 def test_per_source_funnel_stats_reconcile(pipeline):
@@ -193,7 +210,8 @@ def _events_pipeline(now: datetime):
     return items, clusters, themes, events, explanations
 
 
-def test_events_baseline_corroboration_is_one_after_dedup(pipeline):
+def test_events_spend_preserved_corroboration(pipeline):
+    now = pipeline
     items, clusters, themes, events, explanations = _events_pipeline(pipeline)
 
     assert len(clusters) >= 1
@@ -202,12 +220,23 @@ def test_events_baseline_corroboration_is_one_after_dedup(pipeline):
     assert FED_CNBC in by_title, "the Fed event must be admitted (tier-1 source)"
 
     fed = by_title[FED_CNBC]
-    # THE audit-I4 baseline this harness exists to guard: a three-wire story
-    # enters the event layer as a single-source event because ingestion dedup
-    # deleted the corroborating copies. OP1.2/OP1.3 will re-baseline this to 3.
-    assert fed.corroboration_count == 1
-    assert fed.developing is True
-    assert len(fed.evidence) == 1 and fed.evidence[0].source == "CNBC Economy"
+    # Sprint 2 re-baseline of the audit-I4 tripwire: the three-wire story now
+    # enters the event layer with its independent attestations intact.
+    assert fed.source_count == 3
+    assert fed.corroboration_count == 3
+    assert fed.developing is False                     # corroborated lane
+    assert {e.source for e in fed.evidence} == \
+        {"CNBC Economy", "Financial Times", "Bloomberg Markets"}
+    assert all(e.qualified for e in fed.evidence)
+    # decay anchors to the earliest wire's publish time, not the re-report
+    first_seen = datetime.fromisoformat(fed.first_seen)
+    assert abs((first_seen - (now - timedelta(minutes=120))).total_seconds()) < 2
+
+    # Event identity and theme linkage are untouched: the event still IS its
+    # cluster (id equality is the load-bearing join), anchored on the same
+    # freshest primary as before Sprint 2.
+    fed_cluster = next(c for c in clusters if c.primary.title == FED_CNBC)
+    assert fed.id == fed_cluster.id
 
 
 def test_explanations_cover_events_and_populate_typed_chains(pipeline):

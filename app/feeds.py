@@ -1496,9 +1496,99 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+_MAX_MERGED = 12   # provenance rows per survivor (OP1.1 pickle-size bound)
+
+
+def _fold_into(survivor: FeedItem, loser: FeedItem) -> None:
+    """
+    Fold `loser` into `survivor` as MergedSource provenance (OP1.2).
+
+    The loser's identity row and any provenance it already carries transfer
+    to the survivor; duplicate URLs are skipped so syndicated copies and
+    re-encounters can never create a second attestation for the same page.
+    first_seen_dt becomes the earliest valid publish time seen so far.
+    """
+    rows = list(survivor.merged_sources)
+    seen = {survivor.url} | {r.url for r in rows}
+
+    candidates = [MergedSource(
+        source=loser.source,
+        title=loser.title,
+        url=loser.url,
+        published_dt=loser.published_dt,
+        snippet=loser.snippet[:_MAX_SNIPPET],
+        tier=_source_tier(loser.source),
+    )] + list(loser.merged_sources)
+
+    for row in candidates:
+        if row.url in seen or len(rows) >= _MAX_MERGED:
+            continue
+        seen.add(row.url)
+        rows.append(row)
+    survivor.merged_sources = rows
+
+    times = [t for t in (
+        survivor.first_seen_dt, survivor.published_dt, loser.first_seen_dt,
+        loser.published_dt, *(r.published_dt for r in rows),
+    ) if t is not None]
+    survivor.first_seen_dt = min(times) if times else None
+
+    for ent in loser.affected_entities:
+        if ent not in survivor.affected_entities:
+            survivor.affected_entities.append(ent)
+
+
 def _dedup_items(items: list[FeedItem]) -> list[FeedItem]:
     """
-    Remove near-duplicate headlines (sorted newest-first, so we keep freshest).
+    Consolidate near-duplicate headlines (OP1.2 merge-dedup).
+
+    The dedup LAW is unchanged: two items are the same real-world event iff
+    their title-Jaccard ≥ _DEDUP_THRESHOLD against the bucket anchor (the
+    first-encountered, i.e. freshest, telling — anchors never move, so
+    grouping is identical to the legacy delete path). What changed is what
+    happens to duplicates: they FOLD into the surviving item as MergedSource
+    provenance instead of being deleted, and the survivor is the best
+    SOURCE-TIER telling (tie → freshest) rather than blindly the freshest —
+    the tier-1 wire's text is the canonical one.
+
+    settings.merge_dedup=False restores the legacy delete behavior verbatim
+    (instant rollback, not a long-lived mode).
+    """
+    from app.config import settings
+    if not settings.merge_dedup:
+        return _dedup_items_legacy(items)
+
+    survivors:    list[FeedItem]  = []
+    anchor_words: list[set[str]]  = []
+    for item in items:
+        words = _title_words(item.title)
+        matched = False
+        for i, aw in enumerate(anchor_words):
+            if _jaccard(words, aw) >= _DEDUP_THRESHOLD:
+                incumbent = survivors[i]
+                if _source_tier(item.source) < _source_tier(incumbent.source):
+                    # better tier wins; incumbent (and its provenance) folds in
+                    _fold_into(item, incumbent)
+                    survivors[i] = item
+                    log.debug("Dedup folded (survivor swap → %s): %.80s",
+                              item.source, incumbent.title)
+                else:
+                    _fold_into(incumbent, item)
+                    log.debug("Dedup folded into [%s]: %.80s",
+                              incumbent.source, item.title)
+                matched = True
+                break
+        if not matched:
+            survivors.append(item)
+            anchor_words.append(words)
+    return survivors
+
+
+def _dedup_items_legacy(items: list[FeedItem]) -> list[FeedItem]:
+    """
+    Pre-OP1.2 behavior: remove near-duplicate headlines outright (sorted
+    newest-first, so the freshest survives and corroboration is destroyed).
+    Kept verbatim as the merge_dedup=False rollback path.
     """
     kept: list[FeedItem]       = []
     kept_words: list[set[str]] = []
@@ -1695,7 +1785,7 @@ class FeedManager:
         self.last_source_stats = stats
         _raw_total = sum(s.raw_fetched for s in stats.values())
         log.info(
-            "[feed] funnel: %d raw → %d post-dedup (%d duplicates removed) → %d kept "
+            "[feed] funnel: %d raw → %d post-dedup (%d duplicates consolidated) → %d kept "
             "(%d hard-excluded, %d below threshold, %d capped) across %d sources",
             _raw_total, _pre_dedup_n - _dedup_removed, _dedup_removed, len(scored),
             sum(s.hard_excluded for s in stats.values()),

@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -70,14 +70,36 @@ class Settings(BaseSettings):
     log_level:          str  = "INFO"
     save_conversations: bool = True
 
-    # ── Institutional memory (M3.1) ───────────────────────────────────────────
+    # ── Ingestion (OP1.2) ─────────────────────────────────────────────────────
+    # Merge-dedup: cross-source duplicates fold into the best-tier survivor as
+    # MergedSource provenance instead of being deleted, so corroboration
+    # survives ingestion. False restores legacy delete-dedup — an instant
+    # rollback hatch, not a long-lived mode.
+    merge_dedup: bool = True
+
+    # ── Institutional memory (M3.1, default flipped in OP3.3) ─────────────────
     # Backend-only Supabase credentials for the institutional-memory archive.
     # The service-role key must NEVER be exposed to the frontend or logged.
-    # institutional_memory_enabled defaults to False so incomplete deployments
-    # can never write to production without explicit configuration.
+    # OP3.3 (ARGUS_OBSERVATION_PIPELINE_AUDIT_V1 I19/T21): when the flag is not
+    # explicitly set, it derives from credential presence — creds configured
+    # means the archive accrues; every unpersisted day is unrecoverable
+    # history. An explicit env value still wins, and ARGUS_MEMORY_DISABLED
+    # force-disables regardless (the escape hatch). Incomplete deployments
+    # (no creds) still can never write.
     supabase_url:              str  = ""
     supabase_service_role_key: str  = ""
     institutional_memory_enabled: bool = False
+    argus_memory_disabled:     bool = False   # env ARGUS_MEMORY_DISABLED
+
+    @model_validator(mode="after")
+    def _derive_institutional_memory_default(self) -> "Settings":
+        if self.argus_memory_disabled:
+            self.institutional_memory_enabled = False
+        elif "institutional_memory_enabled" not in self.model_fields_set:
+            self.institutional_memory_enabled = bool(
+                self.supabase_url and self.supabase_service_role_key
+            )
+        return self
 
     # ── Prediction & outcome ledger (M3.3) ────────────────────────────────────
     # Issuance/resolution run only when BOTH institutional memory and this flag
