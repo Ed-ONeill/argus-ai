@@ -3,7 +3,8 @@
 **Date:** 2026-07-21
 **Source:** `docs/ARGUS_OBSERVATION_PIPELINE_AUDIT_V1.md` (finding IDs `I#`/`T#`/`B#`/`C#` referenced throughout).
 **Scope:** Tier 1 of the audit's improvement program — OP1 (corroboration-preserving ingestion), OP2 (stable event identity), OP3 (durable observation ledger + rehydration), OP4 (consume the canonical reasoning). Tiers 2–3 (OP5–OP12) are out of scope except where a one-line boundary change is a hard prerequisite (called out explicitly as OP4.0).
-**Status:** Plan only. Nothing in this document is implemented.
+**Status:** Sprints 1–2 implemented (2026-07-21). Sprints 3+ remain plan only.
+**Amendment (2026-07-21):** the Sprint 3–4 identity-and-ledger phase (OP2.x, OP3.1, OP3.4, sequencing, metrics) is revised per `docs/OP2_SPRINT3_DESIGN_REVIEW.md` required changes **C1–C8**. Amended passages are marked `[C#]`. Governing decisions: the identity journal is the permanent source of truth and the registry is a rebuildable hot view [C1]; uids are opaque ULIDs with natural-key aliases [C2]; merge/split/correction/retraction semantics exist from schema v1 [C3]; observation facts and engine assessments are separate row types [C4]; the permanent journal is never deleted [C5]; identity mutation is single-writer [C6]; continuity matching is drift-guarded and flagged [C7]; stable uids enter archive evidence refs at first deployment [C8].
 
 Complexity scale: **S** ≤ 1 day, **M** 1–3 days, **L** 3–7 days. Estimates assume one engineer familiar with the codebase.
 
@@ -91,62 +92,90 @@ Today `MarketEvent.id == cluster.id == md5(primary.title + primary.url)` (`clust
 
 **Design constraint discovered in the audit and honored here:** `event.id`'s equality with `cluster.id` is load-bearing for theme linkage (`events.py:461-465` joins themes via `contributing_cluster_ids`). Therefore: **`id` stays cluster-scoped and ephemeral; a new `uid` becomes the durable identity.** Nothing that currently joins on `id` changes in OP2.
 
-### OP2.1 — `EventRegistry` module with persistent matching
+### 2.0 Event lifecycle charter and authority model *(amended — governs every OP2 task)*
 
-- **Why it matters:** The registry is the missing cross-cycle memory of "which events exist." Every downstream persistence task (OP3.5 explanations history, prediction outcomes, archive evidence refs) keys on it.
-- **What:** New `app/event_registry.py`. State: `{event_uid → RegistryEntry{uid, canonical_title, anchor_entities, title_fingerprint (word set), member_urls (set, capped), first_seen, last_seen, cycles_observed, last_cluster_id, event_type}}`, persisted to `data/event_registry.json` (atomic write per cycle; SQLite only if the JSON exceeds ~2 MB in practice). Matching, per new cycle's event candidate, in order: (1) any shared member URL → same event; (2) shared anchor entity (from `companies_direct`/resolved entities) AND title-Jaccard ≥ 0.4 AND within 72h of `last_seen`; (3) title-Jaccard ≥ 0.6 within 72h (entity-less macro stories). No match → mint `uid = "ev_" + sha1(first member url + first_seen date)[:12]`. Expire entries `last_seen > 14 days`.
-- **Dependencies:** OP1.3 helps matching quality (merged URLs enlarge `member_urls`) but is not required.
-- **Complexity:** L. The matcher's thresholds need a tuning pass against a week of real cycles (use the OP1.5 fixture + a recorded multi-cycle trace).
-- **Affected:** new module; `app/background.py` (call after `build_market_events`); `data/`.
-- **Migration:** Registry starts empty — uids are only meaningful going forward. No backfill attempted.
-- **Risks:** (1) **Over-merge** (two distinct events sharing an entity and similar titles — e.g. two Fed-speaker headlines) — mitigated by requiring URL or entity+high-Jaccard, and `event_type` must match for rule 2/3. (2) **Under-merge** (headline rewritten beyond Jaccard 0.6) — acceptable; a missed match degrades to today's behavior, never worse. (3) Registry corruption — atomic write + schema-versioned JSON with discard-and-restart-on-parse-error (worst case = today's amnesia).
-- **Testing:** Unit: same story across 3 simulated cycles with a changing primary → one uid, `cycles_observed == 3`. Adversarial fixtures for the over-merge cases above. Restart test: kill/reload registry mid-sequence, uid continuity preserved.
-- **Success criteria:** On a 24h live trace, ≥ 90% of events that a human would call "the same story" (sampled, N=30) keep one uid across all their cycles; zero observed over-merges in the same sample.
+**Charter.** An **event** is a discrete real-world occurrence with a bounded lifecycle (typically hours to ~two weeks of active reporting). Long-running arcs — a hiking cycle, a months-long deal saga — belong to **themes and narratives**, not to event identity. Follow-ups, escalations, corrections, and successor occurrences are related to prior events through **edges between uids** (`follows`, `corrects`, `supersedes`), never by silently sharing identity. The registry is an identity system, not a narrative store; anything that needs an arc reads the theme layer or walks successor edges.
 
-### OP2.2 — Thread `uid` through MarketEvent, Explanations, and the API
+**Authority model [C1, C6].** The append-only **identity journal** is the permanent source of truth for identity. The **registry is a bounded hot materialized view** over the journal's active window — disposable and rebuildable by replay at any time, and replaceable later by SQLite or another indexed store without touching the journal. Identity **mutation is single-writer**: minting, aliasing, folding, eviction, and retraction serialize through one authority interface, invoked only by the full-feed background cycle (the same `if not categories and not sources` guard the institutional-memory writer uses — partial/Markets-only warm runs resolve uids **read-only** and never mint). Ingestion and extraction may fan out; **minting never does**. In-process, a lock serializes mutations; in any future multi-worker or distributed deployment, workers scale around this single identity authority (the interface is the future service boundary), never by sharding it.
 
-- **Why it matters:** A registry nobody reads is dead compute. This makes `uid` addressable everywhere `id` is today, without breaking `id`'s cluster join.
-- **What:** `MarketEvent.uid: str = ""` (defaulted, set post-registry-match in the background cycle). `ProcessedFeed.explanations` becomes keyed by `uid` **additively**: keep the current `id` key and add a parallel `uid → same dict` entry during a two-sprint transition (the dict values are shared references; cost is keys only). Serialize `uid` on the event schema (`api/routes/feed.py:296,534` region) and add it to `frontend/src/lib/types.ts` event type. Frontend consumers keep using `id` until OP4 tasks switch them.
+**Identity is annotated, never rewritten [C3].** Merges alias, splits supersede, retractions mark — no journal record is ever mutated or deleted, and no uid is ever reassigned.
+
+### OP2.1 — Identity authority: journal + registry hot view *(amended [C1, C2, C6, C7])*
+
+- **Why it matters:** The identity layer is the missing cross-cycle memory of "which events exist." Every downstream persistence task (OP3.4 explanations history, prediction outcomes, archive evidence refs) keys on it — some of them years later, which is why permanence lives in the journal, not the hot view.
+- **What:** New `app/event_identity.py` exposing one mutation interface (the **identity authority**) and two artifacts:
+
+  **(a) Identity journal** — an append-only JSONL stream (`data/ledger/identity-YYYY-MM-DD.jsonl`, on the OP3.1 ledger substrate). Record types, all carrying `{v: 1, ts (injected cycle clock, never wall-clock inside logic), cycle_id}`:
+  - `mint` — `{uid, event_type, origin_fingerprint: {title_words, anchor_entities}, natural_keys: [], member_urls, first_seen}`
+  - `attach` — `{uid, member_urls_added, latest_fingerprint, match_rule, match_score, last_seen}` (continuity observation)
+  - `alias` — `{uid (younger), canonical_uid (elder), reason: "fold", match_rule}` — permanent; see OP2.4
+  - `supersede` — `{uid (parent), superseded_by: [child_uids], reason}` (split — children are fresh mints; parent history untouched)
+  - `retract` — `{uid, reason, source_ref}` (uid preserved; disposition changes, identity never deleted)
+  - `evict` — `{uid, reason: "ttl" | "cap"}` (leaves the hot view **only**; identity remains permanently resolvable through the journal)
+
+  **(b) Registry hot view** — in-memory dict + atomic snapshot (`data/event_registry.json` via temp-rename) carrying a `journal_watermark`. Entry schema: `{uid, status: "active" | "dormant" | "superseded" | "retracted", event_type, origin_fingerprint (frozen at mint), latest_fingerprint (updates on attach), natural_keys, member_urls (capped), first_seen, last_seen, cycles_observed, last_cluster_id, aliases_in: []}`. **Startup:** load snapshot if parseable, then replay journal records past the watermark; if the snapshot is corrupt or absent, rebuild the entire hot view by replaying the journal's active window (14 days) — **corruption recovery is replay, never amnesia**. **Torn tail:** a malformed final journal line (crash mid-append) is skipped with a WARNING; worst case loses one cycle's identity actions, never history. Snapshot per cycle initially (cadence decoupled later if profiling demands).
+
+  **uid scheme [C2]:** `ev_` + ULID (128-bit, Crockford base32). Opaque — no embedded semantics, never parsed. Permanent once minted. Replay **reads** mint records; it never re-mints, so rebuilt views always carry the originally assigned uids.
+
+  **Natural keys [C2]:** `namespace:value` entries (e.g. `sec:0000320193-26-000042`, future `transcript:<id>`), unique across the hot view. Matching **rule 0**: an observation carrying a known natural key resolves to that uid exactly, bypassing all fuzzy matching.
+
+  **Matching ladder** (per candidate, in order): (0) natural key; (1) any shared member URL; (2) shared anchor entity AND title-Jaccard ≥ 0.4 against **origin or latest** fingerprint AND within 72h of `last_seen` AND same `event_type`; (3) title-Jaccard ≥ 0.6 against either fingerprint within 72h, same `event_type` (entity-less macro stories). **Drift guard [C7]:** for rules 2–3 the candidate must additionally share ≥ 1 anchor entity or member URL with the **origin** fingerprint — day-3 headline evolution still matches via `latest`, but chained drift (A→B→C where C no longer resembles A) dies at the root. **Same-cycle dedup [C6]:** candidates are processed in deterministic order (sorted cluster id) and match against the hot view *including entries minted earlier in the same cycle* — two novel same-story clusters can never both mint.
+
+  **Write authority [C6]:** mutation methods live behind the one interface; only the full-feed cycle calls them; partial runs get read-only resolution. In-process mutations are lock-serialized; the interface is documented as the future single-writer service boundary for any multi-worker deployment.
+
+  **Flag:** `event_identity` (master). Off → no journal writes, no uids, exact Sprint 2 behavior — the instant-rollback hatch.
+- **Dependencies:** OP3.1a (ledger substrate — journal infra lands first); OP1.3 (merged URLs make rule 1 far stronger).
+- **Complexity:** L. Thresholds still need the tuning pass against a recorded multi-cycle trace.
+- **Affected:** new `app/event_identity.py`; `app/background.py` (authority call after `build_market_events`, full-feed guard); `app/config.py` (flags); `data/ledger/`, `data/event_registry.json`.
+- **Migration:** Journal and view start empty — uids are only meaningful going forward, no backfill. The hot view is disposable at any time (delete → replay rebuilds it).
+- **Risks:** (1) **Over-merge** — drift guard + type match + adversarial fixtures (two Fed-speaker headlines; two same-sector earnings). (2) **Under-merge** — acceptable; degrades to Sprint 2 behavior, never worse. (3) **Alias chains** — an `alias` record must always point to a canonical uid that is not itself an alias *at write time* (resolve-before-write), making resolution a single hop; a visited-set + depth-cap in the resolver is belt-and-braces against journal corruption. (4) Journal growth — bounded by C5 policy (compress, cold-tier, never delete).
+- **Testing:** Replay determinism (journal → byte-identical hot view, identical uids); snapshot + watermark recovery; corrupt-snapshot full replay; torn-tail skip; same-cycle duplicate-mint prevention; drift-guard adversarial cases; natural-key exact resolution; retracted-vs-never-existed distinguishability; post-eviction uid resolution via journal; partial-run read-only enforcement.
+- **Success criteria:** ≥ 90% single-uid continuity on a sampled 24h trace (N=30) with zero over-merges — unchanged; **plus [C1/C2]:** cold-start rebuild from journal reproduces the pre-crash hot view exactly; a uid evicted from the hot view remains resolvable; no natural key ever maps to two uids; `event_identity=false` restores Sprint 2 behavior byte-for-byte on the golden fixture.
+
+### OP2.2 — Thread `uid` through MarketEvent, Explanations, the API — and the archive *(amended [C8])*
+
+- **Why it matters:** A registry nobody reads is dead compute. This makes `uid` addressable everywhere `id` is today, without breaking `id`'s cluster join — and it stops the sealed archive from accruing another year of references to ephemeral cluster md5s, which was the audit's original complaint.
+- **What:** `MarketEvent.uid: str = ""` (defaulted, set by the identity authority in the background cycle; alias-resolved so a folded event carries its canonical uid). `ProcessedFeed.explanations` becomes keyed by `uid` **additively**: keep the current `id` key and add a parallel `uid → same dict` entry during a two-sprint transition (shared references; cost is keys only). Serialize `uid` on the event schema (`api/routes/feed.py:296,534` region) and add it to `frontend/src/lib/types.ts`. Frontend consumers keep using `id` until OP4 tasks switch them. **[C8] Institutional-memory dual-referencing:** from the first uid deployment, the archive writer records `uid` alongside the legacy cluster-id in every evidence reference it seals (`graph_adapter.py` / `snapshot_builder.py` evidence_refs — additive field, invisible to existing readers). Legacy cluster ids are preserved where existing consumers require them; the stable uid is the permanent reference going forward; **no new sealed record may reference only an ephemeral cluster id.**
 - **Dependencies:** OP2.1.
 - **Complexity:** M.
-- **Affected:** `app/events.py` (dataclass), `app/background.py` (assignment), `app/processed_cache.py` (no schema change — dict), `api/routes/feed.py`, `frontend/src/lib/types.ts`.
-- **Migration:** Dual-keyed explanations dict guarantees no consumer breaks; old pickles fine (defaulted field).
+- **Affected:** `app/events.py` (dataclass), `app/background.py` (assignment), `app/processed_cache.py` (no schema change — dict), `api/routes/feed.py`, `frontend/src/lib/types.ts`, `app/institutional_memory/graph_adapter.py` + `snapshot_builder.py` (evidence_refs dual-write).
+- **Migration:** Dual-keyed explanations dict guarantees no consumer breaks; old pickles fine (defaulted field); archive rows gain an additive field — rollback leaves harmless extra refs, never dangling ones.
 - **Risks:** Key-count doubling in `explanations` — trivial. Confusion risk between `id`/`uid` for future contributors — one comment block at the `MarketEvent` dataclass stating the contract ("`id` joins clusters/themes within a cycle; `uid` is durable identity across cycles") is the mitigation.
-- **Testing:** API contract test: every serialized event has non-empty `uid`; explanations reachable by both keys; fixture asserts `uid` stability across two simulated cycles while `id` changes.
-- **Success criteria:** 100% of admitted events carry a uid; a frontend `fetch` two cycles apart can join the same story by uid (demonstrated in a test, not a UI change).
+- **Testing:** API contract test: every serialized event has non-empty `uid`; explanations reachable by both keys; fixture asserts `uid` stability across two simulated cycles while `id` changes; **[C8]** archive-writer test: every sealed evidence ref carries both ids, and a fold mid-transition seals the canonical (alias-resolved) uid.
+- **Success criteria:** 100% of admitted events carry a uid; a frontend `fetch` two cycles apart can join the same story by uid (demonstrated in a test, not a UI change); zero post-deploy sealed records referencing only cluster ids.
 
 ### OP2.3 — Registry-anchored `first_seen` and continuity fields
 
 - **Why it matters:** Even with OP1.3, `first_seen` is min-over-*current-members* (`events.py:500-501`). The registry knows the true lifetime first observation — this is the final piece of the E1 decay fix, and `cycles_observed` is the first honest "developing for N hours" signal Argus has ever had.
-- **What:** After registry match, override `event.first_seen = min(member-derived, registry.first_seen)`; recompute `editorial_score` after the override (decay uses it — `events.py:555` currently scores before any registry pass, so the score call moves or repeats post-match). Add `cycles_observed` to the event schema.
+- **What:** After identity resolution, override `event.first_seen = min(member-derived, registry.first_seen)`; recompute `editorial_score` after the override (decay uses it — `events.py:555` currently scores before any registry pass, so the score call moves or repeats post-match). Add `cycles_observed` to the event schema. **[C7] Behind flag `registry_decay`** (default on once OP2.1 soaks; off → member-derived first_seen only) with the same instant-rollback contract as `merge_dedup`.
 - **Dependencies:** OP2.1, OP2.2.
 - **Complexity:** S–M.
-- **Affected:** `app/background.py` (ordering), `app/events.py` (rescore), `api/routes/feed.py`.
+- **Affected:** `app/background.py` (ordering), `app/events.py` (rescore), `api/routes/feed.py`, `app/config.py` (flag).
 - **Migration:** Decay now correctly punishes old-but-rereported events — expect some long-running stories to drop in rank. That is the E1 fix working; review on live data for a week before considering threshold retunes.
 - **Risks:** Double-scoring cost (negligible — pure function); a mis-merged registry entry drags a fresh event's first_seen backward (bounded by OP2.1's over-merge criteria; monitor via the sample audit).
 - **Testing:** Fixture: day-2 re-report of a day-1 event scores lower than a genuinely new event of equal corroboration.
 - **Success criteria:** Zero events in the weekly sample whose displayed age contradicts registry first_seen; decay curve on multi-day stories monotonic across cycles.
 
-### OP2.4 — Multi-day story continuity (registry-level folding)
+### OP2.4 — Multi-day story continuity (registry-level folding with alias semantics) *(amended [C3, C7])*
 
-- **Why it matters:** Audit I8: clustering windows (3–8h) split developing stories into sibling events, splitting corroboration and double-surfacing. Widening clustering windows would perturb the whole cluster layer; folding at the registry/event layer gets the continuity with a fraction of the blast radius.
-- **What:** When two *current-cycle* events match the same registry entry (rules in OP2.1), fold the younger into the older before admission: merge evidence (URL-deduped), recompute corroboration/first_seen/score, keep the elder's `uid`. This generalizes the existing `_fold_near_duplicates` (`events.py:403,559`) from title-similarity-now to identity-over-time.
+- **Why it matters:** Audit I8: clustering windows (3–8h) split developing stories into sibling events, splitting corroboration and double-surfacing. Widening clustering windows would perturb the whole cluster layer; folding at the identity layer gets the continuity with a fraction of the blast radius.
+- **What:** When two *current-cycle* events match the same registry entry (rules in OP2.1), fold the younger into the older before admission: merge evidence (URL-deduped), recompute corroboration/first_seen/score, keep the elder's `uid`. This generalizes the existing `_fold_near_duplicates` (`events.py:403,559`) from title-similarity-now to identity-over-time. **[C3] Alias semantics:** if the younger event had already minted a uid (duplicate discovery across cycles), the fold appends an `alias` journal record — the younger uid becomes a **permanent alias** of the elder canonical uid. Alias resolution is deterministic and cycle-safe: canonical uids are resolved *before* the alias record is written (so every stored alias is a single hop), and the resolver carries a visited-set + depth-cap as corruption armor. Every consumer path that accepts a uid (explanations keys, archive refs, future predictions) resolves aliases first. **Splits** (one grouping later revealed to be two occurrences) are never retroactive: mint fresh child uids, append `supersede` on the parent, leave the parent's history intact. **[C7] Behind flag `registry_folding`** (off → Sprint 2 behavior: siblings surface separately).
 - **Dependencies:** OP2.1–2.3.
 - **Complexity:** M.
-- **Affected:** `app/events.py` (fold pass), `app/event_registry.py`.
-- **Migration:** Fewer, stronger events on multi-day stories; feeds may look "shorter" on slow days — that is E8-honest, not a regression.
-- **Risks:** Same over-merge risk as OP2.1, now user-visible as a wrongly-fused event. Keep rule 1 (shared URL) and rule 2 (entity + Jaccard + same event_type) only for folding; do **not** fold on rule 3 (title-only).
-- **Testing:** Fixture: day-1 "Company X explores sale" + day-2 "Company X hires advisers for sale" (shared entity, type ma) → one event, merged evidence, day-1 first_seen. Negative: two different companies' earnings, no fold.
-- **Success criteria:** In a week of live data, sampled multi-day stories (N=15) surface as one event ≥ 80% of the time, with zero wrong fusions in the sample.
+- **Affected:** `app/events.py` (fold pass), `app/event_identity.py` (alias/supersede records + resolver), `app/config.py` (flag).
+- **Migration:** Fewer, stronger events on multi-day stories; feeds may look "shorter" on slow days — that is E8-honest, not a regression. Aliases are forward-only; rollback (flag off) stops new folds but already-written aliases remain valid resolutions forever.
+- **Risks:** Same over-merge risk as OP2.1, now user-visible as a wrongly-fused event. Keep rule 0 (natural key), rule 1 (shared URL) and rule 2 (entity + Jaccard + same event_type) only for folding; do **not** fold on rule 3 (title-only).
+- **Testing:** Fixture: day-1 "Company X explores sale" + day-2 "Company X hires advisers for sale" (shared entity, type ma) → one event, merged evidence, day-1 first_seen. Negative: two different companies' earnings, no fold. **[C3]** Alias tests: cross-cycle duplicate discovery → alias record, both uids resolve to one canonical; alias-of-alias impossible at write time; resolver survives a hand-corrupted cyclic alias pair; supersede leaves parent queryable with `superseded_by` populated.
+- **Success criteria:** In a week of live data, sampled multi-day stories (N=15) surface as one event ≥ 80% of the time, with zero wrong fusions in the sample; every historical uid ever exposed to a consumer still resolves after arbitrary fold sequences.
 
-### OP2.5 — Registry hygiene: GC, restart survival, observability
+### OP2.5 — Hot-view hygiene: eviction, restart survival, observability *(amended [C1, C5])*
 
-- **Why:** A registry that grows forever or dies on restart re-creates the problems it solves.
-- **What:** 14-day expiry sweep per cycle; atomic persistence (write-temp-rename) already specified in OP2.1 — this task adds: startup load metric log ("registry: N entries, oldest X"), a `/api/feed/status`-style count in the existing status payload (no new endpoint), and a max-size guard (drop oldest beyond 5,000 entries).
-- **Dependencies:** OP2.1. **Complexity:** S. **Affected:** `app/event_registry.py`, `api/routes/feed.py` (status field).
-- **Risks/Migration:** none material.
-- **Testing:** GC unit test; restart test extended to assert load metrics.
-- **Success criteria:** Registry survives deploys (verified in staging restart drill); size stable over 30 days.
+- **Why:** A hot view that grows forever or dies on restart re-creates the problems it solves — but hygiene applies to **residency, never to identity**.
+- **What:** 14-day **eviction** sweep per cycle and a 5,000-entry cap, both emitting `evict` journal records — an evicted uid leaves the hot view but remains permanently resolvable through the journal (eviction ≠ deletion, per the C1 authority model). Startup replay metric log ("hot view: N entries rebuilt, watermark X, replayed Y records"), a `/api/feed/status`-style count in the existing status payload (no new endpoint). Corrupt snapshot → full window replay (specified in OP2.1); this task adds the drill.
+- **Dependencies:** OP2.1. **Complexity:** S. **Affected:** `app/event_identity.py`, `api/routes/feed.py` (status field).
+- **Risks/Migration:** none material — the view is disposable by design.
+- **Testing:** Eviction unit test (evicted uid still resolves via journal); restart drill asserting replay metrics; snapshot-deletion drill (view rebuilt identically from journal).
+- **Success criteria:** Hot view survives deploys and snapshot loss (staging drills); size stable over 30 days; zero uids rendered unresolvable by hygiene.
 
 ---
 
@@ -154,17 +183,28 @@ Today `MarketEvent.id == cluster.id == md5(primary.title + primary.url)` (`clust
 
 Today the observation store is three `ProcessedFeed` pickles overwritten every cycle (`processed_cache.py:185`, audit I19); Supabase institutional memory is off by default (`config.py:80`); `ThemeMomentumTracker` state dies with the process and pollutes the sealed archive with reset values (T6); Explanations are never persisted (T2); saved items live in a module dict (B13).
 
-### OP3.1 — Observation ledger (append-only cycle journal)
+### OP3.1 — Observation ledger substrate *(amended [C4, C5] — delivered as 3.1a substrate + 3.1b assessments)*
 
-- **Why it matters:** This is the system's first durable record of what it observed and concluded, cycle over cycle. It converts the discarded `new_this_cycle` diff (`background.py:609-617`) into history, and it is the substrate for every "what changed since yesterday" feature and for OP1's success metrics.
-- **What:** New `app/observation_ledger.py`. Per cycle, append one JSONL record to `data/ledger/YYYY-MM-DD.jsonl`: cycle timestamp, per-item rows for *newly seen* items only (url, source, tier, published_dt, fetched_at, first_seen_dt, merged source names, signal_score), per-event rows (uid, corroboration_count, source_count, editorial_score, lane, theme_ids), and the new/changed uid lists. Rotation: gzip files > 7 days, delete > 90 (configurable). Write is best-effort — a ledger failure must never fail the pipeline (log WARNING, continue).
-- **Dependencies:** OP1.1 (fields), OP2.2 (uids) for full value; can land after OP1 with cluster ids and be upgraded.
-- **Complexity:** M.
-- **Affected:** new module; `app/background.py` (call site next to the existing `new_this_cycle` computation); `data/`.
-- **Migration:** None — new artifact. Disk budget: at ~200 new items/day and ~50 events/cycle-delta, well under 5 MB/day uncompressed.
-- **Risks:** Disk growth on runaway loops (rotation + a per-cycle row cap of 2,000 guards it); PII/none (public headlines only).
-- **Testing:** Unit: two simulated cycles → second cycle logs only deltas; corrupt-line tolerance on read; rotation test with frozen clock.
-- **Success criteria:** After 7 live days: the ledger can answer "when did Argus first see event uid X, and how did its corroboration evolve?" for any sampled event; OP1's corroboration histogram computed from ledger instead of log-grepping.
+- **Why it matters:** This is the system's permanent record of what it observed and what it concluded — two different things with different lifecycles, kept as different row types. It converts the discarded `new_this_cycle` diff (`background.py:609-617`) into history, carries the identity journal (OP2.1 rides on this substrate), and feeds every "what changed since yesterday" feature, OP1's success metrics, and the future Institutional Timeline.
+- **What:** New `app/observation_ledger.py`: a shared append-only JSONL substrate under `data/ledger/` with **three streams** — `observations-`, `assessments-`, `identity-` (daily files). Every row carries `{v: <schema_version>, kind, ts, cycle_id, seq}`; a row is addressable as `<date>#<seq>`.
+
+  **Observation rows [C4] — immutable facts, never mutated:**
+  `{v, kind: "observation", seq, url, source, tier, title, snippet, published_dt, fetched_at, first_seen_dt, content_hash, provenance: {feed_url, merged_from: [urls]}, disposition: "admitted" | "folded" | "suppressed", supersedes: "<date>#<seq>" | null}`
+  Corrections **append** a new observation row with `supersedes` pointing at the corrected row — the original is never edited or deleted. A false report stays in the record with its correcting row appended (and, where the event itself is withdrawn, the identity stream's `retract`); history shows both the error and the correction, which is precisely the institutional memory. Sprint 3 writes `admitted` (and `folded`, cheap via merge provenance) rows; the `suppressed` disposition is reserved schema for OP8 — the field exists from v1 so suppression capture needs no migration.
+
+  **Assessment rows [C4] — append-only, engine-versioned interpretation:**
+  `{v, kind: "assessment", seq, event_uid (alias-resolved), engine_version, ts, editorial_score, score_components, lane: "developing" | "corroborated", corroboration_count, source_count, confidence, theme_ids, disposition: "admitted" | "floor_rejected"}`
+  Written when an event's assessment materially changes (hash-gated like OP3.4), not every cycle. An assessment is a statement by a specific engine version at a specific time — later engines append newer assessments; nothing overwrites.
+
+  **Retention [C5]:** gzip files older than 7 days; move to a cold tier (`data/ledger/cold/`, or object storage when deployed) after 90; **never delete**. Retention limits apply to hot *views and indexes only* (which are rebuildable), never to the journal. Disk honesty: < 5 MB/day uncompressed at current volumes — permanence costs megabytes.
+  Writes are best-effort — a ledger failure never fails the pipeline (WARNING + continue); readers skip torn tail lines.
+- **Dependencies:** 3.1a (substrate + observation stream + identity stream infra): OP1.1 fields only — **lands before OP2.1, which writes into it**. 3.1b (assessment stream): OP2.2 (uids).
+- **Complexity:** M (3.1a) + S (3.1b).
+- **Affected:** new module; `app/background.py` (call site next to the existing `new_this_cycle` computation); `app/event_identity.py` (journal stream client); `data/ledger/`.
+- **Migration:** None — new artifact. Rollback: stop writing; existing rows remain valid forever (append-only means rollback never corrupts).
+- **Risks:** Disk growth on runaway loops (per-cycle row cap of 2,000 + compression guards it; deletion is not the answer); PII/none (public headlines only); schema drift (every row self-describes via `v` — readers must tolerate unknown newer fields).
+- **Testing:** Unit: two simulated cycles → second cycle logs only deltas; correction rows append with `supersedes` and originals remain readable; observation immutability (no code path rewrites a row); assessment append-on-change gating; corrupt-line tolerance; rotation/compression with frozen clock; cold-tier move preserves addressability.
+- **Success criteria:** After 7 live days: the ledger answers "when did Argus first see event uid X, and how did its corroboration evolve?" for any sampled event **from observation + assessment rows alone**; OP1's corroboration histogram computed from the ledger instead of log-grepping; a simulated correction is reconstructable as original → superseding row with both visible.
 
 ### OP3.2 — `ThemeMomentumTracker` persistence + rehydration
 
@@ -193,7 +233,7 @@ Today the observation store is three `ProcessedFeed` pickles overwritten every c
 ### OP3.4 — Persist Explanations history
 
 - **Why it matters:** Audit T2: verdict bands, counterevidence, and chains vanish every cycle and restart. Persisting them creates the record of *how conviction evolved* — the raw material for calibration, and for any future "Argus said X on Monday" accountability surface.
-- **What:** Extend the observation ledger (OP3.1): when an event's explanation `content_hash` changes (the hash already exists per audit T2), append the full explanation dict keyed by `uid` to `data/ledger/explanations-YYYY-MM-DD.jsonl`. Not Supabase (volume and shape don't fit the snapshot schema); revisit after OP4.3 settles the consumer story.
+- **What:** A fourth stream on the OP3.1 substrate (`explanations-YYYY-MM-DD.jsonl`, same row headers, same retention [C5]): when an event's explanation `content_hash` changes (the hash already exists per audit T2), append the full explanation dict keyed by **alias-resolved** `uid` [C3] with `engine_version` [C4]. Not Supabase (volume and shape don't fit the snapshot schema); revisit after OP4.3 settles the consumer story.
 - **Dependencies:** OP2.2 (uid keys), OP3.1 (ledger infra).
 - **Complexity:** S–M.
 - **Affected:** `app/observation_ledger.py`, `app/background.py` (hash-change detection beside `build_explanations` at `background.py:483-498`).
@@ -304,11 +344,11 @@ Ordered to front-load intelligence gain and instrumentation, keep behavior chang
 |---|---|---|---|
 | **1** | OP1.5, OP1.1, OP4.2, OP3.2 | Nets, schema, first visible win, stop the bleeding | Fixture harness before any behavior change; OP1.1 is pure schema; OP4.2 is zero-risk and proves the program visibly; OP3.2 halts *ongoing* archive corruption — every deploy without it writes more spurious transitions. |
 | **2** | OP1.2, OP1.3, OP3.3 | The corroboration fix | The audit's two highest-gain changes, reviewed against Sprint 1's fixtures; OP3.3 starts the 60-day archive clock as early as possible (it gates OP4.4/OP4.5 value later — calendar time, not eng time, is the scarce resource). |
-| **3** | OP1.4, OP2.1, OP2.2, OP4.0 | Identity | Registry lands while corroboration changes soak; uid + timestamps cross the boundary; OP4.0's freshness resurrection is observed under Sprint 4's parity logging. |
-| **4** | OP2.3, OP2.4, OP3.1, OP4.1 | Continuity + ledger + graph ingestion | Registry-anchored decay and folding complete OP2; the ledger lands with uids available; the graph learns about events (additive, isolated from legacy engines). |
-| **5** | OP2.5, OP3.4, OP3.5, OP4.3a (dual-run) | Durability + parity soak | Explanations history and saved items need uid/ledger from prior sprints; 4.3a runs flagged-off, accumulating divergence data. |
+| **3** | OP1.4, OP3.1a (ledger substrate: observation + identity streams, schemas v1), OP2.1 (identity authority + hot view), OP4.0 | Identity foundations *(amended)* | **Journal before registry [C1]:** the substrate, schemas, and single-writer authority land before any production uid is minted; OP2.1 writes its journal into 3.1a's streams from day one. Timestamps cross the boundary (OP4.0) while Sprint 2's corroboration changes soak. |
+| **4** | OP2.2 (+ archive dual-refs [C8]), OP2.3 (flagged), OP2.4 (flagged, alias semantics), OP3.1b (assessment stream), OP4.1 | Continuity + consumption *(amended)* | uid crosses every boundary — API, explanations, sealed archive — in the same sprint it starts flowing, so no transition window accrues cluster-id-only records; decay override and folding soak behind their flags; the graph learns about events (additive, isolated from legacy engines). |
+| **5** | OP2.5 (eviction drills), OP3.4, OP3.5, OP4.3a (dual-run) | Durability + parity soak | Explanations history and saved items ride the substrate and alias-resolved uids from prior sprints; hygiene drills prove replay recovery; 4.3a runs flagged-off, accumulating divergence data. |
 | **6** | OP4.3b, OP4.3c, OP4.4 | The consumption flip | Parity gate from Sprint 5 decides the flag; un-gated Explanation sections land with consumers already rendering them. |
-| **7** | OP4.5, cleanup | Real history + retire scaffolding | Archive has ~5 weeks of accrual by now — real trend lines are worth rendering; remove dual-keyed explanations dict, retire `merge_dedup` flag, delete legacy engine imports from event paths (grep-enforced), re-baseline fixtures. |
+| **7** | OP4.5, cleanup | Real history + retire scaffolding | Archive has ~5 weeks of accrual by now — real trend lines are worth rendering; remove dual-keyed explanations dict, retire the `merge_dedup` / `registry_decay` / `registry_folding` flags after their soaks (the `event_identity` master flag stays — it is the permanent kill switch for the identity authority), delete legacy engine imports from event paths (grep-enforced), re-baseline fixtures. |
 
 Parallelization note: backend (OP1/OP2/OP3) and frontend (OP4) tracks are independent within each sprint except at the OP4.0/OP2.2 join in Sprint 3 — two engineers can run the tracks concurrently with that single sync point.
 
@@ -319,7 +359,7 @@ Parallelization note: backend (OP1/OP2/OP3) and frontend (OP4) tracks are indepe
 Measured before Sprint 1 (baseline week) and after Sprint 7:
 
 1. **Corroboration honesty:** share of admitted events with `corroboration_count ≥ 2` — expect ≥ 2× baseline; `story_count == len(evidence)` invariant holds.
-2. **Identity stability:** ≥ 90% of sampled multi-cycle stories hold one uid for their lifetime; multi-day stories surface as one event ≥ 80%.
+2. **Identity stability *(amended [C1–C3])*:** ≥ 90% of sampled multi-cycle stories hold one uid for their lifetime; multi-day stories surface as one event ≥ 80%; a cold-start journal replay reproduces the hot view and every uid assignment exactly; every uid ever exposed to a consumer remains resolvable (aliases and evictions included); no natural key ever maps to two uids.
 3. **Memory integrity:** zero momentum-reset transitions in the archive after a restart drill; sealed-day counter incrementing daily; any event's confidence-band trajectory reconstructable from the ledger.
 4. **Consumption:** Explanation consumers 1 → ≥ 4 surfaces; `transmission_chain` consumers 0 → 2; theme-memory v1 consumers 0 → ≥ 1; zero fabricated timestamps (`Date.now()` fallback counter = 0) and zero synthesized momentum history in the frontend.
 5. **No-regression gates:** golden-fixture suite green at every sprint boundary; feed p95 latency within 10% of baseline; parity divergence log < 5% or fully adjudicated before each flag flip.
