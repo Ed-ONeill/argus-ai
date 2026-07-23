@@ -271,7 +271,9 @@ class ObservationLedger:
         self._dir = directory
         self.observations = shared_stream("observations", directory)
         self.identity = shared_stream("identity", directory)
+        self.assessments = shared_stream("assessments", directory)
         self._seen_urls: set[str] | None = None   # lazy-seeded from today's rows
+        self._last_assessment: dict[str, str] | None = None   # uid -> content_hash
 
     # ── observation stream (OP3.1a: admitted + folded dispositions) ──────────
 
@@ -339,10 +341,69 @@ class ObservationLedger:
             log.warning("[ledger] observation recording failed (%s) — pipeline continues", exc)
             return 0
 
+    # ── assessment stream (OP3.1b): append-only, engine-versioned, hash-gated ─
+
+    def _seed_assessments(self, day: str) -> dict[str, str]:
+        if self._last_assessment is None:
+            last: dict[str, str] = {}
+            for _, row in self.assessments.read_rows(day):
+                uid, h = row.get("event_uid"), row.get("content_hash")
+                if uid and h:
+                    last[uid] = h
+            self._last_assessment = last
+        return self._last_assessment
+
+    def record_assessments(self, events: list, *, now: datetime, cycle_id: str) -> int:
+        """Append one assessment row per uid-carrying event whose assessment
+        MATERIALLY changed since its last row (hash-gated — an unchanged event
+        writes nothing). Assessments are interpretation, never facts: each row
+        names the engine version that produced it [C4]. Never raises."""
+        try:
+            from app.events import EDITORIAL_ENGINE_VERSION
+            last = self._seed_assessments(_day(now))
+            written = 0
+            for ev in events or []:
+                uid = getattr(ev, "uid", "") or ""
+                if not uid:
+                    continue
+                lane = "developing" if getattr(ev, "developing", False) else "corroborated"
+                fields = {
+                    "event_uid": uid,
+                    "engine_version": EDITORIAL_ENGINE_VERSION,
+                    "editorial_score": round(float(getattr(ev, "editorial_score", 0.0)), 1),
+                    # honest null: the score decomposition is not serialized
+                    # anywhere yet (OP8) — never partially invented here
+                    "score_components": None,
+                    "lane": lane,
+                    "corroboration_count": int(getattr(ev, "corroboration_count", 0)),
+                    "source_count": int(getattr(ev, "source_count", 0)),
+                    "confidence": int(getattr(ev, "confidence", 0)),
+                    "theme_ids": sorted(getattr(ev, "theme_ids", []) or []),
+                    "cycles_observed": int(getattr(ev, "cycles_observed", 0)),
+                    "disposition": "admitted",
+                }
+                basis = json.dumps(
+                    {k: fields[k] for k in ("lane", "corroboration_count", "source_count",
+                                            "editorial_score", "confidence", "theme_ids")},
+                    sort_keys=True)
+                h = hashlib.sha256(f"{uid}|{fields['engine_version']}|{basis}"
+                                   .encode("utf-8")).hexdigest()[:16]
+                if last.get(uid) == h:
+                    continue
+                if self.assessments.append("assessment", {**fields, "content_hash": h},
+                                           ts=now, cycle_id=cycle_id):
+                    last[uid] = h
+                    written += 1
+            return written
+        except Exception as exc:
+            log.warning("[ledger] assessment recording failed (%s) — pipeline continues", exc)
+            return 0
+
     def compress_old(self, *, now: datetime | None = None) -> None:
         now = now or datetime.now(timezone.utc)
         self.observations.compress_old(now=now)
         self.identity.compress_old(now=now)
+        self.assessments.compress_old(now=now)
 
 
 # Module-level singleton — the background pipeline's substrate

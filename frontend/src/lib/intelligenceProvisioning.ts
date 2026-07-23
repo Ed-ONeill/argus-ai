@@ -47,6 +47,10 @@ export interface CanonicalIntelligenceInputs {
   deals?:          GraphState["deals"];
   snapshots?:      GraphState["snapshots"];
   privateSignals?: GraphState["privateSignals"];
+  // OP4.1 (Sprint 4) — the canonical event layer: FeedResponse.events +
+  // explanations enter the graph as Event nodes keyed by durable uid.
+  events?:         GraphState["events"];
+  explanations?:   GraphState["explanations"];
 }
 
 /** The one canonical mapping from gathered inputs onto adapter state. */
@@ -60,6 +64,8 @@ export function canonicalGraphState(i: CanonicalIntelligenceInputs): GraphState 
     deals:         i.deals,
     snapshots:     i.snapshots,
     privateSignals: i.privateSignals,
+    events:        i.events,
+    explanations:  i.explanations,
   };
 }
 

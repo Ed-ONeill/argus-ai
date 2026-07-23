@@ -15,9 +15,9 @@
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
 import type { SourcePage, IntelNode } from "./intelligenceGraph";
-import { observationEpochs } from "./timestamps";
+import { observationEpochs, toEpochMs } from "./timestamps";
 import { tickerInfo } from "./tickerMetadata";
-import type { ThemeIntelligence, StoryCluster, FeedItem, Episode } from "./types";
+import type { ThemeIntelligence, StoryCluster, FeedItem, Episode, MarketEvent } from "./types";
 import { matchEpisodeThemesDetailed } from "./listenIntelligence";
 import type { ThemeSnapshot } from "./themeSnapshots";
 import type { MADeal } from "@/hooks/useMAIntelligence";
@@ -225,6 +225,106 @@ export function ingestStories(stories: StoryInput[], themes: ThemeIntelligence[]
             link(storyId, "mentions", th, { page: PAGE_FEED });
             link(storyId, "supports", th, { strength: num(item.signal_score, 40), page: PAGE_FEED });
           }
+        }
+      } catch { fail(); }
+    }
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 2b - Canonical Market Events (OP4.1, Sprint 4)
+ *
+ * The backend's editorial units enter the graph as first-class Event nodes
+ * keyed by durable uid, carrying corroboration, lane, cycles_observed, and
+ * the canonical Explanation. Edges preserve the attribution law: companies
+ * NAMED by the event link "names" (attributed); theme-transmitted exposure
+ * stays "mentions" (contextual) — never conflated. Edge confidence derives
+ * from corroboration, never the default-50 (audit C16). Event nodes are
+ * invisible to the legacy engines until OP4.3 (getNeighbors excludes type
+ * "Event" by default).
+ * ------------------------------------------------------------------ */
+
+/** Corroboration-derived confidence: 1 source 40, 2 → 60, 3 → 80, cap 90. */
+const corroborationConfidence = (count: number): number =>
+  Math.min(90, 40 + Math.max(0, num(count) - 1) * 20);
+
+export function ingestEvents(
+  events: MarketEvent[],
+  explanations: Record<string, unknown> = {},
+  themes: ThemeIntelligence[] = [],
+): IngestStats {
+  if (!events?.length) return { ...EMPTY_STATS };
+  return runIngest(fail => {
+    for (const ev of events) {
+      try {
+        const key = s(ev.uid) || ev.id;
+        const conf = corroborationConfidence(ev.corroboration_count);
+        const first = toEpochMs(ev.first_seen);
+        const last = toEpochMs(ev.last_updated) ?? first;
+        const explanation =
+          (ev.uid ? explanations[ev.uid] : undefined) ?? explanations[ev.id] ?? null;
+
+        // resolve the cluster's story node BEFORE the event node exists, so
+        // the cluster-id alias unambiguously still belongs to the story
+        const story = G.searchNodes(ev.id, { types: ["Story"], limit: 1 })[0];
+
+        const eventId = G.addNode({
+          id: `event:${key}`,
+          // exactIdentity: an event's headline IS its cluster primary's title,
+          // so label/alias fuzzy-merge would absorb the Event into its Story
+          // node — events merge by namespaced id only. The cluster id lives in
+          // metadata, never in aliases, for the same reason.
+          exactIdentity: true,
+          label: s(ev.title) || key,
+          type: "Event",
+          aliases: [`event:${key}`, s(ev.uid)].filter(Boolean),
+          importance: num(ev.editorial_score),
+          confidence: conf,
+          ...(first !== null ? { firstSeen: first } : {}),
+          ...(last !== null ? { lastSeen: last } : {}),
+          sources: [PAGE_FEED],
+          metadata: {
+            uid: s(ev.uid) || null,
+            cluster_id: ev.id,
+            lane: ev.developing ? "developing" : "corroborated",
+            event_type: ev.event_type,
+            corroboration_count: num(ev.corroboration_count),
+            source_count: num(ev.source_count),
+            cycles_observed: num(ev.cycles_observed),
+            first_seen: ev.first_seen,
+            last_updated: ev.last_updated,
+            explanation,   // the canonical Explanation rides the node verbatim
+          },
+        }).id;
+
+        // lookup-first linkage: an existing company/theme node is linked as-is
+        // (never re-touched — pre-OP4.3 the legacy world must be byte-stable
+        // under event ingestion); only genuinely new companies are created.
+        const companyNode = (ticker: string): string | null => {
+          const hit = G.searchNodes(ticker, { types: ["Company"], limit: 1 })[0];
+          return hit ? hit.id : addCompany(ticker, PAGE_FEED);
+        };
+        const direct = new Set(ev.companies_direct ?? []);
+        for (const ticker of ev.companies_direct ?? []) {
+          link(eventId, "names", companyNode(ticker),
+               { strength: conf, confidence: conf, page: PAGE_FEED });
+        }
+        for (const ticker of ev.companies ?? []) {
+          if (direct.has(ticker)) continue;
+          link(eventId, "mentions", companyNode(ticker),
+               { strength: Math.round(conf * 0.6), confidence: Math.round(conf * 0.6), page: PAGE_FEED });
+        }
+        for (const t of themes) {
+          if (!(ev.theme_ids ?? []).includes(t.id)) continue;
+          const hit = G.searchNodes(t.name ?? t.id, { types: ["Theme"], limit: 1 })[0];
+          link(eventId, "supports", hit ? hit.id : addTheme(t, PAGE_FEED),
+               { strength: conf, confidence: conf, page: PAGE_FEED });
+        }
+        // evidence edge to the cluster's story node when it exists in-graph
+        // (stories alias their cluster id) — linkage only, never node creation
+        if (story) {
+          link(eventId, "evidenced_by", story.id,
+               { strength: conf, confidence: conf, page: PAGE_FEED });
         }
       } catch { fail(); }
     }
@@ -446,6 +546,9 @@ export interface CurrentState {
   deals?:          MADeal[];
   privateSignals?: PrivateSignalInput[];
   snapshots?:      ThemeSnapshot[];
+  // OP4.1 — the canonical event layer (FeedResponse.events + explanations)
+  events?:         MarketEvent[];
+  explanations?:   Record<string, unknown>;
 }
 
 export interface BuildResult {
@@ -455,6 +558,7 @@ export interface BuildResult {
   listen:         IngestStats;
   ma:             IngestStats;
   privateMarkets: IngestStats;
+  events:         IngestStats;
   total:          IngestStats;
 }
 
@@ -470,10 +574,12 @@ export function buildGraphFromCurrentState(state: CurrentState = {}): BuildResul
   const listen         = state.episodes?.length       ? ingestListen(state.episodes, state.matchedThemes ?? [], { speakersByEpisode: state.speakersByEpisode }) : { ...EMPTY_STATS };
   const ma             = state.deals?.length          ? ingestMA(state.deals, state.themes ?? [])                                   : { ...EMPTY_STATS };
   const privateMarkets = state.privateSignals?.length ? ingestPrivateMarkets(state.privateSignals)                                  : { ...EMPTY_STATS };
+  // events last: stories/themes/companies exist for evidence + linkage edges
+  const events         = state.events?.length         ? ingestEvents(state.events, state.explanations ?? {}, state.themes ?? [])    : { ...EMPTY_STATS };
 
   return {
-    themes, snapshots, stories, listen, ma, privateMarkets,
-    total: sumStats([themes, snapshots, stories, listen, ma, privateMarkets]),
+    themes, snapshots, stories, listen, ma, privateMarkets, events,
+    total: sumStats([themes, snapshots, stories, listen, ma, privateMarkets, events]),
   };
 }
 

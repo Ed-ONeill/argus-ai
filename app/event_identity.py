@@ -541,6 +541,30 @@ class IdentityAuthority:
             log.warning("[identity] snapshot write failed (%s) — journal remains authoritative", exc)
 
 
+    # ── read-only continuity accessors (OP2.3/OP2.4) ──────────────────────────
+
+    def entry_for(self, uid: str) -> RegistryEntry | None:
+        """Read-only hot-view lookup (alias-resolved). Callers must never
+        mutate the returned entry — all mutation goes through the journal."""
+        return self.entries.get(self.resolve(uid))
+
+    def record_fold_alias(self, younger_uid: str, canonical_uid: str, *,
+                          now: datetime, cycle_id: str) -> bool:
+        """Journal a fold alias (OP2.4 [C3]): the younger uid becomes a
+        permanent alias of the elder canonical. Single-writer discipline: only
+        the full-feed background path may call this. Validation (self-alias,
+        cycle, re-alias) is enforced by _validate_alias; a refused alias never
+        reaches the journal."""
+        from app.config import settings
+        if not getattr(settings, "event_identity", True):
+            return False
+        with self._lock:
+            return self._journal_apply("alias", {
+                "uid": younger_uid, "canonical_uid": canonical_uid,
+                "reason": "fold", "match_rule": "registry_fold",
+            }, ts=now, cycle_id=cycle_id)
+
+
 # Module-level singleton, constructed lazily so importing this module never
 # performs IO at import time.
 _authority: IdentityAuthority | None = None
@@ -553,3 +577,105 @@ def get_authority() -> IdentityAuthority:
         if _authority is None:
             _authority = IdentityAuthority()
         return _authority
+
+
+# ── Sprint 4 continuity glue (OP2.2 / OP2.3 / OP2.4) ──────────────────────────
+# The one place identity meets the event list. Called ONLY from the full-feed
+# background cycle (single-writer [C6]); warm/partial runs never reach it.
+
+
+def _iso_min(a: str, b: str) -> str:
+    """Earlier of two ISO timestamps; tolerant of parse failures."""
+    try:
+        return a if datetime.fromisoformat(a) <= datetime.fromisoformat(b) else b
+    except Exception:
+        return min(a, b) if a and b else (a or b)
+
+
+def resolve_and_fold(events: list, *, now: datetime, cycle_id: str) -> list:
+    """Resolve identity for one full-feed cycle's admitted events, then apply
+    registry-backed continuity:
+
+      OP2.2 — every event carries its canonical (alias-resolved) uid;
+      OP2.3 — behind settings.registry_decay: first_seen anchors to the
+              registry's lifetime first observation and the event is rescored,
+              so decay runs from the TRUE first telling; cycles_observed rides
+              along;
+      OP2.4 — behind settings.registry_folding: current-cycle events resolving
+              to the SAME uid fold into the elder telling (evidence union via
+              the existing _merge_into law, rescored) — one institutional
+              event, once. Identity matching decided sameness; folding only
+              enacts it, so unrelated stories can never fold.
+
+    MarketEvent.id is never touched. Returns the (possibly shorter) list,
+    re-ranked by editorial score."""
+    from app.config import settings
+    if not getattr(settings, "event_identity", True) or not events:
+        return events
+    from app.events import _merge_into, editorial_score
+
+    auth = get_authority()
+    uid_map = auth.process_cycle(events, now=now, cycle_id=cycle_id, full_feed=True)
+    for ev in events:
+        ev.uid = uid_map.get(ev.id, "")
+
+    # OP2.3 — registry-anchored decay (flagged)
+    for ev in events:
+        entry = auth.entry_for(ev.uid) if ev.uid else None
+        if entry is None:
+            continue
+        ev.cycles_observed = entry.cycles_observed
+        if getattr(settings, "registry_decay", True) and entry.first_seen:
+            anchored = _iso_min(ev.first_seen, entry.first_seen)
+            if anchored != ev.first_seen:
+                ev.first_seen = anchored
+                ev.editorial_score = editorial_score(ev, now)
+
+    # OP2.4 — same-uid folding (flagged)
+    if getattr(settings, "registry_folding", True):
+        by_uid: dict[str, list] = {}
+        out: list = []
+        for ev in events:
+            if ev.uid:
+                by_uid.setdefault(ev.uid, []).append(ev)
+            else:
+                out.append(ev)
+        folded = 0
+        for uid, group in by_uid.items():
+            if len(group) == 1:
+                out.append(group[0])
+                continue
+            # elder telling keeps the file: earliest first observation, then
+            # earliest latest-report (shared provenance can tie first_seen),
+            # then cluster id as the deterministic last resort
+            group.sort(key=lambda e: (e.first_seen, e.last_updated, e.id))
+            keeper = group[0]
+            for ev in group[1:]:
+                # cross-cycle duplicate discovery: a younger event that had
+                # already minted its own uid aliases to the canonical [C3]
+                if ev.uid and ev.uid != uid:
+                    auth.record_fold_alias(ev.uid, uid, now=now, cycle_id=cycle_id)
+                _merge_into(keeper, ev)
+                folded += 1
+            keeper.editorial_score = editorial_score(keeper, now)
+            out.append(keeper)
+        if folded:
+            log.info("[identity] folded %d same-uid sibling event(s) this cycle", folded)
+        events = out
+        events.sort(key=lambda e: -e.editorial_score)
+
+    return events
+
+
+def dual_key_explanations(explanations: dict, events: list) -> int:
+    """OP2.2 transition: every explanation stays reachable by legacy id AND
+    becomes reachable by uid (same dict object — keys only). Returns the
+    number of uid keys added."""
+    added = 0
+    for ev in events or []:
+        uid = getattr(ev, "uid", "") or ""
+        eid = getattr(ev, "id", "") or ""
+        if uid and eid in explanations and uid not in explanations:
+            explanations[uid] = explanations[eid]
+            added += 1
+    return added

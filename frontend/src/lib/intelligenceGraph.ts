@@ -43,6 +43,9 @@ export type NodeType =
   | "Story"
   | "EconomicRelease"
   | "ETF"
+  // OP4.1 — canonical Market Event (keyed by durable uid; excluded from
+  // getNeighbors by default until OP4.3 migrates the legacy engines)
+  | "Event"
   | (string & {});
 
 /** Known relationship types. Also an open union; add freely. */
@@ -111,7 +114,12 @@ export interface IntelEdge {
 /** Input shapes: everything except id/label is optional and defaulted. */
 export type NodeInput =
   Partial<Omit<IntelNode, "id" | "label" | "type">> &
-  { id?: string; label: string; type: NodeType };
+  { id?: string; label: string; type: NodeType;
+    /** OP4.1 — namespaced canonical nodes (e.g. `event:<uid>`) merge by id
+        ONLY: label/alias fuzzy-merge is skipped so an Event whose headline
+        equals its cluster's story can never be absorbed into it. Requires
+        `id`. */
+    exactIdentity?: boolean };
 
 export type EdgeInput =
   Partial<Omit<IntelEdge, "id" | "source" | "target" | "relationshipType">> &
@@ -170,7 +178,9 @@ export class IntelligenceGraph {
    * Returns the canonical node.
    */
   addNode(input: NodeInput): IntelNode {
-    const keys = this.candidateKeys(input.id, input.label, input.aliases);
+    const keys = input.exactIdentity && input.id
+      ? [normalizeKey(input.id)]
+      : this.candidateKeys(input.id, input.label, input.aliases);
     const existingId = this.findByKeys(keys);
     if (existingId) return this.updateNode(existingId, input)!;
 
@@ -305,10 +315,17 @@ export class IntelligenceGraph {
   /**
    * Neighboring nodes, optionally filtered by relationship type and/or direction.
    * O(degree). Returns each neighbor once with the connecting edge.
+   *
+   * OP4.1 isolation: canonical Event nodes are EXCLUDED by default so the
+   * legacy reasoning engines (evidence/inference/causal — LEGACY-PATH until
+   * OP4.3) never see them; consumers of the canonical event layer opt in with
+   * includeEventNodes. This is the sanctioned kind filter, not a hidden one —
+   * remove the default when OP4.3 retires the legacy engines.
    */
   getNeighbors(
     id: string,
-    opts: { relationshipType?: RelationshipType; direction?: "out" | "in" | "both" } = {},
+    opts: { relationshipType?: RelationshipType; direction?: "out" | "in" | "both";
+            includeEventNodes?: boolean } = {},
   ): Array<{ node: IntelNode; edge: IntelEdge }> {
     const self = this.getNode(id);
     if (!self) return [];
@@ -319,7 +336,10 @@ export class IntelligenceGraph {
       const otherId = edge.source === self.id ? edge.target : edge.source;
       if (seen.has(otherId)) continue;
       const node = this.nodes.get(otherId);
-      if (node) { seen.add(otherId); out.push({ node, edge }); }
+      if (!node) continue;
+      if (node.type === "Event" && !opts.includeEventNodes) continue;
+      seen.add(otherId);
+      out.push({ node, edge });
     }
     return out;
   }

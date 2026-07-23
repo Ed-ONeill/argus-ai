@@ -307,6 +307,11 @@ class MarketEventSchema(BaseModel):
     developing:          bool = False
     reporting_period:    str | None = None   # earnings: "Q1".."Q4" | "FY" when stated
     merged_event_ids:    list[str] = []      # cluster ids folded into this event
+    # OP2.2 (Sprint 4) — durable identity: ev_ + opaque ULID, stable across
+    # cycles ("" when identity is off / warm runs). cycles_observed counts
+    # full-feed cycles this identity has been observed (OP2.3).
+    uid:                 str = ""
+    cycles_observed:     int = 0
 
 
 class ExplanationSectionSchema(BaseModel):
@@ -545,6 +550,8 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
             developing          = ev.developing,
             reporting_period    = getattr(ev, "reporting_period", None),
             merged_event_ids    = getattr(ev, "merged_event_ids", []),
+            uid                 = getattr(ev, "uid", "") or "",
+            cycles_observed     = int(getattr(ev, "cycles_observed", 0) or 0),
         )
         for ev in raw_events
     ]

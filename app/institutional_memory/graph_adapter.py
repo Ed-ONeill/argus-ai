@@ -132,6 +132,7 @@ def build_graph_cycle_state(
     *,
     memory_summaries: dict[str, dict] | None = None,
     provenance_extra: dict | None = None,
+    cluster_uid_map: dict[str, str] | None = None,
 ) -> GraphCycleState:
     """Build all M3.2 records for one cycle. Deterministic for a fixed feed."""
     from app.narrative_graph import build_narrative_graph
@@ -326,7 +327,8 @@ def build_graph_cycle_state(
 
     # ── derived narratives (backend re-derivation of the frontend algorithm) ──
     for snap in _derive_narrative_snapshots(themes, now, today, graph_version,
-                                            provenance, memory_summaries or {}):
+                                            provenance, memory_summaries or {},
+                                            cluster_uid_map=cluster_uid_map):
         state.narrative_snapshots.append(snap)
         register(snap.entity_uid, snap.title)
 
@@ -359,6 +361,8 @@ def _derive_narrative_snapshots(
     graph_version: str,
     provenance: dict,
     memory_summaries: dict[str, dict],
+    *,
+    cluster_uid_map: dict[str, str] | None = None,
 ) -> list[NarrativeSnapshotRecord]:
     """Group themes by shared macro drivers; driver groups with identical
     member sets merge into one narrative keyed by the combined driver set —
@@ -412,6 +416,11 @@ def _derive_narrative_snapshots(
             cid for tid in member_ids
             for cid in (getattr(theme_by_id[tid], "contributing_cluster_ids", []) or [])
         }) or None
+        # OP2.2 [C8] — durable uids alongside the legacy cluster-id refs
+        evidence_uids = sorted({
+            (cluster_uid_map or {})[cid] for cid in (evidence_refs or [])
+            if cid in (cluster_uid_map or {})
+        }) or None
         contradictions = {
             "per_member": [
                 {"uid": theme_uid(tid),
@@ -435,6 +444,7 @@ def _derive_narrative_snapshots(
                 "shared_driver_strength": None,
             },
             "evidence_refs": evidence_refs,
+            "evidence_uids": evidence_uids,
             "contradictions": contradictions,
         })
 
@@ -456,6 +466,7 @@ def _derive_narrative_snapshots(
             "coherence": d["coherence"],
             "coherence_components": d["coherence_components"],
             "evidence_refs": d["evidence_refs"],
+            "evidence_uids": d["evidence_uids"],
             "contradictions": d["contradictions"],
             "dominance_status": dominance,
             "rank": rank,

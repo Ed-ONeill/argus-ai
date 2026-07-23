@@ -49,6 +49,9 @@ export function useArgusIntelligence(): ArgusIntelligence {
   const themes = useMemo(() => data?.theme_intelligence ?? [], [data?.theme_intelligence]);
   const clusters = useMemo(() => data?.clusters ?? [], [data?.clusters]);
   const episodes = useMemo(() => allEpisodes ?? [], [allEpisodes]);
+  // OP4.1 — the canonical event layer rides the same feed query
+  const events = useMemo(() => data?.events ?? [], [data?.events]);
+  const explanations = useMemo(() => data?.explanations ?? {}, [data?.explanations]);
 
   // Daily theme-memory accrual, in its one home (idempotent per day; the
   // drawer and Explorer previously each ran this effect themselves).
@@ -63,8 +66,8 @@ export function useArgusIntelligence(): ArgusIntelligence {
 
   // The one canonical mapping + the one rebuild sequence underneath.
   const state = useMemo(
-    () => canonicalGraphState({ themes, clusters, episodes, deals, snapshots }),
-    [themes, clusters, episodes, deals, snapshots],
+    () => canonicalGraphState({ themes, clusters, episodes, deals, snapshots, events, explanations }),
+    [themes, clusters, episodes, deals, snapshots, events, explanations],
   );
   const graph = useIntelligenceGraph({ enabled: true, ...state });
 

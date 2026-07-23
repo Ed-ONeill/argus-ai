@@ -88,6 +88,11 @@ export interface MarketEvent {
   developing:          boolean;  // single-source, awaiting corroboration
   reporting_period:    string | null;   // earnings: "Q1".."Q4" | "FY" when stated
   merged_event_ids:    string[];        // cluster ids folded into this event
+  // OP2.2 (Sprint 4) — durable identity: ev_ + opaque ULID, stable across
+  // cycles ("" when identity is off). cycles_observed = full-feed cycles this
+  // identity has been observed.
+  uid?:                string;
+  cycles_observed?:    number;
 }
 
 // ── Canonical Explanation (IRE-1) ────────────────────────────────────────────

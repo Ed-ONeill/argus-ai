@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     # transition flag.
     event_identity: bool = True
 
+    # ── Registry-backed continuity (OP2.3 / OP2.4, Sprint 4) ──────────────────
+    # registry_decay: event first_seen anchors to the registry's lifetime first
+    # observation (decay from the TRUE first telling, not this cycle's members)
+    # and events carry cycles_observed. Off → member-derived first_seen only.
+    # registry_folding: two current-cycle events resolving to the same uid fold
+    # into one before serving (same identity law as matching; rule-3 title-only
+    # matches never fold). Off → siblings surface separately (Sprint 3
+    # behavior). Both are instant-rollback hatches with the merge_dedup
+    # contract.
+    registry_decay:   bool = True
+    registry_folding: bool = True
+
     # ── Institutional memory (M3.1, default flipped in OP3.3) ─────────────────
     # Backend-only Supabase credentials for the institutional-memory archive.
     # The service-role key must NEVER be exposed to the frontend or logged.

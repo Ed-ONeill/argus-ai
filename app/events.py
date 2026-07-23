@@ -68,6 +68,10 @@ from app.companies import looks_like_ticker, resolve_companies
 log = logging.getLogger(__name__)
 
 EVENT_SCHEMA_VERSION = 1
+# Version stamp carried on assessment ledger rows (OP3.1b): identifies which
+# editorial engine produced a score/lane so interpretations stay attributable
+# as the engine evolves. Bump when scoring semantics change.
+EDITORIAL_ENGINE_VERSION = "eventscore-f2.1"
 
 # ── Event classes: weights + half-lives (routing, not scoring — E4) ───────────
 # Desk ordering (F2): macro / central bank > policy > earnings > M&A >
@@ -180,6 +184,13 @@ class EventEvidence:
 
 @dataclass
 class MarketEvent:
+    # IDENTITY CONTRACT (OP2.2): `id` joins clusters and themes WITHIN a cycle
+    # (id == StoryCluster.id is load-bearing for contributing_cluster_ids and
+    # legacy archive refs) and changes as the cluster's primary changes.
+    # `uid` is the durable institutional identity ACROSS cycles — minted once
+    # by the identity authority (ev_ + opaque ULID), alias-resolved, permanent.
+    # New persistence and consumers key on uid; nothing that joins on id may
+    # switch fields.
     id: str                       # == StoryCluster.id — the archive's evidence ref
     title: str
     event_type: str
@@ -213,6 +224,12 @@ class MarketEvent:
     developing: bool = False      # single qualified source, awaiting corroboration (F2 lane)
     reporting_period: str | None = None       # earnings events: "Q1".."Q4" | "FY" when stated
     merged_event_ids: list[str] = field(default_factory=list)  # cluster ids folded into this event
+    # OP2.2 (Sprint 4) — durable identity, set by the identity authority on
+    # full-feed cycles ("" on warm/partial runs and when event_identity is
+    # off). OP2.3: cycles_observed = full-feed cycles this identity has been
+    # observed (0 when identity is off).
+    uid: str = ""
+    cycles_observed: int = 0
     schema_version: int = EVENT_SCHEMA_VERSION
 
     def to_dict(self) -> dict:
@@ -234,6 +251,8 @@ class MarketEvent:
             "dominant": self.dominant, "developing": self.developing,
             "reporting_period": self.reporting_period,
             "merged_event_ids": self.merged_event_ids,
+            "uid": self.uid,
+            "cycles_observed": self.cycles_observed,
             "schema_version": self.schema_version,
         }
 

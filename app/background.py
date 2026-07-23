@@ -473,6 +473,20 @@ def run_pipeline(
         log.exception("[bg] market event build FAILED — continuing (feed unaffected)")
         events = []
 
+    # ── Identity continuity (OP2.2/2.3/2.4, Sprint 4) ──────────────────────────
+    # Full-feed cycles only [C6]: events receive their durable uid, decay
+    # anchors to the registry's lifetime first observation (registry_decay),
+    # and same-uid siblings fold into one institutional event
+    # (registry_folding). Warm/partial runs serve uid="" events untouched.
+    _cycle_now = datetime.now(timezone.utc)
+    _cycle_id = _cycle_now.strftime("%Y%m%dT%H%M%SZ")
+    if not categories and not sources:
+        try:
+            from app.event_identity import resolve_and_fold
+            events = resolve_and_fold(events, now=_cycle_now, cycle_id=_cycle_id)
+        except Exception:
+            log.exception("[bg] identity continuity FAILED — continuing (feed unaffected)")
+
     feed = ProcessedFeed(
         items=items,
         top_stories=top,
@@ -481,7 +495,7 @@ def run_pipeline(
         errors=errors,
         promo_excluded=promo_excluded,
         debug_log=debug_log,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=_cycle_now,
         clusters=clusters,
         what_matters_now=wmn,
         sector_data=sector_data,
@@ -503,6 +517,11 @@ def run_pipeline(
         explanations = build_explanations(
             events, theme_intelligence, graph=build_narrative_graph(feed))
         feed.explanations = {eid: ex.to_dict() for eid, ex in explanations.items()}
+        # OP2.2 transition: every explanation reachable by uid as well as by
+        # legacy id (same dict values — keys only; removed when consumers
+        # complete the uid migration).
+        from app.event_identity import dual_key_explanations
+        dual_key_explanations(feed.explanations, events)
     except Exception:
         log.exception("[bg] explanation assembly FAILED — continuing (feed unaffected)")
         feed.explanations = {}
@@ -521,29 +540,27 @@ def run_pipeline(
         except Exception:
             log.exception("[bg] institutional memory write FAILED — continuing (feed unaffected)")
 
-    # ── Observation ledger + identity authority (OP3.1a / OP2.1) ───────────────
+    # ── Observation ledger (OP3.1a observations + OP3.1b assessments) ──────────
     # Full-feed cycles only [C6]: partial/Markets-only warm runs never write
-    # observation rows and never mutate identity — the same guard the memory
-    # writer uses. Both layers are best-effort and never break the pipeline.
+    # ledger rows. Identity resolution itself ran BEFORE feed assembly (the
+    # continuity block above), so assessment rows carry canonical uids.
+    # Best-effort — never breaks the pipeline.
     if not categories and not sources:
-        _cycle_id = feed.generated_at.strftime("%Y%m%dT%H%M%SZ")
         try:
             from app.observation_ledger import observation_ledger
             _n_obs = observation_ledger.record_observations(
-                items, now=feed.generated_at, cycle_id=_cycle_id)
-            observation_ledger.compress_old(now=feed.generated_at)
-            if _n_obs:
-                log.info("[ledger] %d observation row(s) appended (cycle %s)", _n_obs, _cycle_id)
+                items, now=_cycle_now, cycle_id=_cycle_id)
+            _n_ass = observation_ledger.record_assessments(
+                events, now=_cycle_now, cycle_id=_cycle_id)
+            observation_ledger.compress_old(now=_cycle_now)
+            if _n_obs or _n_ass:
+                log.info("[ledger] appended %d observation + %d assessment row(s) (cycle %s)",
+                         _n_obs, _n_ass, _cycle_id)
+            _with_uid = sum(1 for e in events if getattr(e, "uid", ""))
+            log.info("[identity] %d/%d admitted events carry a uid this cycle",
+                     _with_uid, len(events))
         except Exception:
             log.exception("[bg] observation ledger FAILED — continuing (feed unaffected)")
-        try:
-            from app.event_identity import get_authority
-            _uid_map = get_authority().process_cycle(
-                events, now=feed.generated_at, cycle_id=_cycle_id, full_feed=True)
-            log.info("[identity] %d/%d admitted events carry a uid this cycle",
-                     len(_uid_map), len(events))
-        except Exception:
-            log.exception("[bg] identity authority FAILED — continuing (feed unaffected)")
 
     return feed
 

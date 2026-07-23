@@ -73,6 +73,7 @@ def build_theme_snapshot(
     now: datetime,
     *,
     provenance_extra: dict | None = None,
+    cluster_uid_map: dict[str, str] | None = None,
 ) -> SnapshotRecord:
     """Build the canonical daily snapshot for one active theme.
 
@@ -148,6 +149,13 @@ def build_theme_snapshot(
         "causal_narrative": causal,
         "transmission": transmission,
         "contributing_cluster_ids": contributing_clusters,
+        # OP2.2 [C8] — durable event uids alongside the legacy cluster ids
+        # (additive; None until identity uids flow). Cluster ids stay for
+        # existing consumers; the uid is the permanent reference.
+        "contributing_event_uids": sorted({
+            (cluster_uid_map or {})[cid] for cid in contributing_clusters
+            if cid in (cluster_uid_map or {})
+        }) or None,
         "memory": mem,
         # Honest nulls — the backend cannot produce these today:
         "forward_view": None,

@@ -129,6 +129,20 @@ class InstitutionalMemoryWriter:
         today = now.date().isoformat()
         cycle_id = now.strftime("%Y%m%dT%H%M")
 
+        # ── OP2.2 [C8] — dual-referencing map ─────────────────────────────────
+        # Sealed evidence refs carry the durable event uid ALONGSIDE the legacy
+        # cluster id from the first uid deployment: no new archive record may
+        # reference only an ephemeral id. Folded cluster ids resolve to their
+        # keeper's uid. Historical records are never touched.
+        cluster_uid_map: dict[str, str] = {}
+        for ev in (getattr(feed, "events", None) or []):
+            uid = getattr(ev, "uid", "") or ""
+            if not uid:
+                continue
+            cluster_uid_map[getattr(ev, "id", "") or ""] = uid
+            for cid in (getattr(ev, "merged_event_ids", None) or []):
+                cluster_uid_map[cid] = uid
+
         # ── build deterministic snapshots ─────────────────────────────────────
         snapshots: list[SnapshotRecord] = []
         entities: list[EntityRecord] = []
@@ -145,7 +159,8 @@ class InstitutionalMemoryWriter:
                 summaries[tid] = summary
             try:
                 snap = build_theme_snapshot(theme, summary, now,
-                                            provenance_extra={"cycle_id": cycle_id})
+                                            provenance_extra={"cycle_id": cycle_id},
+                                            cluster_uid_map=cluster_uid_map)
             except ValueError as exc:
                 log.warning("[institutional-memory] skipped theme %r: %s", tid, exc)
                 continue
@@ -169,7 +184,8 @@ class InstitutionalMemoryWriter:
                 from app.institutional_memory.graph_adapter import build_graph_cycle_state
                 graph_state = build_graph_cycle_state(
                     feed, now, memory_summaries=summaries,
-                    provenance_extra={"cycle_id": cycle_id})
+                    provenance_extra={"cycle_id": cycle_id},
+                    cluster_uid_map=cluster_uid_map)
             except Exception:
                 # M3.2 derivation failure must never block M3.1 writes.
                 log.exception("[institutional-memory:m3.2] graph state derivation FAILED "
