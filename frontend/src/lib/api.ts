@@ -1,4 +1,4 @@
-import type { FeedParams, FeedResponse, FeedItem, SourceInfo, DeepAnalysis, FeedFreshness } from "./types";
+import type { FeedParams, FeedResponse, SourceInfo, DeepAnalysis, FeedFreshness } from "./types";
 
 const BASE = "/api";
 
@@ -54,23 +54,10 @@ export async function fetchSources(): Promise<SourceInfo[]> {
 }
 
 // ── Saved ────────────────────────────────────────────────────────────────────
-
-export async function fetchSaved(): Promise<FeedItem[]> {
-  return get<FeedItem[]>("/saved");
-}
-
-export async function fetchSavedIds(): Promise<string[]> {
-  return get<string[]>("/saved/ids");
-}
-
-export async function saveItem(item: FeedItem): Promise<void> {
-  await post("/saved", item);
-}
-
-export async function deleteItem(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/saved/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
-}
+// RETIRED (PH3, audit C4). The backend saved store was a global unscoped dict.
+// Saved research now lives ONLY in the RLS-protected Supabase `saved_items`
+// table, read/written directly by the client in hooks/useSaved.ts. No backend
+// saved API exists — do not reintroduce one here.
 
 // ── Analyze ──────────────────────────────────────────────────────────────────
 

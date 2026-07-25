@@ -1,3 +1,14 @@
+# ── Argus backend (FastAPI) ──────────────────────────────────────────────────
+# PRODUCTION REQUIREMENTS (PH1/PH2/PH5 — see docs/PRODUCTION_DEPLOYMENT_CHECKLIST.md).
+# Railway volumes and env vars are set in the DASHBOARD, not here. This service
+# will REFUSE TO START in production (ARGUS_ENV=production) unless:
+#   1. A persistent volume is attached, and ARGUS_DATA_DIR points at its mount
+#      path (e.g. mount at /data, set ARGUS_DATA_DIR=/data). Without it the
+#      identity journal, event registry, and theme memory are wiped every deploy.
+#   2. SUPABASE_JWT_SECRET is set (backend independently verifies every token).
+#   3. SUPABASE_URL + SUPABASE_ANON_KEY are set (used to prove RLS is applied).
+# The startup readiness check (app/readiness.py) enforces all of the above.
+
 [build]
 builder = "nixpacks"
 

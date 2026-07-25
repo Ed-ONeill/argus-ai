@@ -44,8 +44,10 @@ from app.observation_ledger import LEDGER_DIR, LedgerStream, shared_stream
 
 log = logging.getLogger(__name__)
 
+from app.storage import REGISTRY_PATH  # PH1 (C5): volume-backed durable root
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-SNAPSHOT_PATH = BASE_DIR / "data" / "event_registry.json"
+SNAPSHOT_PATH = REGISTRY_PATH
 
 SNAPSHOT_VERSION = 1
 TTL_DAYS = 14                 # hot-view residency, NEVER identity lifetime

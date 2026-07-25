@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
 // Reads BACKEND_URL at request time (runtime), not at build time.
 // This means you can update the Railway env var and restart without rebuilding.
@@ -39,6 +40,20 @@ async function proxy(
   headers.delete("accept-encoding"); // prevent backend from compressing; Node fetch auto-decompresses
                                      // but forwards the original Content-Encoding header, causing
                                      // ERR_CONTENT_DECODING_FAILED in the browser (double decompression)
+
+  // PH2 (C3) — the browser never sees a backend token; the proxy attaches the
+  // server-validated Supabase access token so the backend can INDEPENDENTLY
+  // verify the user (app/auth.py). A caller-supplied Authorization header is
+  // dropped and replaced, so the header can only ever carry the real session.
+  headers.delete("authorization");
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) headers.set("authorization", `Bearer ${token}`);
+  } catch (err) {
+    console.error("[proxy] session read failed (forwarding unauthenticated):", err);
+  }
 
   const body =
     req.method !== "GET" && req.method !== "HEAD"

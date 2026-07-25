@@ -19,10 +19,11 @@ from pathlib import Path
 # Make the project root importable regardless of how uvicorn is invoked
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import feed, saved, analyze, listen, briefings
+from app.auth import require_user
 from app.background import refresher
 
 # Configure logging at the entrypoint so startup logs (persistence probe, router
@@ -50,6 +51,20 @@ def _theme_memory_persistence_probe() -> None:
     """
     import json
     from datetime import datetime, timezone
+
+    # PH1 (C5): report the centralized, volume-backed data root first — this is
+    # the single directory a Railway volume must be mounted at.
+    try:
+        from app import storage
+        st = storage.persistence_status()
+        log.info("[persistence-probe] data dir            = %s (source=%s, persistent=%s, writable=%s)",
+                 st["data_dir"], st["source"], st["persistent"], st["writable"])
+        if not st["persistent"]:
+            log.warning("[persistence-probe] data dir is the EPHEMERAL repo fallback — "
+                        "attach a Railway volume and set ARGUS_DATA_DIR to its mount path, "
+                        "or the identity journal / registry / theme memory are wiped every deploy")
+    except Exception as exc:
+        log.error("[persistence-probe] cannot resolve storage status: %r", exc)
 
     try:
         from app.theme_memory import _STORE_DIR as store_dir
@@ -127,6 +142,12 @@ def _theme_memory_persistence_probe() -> None:
 async def lifespan(_app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
     _theme_memory_persistence_probe()
+    # PH5 — fail-fast production readiness: storage persistence, auth secret,
+    # required env, and (C7) that Supabase migrations + RLS actually applied.
+    # In production a required failure raises and the app refuses to serve; in
+    # dev/test it logs warnings only.
+    from app.readiness import run_startup_checks
+    run_startup_checks()
     # Institutional memory (M3.1): log enabled/disabled and why (no secrets).
     try:
         from app.institutional_memory import log_startup_status
@@ -166,11 +187,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(feed.router,      prefix="/api/feed",      tags=["feed"])
-app.include_router(saved.router,     prefix="/api/saved",     tags=["saved"])
-app.include_router(analyze.router,   prefix="/api/analyze",   tags=["analyze"])
-app.include_router(listen.router,    prefix="/api/listen",    tags=["listen"])
-app.include_router(briefings.router, prefix="/api/briefings", tags=["briefings"])
+# PH2 (C1/C3) — every data router independently verifies the caller's Supabase
+# token. `require_user` is a gate: 401 when auth is enabled and the token is
+# missing/invalid, an open dev principal only in non-prod without a secret
+# (which production startup forbids). Health stays public for Railway probes.
+_auth = [Depends(require_user)]
+
+app.include_router(feed.router,      prefix="/api/feed",      tags=["feed"],      dependencies=_auth)
+app.include_router(saved.router,     prefix="/api/saved",     tags=["saved"],     dependencies=_auth)
+app.include_router(analyze.router,   prefix="/api/analyze",   tags=["analyze"],   dependencies=_auth)
+app.include_router(listen.router,    prefix="/api/listen",    tags=["listen"],    dependencies=_auth)
+app.include_router(briefings.router, prefix="/api/briefings", tags=["briefings"], dependencies=_auth)
 
 # Intelligence graph router — wrapped so a startup import error is logged
 # clearly rather than silently killing the entire deploy.
@@ -180,6 +207,7 @@ try:
         _intelligence_mod.router,
         prefix="/api/intelligence",
         tags=["intelligence"],
+        dependencies=_auth,
     )
     log.info("[main] intelligence router registered at /api/intelligence")
 except Exception as _exc:
@@ -196,6 +224,7 @@ try:
         _memory_mod.router,
         prefix="/api/memory",
         tags=["memory"],
+        dependencies=_auth,
     )
     log.info("[main] memory router registered at /api/memory")
 except Exception as _exc:
@@ -213,6 +242,7 @@ try:
         _memory_v2_mod.router,
         prefix="/api/memory/v2",
         tags=["memory-v2"],
+        dependencies=_auth,
     )
     log.info("[main] memory v2 router registered at /api/memory/v2")
 except Exception as _exc:

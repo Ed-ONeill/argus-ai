@@ -28,8 +28,8 @@ from app.events import MarketEvent
 
 log = logging.getLogger(__name__)
 
-# Disk-persistence directory (project_root/data/feed_cache/)
-_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "feed_cache"
+# Disk-persistence directory — PH1 (C5): volume-backed durable root.
+from app.storage import FEED_CACHE_DIR as _CACHE_DIR
 
 
 @dataclass

@@ -43,11 +43,11 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 # ── Storage location ──────────────────────────────────────────────────────────
-# Honors THEME_MEMORY_DIR so the store can live on a persistent volume (e.g. a
-# Railway Volume mount) and survive redeploys / container restarts. Falls back to
-# the local repo path (project_root/data/theme_memory, mirroring
-# ProcessedFeedCache) when the env var is absent.
-_DEFAULT_STORE_DIR = Path(__file__).resolve().parent.parent / "data" / "theme_memory"
+# PH1 (C5): the durable root now resolves centrally in app.storage (Railway
+# volume → env → repo fallback). THEME_MEMORY_DIR still overrides for callers
+# that pin this store somewhere bespoke, but the default rides the shared,
+# volume-backed data dir so it survives redeploys / container restarts.
+from app.storage import THEME_MEMORY_DIR as _DEFAULT_STORE_DIR
 _STORE_DIR  = Path(os.getenv("THEME_MEMORY_DIR") or _DEFAULT_STORE_DIR)
 _STORE_PATH = _STORE_DIR / "theme_memory.json"
 

@@ -12,6 +12,8 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app import storage as _storage
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -54,12 +56,14 @@ class Settings(BaseSettings):
     llm_stream:         bool  = True
 
     # ── Paths ─────────────────────────────────────────────────────────────────
+    # Durable state (conversations, memory db) rides the volume-backed data dir
+    # (PH1/C5); build-time assets (models, embeddings) stay in the image.
     documents_dir:   Path = BASE_DIR / "documents"
     embeddings_dir:  Path = BASE_DIR / "embeddings"
     models_dir:      Path = BASE_DIR / "models"
     chroma_dir:      Path = BASE_DIR / "embeddings" / "chroma"
-    conversations_dir: Path = BASE_DIR / "data" / "conversations"
-    memory_db:         Path = BASE_DIR / "data" / "memory.db"
+    conversations_dir: Path = _storage.CONVERSATIONS_DIR
+    memory_db:         Path = _storage.MEMORY_DB_PATH
     log_file:          Path = BASE_DIR / "logs" / "assistant.log"
 
     # ── Persona ───────────────────────────────────────────────────────────────
@@ -109,6 +113,49 @@ class Settings(BaseSettings):
     supabase_service_role_key: str  = ""
     institutional_memory_enabled: bool = False
     argus_memory_disabled:     bool = False   # env ARGUS_MEMORY_DISABLED
+
+    # ── Production deployment & auth (PH2 / PH5) ───────────────────────────────
+    # argus_env: "production" turns on fail-fast startup verification — missing
+    # persistence, JWT secret, or RLS becomes a boot error instead of a silent
+    # insecure serve. Anything else (default) is dev/test: verification logs
+    # warnings but never blocks.
+    argus_env: str = "development"    # env ARGUS_ENV
+    # Backend token verification (PH2). This Supabase project signs user access
+    # tokens ASYMMETRICALLY (ES256) — verification uses the project's public
+    # JWKS, which is derived from SUPABASE_URL (no secret required, JWKS is
+    # public). Auth is therefore ENABLED whenever SUPABASE_URL is set; the
+    # legacy shared secret below is retained only as an optional HS256 fallback
+    # for projects still on symmetric signing (unused here).
+    supabase_jwt_secret:       str  = ""      # env SUPABASE_JWT_SECRET (legacy HS256 only)
+    supabase_jwks_url:         str  = ""      # env SUPABASE_JWKS_URL (defaults from SUPABASE_URL)
+    argus_auth_disabled:       bool = False   # env ARGUS_AUTH_DISABLED — explicit dev opt-out
+    # Anon (publishable) key — used only to PROVE at startup that anonymous
+    # PostgREST access to backend tables is denied by RLS (PH5). Never used to
+    # write. Public by design.
+    supabase_anon_key:         str  = ""      # env SUPABASE_ANON_KEY
+
+    @property
+    def is_production(self) -> bool:
+        return self.argus_env.strip().lower() in ("production", "prod")
+
+    @property
+    def auth_enabled(self) -> bool:
+        # JWKS verification needs only the project URL; the secret path is a
+        # legacy fallback. Either configured (and not explicitly disabled)
+        # turns enforcement on.
+        return (not self.argus_auth_disabled) and bool(self.supabase_url or self.supabase_jwt_secret)
+
+    @property
+    def jwks_url(self) -> str:
+        if self.supabase_jwks_url:
+            return self.supabase_jwks_url
+        if self.supabase_url:
+            return f"{self.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        return ""
+
+    @property
+    def expected_issuer(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/auth/v1" if self.supabase_url else ""
 
     @model_validator(mode="after")
     def _derive_institutional_memory_default(self) -> "Settings":

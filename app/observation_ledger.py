@@ -33,8 +33,9 @@ from typing import Any, Iterator
 
 log = logging.getLogger(__name__)
 
+from app.storage import LEDGER_DIR  # PH1 (C5): volume-backed durable root
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-LEDGER_DIR = BASE_DIR / "data" / "ledger"
 
 SCHEMA_VERSION = 1
 _MAX_ROWS_PER_CYCLE = 2_000     # runaway-loop guard; never a history limit

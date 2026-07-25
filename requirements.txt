@@ -18,6 +18,7 @@ markdown>=3.6                  # Markdown rendering
 pydantic>=2.7.0                # Config management and data validation
 pydantic-settings>=2.3.0       # Settings from .env files
 python-dotenv>=1.0.0           # .env file loading
+PyJWT[crypto]>=2.8.0           # Supabase access-token verification (ES256/JWKS, PH2)
 rich>=13.7.0                   # Beautiful terminal output / CLI
 tiktoken>=0.7.0                # Token counting
 httpx>=0.27.0                  # Async HTTP client
