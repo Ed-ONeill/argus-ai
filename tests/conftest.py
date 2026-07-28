@@ -66,6 +66,7 @@ class FakeRepository:
         self.rel_snapshots: dict[str, dict] = {}      # id -> row
         self.narr_snapshots: dict[str, dict] = {}     # id -> row
         self.rel_transitions: dict[str, dict] = {}    # event_key -> row
+        self.narr_transitions: dict[str, dict] = {}   # event_key -> row (007)
         # M3.3 tables
         self.predictions: dict[str, dict] = {}        # prediction_uid -> row
         self.outcomes: dict[str, dict] = {}           # outcome_uid -> row
@@ -207,13 +208,38 @@ class FakeRepository:
                 if r["source_uid"] == entity_uid or r["target_uid"] == entity_uid]
         return sorted(rows, key=lambda r: r["rel_uid"])[:limit]
 
+    # Faithful FK-domain enforcement (Postgres rejects a bulk insert ATOMICALLY
+    # if any referenced snapshot id is absent). The pre-fix fake enforced NO
+    # FK, which is exactly why the narrative cross-domain bug reached
+    # production. Each transition ledger references ONLY its own snapshot table.
+    @staticmethod
+    def _assert_snapshot_fk(events, snapshot_store: dict, table: str) -> None:
+        for e in events:
+            for col in ("from_snapshot_id", "to_snapshot_id"):
+                sid = getattr(e, col, None)
+                if sid is not None and sid not in snapshot_store:
+                    raise RepositoryError(
+                        f'insert on "{table}" violates foreign key: '
+                        f'{col}={sid} not present in the referenced snapshot table')
+
     def insert_relationship_transitions(self, events) -> int:
         self._maybe_fail("insert_relationship_transitions")
+        self._assert_snapshot_fk(events, self.rel_snapshots, "relationship_transitions")
         for e in events:
             row = e.to_row(uid_column="rel_uid")
             if row["event_key"] not in self.rel_transitions:   # ignore-duplicates
                 row["id"] = str(uuid.uuid4())
                 self.rel_transitions[row["event_key"]] = row
+        return len(events)
+
+    def insert_narrative_transitions(self, events) -> int:
+        self._maybe_fail("insert_narrative_transitions")
+        self._assert_snapshot_fk(events, self.narr_snapshots, "narrative_transitions")
+        for e in events:
+            row = e.to_row()   # narratives use entity_uid (to_row default)
+            if row["event_key"] not in self.narr_transitions:   # ignore-duplicates
+                row["id"] = str(uuid.uuid4())
+                self.narr_transitions[row["event_key"]] = row
         return len(events)
 
     def list_table_snapshots(self, table, uid_col, uid, *, date_from, date_to,
@@ -230,7 +256,8 @@ class FakeRepository:
     def list_table_transitions(self, table, uid_col, uid, *, date_from, date_to,
                                order_desc, limit):
         self._maybe_fail("list_table_transitions")
-        store = self.rel_transitions if table == "relationship_transitions" else self.transitions
+        store = {"relationship_transitions": self.rel_transitions,
+                 "narrative_transitions": self.narr_transitions}.get(table, self.transitions)
         rows = [r for r in store.values() if r.get(uid_col) == uid]
         rows.sort(key=lambda r: r["effective_at"], reverse=order_desc)
         return rows[:limit]
@@ -244,6 +271,8 @@ class FakeRepository:
     # transitions
     def insert_transitions(self, events: list[TransitionEvent]) -> int:
         self._maybe_fail("insert_transitions")
+        # transition_events references ONLY entity_snapshots
+        self._assert_snapshot_fk(events, self.snapshots, "transition_events")
         for e in events:
             row = e.to_row()
             if row["event_key"] not in self.transitions:   # ignore-duplicates
@@ -308,6 +337,7 @@ class FakeRepository:
             "relationship_snapshots": len(self.rel_snapshots),
             "relationship_transitions": len(self.rel_transitions),
             "narrative_snapshots": len(self.narr_snapshots),
+            "narrative_transitions": len(self.narr_transitions),
         }[table]
 
     def latest_run(self, status=None):
@@ -327,7 +357,8 @@ class FakeRepository:
     def fetch_transitions_between(self, table, uid_col, date_from, date_to,
                                   page_size=1000, max_rows=50000):
         self._maybe_fail("fetch_transitions_between")
-        store = self.rel_transitions if table == "relationship_transitions" else self.transitions
+        store = {"relationship_transitions": self.rel_transitions,
+                 "narrative_transitions": self.narr_transitions}.get(table, self.transitions)
         rows = [r for r in store.values()
                 if date_from <= str(r["effective_at"])[:10] <= date_to]
         return sorted(rows, key=lambda r: r["effective_at"])

@@ -89,14 +89,22 @@ def test_seal_generates_narrative_and_relationship_transitions(writer, fake_repo
     _cycle(writer, DAY_AFTER, feed=solo)                   # day 3 seals day 2
     rel_types = {r["transition_type"] for r in fake_repo.rel_transitions.values()}
     assert "relationship_disappeared" in rel_types
-    ent_types = {r["transition_type"] for r in fake_repo.transitions.values()}
-    assert "narrative_disappeared" in ent_types
-    # rerun after simulated restart: no duplicates anywhere
-    n_rel, n_ent = len(fake_repo.rel_transitions), len(fake_repo.transitions)
+    # narrative transitions now land in their OWN ledger (007), never in
+    # transition_events (whose FK targets entity_snapshots).
+    narr_types = {r["transition_type"] for r in fake_repo.narr_transitions.values()}
+    assert "narrative_disappeared" in narr_types
+    assert not any(t.startswith("narrative_") or t in {"member_added", "member_removed",
+                   "coherence_strengthened", "coherence_weakened", "dominant_status_changed",
+                   "thesis_changed"} for t in
+                   (r["transition_type"] for r in fake_repo.transitions.values()))
+    # rerun after simulated restart: no duplicates anywhere, every domain
+    n_rel, n_ent, n_narr = (len(fake_repo.rel_transitions), len(fake_repo.transitions),
+                            len(fake_repo.narr_transitions))
     writer._transitions_done_for = None
     _cycle(writer, DAY_AFTER, feed=solo)
     assert len(fake_repo.rel_transitions) == n_rel
     assert len(fake_repo.transitions) == n_ent
+    assert len(fake_repo.narr_transitions) == n_narr
 
 
 def test_m32_failure_does_not_break_m31_or_raise(writer, fake_repo, caplog):

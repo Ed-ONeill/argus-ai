@@ -212,8 +212,11 @@ class InstitutionalMemoryWriter:
                 log.debug("[institutional-memory] run=%s already completed — skipping", run_key)
                 result.status = "skipped"
                 result.snapshots_unchanged = len(snapshots)
-                # the prediction ledger has its own daily idempotency and must
-                # still get its once-per-day chance on identical-state cycles
+                # D-1 transition sealing must still run on identical-state days:
+                # it seals YESTERDAY (independent of today's snapshot dedup) and
+                # is the retry path when a prior cycle's seal partially failed.
+                # The prediction ledger likewise gets its once-per-day chance.
+                self._seal_transitions_stage(repo, result, now)
                 self._prediction_stage(repo, snapshots, graph_state, result, now)
                 return result
             repo.start_run(run_key, WRITER_VERSION, now.isoformat(), cycle_id,
@@ -264,16 +267,11 @@ class InstitutionalMemoryWriter:
                 log.error("[institutional-memory:m3.2] write_failed: %s", exc)
                 result.add_error(str(exc))
 
-        # ── sealed-boundary transitions (once per UTC day) ────────────────────
-        if self._transitions_done_for != today:
-            try:
-                result.transitions_inserted = self._seal_transitions(repo, now)
-                self._transitions_done_for = today
-            except RepositoryError as exc:
-                # Not fatal to the run: snapshots are safe; retry next cycle.
-                log.error("[institutional-memory] transition derivation failed "
-                          "(will retry next cycle): %s", exc)
-                result.add_error(str(exc))
+        # ── sealed-boundary transitions (once per UTC day, per-domain) ────────
+        # Non-fatal + retryable: each of the three ledgers is isolated, a
+        # failing domain does not fail the run or the other domains, and the
+        # day is marked done only when all three succeed (see the stage).
+        self._seal_transitions_stage(repo, result, now)
 
         # ── prediction issuance + outcome resolution (M3.3, once per UTC day) ─
         self._prediction_stage(repo, snapshots, graph_state, result, now)
@@ -446,10 +444,20 @@ class InstitutionalMemoryWriter:
                 latest_prior[uid] = r   # dates ascend, so the last write wins
         return curr or {}, latest_prior, by_date[prior_dates[-1]]
 
-    def _seal_transitions(self, repo: SupabaseRepository, now: datetime) -> int:
-        """Derive transitions for the most recently sealed UTC day (D-1),
-        across themes (M3.1, unchanged semantics), narratives, and
-        relationships.
+    def _seal_transitions(self, repo: SupabaseRepository, now: datetime) -> dict[str, dict]:
+        """Derive + insert transitions for the most recently sealed UTC day
+        (D-1) across THREE independent ledgers, each routed to its OWN
+        snapshot-id FK domain:
+
+            themes/entities → transition_events        (FK → entity_snapshots)
+            narratives      → narrative_transitions    (FK → narrative_snapshots)
+            relationships   → relationship_transitions (FK → relationship_snapshots)
+
+        Each domain is isolated in its own try/except: a failure in one is
+        logged with its table and does NOT abort the others (the pre-fix code
+        raised on narratives and thereby silently skipped relationships too).
+        Idempotent via event_key. NEVER raises. Returns
+        {table_name: {"inserted": int, "ok": bool}}.
 
         Value transitions compare each subject's D-1 snapshot against its most
         recent prior sealed snapshot within a 14-day lookback (gap-tolerant).
@@ -460,73 +468,121 @@ class InstitutionalMemoryWriter:
         """
         d1 = (now.date() - timedelta(days=1)).isoformat()
         lookback_start = (now.date() - timedelta(days=1 + _ABSENCE_LOOKBACK_DAYS)).isoformat()
-        total = 0
-
-        # ── themes (M3.1 semantics, scoped to theme:* uids) ──────────────────
-        rows = [r for r in repo.fetch_snapshots_between(
-                    lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
-                if str(r.get("entity_uid", "")).startswith("theme:")]
-        maps = self._sealed_maps(rows, "entity_uid", d1)
-        writer_alive_d1 = False
         seal_effective_at = f"{d1}T23:59:59+00:00"
-        if maps:
-            curr, latest_prior, prev_day = maps
-            writer_alive_d1 = bool(curr)
-            events = []
-            for uid, curr_row in curr.items():
-                prev_row = latest_prior.get(uid)
-                if prev_row is not None:
-                    events.extend(derive_theme_transitions(prev_row, curr_row))
-            effective_at = next(iter(curr.values()))["observed_at"]
-            seal_effective_at = effective_at
-            events.extend(derive_status_transitions(prev_day, curr, d1, effective_at))
-            total += repo.insert_transitions(events)
+        writer_alive_d1 = False
+        domains: dict[str, dict] = {}
 
-        # ── narratives ────────────────────────────────────────────────────────
+        # ── themes → transition_events (FK: entity_snapshots) ─────────────────
+        try:
+            inserted = 0
+            rows = [r for r in repo.fetch_snapshots_between(
+                        lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+                    if str(r.get("entity_uid", "")).startswith("theme:")]
+            maps = self._sealed_maps(rows, "entity_uid", d1)
+            if maps:
+                curr, latest_prior, prev_day = maps
+                writer_alive_d1 = bool(curr)
+                events = []
+                for uid, curr_row in curr.items():
+                    prev_row = latest_prior.get(uid)
+                    if prev_row is not None:
+                        events.extend(derive_theme_transitions(prev_row, curr_row))
+                effective_at = next(iter(curr.values()))["observed_at"]
+                seal_effective_at = effective_at
+                events.extend(derive_status_transitions(prev_day, curr, d1, effective_at))
+                inserted = repo.insert_transitions(events)
+            domains["transition_events"] = {"inserted": inserted, "ok": True}
+        except RepositoryError as exc:
+            log.error("[institutional-memory] transition seal FAILED "
+                      "domain=themes table=transition_events (retry next cycle): %s", exc)
+            domains["transition_events"] = {"inserted": 0, "ok": False}
+
+        # ── narratives → narrative_transitions (FK: narrative_snapshots) ──────
         # allow_empty_curr: a day with theme writes but zero narratives means
         # every narrative genuinely dissolved (not a data gap).
-        n_rows = repo.fetch_table_snapshots_between(
-            "narrative_snapshots", lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
-        maps = self._sealed_maps(n_rows, "entity_uid", d1,
-                                 allow_empty_curr=writer_alive_d1)
-        if maps:
-            curr, latest_prior, prev_day = maps
-            events = []
-            for uid, curr_row in curr.items():
-                prev_row = latest_prior.get(uid)
-                if prev_row is not None:
-                    events.extend(derive_narrative_transitions(prev_row, curr_row))
-            effective_at = (next(iter(curr.values()))["observed_at"]
-                            if curr else seal_effective_at)
-            events.extend(derive_presence_transitions(
-                prev_day, curr, d1, effective_at,
-                appeared_type="narrative_appeared",
-                disappeared_type="narrative_disappeared",
-                uid_field="entity_uid"))
-            total += repo.insert_transitions(events)
+        try:
+            inserted = 0
+            n_rows = repo.fetch_table_snapshots_between(
+                "narrative_snapshots", lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+            maps = self._sealed_maps(n_rows, "entity_uid", d1,
+                                     allow_empty_curr=writer_alive_d1)
+            if maps:
+                curr, latest_prior, prev_day = maps
+                events = []
+                for uid, curr_row in curr.items():
+                    prev_row = latest_prior.get(uid)
+                    if prev_row is not None:
+                        events.extend(derive_narrative_transitions(prev_row, curr_row))
+                effective_at = (next(iter(curr.values()))["observed_at"]
+                                if curr else seal_effective_at)
+                events.extend(derive_presence_transitions(
+                    prev_day, curr, d1, effective_at,
+                    appeared_type="narrative_appeared",
+                    disappeared_type="narrative_disappeared",
+                    uid_field="entity_uid"))
+                # ROUTING FIX: narrative snapshot ids belong to
+                # narrative_snapshots — they must NEVER go to transition_events
+                # (whose FK targets entity_snapshots). Own table, own FK domain.
+                inserted = repo.insert_narrative_transitions(events)
+            domains["narrative_transitions"] = {"inserted": inserted, "ok": True}
+        except RepositoryError as exc:
+            log.error("[institutional-memory] transition seal FAILED "
+                      "domain=narratives table=narrative_transitions (retry next cycle): %s", exc)
+            domains["narrative_transitions"] = {"inserted": 0, "ok": False}
 
-        # ── relationships (separate ledger table) ─────────────────────────────
-        r_rows = repo.fetch_table_snapshots_between(
-            "relationship_snapshots", lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
-        maps = self._sealed_maps(r_rows, "rel_uid", d1,
-                                 allow_empty_curr=writer_alive_d1)
-        if maps:
-            curr, latest_prior, prev_day = maps
-            events = []
-            for uid, curr_row in curr.items():
-                prev_row = latest_prior.get(uid)
-                if prev_row is not None:
-                    events.extend(derive_relationship_transitions(prev_row, curr_row))
-            effective_at = (next(iter(curr.values()))["observed_at"]
-                            if curr else seal_effective_at)
-            events.extend(derive_presence_transitions(
-                prev_day, curr, d1, effective_at,
-                appeared_type="relationship_appeared",
-                disappeared_type="relationship_disappeared",
-                uid_field="rel_uid"))
-            total += repo.insert_relationship_transitions(events)
+        # ── relationships → relationship_transitions (FK: relationship_snapshots)
+        try:
+            inserted = 0
+            r_rows = repo.fetch_table_snapshots_between(
+                "relationship_snapshots", lookback_start, d1, SNAPSHOT_KIND_DAILY, SCHEMA_VERSION)
+            maps = self._sealed_maps(r_rows, "rel_uid", d1,
+                                     allow_empty_curr=writer_alive_d1)
+            if maps:
+                curr, latest_prior, prev_day = maps
+                events = []
+                for uid, curr_row in curr.items():
+                    prev_row = latest_prior.get(uid)
+                    if prev_row is not None:
+                        events.extend(derive_relationship_transitions(prev_row, curr_row))
+                effective_at = (next(iter(curr.values()))["observed_at"]
+                                if curr else seal_effective_at)
+                events.extend(derive_presence_transitions(
+                    prev_day, curr, d1, effective_at,
+                    appeared_type="relationship_appeared",
+                    disappeared_type="relationship_disappeared",
+                    uid_field="rel_uid"))
+                inserted = repo.insert_relationship_transitions(events)
+            domains["relationship_transitions"] = {"inserted": inserted, "ok": True}
+        except RepositoryError as exc:
+            log.error("[institutional-memory] transition seal FAILED "
+                      "domain=relationships table=relationship_transitions (retry next cycle): %s", exc)
+            domains["relationship_transitions"] = {"inserted": 0, "ok": False}
 
-        return total
+        return domains
+
+    def _seal_transitions_stage(self, repo: SupabaseRepository, result: WriteRunResult,
+                                now: datetime) -> None:
+        """Once-per-UTC-day sealing of D-1 transitions — non-fatal and
+        retryable. Runs in BOTH the normal and completed-run fast paths so a
+        quiet (duplicate-state) day still seals YESTERDAY. Records per-domain
+        status in result.extra['transitions'] and marks the day done ONLY when
+        every domain succeeded; a failed domain retries next cycle (idempotent
+        via event_key). A transition failure NEVER flips the run to 'failed' —
+        entity snapshots and the other domains stay durable."""
+        today = now.date().isoformat()
+        if self._transitions_done_for == today:
+            return
+        domains = self._seal_transitions(repo, now)   # never raises
+        result.transitions_inserted = sum(d["inserted"] for d in domains.values())
+        result.extra["transitions"] = {t: ("ok" if d["ok"] else "failed")
+                                        for t, d in domains.items()}
+        log.info("[institutional-memory] transition seal D-1: %s",
+                 {t: f"{d['inserted']} {'ok' if d['ok'] else 'FAILED'}"
+                  for t, d in domains.items()})
+        if all(d["ok"] for d in domains.values()):
+            self._transitions_done_for = today
+        else:
+            result.extra["transitions_retry"] = [t for t, d in domains.items() if not d["ok"]]
 
 
 # ── Module-level singleton + convenience wrapper ───────────────────────────────

@@ -329,9 +329,24 @@ class SupabaseRepository:
     # ── transitions ──────────────────────────────────────────────────────────
 
     def insert_transitions(self, events: list[TransitionEvent]) -> int:
+        """Theme/entity transitions → transition_events (FK → entity_snapshots)."""
         if not events:
             return 0
         self._request("POST", "transition_events",
+                      json_body=[e.to_row() for e in events],
+                      params={"on_conflict": "event_key"},
+                      prefer="resolution=ignore-duplicates,return=minimal")
+        return len(events)
+
+    def insert_narrative_transitions(self, events: list[TransitionEvent]) -> int:
+        """Narrative transitions → narrative_transitions (FK → narrative_snapshots).
+        Narratives are institutional entities, so the subject column is
+        entity_uid (to_row's default); snapshot ids come from narrative_snapshots
+        and satisfy this table's FK domain. Never route these to
+        insert_transitions — transition_events' FK targets entity_snapshots."""
+        if not events:
+            return 0
+        self._request("POST", "narrative_transitions",
                       json_body=[e.to_row() for e in events],
                       params={"on_conflict": "event_key"},
                       prefer="resolution=ignore-duplicates,return=minimal")
