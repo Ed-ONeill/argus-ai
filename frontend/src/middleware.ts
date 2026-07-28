@@ -39,7 +39,16 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  // Static assets in /public (logos, fonts, icons, etc.) are PUBLIC. Without
+  // this, an unauthenticated viewer — e.g. everyone on /auth — has every
+  // `/argus-*.png` request redirected to /auth, so the <img> receives HTML and
+  // renders a broken-image icon. (favicon.ico was already whitelisted; the
+  // other logos were not.) Match by file extension so no /public asset is ever
+  // gated by the auth redirect.
+  const isStaticAsset =
+    /\.(?:png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|css|js|map|txt|json)$/i.test(pathname);
   const isPublic =
+    isStaticAsset ||
     pathname === "/auth" ||
     pathname.startsWith("/auth/") ||
     pathname === "/favicon.ico";
@@ -55,9 +64,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude static assets and the API proxy (the proxy + backend enforce auth
-  // themselves; page routes are gated above).
+  // Exclude Next internals, the API proxy, and any static-asset request (paths
+  // with a file extension). Page routes still run the auth gate above; static
+  // assets never reach it, which also avoids a getUser() round-trip per image.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|css|js|map|txt|json)$).*)",
   ],
 };
