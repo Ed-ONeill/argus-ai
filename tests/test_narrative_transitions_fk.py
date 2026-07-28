@@ -180,3 +180,76 @@ def test_each_transition_ledger_targets_only_its_own_snapshot_table():
     assert "references public.entity_snapshots(id)" in fk004        # transition_events
     assert "references public.relationship_snapshots(id)" in fk005  # relationship_transitions
     assert "references public.narrative_snapshots(id)" in fk007     # narrative_transitions
+
+
+# ── vocabulary drift guard (migration 008) ──────────────────────────────────────
+# Derive the COMPLETE narrative transition vocabulary straight from the code
+# and prove the SQL CHECK contains exactly it — so application code and the
+# migration constraint can never drift apart again (the 007→production bug).
+
+def _emitted_narrative_value_types() -> set[str]:
+    """Every transition_type literal emitted by derive_narrative_transitions,
+    via AST so a conditional like emit('contradiction_added' if … else
+    'contradiction_removed', …) yields BOTH values."""
+    import ast
+    import inspect
+    import textwrap
+    from app.institutional_memory import transitions
+    src = textwrap.dedent(inspect.getsource(transitions.derive_narrative_transitions))
+    tree = ast.parse(src)
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "emit":
+            for sub in ast.walk(node.args[0]):        # first arg = the type
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    out.add(sub.value)
+    return out
+
+
+def _narrative_presence_types() -> set[str]:
+    """The two presence types the writer passes to derive_presence_transitions
+    for the narrative domain — asserted against the writer source so a rename
+    there also trips this guard."""
+    import inspect
+    from app.institutional_memory.writer import InstitutionalMemoryWriter
+    src = inspect.getsource(InstitutionalMemoryWriter._seal_transitions)
+    presence = {"narrative_appeared", "narrative_disappeared"}
+    for p in presence:
+        assert f'"{p}"' in src or f"'{p}'" in src, f"writer no longer emits {p}"
+    return presence
+
+
+def _sql_check_vocab(migration: str) -> set[str]:
+    sql = (MIGRATIONS / migration).read_text(encoding="utf-8")
+    constraint = sql[sql.lower().index("add constraint"):]   # skip the prose header
+    return set(re.findall(r"'([a-z_]+)'", constraint))
+
+
+def test_migration_008_check_vocab_equals_emitted_narrative_vocab():
+    emitted = _emitted_narrative_value_types() | _narrative_presence_types()
+    sql = _sql_check_vocab("008_narrative_transitions_vocabulary.sql")
+    assert emitted == sql, (
+        f"narrative vocabulary DRIFT — emitted-but-not-in-SQL={sorted(emitted - sql)}, "
+        f"in-SQL-but-never-emitted={sorted(sql - emitted)}")
+
+
+def test_contradiction_types_present_regression_guard():
+    """The exact production failure: contradiction_added/removed must be
+    accepted by narrative_transitions."""
+    sql = _sql_check_vocab("008_narrative_transitions_vocabulary.sql")
+    assert {"contradiction_added", "contradiction_removed"} <= sql
+    # and prove the code really does emit them (not just present in SQL)
+    assert {"contradiction_added", "contradiction_removed"} <= _emitted_narrative_value_types()
+
+
+def test_008_replaces_check_without_touching_table_or_other_constraints():
+    raw = (MIGRATIONS / "008_narrative_transitions_vocabulary.sql").read_text(encoding="utf-8")
+    # executable SQL only — strip '--' comments so prose never trips the guard
+    code = "\n".join(line.split("--", 1)[0] for line in raw.splitlines()).lower()
+    # replaces ONLY the narrative_transitions type check
+    assert "drop constraint if exists narrative_transitions_transition_type_check" in code
+    assert "add constraint narrative_transitions_transition_type_check" in code
+    # additive: no table drop/recreate, no data change, nothing on other tables
+    assert "drop table" not in code and "create table" not in code
+    assert "delete" not in code and "truncate" not in code
+    assert "transition_events" not in code and "relationship_transitions" not in code
