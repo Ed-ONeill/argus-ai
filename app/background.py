@@ -23,6 +23,9 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from app import diagnostics as diag
+from app.diagnostics import CycleRecord, EMPTY, FAILED, OK, signal_score_histogram
+
 log = logging.getLogger(__name__)
 
 # ── Lazy imports (avoid circular-import at module load time) ───────────────────
@@ -123,6 +126,16 @@ def run_pipeline(
         "[bg] pipeline START  categories=%r  sources=%r  fresh_only=%s",
         categories, sources, fresh_only,
     )
+    # Diagnostics record for this cycle (observability only — never alters flow).
+    # begin_cycle_stats() opens an invocation-scoped, thread-isolated stats
+    # context so concurrent background/inline pipelines never exchange counts.
+    _diag_key = make_cache_key(categories, sources, fresh_only)
+    diag.begin_cycle_stats()
+    _rec = CycleRecord(_diag_key,
+                       cycle_id=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"))
+    for _s in ("themes", "brief", "sector", "activation", "events",
+               "explanations", "memory", "ledger"):
+        _rec.stage(_s, diag.NOT_RUN)
 
     # ── 1. Build registry subset ──────────────────────────────────────────────
     cat_set = {c.strip() for c in categories.split(",") if c.strip()}
@@ -140,6 +153,16 @@ def run_pipeline(
     )
     errors         = dict(feed_manager.fetch_errors)
     promo_excluded = feed_manager.promo_excluded
+    _st = getattr(feed_manager, "last_source_stats", {}) or {}
+    # finding 6: None only when NOT measured (no per-source stats); a real 0 is
+    # preserved as 0, never collapsed to None.
+    _measured = bool(_st)
+    _rec.set(
+        raw_items=(sum(getattr(s, "raw_fetched", 0) for s in _st.values()) if _measured else None),
+        post_dedup_items=(sum(getattr(s, "post_dedup", 0) for s in _st.values()) if _measured else None),
+        post_score_items=(sum(getattr(s, "kept", 0) for s in _st.values()) if _measured else None),
+        source_errors_count=len(errors),
+    )
     t_fetch = time.perf_counter()
     log.info(
         "[bg] fetch done in %.2fs  items=%d  sources_ok=%d  errors=%d",
@@ -180,6 +203,10 @@ def run_pipeline(
     from app.themes     import select_what_matters_now
 
     clusters = cluster_items(items)
+    _rec.set(clusters_total=len(clusters),
+             clusters_multi=sum(1 for c in clusters if c.story_count > 1))
+    _rec.signal_score_histogram = signal_score_histogram(
+        [float(getattr(c.primary, "signal_score", 0) or 0) for c in clusters])
     t_cluster = time.perf_counter()
     log.info(
         "[bg] cluster done in %.3fs  clusters=%d  multi=%d",
@@ -190,11 +217,18 @@ def run_pipeline(
 
     # ── 5. Theme intelligence graph (must precede WMN — WMN is theme-driven) ──
     try:
-        from app.theme_graph import extract_themes
+        from app.theme_graph import extract_themes, last_extract_stats
         theme_intelligence = extract_themes(clusters)
-    except Exception:
+        _ts = last_extract_stats()
+        _rec.set(theme_candidates=_ts["candidates"], themes_emitted=_ts["emitted"])
+        _rec.theme_suppressed_by_reason = _ts["suppressed_by_reason"]
+        _rec.stage("themes", OK if theme_intelligence else EMPTY)
+    except Exception as _e:
         log.exception("[bg] extract_themes FAILED — falling back to empty list")
         theme_intelligence = []
+        _rec.set(themes_emitted=0)
+        _rec.stage("themes", FAILED, _e)
+        diag.diagnostics.mark_exception(_diag_key, "themes", _e)
     t_theme0 = time.perf_counter()
     log.info("[bg] themes done in %.3fs  active=%d", t_theme0 - t_cluster, len(theme_intelligence))
 
@@ -207,10 +241,12 @@ def run_pipeline(
     try:
         take  = generate_market_take(items, model_name=model)
         brief = generate_market_brief(items)
-    except Exception:
+        _rec.stage("brief", OK if brief else EMPTY)
+    except Exception as _e:
         log.exception("[bg] market take/brief FAILED — continuing with empty values")
         take  = ""
         brief = None
+        _rec.stage("brief", FAILED, _e)
     t_take = time.perf_counter()
     log.info("[bg] market take done in %.2fs  brief=%s", t_take - t_wmn,
              "OK" if brief else "None")
@@ -219,7 +255,10 @@ def run_pipeline(
     try:
         from app.sectors import aggregate_sector_intelligence
         sector_data = aggregate_sector_intelligence(clusters, brief)
-    except Exception:
+        _sp = sum(1 for s in (sector_data.sectors or []) if getattr(s, "signal_score", 0) > 0)
+        _rec.set(sectors_positive=_sp)
+        _rec.stage("sector", OK if _sp else EMPTY)
+    except Exception as _e:
         log.exception("[bg] aggregate_sector_intelligence FAILED — using empty SectorData")
         from app.sectors import SectorData
         sector_data = SectorData(
@@ -227,6 +266,8 @@ def run_pipeline(
             dominant_sector=None,
             generated_at=datetime.now(timezone.utc),
         )
+        _rec.set(sectors_positive=0)
+        _rec.stage("sector", FAILED, _e)
     t_sector = time.perf_counter()
     log.info(
         "[bg] sectors done in %.3fs  sectors=%d  industries=%d  rotations=%d",
@@ -315,9 +356,15 @@ def run_pipeline(
     try:
         from app.theme_graph import compute_industry_activation
         industry_activation = compute_industry_activation(theme_intelligence)
-    except Exception:
+        _ap = sum(1 for ia in industry_activation if getattr(ia, "score", 0) > 0)
+        _rec.set(activations_total=len(industry_activation), activations_positive=_ap)
+        _rec.stage("activation", OK if _ap else EMPTY)
+    except Exception as _e:
         log.exception("[bg] compute_industry_activation FAILED — falling back to empty list")
         industry_activation = []
+        _rec.set(activations_total=0, activations_positive=0)
+        _rec.stage("activation", FAILED, _e)
+        diag.diagnostics.mark_exception(_diag_key, "activation", _e)
     t_activ = time.perf_counter()
     active_industries = sum(1 for ia in industry_activation if ia.score > 0)
     log.info(
@@ -448,8 +495,10 @@ def run_pipeline(
         from app.theme_memory import update_theme_memory
         _mem_n = update_theme_memory(theme_intelligence, clusters)
         log.info("[bg] theme_memory updated: %d themes", _mem_n)
-    except Exception:
+        _rec.stage("memory", OK)
+    except Exception as _e:
         log.exception("[bg] theme_memory update FAILED — continuing (feed unaffected)")
+        _rec.stage("memory", FAILED, _e)
 
     # ── Market Events (F1) ─────────────────────────────────────────────────────
     # Elevate story clusters into ranked Market Events — the Feed's editorial
@@ -469,9 +518,15 @@ def run_pipeline(
             "[events] corroboration histogram (admitted): 1-source=%d 2-source=%d 3+-source=%d of %d events",
             _hist["1"], _hist["2"], _hist["3+"], len(events),
         )
-    except Exception:
+        from app.events import last_build_stats
+        _bs = last_build_stats()
+        _rec.set(events_built=_bs["built"], events_admitted=_bs["admitted"])
+        _rec.stage("events", OK if events else EMPTY)
+    except Exception as _e:
         log.exception("[bg] market event build FAILED — continuing (feed unaffected)")
         events = []
+        _rec.set(events_built=0, events_admitted=0)
+        _rec.stage("events", FAILED, _e)
 
     # ── Identity continuity (OP2.2/2.3/2.4, Sprint 4) ──────────────────────────
     # Full-feed cycles only [C6]: events receive their durable uid, decay
@@ -522,9 +577,11 @@ def run_pipeline(
         # complete the uid migration).
         from app.event_identity import dual_key_explanations
         dual_key_explanations(feed.explanations, events)
-    except Exception:
+        _rec.stage("explanations", OK if feed.explanations else EMPTY)
+    except Exception as _e:
         log.exception("[bg] explanation assembly FAILED — continuing (feed unaffected)")
         feed.explanations = {}
+        _rec.stage("explanations", FAILED, _e)
 
     # ── Institutional memory (M3.1 themes + M3.2 graph/narratives) ─────────────
     # Persist the canonical daily snapshots to Supabase AFTER the ThemeMemory
@@ -534,11 +591,19 @@ def run_pipeline(
     # when disabled and never raises — a Supabase outage logs an error and
     # retries on the next eligible cycle.
     if not categories and not sources:
+        # finding 1: DISABLED and FAILED must never be conflated. record_cycle's
+        # None result is ambiguous, so the authoritative config gate — not the
+        # return value — decides "disabled". record_cycle_status() applies that
+        # contract (enabled + None / malformed / raise → "failed") and never
+        # raises. finding 7: a successful in-memory cache publish must NOT imply
+        # Supabase persistence succeeded, so this is a separate sink.
         try:
-            from app.institutional_memory import record_cycle
-            record_cycle(theme_intelligence, feed=feed)
+            from app.institutional_memory import record_cycle_status
+            _im_status = record_cycle_status(theme_intelligence, feed=feed)
         except Exception:
             log.exception("[bg] institutional memory write FAILED — continuing (feed unaffected)")
+            _im_status = "failed"
+        diag.diagnostics.mark_persistence(_diag_key, institutional_memory=_im_status)
 
     # ── Observation ledger (OP3.1a observations + OP3.1b assessments) ──────────
     # Full-feed cycles only [C6]: partial/Markets-only warm runs never write
@@ -559,8 +624,14 @@ def run_pipeline(
             _with_uid = sum(1 for e in events if getattr(e, "uid", ""))
             log.info("[identity] %d/%d admitted events carry a uid this cycle",
                      _with_uid, len(events))
-        except Exception:
+            _rec.stage("ledger", OK)
+        except Exception as _e:
             log.exception("[bg] observation ledger FAILED — continuing (feed unaffected)")
+            _rec.stage("ledger", FAILED, _e)
+
+    # ── Finalize the diagnostics record (observability only) ──────────────────
+    _rec.set(market_brief_present=(feed.market_brief is not None))
+    diag.diagnostics.record_cycle(_rec)
 
     return feed
 
@@ -599,6 +670,7 @@ class FeedRefresher:
             daemon=True,
         )
         self._thread.start()
+        diag.diagnostics.set_refresher_thread(self._thread)   # supervision visibility
         log.info("[bg] FeedRefresher started  interval=%ds  targets=%d",
                  self._interval, len(WARM_TARGETS))
 
@@ -618,13 +690,25 @@ class FeedRefresher:
 
     def _loop(self) -> None:
         # Warm all targets immediately so the first page load hits cache.
-        self._refresh_all()
+        # Each _refresh_all is wrapped so a thread-fatal exception is RECORDED
+        # (making a silent death observable via /api/feed/status) before it
+        # propagates — the survival behavior is unchanged (re-raise → thread
+        # exits, as today), we only add the record. Not a redesign.
+        self._safe_refresh()
         while not self._stop.is_set():
             self._wake.wait(timeout=self._interval)
             self._wake.clear()
             if self._stop.is_set():
                 break
+            self._safe_refresh()
+
+    def _safe_refresh(self) -> None:
+        try:
             self._refresh_all()
+        except Exception as exc:
+            diag.diagnostics.mark_loop_exception(exc)
+            log.exception("[bg] refresher loop FATAL — thread will exit")
+            raise   # preserve existing behavior (thread dies); now it's recorded
 
     def _refresh_all(self) -> None:
         import hashlib
@@ -638,6 +722,7 @@ class FeedRefresher:
         is_cold  = (cycle == 0)
         self._cycle_count += 1
         t_cycle  = time.perf_counter()
+        _cycle_tag = f"cycle-{cycle}"
         log.info(
             "[bg] refresh cycle #%d START  warm_targets=%d  cold_start=%s",
             cycle, len(WARM_TARGETS), is_cold,
@@ -648,6 +733,10 @@ class FeedRefresher:
                 if self._stop.is_set():
                     return
                 key = make_cache_key(categories, sources, fresh_only)
+                # PER-TARGET supervision (finding 3): each warm target owns its
+                # own attempt/success/failure — a healthy Markets refresh can
+                # never make a failed full-feed refresh look healthy.
+                diag.diagnostics.mark_attempt(key, _cycle_tag)
                 feed_cache.mark_refreshing(key)
                 try:
                     feed = run_pipeline(
@@ -668,12 +757,14 @@ class FeedRefresher:
                     self._prev_fps[key] = fps
 
                     feed_cache.set(key, feed)
+                    diag.diagnostics.mark_published(key, _cycle_tag)  # this target succeeded
                     log.info(
                         "[bg] cache updated  key=%s  items=%d  new_this_cycle=%d",
                         key, len(feed.items), n_new,
                     )
-                except Exception:
+                except Exception as exc:
                     log.exception("[bg] pipeline failed  key=%s", key)
+                    diag.diagnostics.mark_exception(key, "pipeline", exc)
         finally:
             self._run_lock.release()
 

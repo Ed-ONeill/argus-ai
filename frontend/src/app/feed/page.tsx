@@ -18,6 +18,7 @@ import { deriveMorningBriefDeltas, type MorningBriefDelta } from "@/lib/intellig
 import { getTrackedThemes } from "@/lib/themeSnapshots";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { rankClusters, rankWhatMattersNow, rankThemes, capEventDominance } from "@/lib/feedRanker";
+import { computeFeedFunnel, funnelSignature, feedDiagEnabled } from "@/lib/feedDiagnostics";
 import { nodeToFocus, buildFocusMatcher, clusterMatchesFocus, wmnMatchesFocus, itemMatchesFocus, focusKindLabel } from "@/lib/feedFocus";
 import { formatRelativeAge } from "@/lib/utils";
 import type { GraphNode } from "@/lib/graph/types";
@@ -141,7 +142,8 @@ export default function FeedPage() {
     return d.kind === "STRENGTHENED" || d.kind === "NEW" || d.kind === "EXPANDED" ? "up" : "down";
   }, [ledgerAlert]);
   const ms = useMarketState();
-  const { prefs } = useUserPreferences();
+  const { prefs, ready: prefsReady, preferenceRevision: prefRevision,
+          preferenceLoadStatus: prefLoadStatus } = useUserPreferences();
   const isPanic      = ms.regimeTransition && ms.riskRegime === "risk-off";
   const isEuphoric   = ms.trend.acceleration === "accelerating" && ms.riskRegime === "risk-on";
   const isComplacent = ms.volRegime === "low" && ms.riskRegime !== "risk-off";
@@ -206,6 +208,31 @@ export default function FeedPage() {
   );
   const visibleClusters = focusedClusters.slice(0, visibleCount);
   const hasMore         = visibleCount < focusedClusters.length;
+
+  // Production-safe Feed funnel diagnostic — observability only, behind an
+  // explicit flag (?diag=1 or localStorage argus:diag=1). Reuses the exact
+  // stage arrays above; never alters ranking. Emission is keyed on a stable
+  // signature over ALL funnel inputs (feed generation, preference readiness,
+  // personalization, followed counts, focus identity, post-pagination
+  // visibility) — not generated_at alone — so a corrected funnel re-emits when
+  // preferences load async, focus changes, or pagination advances (finding 2).
+  const lastDiagKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!feedDiagEnabled() || !data) return;
+    const funnel = computeFeedFunnel(allClusters, prefs, {
+      ranked: rankedClusters, deduped: dedupedClusters, capped: cappedClusters,
+      focused: focusedClusters, visible: visibleClusters,
+    }, (data as { generated_at?: string }).generated_at ?? null,
+      { preferencesReady: prefsReady, preferenceRevision: prefRevision,
+        preferenceLoadStatus: prefLoadStatus });
+    const sig = funnelSignature(funnel, focus?.nodeId ?? null);
+    if (lastDiagKey.current === sig) return;   // nothing funnel-affecting changed
+    lastDiagKey.current = sig;
+    // eslint-disable-next-line no-console
+    console.log("[argus:feed-funnel]", funnel);
+  }, [data, allClusters, prefs, rankedClusters, dedupedClusters, cappedClusters,
+      focusedClusters, visibleClusters, prefsReady, prefRevision, prefLoadStatus,
+      focus?.nodeId]);
 
   // Personalization active → the gate ran, so the ranked list can be much shorter
   // than the raw cluster set. Surface counts so an intentionally short, high-signal

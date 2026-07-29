@@ -27,12 +27,14 @@ from app.institutional_memory.writer import (
     institutional_memory_writer,
     memory_config_status,
     record_cycle,
+    record_cycle_status,
 )
 
 log = logging.getLogger(__name__)
 
 __all__ = [
     "record_cycle",
+    "record_cycle_status",
     "memory_config_status",
     "log_startup_status",
     "bootstrap_from_theme_memory",

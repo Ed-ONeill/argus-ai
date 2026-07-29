@@ -471,6 +471,16 @@ def _admit(events: list[MarketEvent]) -> list[MarketEvent]:
     return admitted
 
 
+# ── Build diagnostics (observability only; never affects event construction) ──
+# Invocation-scoped via a contextvar (finding 5) so concurrent background and
+# inline builds never exchange counts.
+def last_build_stats() -> dict:
+    """Events constructed (pre-admission) vs admitted (post floor) from THIS
+    context's most recent build_market_events run."""
+    from app.diagnostics import get_stage_stat
+    return get_stage_stat("events", {"built": 0, "admitted": 0})
+
+
 def build_market_events(clusters: list, themes: list,
                         now: datetime | None = None) -> list[MarketEvent]:
     """Elevate story clusters into ranked Market Events (one event per
@@ -631,7 +641,10 @@ def build_market_events(clusters: list, themes: list,
 
     events = _fold_duplicate_earnings(events, now)
     events = _fold_near_duplicates(events, now)
+    _built = len(events)                      # diagnostics: before the admission floor
     events = _admit(events)
+    from app.diagnostics import set_stage_stat   # observability only, context-scoped
+    set_stage_stat("events", {"built": _built, "admitted": len(events)})
     events.sort(key=lambda e: (-e.editorial_score, e.id))
     if events:
         log.info("[events] built %d market events  top=%r score=%.1f type=%s sources=%d",

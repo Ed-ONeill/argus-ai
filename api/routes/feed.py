@@ -339,6 +339,9 @@ class FeedStatusResponse(BaseModel):
     cache_keys:    list[str]
     warm_targets:  list[dict[str, Any]]
     entries: list[dict[str, Any]]
+    # Read-only production-feed diagnostics (observability only). Counts,
+    # statuses, and timestamps — never source content or secrets.
+    diagnostics: dict[str, Any] | None = None
 
 
 class FeedFreshnessResponse(BaseModel):
@@ -653,7 +656,68 @@ def feed_status() -> FeedStatusResponse:
         cache_keys=[make_cache_key(c, s, f) for c, s, f in WARM_TARGETS],
         warm_targets=warm,
         entries=entries_info,
+        diagnostics=_build_diagnostics(),
     )
+
+
+def _build_diagnostics() -> dict[str, Any]:
+    """Assemble the read-only, sanitized diagnostics record. Each warm target
+    carries its OWN attempt/success/failure/persistence (finding 3) merged with
+    the live cache entry; the refresher section holds only genuinely global
+    state (thread liveness + loop-fatal error)."""
+    from app.diagnostics import diagnostics
+    targets: list[dict[str, Any]] = []
+    refresher: dict[str, Any] = {"thread_alive": diagnostics.refresher_alive(),
+                                 "last_error": None}
+    for c, s, f in WARM_TARGETS:
+        key = make_cache_key(c, s, f)
+        rec = diagnostics.status_for(key)
+        # If the diagnostics store itself failed, status_for returns an explicit
+        # unavailable fallback. Preserve it verbatim — do NOT reconstruct the
+        # target as a normal record full of nulls (that would read as a healthy
+        # but idle target and mask the outage).
+        if rec.get("diagnostics_available") is False:
+            targets.append({
+                "key": key,
+                "target": (c or "(all)"),
+                "diagnostics_available": False,
+                "diagnostics_error": rec.get("diagnostics_error"),
+            })
+            continue
+        refresher["last_error"] = rec.get("refresher_last_error")
+        entry = feed_cache.get(key)
+        gen_iso = entry.generated_at.isoformat() if entry else None
+        age = feed_cache.age_seconds(key)
+        attempt = rec.get("last_attempt_at")
+        targets.append({
+            "key": key,
+            "target": (c or "(all)"),
+            "diagnostics_available": True,
+            # cache liveness
+            "cache_generated_at": gen_iso,
+            "cache_age_seconds": round(age, 1) if age is not None else None,
+            "is_refreshing": entry.is_refreshing if entry else None,
+            "cache_predates_last_refresh": bool(gen_iso and attempt and gen_iso < attempt),
+            # per-target supervision (independent of other targets)
+            "last_attempt_at": rec.get("last_attempt_at"),
+            "last_success_at": rec.get("last_success_at"),
+            "last_cycle_started_id": rec.get("last_cycle_started_id"),
+            "last_cycle_completed_id": rec.get("last_cycle_completed_id"),
+            "last_attempt_succeeded": rec.get("last_attempt_succeeded"),
+            "last_error": rec.get("last_error"),
+            "published_at": rec.get("published_at"),
+            # persistence health per sink (finding 7)
+            "persistence": rec.get("persistence"),
+            # compatibility load (finding 2)
+            "cache_loaded_from_disk": rec.get("cache_loaded_from_disk"),
+            "cache_schema_compatible": rec.get("cache_schema_compatible"),
+            "compatibility_fields_cleared": rec.get("compatibility_fields_cleared"),
+            "compatibility_clear_reasons": rec.get("compatibility_clear_reasons"),
+            "cache_load": rec.get("cache_load"),
+            # last cycle produced for this target
+            "cycle": rec.get("cycle"),
+        })
+    return {"refresher": refresher, "targets": targets}
 
 
 @router.get("/", response_model=FeedResponse)

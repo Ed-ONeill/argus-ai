@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -334,6 +335,18 @@ _THEME_CATALOG_SENTINEL: dict = {}     # real catalog data lives in THEME_ONTOLO
 
 # ── Extraction engine ─────────────────────────────────────────────────────────
 
+# ── Extraction diagnostics (observability only; never affects extraction) ─────
+# Invocation-scoped via a contextvar so concurrent background and inline
+# extractions never exchange counts (finding 5).
+def last_extract_stats() -> dict:
+    """Counts from THIS context's most recent extract_themes run: candidates
+    (scored ≥1 with contributing clusters), emitted, and suppressed-by-reason.
+    Read by the diagnostics layer to distinguish 'themes gated to zero' from
+    'theme stage failed'."""
+    from app.diagnostics import get_stage_stat
+    return get_stage_stat("themes", {"candidates": 0, "emitted": 0, "suppressed_by_reason": {}})
+
+
 def extract_themes(
     clusters: list,    # list[StoryCluster]
     now:      datetime | None = None,
@@ -373,6 +386,9 @@ def extract_themes(
         )
 
     results: list[ThemeIntelligence] = []
+    # diagnostics counters (observability only)
+    _diag_candidates = 0
+    _diag_suppressed: dict[str, int] = {}
 
     # ── Pass 1: keyword / entity scoring ─────────────────────────────────────
     for theme_id, cfg in THEME_CATALOG.items():
@@ -454,6 +470,7 @@ def extract_themes(
         if total_score < 1.0 or not contributing:
             continue
 
+        _diag_candidates += 1   # scored ≥1 with contributing clusters → a real candidate
         n_clusters = len(contributing)
 
         # ── Signal strength ───────────────────────────────────────────────────
@@ -540,6 +557,8 @@ def extract_themes(
             gate_fail.append(f"conf={confidence}<{_MIN_CONFIDENCE}")
         if gate_fail:
             log.info("[theme] gate_suppress  %-36s  %s", theme_id, ", ".join(gate_fail))
+            _reason = gate_fail[0].split("=", 1)[0]   # primary reason: stories|evidence|breadth|conf
+            _diag_suppressed[_reason] = _diag_suppressed.get(_reason, 0) + 1
             continue
 
         _momentum_tracker.record_breadth(theme_id, breadth_raw)
@@ -624,6 +643,7 @@ def extract_themes(
             "[theme] gate_suppress(post-competition): dropped %d theme(s) below conf=%d",
             before - len(results), _MIN_CONFIDENCE,
         )
+        _diag_suppressed["competition"] = _diag_suppressed.get("competition", 0) + (before - len(results))
 
     # ── Pass 3: causal narrative ──────────────────────────────────────────────
     try:
@@ -645,6 +665,11 @@ def extract_themes(
                 )
         except Exception:
             pass
+
+    # publish extraction diagnostics into the current context (observability only)
+    from app.diagnostics import set_stage_stat
+    set_stage_stat("themes", {"candidates": _diag_candidates, "emitted": len(results),
+                              "suppressed_by_reason": dict(_diag_suppressed)})
 
     results.sort(key=lambda t: t.confidence, reverse=True)
     log.info(

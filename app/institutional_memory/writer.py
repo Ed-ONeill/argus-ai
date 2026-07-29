@@ -112,15 +112,20 @@ class InstitutionalMemoryWriter:
             if not self._disabled_logged:
                 log.info("[institutional-memory] disabled reason=%s", reason)
                 self._disabled_logged = True
-            return None
+            return None            # None means DISABLED — and only disabled.
 
         with self._lock:
             try:
                 return self._record_cycle_locked(themes or [], now or utc_now(), feed)
-            except Exception:
-                # Absolute backstop: the memory layer must never break the pipeline.
+            except Exception as exc:
+                # Absolute backstop: the memory layer must never break the
+                # pipeline. A FAILURE must not masquerade as disabled (None), so
+                # return an explicit failed result. The message is a bounded,
+                # secret-free exception summary (never a raw response body).
                 log.exception("[institutional-memory] write_failed unexpected error")
-                return None
+                failed = WriteRunResult(run_key="unknown", status="failed")
+                failed.add_error(f"{type(exc).__name__}: unexpected writer error")
+                return failed
 
     def _record_cycle_locked(self, themes: list, now: datetime,
                              feed: object | None) -> WriteRunResult:
@@ -595,3 +600,29 @@ def record_cycle(themes: list, now: datetime | None = None,
     """Persist this cycle's canonical state (non-raising). Pass the assembled
     ProcessedFeed to enable the M3.2 entity/narrative/relationship stage."""
     return institutional_memory_writer.record_cycle(themes, now, feed)
+
+
+def record_cycle_status(themes: list, now: datetime | None = None,
+                        feed: object | None = None) -> str:
+    """Authoritative persistence-status classifier for diagnostics — DISABLED
+    and FAILED can never be conflated (finding 1). The config gate, not the
+    return value, decides 'disabled':
+
+      config disabled                         → "disabled"
+      enabled + successful result             → the result's own status
+      enabled + writer returns None (backstop)→ "failed"
+      enabled + writer raises                 → "failed"
+      enabled + malformed/absent status       → "unknown_failed"
+    """
+    enabled, _reason = memory_config_status()
+    if not enabled:
+        return "disabled"
+    try:
+        result = record_cycle(themes, now, feed)
+    except Exception:
+        log.exception("[institutional-memory] status classifier caught writer error")
+        return "failed"
+    if result is None:
+        return "failed"
+    status = getattr(result, "status", None)
+    return status if (isinstance(status, str) and status) else "unknown_failed"
