@@ -1,11 +1,22 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Returns a Supabase client suitable for use in browser ("use client") components
- * and hooks. Safe to call multiple times — @supabase/ssr shares session state
- * via cookies across instances.
+ * Browser Supabase client — a PROCESS-WIDE SINGLETON.
+ *
+ * Every call must return the SAME instance. Creating multiple browser clients
+ * spins up multiple GoTrue auth managers that each run their own token-refresh
+ * timer against the same refresh token; they race, and the loser gets
+ * `refresh_token_already_used`, which silently invalidates the session. That is
+ * the root of the "have to click Sign In repeatedly" symptom and of protected
+ * requests intermittently going out with a stale/empty token. One client =>
+ * one refresh loop => one coherent session.
  */
-export function createClient() {
+let _client: SupabaseClient | null = null;
+
+export function createClient(): SupabaseClient {
+  if (_client) return _client;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -18,5 +29,6 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(url, key);
+  _client = createBrowserClient(url, key);
+  return _client;
 }

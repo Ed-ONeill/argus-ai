@@ -7,6 +7,7 @@ import { Globe2, RefreshCw, LayoutGrid } from "lucide-react";
 import { cn, formatRelativeAge } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
+import { SessionExpired } from "@/components/common/SessionExpired";
 import { IndustryCard, IndustryCardSkeleton, type ThemeSignalFallback } from "@/components/industries/IndustryCard";
 import {
   INDUSTRIES,
@@ -71,7 +72,7 @@ function deriveThemeSignal(
 
 export default function IndustriesPage() {
   const queryClient = useQueryClient();
-  const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
+  const { sectorData, regime, clusters, isLoading, isFetching, cacheAge, isUnauthorized } = useSectors();
   const { data: feedData } = useFeed({});
 
   // On mount: invalidate the feed cache so the page always fetches fresh data.
@@ -80,6 +81,10 @@ export default function IndustriesPage() {
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: ["feed"] });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resolved unauthenticated (or active invalidation) → sign-in, NOT a permanent
+  // skeleton. Initial auth restoration still shows the skeleton via isLoading.
+  if (isUnauthorized) return <SessionExpired label="Sign in to view Industries intelligence." />;
 
   const whatMattersNow   = feedData?.what_matters_now ?? [];
   const allThemes        = feedData?.theme_intelligence ?? [];

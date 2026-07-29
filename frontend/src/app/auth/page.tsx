@@ -1,11 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { createSingleFlight } from "@/lib/singleFlight";
+import { sanitizeInternalRedirect } from "@/lib/safeRedirect";
 
 type Tab      = "signin" | "signup";
 type InputKey = "name" | "lastname" | "email" | "password";
@@ -35,13 +37,23 @@ function AuthPageInner() {
   const [message,      setMessage]      = useState<string | null>(null);
   const [focusedInput, setFocusedInput] = useState<InputKey | null>(null);
 
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, signUp, session, invalidatingSession } = useAuth();
   const router       = useRouter();
   const searchParams = useSearchParams();
+  // One in-flight guard: rapid repeated submits collapse into a single request.
+  const submitFlight = useRef(createSingleFlight<void>());
 
+  // Same-origin redirect target only — the shared sanitizer rejects protocol-
+  // relative, backslash, encoded-slash, absolute and javascript: escapes.
+  const redirectTo = sanitizeInternalRedirect(searchParams.get("redirect"));
+
+  // Fallback: if a usable session already exists (e.g. restored, or established
+  // via onAuthStateChange after submit), leave the auth screen. Gated on a real
+  // access token AND on NOT being mid-invalidation — a session being torn down
+  // by a definitive-401 cleanup must never bounce /auth back into the app.
   useEffect(() => {
-    if (user) router.replace("/");
-  }, [user, router]);
+    if (session?.access_token && !invalidatingSession) router.replace(redirectTo);
+  }, [session, invalidatingSession, router, redirectTo]);
 
   useEffect(() => {
     if (searchParams.get("error") === "auth_failed") {
@@ -57,20 +69,27 @@ function AuthPageInner() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    if (loading) return;   // fast path: button is disabled while pending
     setError(null);
     setMessage(null);
 
-    try {
-      if (tab === "signin") {
-        const err = await signIn(email, password);
-        if (err) {
-          setError(friendlyError(err.message));
+    // The single-flight collapses concurrent submits into ONE request even if
+    // clicks slip in before `loading` re-renders the disabled button.
+    await submitFlight.current(async () => {
+      setLoading(true);
+      try {
+        if (tab === "signin") {
+          const { error: err, session: newSession } = await signIn(email, password);
+          if (err) {
+            setError(friendlyError(err.message));
+          } else if (newSession?.access_token) {
+            // Redirect only once a usable session (with a token) exists.
+            router.replace(redirectTo);
+            router.refresh();
+          }
+          // If signIn returned no error but no session yet, the session effect
+          // above redirects as soon as onAuthStateChange delivers it.
         } else {
-          router.push("/");
-          router.refresh();
-        }
-      } else {
         const err = await signUp(
           email,
           password,
@@ -86,12 +105,13 @@ function AuthPageInner() {
           switchTab("signin");
         }
       }
-    } catch (thrown) {
-      const msg = thrown instanceof Error ? thrown.message : "An unexpected error occurred.";
-      setError(friendlyError(msg));
-    } finally {
-      setLoading(false);
-    }
+      } catch (thrown) {
+        const msg = thrown instanceof Error ? thrown.message : "An unexpected error occurred.";
+        setError(friendlyError(msg));
+      } finally {
+        setLoading(false);
+      }
+    });
   }
 
   function inputStyle(name: InputKey): React.CSSProperties {

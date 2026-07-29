@@ -3,6 +3,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { extractEntitiesFromText } from "@/lib/listenIntelligence";
+import { apiGet, UnauthorizedError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { authedQueryState } from "@/lib/authGate";
 import type { Episode } from "@/lib/types";
 
 // Ingestion ships episodes with entities = [] (no upstream NER). Derive companies +
@@ -147,23 +150,37 @@ function mergeAndSort(podcasts: Episode[], briefings: Episode[], activeTopic: st
 export function useListen(topic: string) {
   // Keep queryKey stable: "" and "All" both map to the same cache entry.
   const queryKey = topic && topic !== "All" ? topic : "all";
+  const { authReady, accessToken, invalidatingSession } = useAuth();
+  const authState = authedQueryState({ authReady, accessToken, invalidatingSession });
+  const enabled = authState.enabled;
 
-  const { data, isLoading } = useQuery<{ episodes: Episode[]; isFallback: boolean }>({
+  const { data, isLoading, error } = useQuery<{ episodes: Episode[]; isFallback: boolean; partial: boolean; apiError: boolean }>({
     queryKey: ["listen", queryKey],
+    enabled,
     queryFn: async () => {
       const normalizedTopic = queryKey === "all" ? "" : queryKey;
       const topicParam = normalizedTopic
         ? `?topic=${encodeURIComponent(normalizedTopic)}`
         : "";
 
-      const listenUrl    = `/api/listen${topicParam}`;
-      const briefingsUrl = `/api/briefings${topicParam}`;
-
-      // Fetch both sources in parallel; treat each failure as an empty array.
+      // Both are protected backend routes → go through the shared authed client
+      // (fresh Bearer + 401 handling).
       const [listenResult, briefingsResult] = await Promise.allSettled([
-        fetch(listenUrl).then(r => (r.ok ? r.json() : [])),
-        fetch(briefingsUrl).then(r => (r.ok ? r.json() : [])),
+        apiGet<Episode[]>(`/listen${topicParam}`),
+        apiGet<Episode[]>(`/briefings${topicParam}`),
       ]);
+
+      // An UnauthorizedError from EITHER protected request is a hard auth failure
+      // — propagate it (never silently downgrade a 401 to empty content). Only
+      // non-auth source failures are allowed to degrade to partial results.
+      for (const r of [listenResult, briefingsResult]) {
+        if (r.status === "rejected" && r.reason instanceof UnauthorizedError) throw r.reason;
+      }
+
+      const listenFailed    = listenResult.status    === "rejected";
+      const briefingsFailed  = briefingsResult.status === "rejected";
+      const anyFailed = listenFailed || briefingsFailed;
+      const allFailed = listenFailed && briefingsFailed;
 
       // Combine raw results from both endpoints, then split by is_briefing flag.
       // This ensures correct categorization regardless of which endpoint returned them,
@@ -200,7 +217,11 @@ export function useListen(topic: string) {
 
       return {
         episodes:   combined.map(withEntities),
-        isFallback: combined.length === 0,
+        // Genuine empty ONLY when nothing came back AND no source failed. A
+        // non-auth source failure is NOT genuine empty content.
+        isFallback: combined.length === 0 && !anyFailed,
+        partial:    anyFailed && !allFailed,   // one source down, other rendered
+        apiError:   allFailed,                 // both non-auth sources failed
       };
     },
     staleTime: 2 * 60_000,   // 2 minutes
@@ -209,7 +230,16 @@ export function useListen(topic: string) {
   const episodes: Episode[] = data?.episodes  ?? [];
   const isFallback: boolean  = data?.isFallback ?? false;
 
-  return { episodes, isLoading, isFallback };
+  return {
+    episodes,
+    isLoading,
+    isFallback,
+    isPartial:      data?.partial ?? false,
+    isApiError:     data?.apiError ?? false,
+    isUnauthorized: authState.isUnauthenticated || error instanceof UnauthorizedError,
+    isAuthWaiting:  authState.isAuthWaiting,
+    error,
+  };
 }
 
 // ── Rail-based hook (new Listen page) ─────────────────────────────────────────
@@ -220,12 +250,18 @@ export function useListen(topic: string) {
 // appears in two rails.
 
 export function useListenRails() {
-  const { data, isLoading } = useQuery<Episode[]>({
+  const { authReady, accessToken, invalidatingSession } = useAuth();
+  const authState = authedQueryState({ authReady, accessToken, invalidatingSession });
+  const enabled = authState.enabled;
+  const { data, isLoading, error, refetch } = useQuery<Episode[]>({
     queryKey: ["listen-rails"],
+    enabled,
+    // NOTE: do NOT catch-all → []. A single source hook cannot render "partial",
+    // and swallowing errors would turn a 401 (and any API failure) into a silent
+    // empty page. Let react-query surface the error; UnauthorizedError propagates
+    // so the shared client can route to sign-in.
     queryFn: async () => {
-      const res = await fetch("/api/listen?limit=100");
-      if (!res.ok) return [];
-      const raw: unknown = await res.json();
+      const raw = await apiGet<unknown>("/listen?limit=100");
       return (Array.isArray(raw) ? (raw as Episode[]) : [])
         .filter(e => !e.is_briefing)
         .map(withEntities);
@@ -287,5 +323,16 @@ export function useListenRails() {
     };
   }, [data]);
 
-  return { rails, isLoading, totalEpisodes: data?.length ?? 0, allEpisodes: data ?? [] };
+  return {
+    rails, isLoading,
+    totalEpisodes: data?.length ?? 0,
+    allEpisodes: data ?? [],
+    isUnauthorized: authState.isUnauthenticated || error instanceof UnauthorizedError,
+    isApiError: !!error && !(error instanceof UnauthorizedError),
+    // Single source → never a partial result; exposed for uniform page handling.
+    isPartial: false,
+    isAuthWaiting: authState.isAuthWaiting,
+    error,
+    refetch,
+  };
 }

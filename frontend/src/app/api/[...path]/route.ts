@@ -41,19 +41,31 @@ async function proxy(
                                      // but forwards the original Content-Encoding header, causing
                                      // ERR_CONTENT_DECODING_FAILED in the browser (double decompression)
 
-  // PH2 (C3) — the browser never sees a backend token; the proxy attaches the
-  // server-validated Supabase access token so the backend can INDEPENDENTLY
-  // verify the user (app/auth.py). A caller-supplied Authorization header is
-  // dropped and replaced, so the header can only ever carry the real session.
-  headers.delete("authorization");
-  try {
-    const supabase = await createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (token) headers.set("authorization", `Bearer ${token}`);
-  } catch (err) {
-    console.error("[proxy] session read failed (forwarding unauthenticated):", err);
+  // Auth token forwarding. The backend INDEPENDENTLY verifies the JWT signature
+  // (ES256/JWKS in app/auth.py), so a forged token can never pass — which means
+  // we can safely trust a client-supplied Bearer as the *freshest* token.
+  //
+  // Order matters and fixes the production 401: this route is EXCLUDED from the
+  // middleware (see middleware matcher), so the server-side cookie session here
+  // is never refreshed and its access_token routinely goes stale between page
+  // load and a later /api call. The browser's Supabase client, by contrast,
+  // auto-refreshes and hands us a live token via the Authorization header. So:
+  //   1. prefer the caller's Bearer (fresh, from the live browser session);
+  //   2. otherwise fall back to the server cookie session (SSR/no-JS callers).
+  const forwarded = req.headers.get("authorization");
+  const hasClientBearer = !!forwarded && /^Bearer\s+\S+/i.test(forwarded);
+  if (!hasClientBearer) {
+    headers.delete("authorization");
+    try {
+      const supabase = await createClient();
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) headers.set("authorization", `Bearer ${token}`);
+    } catch (err) {
+      console.error("[proxy] session read failed (forwarding unauthenticated):", err);
+    }
   }
+  // else: leave the caller's fresh Bearer in place.
 
   const body =
     req.method !== "GET" && req.method !== "HEAD"

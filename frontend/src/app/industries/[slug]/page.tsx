@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TickerChip } from "@/components/common/TickerChip";
+import { SessionExpired } from "@/components/common/SessionExpired";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
@@ -714,7 +715,7 @@ export default function IndustryDetailPage() {
   const industry = getIndustryBySlug(slug);
   const { isWatched, toggle: toggleThemeWatch } = useThemeWatchlist();
 
-  const { sectorData, regime, clusters, isLoading, isFetching } = useSectors();
+  const { sectorData, regime, clusters, isLoading, isFetching, isUnauthorized } = useSectors();
   const derivedRegime = sectorData?.derived_regime ?? "";
   const { data: feedData } = useFeed({});
   const whatMattersNow = feedData?.what_matters_now ?? [];
@@ -755,6 +756,10 @@ export default function IndustryDetailPage() {
       </div>
     );
   }
+
+  // Resolved unauthenticated → sign-in, NOT a permanent skeleton (precedence
+  // over loading). Initial auth restoration still shows the skeleton below.
+  if (isUnauthorized) return <SessionExpired label="Sign in to view this industry." />;
 
   if (isLoading) return <DetailSkeleton color={industry.color} />;
 

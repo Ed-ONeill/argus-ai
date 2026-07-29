@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Headphones, BarChart2 } from "lucide-react";
+import { Headphones, BarChart2, AlertCircle, LogIn } from "lucide-react";
 import { useListenRails } from "@/hooks/useListen";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { useFollowedThemes } from "@/hooks/useFollowedThemes";
@@ -62,6 +62,40 @@ function Skeleton() {
   );
 }
 
+/** Explicit signed-out / session-expired state — NOT rendered as zero episodes.
+ *  The global definitive-401 handler redirects to /auth; this offers a direct
+ *  sign-in action while that completes. */
+function UnauthorizedState() {
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-24 text-center">
+      <LogIn size={32} className="mx-auto mb-3 text-ink-muted opacity-40" />
+      <h1 className="text-base font-medium text-ink mb-1.5">Your session has expired</h1>
+      <p className="text-sm text-ink-secondary mb-5">Sign in again to open your Listen intelligence.</p>
+      <a href="/auth" className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold tracking-wide text-white"
+         style={{ background: "#2563EB" }}>
+        <LogIn size={13} /> SIGN IN
+      </a>
+    </div>
+  );
+}
+
+/** Explicit service-error state with retry — NOT rendered as zero episodes. */
+function ServiceErrorState({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-24 text-center">
+      <AlertCircle size={32} className="mx-auto mb-3 text-ink-muted opacity-40" />
+      <h1 className="text-base font-medium text-ink mb-1.5">Couldn&apos;t load Listen</h1>
+      <p className="text-sm text-ink-secondary mb-5">A temporary service issue interrupted the request.</p>
+      {onRetry && (
+        <button onClick={onRetry} className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold tracking-wide text-white"
+                style={{ background: "#2563EB" }}>
+          RETRY
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ListenPage() {
@@ -70,7 +104,10 @@ export default function ListenPage() {
   const [selectedTheme, setSelectedTheme] = useState<ThemeIntelligence | null>(null);
 
   // ── Episodes ────────────────────────────────────────────────────────────────
-  const { isLoading, totalEpisodes, allEpisodes } = useListenRails();
+  const {
+    isLoading, totalEpisodes, allEpisodes,
+    isAuthWaiting, isUnauthorized, isApiError, isPartial, refetch,
+  } = useListenRails();
 
   // ── Canonical intelligence provisioning (A1): the one hook every surface
   //    mounts - themes and clusters ride along, and the shared graph is
@@ -175,7 +212,19 @@ export default function ListenPage() {
     );
   }
 
-  if (isLoading) return <Skeleton />;
+  // ── Distinct top-level states, in precedence order. A propagated
+  //     UnauthorizedError / API error must NEVER share the render branch with a
+  //     successful empty array — and unauthorized takes precedence over loading
+  //     so an in-progress session invalidation shows sign-in, not a skeleton. ──
+  // 1. unauthenticated (resolved signed-out / invalidation / request 401)
+  if (isUnauthorized) return <UnauthorizedState />;
+  // 2. loading / waiting on the session
+  if (isAuthWaiting || isLoading) return <Skeleton />;
+  // 3. service error (never zero-episodes)
+  if (isApiError) return <ServiceErrorState onRetry={() => refetch?.()} />;
+  // 4. partial results fall through to the normal render below, with a
+  //    non-blocking notice; 5. genuine empty and 6. success are the existing
+  //    totalEpisodes === 0 / > 0 branches.
 
   // Derive a contextual subtitle from top theme
   const topTheme = themeGroups[0]?.theme;
@@ -206,6 +255,18 @@ export default function ListenPage() {
           </div>
           <p className="text-sm text-ink-secondary">{contextLine}</p>
         </motion.div>
+
+        {/* ── Non-blocking partial-data notice — some sources were unavailable,
+            but what loaded still renders below. ──────────────────────────────── */}
+        {isPartial && (
+          <div className="mb-6 flex items-center gap-2.5 rounded-lg px-3.5 py-2.5"
+               style={{ background: "rgba(220,160,60,0.08)", border: "1px solid rgba(220,160,60,0.28)" }}>
+            <AlertCircle size={13} className="shrink-0" style={{ color: "#d0a03c" }} />
+            <p className="text-xs text-ink-secondary">
+              Some sources are temporarily unavailable — showing partial results.
+            </p>
+          </div>
+        )}
 
         {/* ── Intelligence-led sections (Phase 2.4): episodes as evidence
             attached to the shared Read, ledger, contradiction records, and

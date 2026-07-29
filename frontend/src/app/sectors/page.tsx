@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { cn, formatRelativeAge } from "@/lib/utils";
 import { useSectors } from "@/hooks/useSectors";
+import { SessionExpired } from "@/components/common/SessionExpired";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
 import { buildIndustriesIntel, type SectorIntelVM } from "@/lib/industriesIntel";
 import { type IntelligenceProfile } from "@/lib/intelligenceProfile";
@@ -213,7 +214,7 @@ function RotationCardSkeleton() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SectorsPage() {
-  const { sectorData, regime, clusters, isLoading, isFetching, cacheAge } = useSectors();
+  const { sectorData, regime, clusters, isLoading, isFetching, cacheAge, isUnauthorized } = useSectors();
 
   // Phase 2.5: shared-engine projections per sector (the same profile /
   // risk / ledger / narrative reads Explorer shows), injected into the cards.
@@ -236,6 +237,10 @@ export default function SectorsPage() {
     });
     return new Map((vm.sectors.data ?? []).map(s => [s.key.toLowerCase(), s]));
   }, [sectorData?.sectors, argus.themes, argus.ready]);
+
+  // Resolved unauthenticated → sign-in, NOT a permanent skeleton. Initial auth
+  // restoration still shows loading via isLoading below.
+  if (isUnauthorized) return <SessionExpired label="Sign in to view Sectors intelligence." />;
 
   const regimeMeta    = regime ? (REGIME_META[regime] ?? null) : null;
   const rotations     = (sectorData?.rotation_signals ?? []).slice(0, 3);

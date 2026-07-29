@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchFeedFreshness } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { authedQueryState } from "@/lib/authGate";
 import type { FeedFreshness } from "@/lib/types";
 
 interface UseFeedFreshnessOptions {
@@ -21,9 +23,13 @@ export function useFeedFreshness({
   currentGeneratedAt,
   refetchInterval    = 60_000,
 }: UseFeedFreshnessOptions = {}) {
+  const { authReady, accessToken, invalidatingSession } = useAuth();
+  const enabled = authedQueryState({ authReady, accessToken, invalidatingSession }).enabled;
+
   const { data } = useQuery<FeedFreshness>({
     queryKey:        ["feed-freshness", categories, sources, fresh_only],
     queryFn:         () => fetchFeedFreshness(categories, sources, fresh_only),
+    enabled,
     refetchInterval,
     staleTime:       30_000,
     // Don't show loading state — this is a silent background poll

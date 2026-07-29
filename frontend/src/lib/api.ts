@@ -1,6 +1,15 @@
 import type { FeedParams, FeedResponse, SourceInfo, DeepAnalysis, FeedFreshness } from "./types";
+import { authedJson, UnauthorizedError } from "./authClient";
+import { getAccessToken, refreshAccessToken, notifyUnauthorized } from "./authSession";
 
 const BASE = "/api";
+
+// Re-export so callers/react-query can distinguish states by error type.
+export { UnauthorizedError, ApiError } from "./authClient";
+
+// The single dependency bundle every protected request uses: fresh token at
+// call time + one-shot refresher. No token is ever captured in a closure.
+const authDeps = { getToken: getAccessToken, refreshToken: refreshAccessToken };
 
 async function get<T>(path: string, params?: Record<string, string | boolean>): Promise<T> {
   let url = BASE + path;
@@ -12,24 +21,25 @@ async function get<T>(path: string, params?: Record<string, string | boolean>): 
     const qstr = qs.toString();
     if (qstr) url += "?" + qstr;
   }
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("[api.get] error", res.status, url, text.slice(0, 300));
-    throw new Error(`API ${res.status}: ${text.slice(0, 100)}`);
+  try {
+    return await authedJson<T>(url, undefined, authDeps);
+  } catch (err) {
+    if (err instanceof UnauthorizedError) notifyUnauthorized();
+    throw err;
   }
-  return res.json();
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
-  return res.json();
+  try {
+    return await authedJson<T>(BASE + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }, authDeps);
+  } catch (err) {
+    if (err instanceof UnauthorizedError) notifyUnauthorized();
+    throw err;
+  }
 }
 
 // ── Feed ─────────────────────────────────────────────────────────────────────
@@ -51,6 +61,16 @@ export async function fetchFeed(params: FeedParams = {}): Promise<FeedResponse> 
 
 export async function fetchSources(): Promise<SourceInfo[]> {
   return get<SourceInfo[]>("/feed/sources");
+}
+
+/**
+ * Generic authenticated GET for other protected backend routes (listen,
+ * briefings, markets/industries intelligence, …). `path` is relative to /api
+ * and MAY include a query string, e.g. "/listen?topic=Tech". Routes through the
+ * one shared authed client, so it attaches a fresh Bearer and handles 401.
+ */
+export async function apiGet<T>(path: string): Promise<T> {
+  return get<T>(path);
 }
 
 // ── Saved ────────────────────────────────────────────────────────────────────

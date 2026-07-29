@@ -92,6 +92,48 @@ const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
   + '</svg>'
 )}")`;
 
+/**
+ * Distinct, non-empty top-level states for the feed. A 401 (unauthenticated) or
+ * an API failure must never be shown as "no stories" — each has its own view.
+ */
+function FeedGateView({ kind, onRetry }: {
+  kind: "loading" | "unauthenticated" | "error";
+  onRetry?: () => void;
+}) {
+  const copy = {
+    loading:         { title: "Preparing your briefing…", body: "Establishing your secure session." },
+    unauthenticated: { title: "Sign in to open your briefing", body: "Your session has expired. Redirecting you to sign in…" },
+    error:           { title: "Couldn't reach the intelligence service", body: "The feed pipeline is healthy; this is a temporary connection issue." },
+  }[kind];
+  return (
+    <div style={{ minHeight: "calc(100vh - 3.5rem)", background: "#0A0F1C",
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
+      <div style={{ maxWidth: 420, textAlign: "center" }}>
+        {kind === "loading" && (
+          <span className="inline-block w-4 h-4 mb-4 border border-white/25 border-t-white/70 rounded-full animate-spin" />
+        )}
+        <h1 style={{ fontSize: 16, fontWeight: 500, color: "rgba(255,255,255,0.86)", marginBottom: 8 }}>
+          {copy.title}
+        </h1>
+        <p style={{ fontSize: 13, lineHeight: 1.55, color: "rgba(255,255,255,0.42)" }}>{copy.body}</p>
+        {kind === "unauthenticated" && (
+          <a href="/auth" style={{ display: "inline-block", marginTop: 16, fontSize: 12, fontWeight: 700,
+              letterSpacing: "0.08em", color: "#5aa2dc", textDecoration: "none" }}>
+            GO TO SIGN IN →
+          </a>
+        )}
+        {kind === "error" && onRetry && (
+          <button onClick={onRetry} style={{ marginTop: 16, padding: "9px 16px", borderRadius: 5, border: "none",
+              background: "#2563EB", color: "rgba(255,255,255,0.92)", fontSize: 10.5, fontWeight: 700,
+              letterSpacing: "0.12em", cursor: "pointer" }}>
+            RETRY
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function FeedPage() {
   const [drawerOpen,       setDrawerOpen]       = useState(false);
   const [settingsOpen,     setSettingsOpen]     = useState(false);
@@ -118,7 +160,8 @@ export default function FeedPage() {
   const prevIdsRef = useRef<Set<string>>(new Set());
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isPending, isFetching, error, params, refresh, updateParams } = useFeed();
+  const { data, isLoading, isPending, isFetching, error, params, refresh, updateParams,
+          isAuthWaiting, isUnauthorized } = useFeed();
   const { savedIds, toggleSave } = useSaved();
   const { hasNew, cacheAgeSeconds } = useFeedFreshness({
     currentGeneratedAt: data?.generated_at,
@@ -280,6 +323,19 @@ export default function FeedPage() {
   }, [error]);
 
   const handleSave = useCallback((item: FeedItem) => toggleSave(item), [toggleSave]);
+
+  // ── Distinct top-level states, in precedence order (never render a 401 or API
+  //     failure as an empty feed). Placed after all hooks so hook order is
+  //     stable. Unauthorized takes precedence over loading, so an in-progress
+  //     session invalidation shows the signed-out state, not a skeleton. ───────
+  // 1. Definitively unauthenticated (resolved signed-out OR active invalidation
+  //    OR a request 401). Sign-in prompt, never an empty feed.
+  if (isUnauthorized) return <FeedGateView kind="unauthenticated" />;
+  // 2. Waiting on the initial session resolution. (Data-loading skeletons for a
+  //    normal fetch are handled inline by the map/hero/stream via isLoading.)
+  if (isAuthWaiting) return <FeedGateView kind="loading" />;
+  // 3. A genuine (non-401) API failure with no data to fall back on.
+  if (error && !data) return <FeedGateView kind="error" onRetry={() => refresh(true)} />;
 
   return (
     <>
