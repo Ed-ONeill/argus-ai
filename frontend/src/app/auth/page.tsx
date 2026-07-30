@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -47,13 +47,25 @@ function AuthPageInner() {
   // relative, backslash, encoded-slash, absolute and javascript: escapes.
   const redirectTo = sanitizeInternalRedirect(searchParams.get("redirect"));
 
-  // Fallback: if a usable session already exists (e.g. restored, or established
-  // via onAuthStateChange after submit), leave the auth screen. Gated on a real
-  // access token AND on NOT being mid-invalidation — a session being torn down
-  // by a definitive-401 cleanup must never bounce /auth back into the app.
+  // ONE navigation, fired at most once. Both the submit-success path and the
+  // onAuthStateChange fallback below route through this, so they can never race
+  // or issue repeated redirects. No router.refresh() (it re-renders the current
+  // /auth tree and races the replace transition — the intermittent "click again"
+  // symptom); the destination is client-rendered and reads the live session.
+  const navigatedRef = useRef(false);
+  const navigateToApp = useCallback(() => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    router.replace(redirectTo);
+  }, [router, redirectTo]);
+
+  // Fallback for a restored/external session, or a delayed onAuthStateChange
+  // after submit. Gated on a real access token AND on NOT being mid-invalidation
+  // (a session being torn down by a definitive-401 must never bounce /auth back
+  // into the app). Deduped by navigateToApp so it can't double-redirect.
   useEffect(() => {
-    if (session?.access_token && !invalidatingSession) router.replace(redirectTo);
-  }, [session, invalidatingSession, router, redirectTo]);
+    if (session?.access_token && !invalidatingSession) navigateToApp();
+  }, [session, invalidatingSession, navigateToApp]);
 
   useEffect(() => {
     if (searchParams.get("error") === "auth_failed") {
@@ -81,14 +93,15 @@ function AuthPageInner() {
         if (tab === "signin") {
           const { error: err, session: newSession } = await signIn(email, password);
           if (err) {
+            // Failure: stay on /auth, show the sanitized error, do NOT navigate.
             setError(friendlyError(err.message));
           } else if (newSession?.access_token) {
-            // Redirect only once a usable session (with a token) exists.
-            router.replace(redirectTo);
-            router.refresh();
+            // Success: the RETURNED session is authoritative. Navigate IMMEDIATELY
+            // — do not wait for a second onAuthStateChange event or context update.
+            navigateToApp();
           }
           // If signIn returned no error but no session yet, the session effect
-          // above redirects as soon as onAuthStateChange delivers it.
+          // above navigates (once) as soon as onAuthStateChange delivers it.
         } else {
         const err = await signUp(
           email,
