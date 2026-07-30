@@ -9,9 +9,7 @@ const h = vi.hoisted(() => ({
   signIn: vi.fn(),
   signUp: vi.fn(),
   session: { current: null as Sess },
-  replace: vi.fn(),
-  refresh: vi.fn(),
-  push: vi.fn(),
+  hard: vi.fn(),          // hard navigation spy
   params: new URLSearchParams(""),
 }));
 
@@ -22,9 +20,12 @@ vi.mock("@/context/AuthContext", () => ({
   }),
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: h.replace, refresh: h.refresh, push: h.push }),
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn(), push: vi.fn() }),
   useSearchParams: () => h.params,
 }));
+// Navigation now goes through a HARD navigation (real request → server sees the
+// session cookies). Mock it so tests observe the transition without reloading.
+vi.mock("@/lib/hardNavigate", () => ({ hardNavigate: (url: string) => h.hard(url) }));
 
 import AuthPage from "@/app/auth/page";
 
@@ -41,50 +42,44 @@ const submitBtn = (c: HTMLElement) => c.querySelector('button[type="submit"]') a
 beforeEach(() => {
   h.signIn.mockReset();
   h.signUp.mockReset();
-  h.replace.mockReset();
-  h.refresh.mockReset();
+  h.hard.mockReset();
   h.session.current = null;
   h.params = new URLSearchParams("");
+  try { window.sessionStorage.clear(); } catch { /* ignore */ }
 });
 afterEach(() => cleanup());
 
 describe("AuthPage — first-click sign-in sequence (browser-level)", () => {
-  it("one real submit: onSubmit fires, button disables + says Signing in, signIn once, resolves→navigates, no 2nd click", async () => {
+  it("one real submit: onSubmit fires, button disables + says Signing in, signIn once, resolves→hard-navigates, no 2nd click", async () => {
     let resolveSignIn!: (v: unknown) => void;
     h.signIn.mockImplementation(() => new Promise((r) => { resolveSignIn = r; }));
     const { container } = render(<AuthPage />);
     fill(container);
 
-    // FIRST click only.
-    fireEvent.click(submitBtn(container));
+    fireEvent.click(submitBtn(container));   // FIRST click only
 
-    // onSubmit fired on the first click → signIn started exactly once.
     expect(h.signIn).toHaveBeenCalledTimes(1);
-    // Button is immediately disabled and shows the signing-in state.
     await waitFor(() => expect(submitBtn(container).disabled).toBe(true));
     expect(container.textContent).toMatch(/signing in/i);
-    // Still on /auth (no premature navigation) while the request is pending.
-    expect(h.replace).not.toHaveBeenCalled();
+    expect(h.hard).not.toHaveBeenCalled();   // no premature navigation while pending
 
-    // Successful resolution IMMEDIATELY invokes navigation — no second click.
     await act(async () => { resolveSignIn({ error: null, session: SESSION }); });
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/"));
-    expect(h.replace).toHaveBeenCalledTimes(1);
-    expect(h.signIn).toHaveBeenCalledTimes(1);   // never needed a second attempt
+    await waitFor(() => expect(h.hard).toHaveBeenCalledWith("/"));
+    expect(h.hard).toHaveBeenCalledTimes(1);
+    expect(h.signIn).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("AuthPage — sign-in completion transition (single-flight + immediate navigation)", () => {
-  it("one click calls signIn once and navigates once, even if session context is delayed", async () => {
+describe("AuthPage — sign-in completion transition", () => {
+  it("navigates once via hard navigation even if the session context is delayed", async () => {
     h.signIn.mockResolvedValue({ error: null, session: SESSION });
-    h.session.current = null;   // context session update is delayed / never arrives
+    h.session.current = null;   // context session never arrives
     const { container } = render(<AuthPage />);
     fill(container);
     fireEvent.click(submitBtn(container));
-
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/"));
+    await waitFor(() => expect(h.hard).toHaveBeenCalledWith("/"));
     expect(h.signIn).toHaveBeenCalledTimes(1);
-    expect(h.replace).toHaveBeenCalledTimes(1);
+    expect(h.hard).toHaveBeenCalledTimes(1);
   });
 
   it("navigates to the sanitized internal redirect target from the query", async () => {
@@ -93,8 +88,8 @@ describe("AuthPage — sign-in completion transition (single-flight + immediate 
     const { container } = render(<AuthPage />);
     fill(container);
     fireEvent.click(submitBtn(container));
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/industries"));
-    expect(h.replace).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(h.hard).toHaveBeenCalledWith("/industries"));
+    expect(h.hard).toHaveBeenCalledTimes(1);
   });
 
   it("a rapid second click does NOT make a second signIn request", async () => {
@@ -104,26 +99,24 @@ describe("AuthPage — sign-in completion transition (single-flight + immediate 
     fill(container);
     const btn = submitBtn(container);
     fireEvent.click(btn);
-    fireEvent.click(btn);   // rapid second click before the first resolves
+    fireEvent.click(btn);
     expect(h.signIn).toHaveBeenCalledTimes(1);
-
     await act(async () => { resolveSignIn({ error: null, session: SESSION }); });
-    await waitFor(() => expect(h.replace).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(1));
     expect(h.signIn).toHaveBeenCalledTimes(1);
   });
 
-  it("a delayed auth event does NOT cause a duplicate redirect", async () => {
+  it("a delayed auth event does NOT cause a duplicate navigation within the same page instance", async () => {
     h.signIn.mockResolvedValue({ error: null, session: SESSION });
     const { container, rerender } = render(<AuthPage />);
     fill(container);
     fireEvent.click(submitBtn(container));
-    await waitFor(() => expect(h.replace).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(1));
 
-    // onAuthStateChange finally delivers the session to context → effect runs.
-    h.session.current = SESSION;
+    h.session.current = SESSION;   // onAuthStateChange delivers session to context
     rerender(<AuthPage />);
     await act(async () => {});
-    expect(h.replace).toHaveBeenCalledTimes(1);   // still exactly one navigation
+    expect(h.hard).toHaveBeenCalledTimes(1);   // deduped within the instance
   });
 
   it("failed signIn shows the sanitized error and does NOT navigate", async () => {
@@ -131,30 +124,66 @@ describe("AuthPage — sign-in completion transition (single-flight + immediate 
     const { container } = render(<AuthPage />);
     fill(container);
     fireEvent.click(submitBtn(container));
-
     await waitFor(() => expect(screen.getByText(/incorrect email or password/i)).toBeTruthy());
-    expect(h.replace).not.toHaveBeenCalled();
+    expect(h.hard).not.toHaveBeenCalled();
     expect(h.signIn).toHaveBeenCalledTimes(1);
   });
 
-  it("disables the submit button and shows a signing-in state while pending", async () => {
-    let resolveSignIn!: (v: unknown) => void;
-    h.signIn.mockImplementation(() => new Promise((r) => { resolveSignIn = r; }));
+  it("normal case: server auth immediately available → one hard navigation to /", async () => {
+    h.session.current = SESSION;   // restored/valid session, server can read it
+    render(<AuthPage />);
+    await waitFor(() => expect(h.hard).toHaveBeenCalledWith("/"));
+    expect(h.hard).toHaveBeenCalledTimes(1);
+    expect(h.signIn).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthPage — bounce/retry across the browser↔server session boundary", () => {
+  it("first nav rejected by middleware (bounce) → page RETRIES on the /auth reload → eventually lands", async () => {
+    // A valid session exists client-side, but the server can't read it yet.
+    h.session.current = SESSION;
+
+    // Mount 1: attempt navigation (hard nav to "/").
+    const first = render(<AuthPage />);
+    await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(1));
+    // Middleware 307s "/" → "/auth?redirect=/" → /auth fully reloads:
+    first.unmount();
+
+    // Fresh /auth instance after the bounce — the latch is NOT permanent, so it
+    // retries instead of getting stuck on /auth.
+    render(<AuthPage />);
+    await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(2));
+    // In production the server now reads the committed cookie and serves "/".
+  });
+
+  it("bounded: after MAX bounces it STOPS (no infinite loop) and shows an error", async () => {
+    h.session.current = SESSION;
+    // Three bounces = three hard-nav attempts.
+    for (let i = 1; i <= 3; i++) {
+      const inst = render(<AuthPage />);
+      await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(i));
+      inst.unmount();
+    }
+    // Fourth /auth load: budget exhausted → NO fourth navigation, error surfaced.
+    render(<AuthPage />);
+    await waitFor(() => expect(screen.getByText(/couldn't be reached|please reload/i)).toBeTruthy());
+    expect(h.hard).toHaveBeenCalledTimes(3);
+  });
+
+  it("a fresh explicit sign-in resets the bounce budget", async () => {
+    // Exhaust the budget via bounces.
+    h.session.current = SESSION;
+    for (let i = 1; i <= 3; i++) {
+      const inst = render(<AuthPage />);
+      await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(i));
+      inst.unmount();
+    }
+    // Now a real sign-in submit should reset the budget and navigate again.
+    h.session.current = null;
+    h.signIn.mockResolvedValue({ error: null, session: SESSION });
     const { container } = render(<AuthPage />);
     fill(container);
     fireEvent.click(submitBtn(container));
-
-    await waitFor(() => expect(submitBtn(container).disabled).toBe(true));
-    expect(container.textContent).toMatch(/signing in/i);
-
-    await act(async () => { resolveSignIn({ error: null, session: SESSION }); });
-  });
-
-  it("an already-present (restored) session navigates once via the fallback effect", async () => {
-    h.session.current = SESSION;   // restored/external session on mount
-    render(<AuthPage />);
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/"));
-    expect(h.replace).toHaveBeenCalledTimes(1);
-    expect(h.signIn).not.toHaveBeenCalled();
+    await waitFor(() => expect(h.hard).toHaveBeenCalledTimes(4));   // reset → navigates again
   });
 });

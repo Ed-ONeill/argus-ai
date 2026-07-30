@@ -9,7 +9,6 @@ interface Profile {
   display_name:         string | null;
   first_name:           string | null;
   last_name:            string | null;
-  avatar_url:           string | null;
   created_at:           string | null;
   onboarding_completed: boolean;
 }
@@ -52,7 +51,10 @@ export function useProfile() {
 
     supabase
       .from("profiles")
-      .select("display_name, first_name, last_name, avatar_url, created_at, onboarding_completed")
+      // NOTE: avatar_url removed — that column does not exist in the production
+      // profiles table (no migration adds it; it is read nowhere in the app), so
+      // selecting it produced a persistent PostgREST 400 "column does not exist".
+      .select("display_name, first_name, last_name, created_at, onboarding_completed")
       .eq("id", userId)
       .maybeSingle()   // zero rows → { data: null } success, never a 406/PGRST116
       .then(({ data, error }) => {

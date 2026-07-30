@@ -1,14 +1,20 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { createSingleFlight } from "@/lib/singleFlight";
 import { sanitizeInternalRedirect } from "@/lib/safeRedirect";
+import { hardNavigate } from "@/lib/hardNavigate";
 import { startSigninTrace, type SigninMark } from "@/lib/authTiming";
+
+// Bounds automatic bounce-retries so a genuinely unreadable server session can
+// never loop forever. Reset on each explicit sign-in submit.
+const NAV_ATTEMPT_KEY = "argus_auth_nav_attempts";
+const MAX_NAV_ATTEMPTS = 3;
 
 type Tab      = "signin" | "signup";
 type InputKey = "name" | "lastname" | "email" | "password";
@@ -39,7 +45,6 @@ function AuthPageInner() {
   const [focusedInput, setFocusedInput] = useState<InputKey | null>(null);
 
   const { signIn, signUp, session, invalidatingSession } = useAuth();
-  const router       = useRouter();
   const searchParams = useSearchParams();
   // One in-flight guard: rapid repeated submits collapse into a single request.
   const submitFlight = useRef(createSingleFlight<void>());
@@ -48,21 +53,38 @@ function AuthPageInner() {
   // relative, backslash, encoded-slash, absolute and javascript: escapes.
   const redirectTo = sanitizeInternalRedirect(searchParams.get("redirect"));
 
-  // ONE navigation, fired at most once. Both the submit-success path and the
-  // onAuthStateChange fallback below route through this, so they can never race
-  // or issue repeated redirects. No router.refresh() (it re-renders the current
-  // /auth tree and races the replace transition — the intermittent "click again"
-  // symptom); the destination is client-rendered and reads the live session.
-  const navigatedRef = useRef(false);
+  // Navigation to the app. A router.replace RSC soft-navigation races the
+  // Supabase SSR cookie write, so the middleware doesn't see the new session and
+  // 307-bounces to /auth. We therefore HARD-navigate: a real top-level request
+  // that carries the committed session cookies, which the middleware reads.
+  //
+  // The latch is NOT permanent (that made the bounce terminal): `attemptingRef`
+  // only dedups within THIS page instance. On a bounce, /auth fully reloads →
+  // fresh instance → the session effect retries. A sessionStorage counter bounds
+  // the retries so a genuinely unreadable server session can't loop forever.
+  const attemptingRef = useRef(false);
   // TEMP: current attempt's timing marker (set at submit; read by nav/effects).
   const traceRef = useRef<SigninMark | null>(null);
   const navigateToApp = useCallback(() => {
-    if (navigatedRef.current) return;
-    navigatedRef.current = true;
+    if (attemptingRef.current) return;   // dedup within this page instance
+    attemptingRef.current = true;
     traceRef.current?.("navigateToApp_invoked");
-    traceRef.current?.("router_replace_invoked", { target: redirectTo });
-    router.replace(redirectTo);
-  }, [router, redirectTo]);
+
+    let attempts = 0;
+    try { attempts = Number(sessionStorage.getItem(NAV_ATTEMPT_KEY) ?? "0"); } catch { /* ignore */ }
+    if (attempts >= MAX_NAV_ATTEMPTS) {
+      // Server still can't read the session after repeated bounces → stop the
+      // loop and surface it instead of reloading forever.
+      try { sessionStorage.removeItem(NAV_ATTEMPT_KEY); } catch { /* ignore */ }
+      setError("You're signed in, but the app couldn't be reached. Please reload the page.");
+      attemptingRef.current = false;
+      traceRef.current?.("navigation_gave_up", { attempts });
+      return;
+    }
+    try { sessionStorage.setItem(NAV_ATTEMPT_KEY, String(attempts + 1)); } catch { /* ignore */ }
+    traceRef.current?.("hard_navigate", { target: redirectTo, attempt: attempts + 1 });
+    hardNavigate(redirectTo);
+  }, [redirectTo]);
 
   // Fallback for a restored/external session, or a delayed onAuthStateChange
   // after submit. Gated on a real access token AND on NOT being mid-invalidation
@@ -101,6 +123,9 @@ function AuthPageInner() {
     if (loading) { trace("blocked_loading_guard"); return; }  // button disabled while pending
     setError(null);
     setMessage(null);
+    // Fresh explicit sign-in → reset the bounce-retry budget and per-instance latch.
+    try { sessionStorage.removeItem(NAV_ATTEMPT_KEY); } catch { /* ignore */ }
+    attemptingRef.current = false;
 
     // The single-flight collapses concurrent submits into ONE request even if
     // clicks slip in before `loading` re-renders the disabled button.
