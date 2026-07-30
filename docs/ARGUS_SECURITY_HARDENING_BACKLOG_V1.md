@@ -1,0 +1,419 @@
+# Argus Security Hardening Backlog — v1
+
+A concise, phased implementation plan derived from the v3 security audit. Each phase
+is a small, independently reviewable change (a few files). The process per phase is:
+
+1. Claude implements the phase.
+2. Codex reviews **only** that change.
+3. Claude fixes anything Codex flags.
+4. Codex returns **PASS**.
+5. Commit.
+6. Move to the next phase.
+
+Severity legend: **High** = blocks external launch · **Med** = fix before scale ·
+**Low** = hardening. Change type: `code` · `supabase` · `railway` · `dns` · `ops` · `legal`.
+
+Every finding below was verified against repository source and the installed
+`@supabase/ssr@0.10.0` package. Line numbers are current as of this writing; re-confirm
+before editing.
+
+---
+
+## Phase 1 — activation-debug must not mutate global state · High · `code`
+
+**Confirmed issue.** `GET /api/feed/activation-debug?refresh=true` re-runs theme/industry
+extraction, **swallows any failure to empty lists**, then persists those (possibly empty)
+results onto the **shared, global** cache entry. Any authenticated user — or a cross-site
+CSRF navigation via the cookie→Bearer proxy fallback — can therefore blank out themes and
+industries for **all** users. It is a state-changing GET on a debug endpoint.
+
+**Why it matters.** Global data-integrity destruction with trivial reach. A partial
+upstream failure during a single debug call silently overwrites good global intelligence
+with `[]`. This is the highest-integrity, lowest-effort defect in the audit.
+
+**Evidence.** `api/routes/feed.py:829` (route), `:864–887` (mutation + `feed_cache.set`),
+`:872–882` (except → `[]`). Router is already auth-gated (`api/main.py:196`), so this is an
+*integrity/CSRF* defect, not an authn gap. Frontend never calls it (grep: no references).
+
+**Exact implementation.** Make the endpoint **read-only**: remove the `refresh` query
+parameter and the entire cache-mutating block; return current cached
+`theme_intelligence`/`industry_activation` only. One file: `api/routes/feed.py`.
+
+**Phase 1 invariant (scoped to this endpoint).** `GET /api/feed/activation-debug`,
+including requests containing `?refresh=true`, is read-only and cannot invoke extraction
+or mutate the feed cache. Full feed refresh remains available through the main feed
+endpoint; its failure and cache-replacement behavior is outside `activation_debug`'s
+read-only contract and is tracked separately in this backlog. In particular, the separate
+`force_refresh` path can still persist empty results when extraction fails
+(`run_pipeline()` catches theme/activation failures, substitutes empty arrays, and returns
+successfully; `_run_inline()` may then persist that result) — that remains a later
+hardening item and is **not** addressed in Phase 1.
+
+**Regression risks.** Callers passing `?refresh=true` still succeed (FastAPI ignores
+unknown query params) but no longer trigger a recompute — acceptable, as no caller relies
+on it. `data_source` is now always `"cached"`.
+
+**Tests.** `tests/test_feed_activation_debug.py` — isolated via an in-memory fake cache
+(no disk, no production singleton), with an autouse guard asserting nothing under
+`data/feed_cache/` is created or modified. Coverage: (a) the endpoint returns cached data
+without calling `feed_cache.set`; (b) **deep value equality** — a `deepcopy` baseline is
+taken, `activation_debug` is called twice, and the complete entry plus every nested
+structure (themes/activations/clusters/sector) remains equal by value, protecting against
+in-place mutation (not a byte-serialization check); (c) `?refresh=true` is inert (no write,
+no 422, extraction never invoked); (d) the full response-shape contract (exact top-level
+keys + types + nested keys) and the cold-cache contract; (e) an HTTP-level authenticated
+request via the FastAPI dependency-override pattern (`require_user` not weakened).
+
+**Rollback plan.** **Rollback must never restore extraction or `feed_cache.set` behavior to
+the GET endpoint.** If this change must be backed out, keep the endpoint read-only and
+instead disable it — return a temporary 404/503 or remove the route — or revert only
+non-security compatibility details (e.g., response wording) while preserving the read-only
+contract. Do not `git revert` to the prior mutating implementation.
+
+**Codex verification checklist.**
+- [ ] No code path in `activation_debug` writes to `feed_cache`.
+- [ ] No path in `activation_debug` (including `?refresh=true`) persists empty/partial results or mutates the cache.
+- [ ] `extract_themes`/`compute_industry_activation` are not invoked from this endpoint.
+- [ ] Read-only debug output is unchanged in shape.
+- [ ] `get_feed?force_refresh` still provides the re-extraction capability (its own hardening is a separate backlog item).
+
+---
+
+## Phase 2 — transport validation for bearer forwarding · High · `code` + `railway`/`dns`
+
+**Confirmed issue.** The proxy decides redirect safety on **host only**; a same-host
+`Location: http://…` re-sends `Authorization: Bearer` over cleartext. The **initial** hop
+also inherits `BACKEND_URL`'s scheme — a public HTTP upstream leaks the token before any
+redirect.
+
+**Why it matters.** Plaintext bearer exposure = full session takeover on any network hop.
+
+**Evidence.** `frontend/src/app/api/[...path]/route.ts:~39` (`next.host !== new URL(url).host`,
+scheme ignored) + inline comment; initial scheme from `BACKEND_URL`.
+
+**Exact implementation.** In `fetchFollowingSameHost`: forward `Authorization` only when the
+target is **HTTPS** *or* an asserted-private host (e.g. `*.railway.internal`); reject/strip on
+HTTPS→HTTP downgrade; keep existing cross-host stripping. Add a startup assertion that
+`BACKEND_URL` is HTTPS-or-private in production. Files: proxy route + one config check.
+
+**Regression risks.** Local dev over `http://localhost` must still work (treat loopback/private
+as allowed). Railway internal HTTP networking must be recognized as private, not public.
+
+**Tests.** Unit the transport matrix (audit §J): 7 scenarios — HTTPS/HTTP public initial,
+private HTTP initial, HTTPS→HTTPS, HTTPS→HTTP, same-host, cross-host.
+
+**Rollback plan.** Revert proxy change; the startup assertion is independent and can be
+reverted separately.
+
+**Codex verification checklist.**
+- [ ] Bearer never sent to a public HTTP destination (initial or redirect).
+- [ ] Loopback/private hosts still allowed for dev + Railway internal.
+- [ ] Cross-host stripping preserved; client-Bearer precedence preserved.
+
+---
+
+## Phase 3 — Supabase cookie `Secure` + anti-cache header propagation · High · `code`
+
+**Confirmed issue.** (a) The session cookie carries **no `Secure`** attribute (package
+default sets none; Argus adds no override). (b) `@supabase/ssr` passes anti-cache headers via
+the `setAll(cookies, headers)` **second argument**; Argus's callbacks ignore it, so
+session-refresh responses ship without `no-store`.
+
+**Why it matters.** Without `Secure`, the cookie can transit HTTP (compounds Phase 2). Without
+the anti-cache headers, a cached refresh response can leak one user's session to another.
+
+**Evidence.** Defaults `@supabase/ssr/dist/main/utils/constants.js:4` (no `secure`, `maxAge`
+400d, `sameSite:lax`, `httpOnly:false`); headers source `.../cookies.js:334–349`; dropped at
+`frontend/src/middleware.ts:15` and `frontend/src/lib/supabase/server.ts:22`.
+
+**Exact implementation.** Two *distinct* fixes (see audit §O):
+- **middleware.ts** (owns the response): extend `setAll(cookiesToSet, headers)` to apply the
+  headers directly to the `NextResponse`; add `secure: true` in production only.
+- **server.ts** (does *not* own the response): expose the pending anti-cache headers to the
+  caller via an explicit accumulator/return contract, or a response-owning wrapper — do **not**
+  fake header-setting inside a Server Component context. Add production-only `secure`.
+Preserve HttpOnly=false, SameSite, chunking, Max-Age, deletion behavior.
+
+**Regression risks.** Local HTTP dev must not set `Secure` (would drop the cookie). Server
+Components that legitimately cannot set headers must instead be covered by Phase 4 cache rules.
+
+**Tests.** Cookie options snapshot (prod vs dev `Secure`); middleware response carries
+`Cache-Control: …no-store…`; chunked-cookie round-trip preserved.
+
+**Rollback plan.** Revert per file; middleware and server changes are independent.
+
+**Codex verification checklist.**
+- [ ] `Secure` set in prod, absent in dev; HttpOnly=false, SameSite, chunking, Max-Age intact.
+- [ ] Session-refresh responses carry `no-store`.
+- [ ] `server.ts` fix does not break Server Components / cookie refresh / request-cookie sync.
+
+---
+
+## Phase 4 — proxy caching rules for cookie-refresh-capable responses · High · `code`
+
+**Confirmed issue.** Global body content ≠ publicly cacheable: the catch-all proxy may call
+`getSession()`, refresh the session, and emit `Set-Cookie`. Feed/Listen through this path must
+not be treated as public.
+
+**Why it matters.** Shared caching of a session-touching response bleeds sessions across users.
+
+**Evidence.** Cookie→Bearer fallback `frontend/src/app/api/[...path]/route.ts:57–67`; audit §M.
+
+**Exact implementation.** Classify by content **and** session behavior (audit §M): any response
+carrying `Set-Cookie` or served via the cookie-refresh-capable path → `private, no-store`;
+explicit-Bearer responses → cache key includes `Authorization` or shared caching disabled; only
+provably session-free global routes may be publicly cacheable. Enforce in the proxy response
+headers.
+
+**Regression risks.** Do not over-apply `no-store` to genuinely global, session-free data
+(preserve intended caching). Keep the CDN/edge behavior consistent with these headers.
+
+**Tests.** Matrix test: Set-Cookie response → `no-store`; cookie-fallback Feed response →
+`no-store`; explicit-Bearer response → keyed/!shared; public route → cacheable.
+
+**Rollback plan.** Header-only change in the proxy; revert commit.
+
+**Codex verification checklist.**
+- [ ] Every Set-Cookie / cookie-refresh-capable response is `private, no-store`.
+- [ ] Session-free global responses remain cacheable (no blanket no-store).
+
+---
+
+## Phase 5 — endpoint-specific rate limiting · High · `code` + `railway`
+
+**Confirmed issue.** No application-level rate limiting anywhere; expensive endpoints
+(`force_refresh` pipeline, `/api/analyze` LLM, graph compute, vendor routes) are unbounded.
+
+**Why it matters.** Trivial DoS and vendor-cost amplification.
+
+**Evidence.** No limiter in `app/`, `api/`, or proxy; expensive ops `feed.py:723`,
+`analyze.py`, public vendor routes (audit §K).
+
+**Exact implementation.** Shared limiter keyed by verified JWT `sub` with an edge-IP ceiling
+(Redis/other shared store for multi-replica correctness); per-endpoint budgets for refresh,
+analyze, and vendor routes. Backend dependency + config.
+
+**Regression risks.** Per-replica in-memory counters are wrong under Railway replicas — must be
+shared. Don't throttle normal interactive use.
+
+**Tests.** Limiter unit tests (allow under budget, 429 over budget, key isolation per `sub`).
+
+**Rollback plan.** Feature-flag the limiter; disable via env to revert behavior without deploy.
+
+**Codex verification checklist.**
+- [ ] Limits keyed by verified `sub` + IP ceiling; shared store under replicas.
+- [ ] Expensive/vendor endpoints covered; interactive paths unaffected.
+
+---
+
+## Phase 6 — bounded module caches · High · `code`
+
+**Confirmed issue.** `_SUMMARY_CACHE`, `_DEEP_CACHE`, `_TAKE_CACHE`, `_BRIEF_CACHE` are plain
+dicts with unbounded key cardinality (only `.clear()` helpers). Per-symbol `Map` caches in
+`explorer-market` similarly unbounded.
+
+**Why it matters.** Memory exhaustion under attacker-chosen keys/symbols.
+
+**Evidence.** `app/summarizer.py:47,52,57,510`; `frontend/src/app/api/explorer-market/route.ts:37,39`.
+
+**Exact implementation.** Replace with size-bounded LRU (fixed max entries + eviction); keep the
+existing `.clear()` semantics. Backend caches + the two frontend Maps.
+
+**Regression risks.** Eviction must not change correctness (caches are advisory). Choose bounds
+that preserve hit rates for normal load.
+
+**Tests.** Cache never exceeds max size; LRU eviction order; hit/miss behavior unchanged for
+hot keys.
+
+**Rollback plan.** Revert per file; caches are self-contained.
+
+**Codex verification checklist.**
+- [ ] Each cache has a hard max and eviction; `.clear()` preserved.
+- [ ] No correctness change for hot keys.
+
+---
+
+## Phase 7 — remove caller-controlled global model mutation · High · `code`
+
+**Confirmed issue.** `/api/analyze` writes request-supplied `model_name` into process-global
+`settings.ollama_model`, changing the model for all subsequent users.
+
+**Why it matters.** Cross-user state contamination + abuse lever.
+
+**Evidence.** `api/routes/analyze.py:62–65`.
+
+**Exact implementation.** Use a per-request local model variable; never assign to
+`settings.ollama_model` from request input. One file.
+
+**Regression risks.** Ensure downstream summarizer calls receive the per-request model
+explicitly rather than reading the global.
+
+**Tests.** Concurrent requests with different `model_name` do not affect each other; global
+setting is never mutated by a request.
+
+**Rollback plan.** Revert commit.
+
+**Codex verification checklist.**
+- [ ] No request path writes `settings.ollama_model`.
+- [ ] Per-request model threaded to the LLM call.
+
+---
+
+## Phase 8 — input-size and request-body limits · Med · `code`
+
+**Confirmed issue.** `AnalyzeRequest` fields are unbounded; the proxy reads the full request
+body via `arrayBuffer()` with no cap.
+
+**Why it matters.** Memory/compute DoS.
+
+**Evidence.** `api/routes/analyze.py:35`; `frontend/src/app/api/[...path]/route.ts:117`.
+
+**Exact implementation.** Add `max_length` to `AnalyzeRequest` fields (Pydantic). In the proxy,
+enforce a `Content-Length` cap and **reject** (413) oversized requests **before** buffering;
+prefer canonical upstream URLs to avoid 307/308 replay; only stream with a deliberate replay
+strategy (audit §N) — do **not** consume the stream bare.
+
+**Regression risks.** Body-size limit must exceed legitimate payloads. 307/308 replay must keep
+working (buffer-then-replay, not consumed stream).
+
+**Tests.** Oversized body → 413 before buffering; legitimate payload passes; redirect replay
+preserves body.
+
+**Rollback plan.** Revert per file.
+
+**Codex verification checklist.**
+- [ ] Oversized requests rejected before full buffering.
+- [ ] Analyze fields length-capped; redirect body replay intact.
+
+---
+
+## Phase 9 — error normalization + logging hygiene · Med · `code`
+
+**Confirmed issue.** Raw exception text is returned to clients (`feed.py:774`, proxy
+`String(err)`); Yahoo crumb prefix and per-request/timing diagnostics are logged.
+
+**Why it matters.** Internal detail disclosure + credential-adjacent logging.
+
+**Evidence.** `api/routes/feed.py:774`; proxy catch; `market-data/route.ts:144`;
+`frontend/src/lib/authTiming.ts:31`; `[auth]`/`[proxy-auth]` logs.
+
+**Exact implementation.** Return normalized error codes to clients; log detail server-side only.
+Remove the crumb from logs and the per-request/timing diagnostics. **Retain** sanitized
+aggregate JWT-rejection reason codes and auth-failure counters.
+
+**Regression risks.** Do not remove the useful sanitized aggregate telemetry.
+
+**Tests.** Error responses contain no raw exception/stack; logs contain no crumb/token/email.
+
+**Rollback plan.** Revert per file.
+
+**Codex verification checklist.**
+- [ ] No raw exception text reaches clients.
+- [ ] No credential-adjacent or per-request logs; aggregate telemetry retained.
+
+---
+
+## Phase 10 — public Next.js API routes · Med (explorer-market) / Low · `code`
+
+**Confirmed issue.** `explorer-market` (paid `FMP_API_KEY`), `market-data` (free Yahoo),
+`ipo-pipeline` (free SEC) sit outside the middleware auth matcher.
+
+**Why it matters.** `explorer-market` = vendor-cost exposure (High if metered plan);
+`market-data`/`ipo-pipeline` = availability only, no paid secret.
+
+**Evidence.** `frontend/src/middleware.ts:71` (excludes `/api/*`);
+`explorer-market/route.ts:28` (`FMP_API_KEY`); `ipo-pipeline/route.ts:18` (1h cache).
+
+**Exact implementation.** Protect `explorer-market` (auth and/or distributed rate limit + cache
+bound). Rate-limit + request-coalesce `market-data`/`ipo-pipeline`. Auth on the latter two is a
+**product-policy** choice (consuming pages are authed), *not* a required security control —
+decide explicitly.
+
+**Regression risks.** Public pages that legitimately need these must keep working if auth is
+added; coordinate with page auth state.
+
+**Tests.** Rate-limit enforced; explorer-market rejects unauth (if auth chosen) or throttles.
+
+**Rollback plan.** Revert per file / disable via flag.
+
+**Codex verification checklist.**
+- [ ] explorer-market no longer allows unbounded FMP spend.
+- [ ] Policy for market-data/ipo-pipeline documented as product vs security.
+
+---
+
+## Phase 11 — security headers + CSP-Report-Only + CORS tightening · Low · `code` + `railway`
+
+**Confirmed issue.** No security headers (`next.config.ts` empty); CORS methods/headers are
+wildcard with `allow_credentials=True` (origins already allowlisted).
+
+**Why it matters.** Defense-in-depth (HSTS, framing, sniffing, referrer, CSP).
+
+**Evidence.** `frontend/next.config.ts` (empty); `api/main.py:175–188`.
+
+**Exact implementation.** Add baseline headers (HSTS, `X-Frame-Options`/`frame-ancestors`,
+`nosniff`, `Referrer-Policy`, `Permissions-Policy`) and **CSP in Report-Only** first. Tighten
+CORS methods/headers; drop `allow_credentials` unless needed. HSTS `preload` only after HSTS is
+proven in production.
+
+**Regression risks.** A strict CSP before Report-Only observation will break the app — Report-Only
+first. Framing headers must not block legitimate embeds.
+
+**Tests.** Headers present on responses; CSP is Report-Only; no functional CSP blocks during
+observation.
+
+**Rollback plan.** Header config is additive; revert `next.config.ts` / CORS block.
+
+**Codex verification checklist.**
+- [ ] Baseline headers present; CSP Report-Only (not enforcing).
+- [ ] CORS methods/headers tightened; credentials reconsidered.
+
+---
+
+## Phase 12 — deployment verification (no code) · `supabase` · `railway` · `dns` · `ops`
+
+**Confirmed issue.** Repository is fail-closed in source, but production application of
+migrations, grants, Auth settings, secret scope, redirects, origins, and caching layers is
+unverified. Readiness probes only `entity_snapshots`.
+
+**Why it matters.** Source correctness ≠ deployed correctness.
+
+**Evidence.** Archive RLS + revoke: `supabase/migrations/004:164–172`, `005:205–213`,
+`006:159–166`, `007:61–62`; readiness `app/readiness.py:35,146`.
+
+**Exact implementation (ops).** Execute audit §Q checklist: verify `pg_policies`/grants for
+every user + archive table; Set-Cookie attributes in prod; CDN/edge caching of Set-Cookie;
+`BACKEND_URL` scheme + redirect hops; `ALLOWED_ORIGINS`; Supabase Auth (expiry, refresh
+rotation/reuse detection, leaked-password protection, redirect URLs); service-role key scope;
+replica count + shared rate-limit backend; source-map exposure; provider secret-scanning over
+env + Git history. Optionally broaden the readiness probe (a small `code` change).
+
+**Regression risks.** None (inspection). Any config change must be staged.
+
+**Rollback plan.** N/A (verification); config changes reverted individually.
+
+**Codex verification checklist.**
+- [ ] Every archive + user table verified RLS-on and anon/authenticated denied in the deployed DB.
+- [ ] Prod Set-Cookie has `Secure`; no cache layer stores Set-Cookie responses.
+- [ ] Auth settings, secret scope, origins, redirect hops confirmed.
+
+---
+
+## Separate product/operational track (not a code phase)
+
+Account deletion as an **Auth Admin + dependent-data** server workflow (never a profiles-row
+DELETE policy); privacy documentation (`legal`); dependency-hygiene CI (`ops` — `npm audit` /
+`pip-audit`); HSTS preload submission after HSTS is proven (`ops`/`dns`).
+
+---
+
+### Safeguards that must not be broken (apply to every phase)
+
+Keep Supabase cookies browser-readable (never force HttpOnly); preserve chunking, all cookie
+options, request-cookie sync, response Set-Cookie, deletion behavior, and the second-argument
+anti-cache headers. Preserve client-Bearer precedence in the proxy. Never treat `getSession()`
+as authorization — the backend keeps verifying independently. Never forward `Authorization`
+across a host change or HTTPS→HTTP downgrade. Keep startup fail-closed on JWKS failure. Keep the
+service-role key backend-only. Apply CSRF enforcement selectively (cookie-fallback + mutating/
+expensive). Do not blanket-cache session-touching responses, and do not blanket-`no-store`
+genuinely global data. CSP Report-Only before enforcing.

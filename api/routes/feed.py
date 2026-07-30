@@ -827,19 +827,23 @@ def feed_freshness(
 # ── Activation debug endpoint ─────────────────────────────────────────────────
 
 @router.get("/activation-debug")
-def activation_debug(
-    refresh: bool = Query(default=False, description="Re-run extraction synchronously on current clusters"),
-) -> dict:
+def activation_debug() -> dict:
     """
-    Returns raw theme + industry activation data.
+    Returns raw theme + industry activation data. READ-ONLY.
 
-    ?refresh=true  — re-runs extract_themes + compute_industry_activation
-                     synchronously on the cached clusters and writes results
-                     back to cache. Use this when the background pipeline has
-                     stale or empty data.
+    This endpoint no longer mutates state. It previously accepted ?refresh=true,
+    which re-ran extraction and wrote the (possibly empty) results back onto the
+    shared global cache entry — a state-changing GET that any authenticated user,
+    or a cross-site CSRF navigation via the cookie→Bearer proxy fallback, could
+    use to blank out themes/industries for everyone (and a partial upstream
+    failure silently persisted []). Removed for that reason.
+
+    Full feed refresh remains available through the main feed endpoint. Its
+    failure and cache-replacement behavior is outside this endpoint's read-only
+    contract and is tracked separately in the security-hardening backlog.
 
     Returned fields:
-      data_source         — "refreshed" | "cached"
+      data_source         — always "cached" (read-only)
       cache_age_seconds   — age of the underlying cache entry
       cluster_count       — total clusters available for extraction
       theme_count         — themes that passed the activation threshold
@@ -861,33 +865,10 @@ def activation_debug(
     age_s = feed_cache.age_seconds(key) or 0.0
     data_source = "cached"
 
-    if refresh:
-        # Run extraction synchronously on current clusters — bypasses background job
-        log.info(
-            "[api] activation-debug refresh=True  clusters=%d  cache_age=%.0fs",
-            len(clusters), age_s,
-        )
-        from app.theme_graph import extract_themes, compute_industry_activation
-        try:
-            themes = extract_themes(clusters)
-            log.info("[api] refresh extract_themes: %d active themes", len(themes))
-        except Exception:
-            log.exception("[api] refresh extract_themes FAILED")
-            themes = []
-        try:
-            activations = compute_industry_activation(themes)
-            log.info("[api] refresh compute_industry_activation: %d industries", len(activations))
-        except Exception:
-            log.exception("[api] refresh compute_industry_activation FAILED")
-            activations = []
-        # Persist back to cache so the main feed reflects these results
-        entry.theme_intelligence = themes
-        entry.industry_activation = activations
-        feed_cache.set(key, entry)
-        data_source = "refreshed"
-    else:
-        themes      = getattr(entry, "theme_intelligence", []) or []
-        activations = getattr(entry, "industry_activation", []) or []
+    # Read-only: report whatever the background pipeline last wrote. This
+    # endpoint never mutates the shared cache (see docstring).
+    themes      = getattr(entry, "theme_intelligence", []) or []
+    activations = getattr(entry, "industry_activation", []) or []
 
     sector_data = getattr(entry, "sector_data", None)
 
