@@ -44,14 +44,17 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 // ── Feed ─────────────────────────────────────────────────────────────────────
 
+// NOTE: trailing slashes MATCH the FastAPI routes (`/api/feed/`,
+// `/api/feed/freshness/`, `/api/feed/sources/`). Hitting the exact path avoids a
+// 307 slash-redirect on which the Authorization header must never depend.
 export async function fetchFeedFreshness(
   categories = "", sources = "", fresh_only = false,
 ): Promise<FeedFreshness> {
-  return get<FeedFreshness>("/feed/freshness", { categories, sources, fresh_only });
+  return get<FeedFreshness>("/feed/freshness/", { categories, sources, fresh_only });
 }
 
 export async function fetchFeed(params: FeedParams = {}): Promise<FeedResponse> {
-  return get<FeedResponse>("/feed", {
+  return get<FeedResponse>("/feed/", {
     categories:    params.categories    ?? "",
     sources:       params.sources       ?? "",
     fresh_only:    params.fresh_only    ?? false,
@@ -60,7 +63,7 @@ export async function fetchFeed(params: FeedParams = {}): Promise<FeedResponse> 
 }
 
 export async function fetchSources(): Promise<SourceInfo[]> {
-  return get<SourceInfo[]>("/feed/sources");
+  return get<SourceInfo[]>("/feed/sources/");
 }
 
 /**

@@ -33,11 +33,18 @@ reach a real deployment. `ARGUS_AUTH_DISABLED=true` is an explicit dev opt-out.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import jwt as pyjwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from jwt import InvalidTokenError, PyJWKClient
+from jwt.exceptions import (
+    DecodeError, ExpiredSignatureError, InvalidAlgorithmError,
+    InvalidAudienceError, InvalidIssuerError, InvalidSignatureError,
+    PyJWKClientError,
+)
 
 from app.config import settings
 
@@ -116,6 +123,75 @@ def verify_supabase_jwt(
     return claims
 
 
+# ── TEMPORARY sanitized diagnostics (production 401 investigation) ────────────
+# Emits ONLY structural facts — algorithm, kid-presence, issuer HOST, audience,
+# subject-presence, expiry status, sanitized reason code. NEVER the token value,
+# email, or raw claims. Remove once the boundary is identified.
+
+def _auth_scheme(authorization: str | None) -> str:
+    if not authorization:
+        return "none"
+    first = authorization.split(" ", 1)[0].strip().lower()
+    return "Bearer" if first == "bearer" else "other"
+
+
+def _token_diag(token: str | None) -> dict:
+    """Best-effort, verification-free decode for diagnostics. Never raises, never
+    exposes secrets — header alg/kid and only the non-sensitive claims."""
+    d = {"alg": "none", "kid_present": False, "iss_host": "none",
+         "aud": "none", "sub_present": False, "exp_status": "unknown"}
+    if not token:
+        return d
+    try:
+        header = pyjwt.get_unverified_header(token)
+        d["alg"] = str(header.get("alg", "none"))
+        d["kid_present"] = "kid" in header
+    except Exception:
+        pass
+    try:
+        claims = pyjwt.decode(token, options={"verify_signature": False})
+        iss = claims.get("iss")
+        if isinstance(iss, str) and iss:
+            d["iss_host"] = urlparse(iss).netloc or "none"
+        aud = claims.get("aud")
+        d["aud"] = aud if isinstance(aud, str) else (",".join(aud) if isinstance(aud, list) else "none")
+        d["sub_present"] = bool(claims.get("sub"))
+        exp = claims.get("exp")
+        if isinstance(exp, (int, float)):
+            d["exp_status"] = "expired" if exp < time.time() else "valid"
+    except Exception:
+        pass
+    return d
+
+
+def _reason_code(exc: BaseException) -> str:
+    """Map a verification/resolution error to ONE sanitized reason code."""
+    msg = str(exc).lower()
+    if isinstance(exc, ExpiredSignatureError):   return "expired"
+    if isinstance(exc, InvalidAudienceError):    return "audience_invalid"
+    if isinstance(exc, InvalidIssuerError):      return "issuer_invalid"
+    if isinstance(exc, InvalidSignatureError):   return "signature_invalid"
+    if isinstance(exc, InvalidAlgorithmError):   return "invalid_algorithm"
+    if "alg" in msg and ("not allowed" in msg or "not supported" in msg):
+        return "invalid_algorithm"
+    if isinstance(exc, PyJWKClientError):
+        return "jwks_key_not_found" if ("unable to find" in msg or "match" in msg) else "jwks_fetch_failed"
+    if "unable to find" in msg and "signing key" in msg:  return "jwks_key_not_found"
+    if "missing subject" in msg:                          return "missing_subject"
+    if isinstance(exc, DecodeError):                      return "malformed_token"
+    if isinstance(exc, InvalidTokenError):                return "malformed_token"
+    return "jwks_fetch_failed"
+
+
+def _log_token_rejected(reason: str, path: str, diag: dict) -> None:
+    log.info(
+        "[auth] token_rejected reason=%s path=%s alg=%s kid_present=%s "
+        "iss_host=%s aud=%s sub_present=%s exp_status=%s",
+        reason, path, diag["alg"], diag["kid_present"], diag["iss_host"],
+        diag["aud"], diag["sub_present"], diag["exp_status"],
+    )
+
+
 # ── FastAPI dependency ────────────────────────────────────────────────────────
 
 _UNAUTH = HTTPException(
@@ -134,7 +210,11 @@ def _bearer(authorization: str | None) -> str | None:
     return None
 
 
-def require_user(authorization: str | None = Header(default=None)) -> AuthedUser:
+def require_user(
+    # FastAPI injects Request by annotation; default None only for direct test calls.
+    request: Request = None,  # type: ignore[assignment]
+    authorization: str | None = Header(default=None),
+) -> AuthedUser:
     """Dependency for protected routers. 401 on any missing/invalid token when
     auth is enabled; a dev principal when auth is disabled (non-prod, no URL)."""
     if not settings.auth_enabled:
@@ -143,19 +223,24 @@ def require_user(authorization: str | None = Header(default=None)) -> AuthedUser
         # deployment.
         return AuthedUser(user_id="dev-open", email=None, authenticated=False, claims={})
 
+    path = request.url.path if request is not None else "-"
     token = _bearer(authorization)
     if not token:
+        # TEMP diagnostic — sanitized; no credential.
+        log.info("[auth] missing_bearer path=%s has_authorization_header=%s authorization_scheme=%s",
+                 path, bool(authorization), _auth_scheme(authorization))
         raise _UNAUTH
+    diag = _token_diag(token)   # TEMP: header alg/kid + non-sensitive claims only
     try:
         key = resolve_signing_key(token)
         claims = verify_supabase_jwt(
             token, key=key, expected_iss=settings.expected_issuer or None)
     except AuthError as exc:
-        # Never echo the reason to the caller (no oracle); logs get the detail.
-        log.info("[auth] token rejected: %s", exc)
+        # The original PyJWT error is chained as __cause__; classify from it.
+        _log_token_rejected(_reason_code(exc.__cause__ or exc), path, diag)
         raise _UNAUTH
     except Exception as exc:  # key resolution / JWKS fetch failure → fail closed
-        log.warning("[auth] verification error (failing closed): %r", exc)
+        _log_token_rejected(_reason_code(exc), path, diag)
         raise _UNAUTH
     return AuthedUser(
         user_id=str(claims["sub"]),

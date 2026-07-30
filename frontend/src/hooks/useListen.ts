@@ -166,8 +166,8 @@ export function useListen(topic: string) {
       // Both are protected backend routes → go through the shared authed client
       // (fresh Bearer + 401 handling).
       const [listenResult, briefingsResult] = await Promise.allSettled([
-        apiGet<Episode[]>(`/listen${topicParam}`),
-        apiGet<Episode[]>(`/briefings${topicParam}`),
+        apiGet<Episode[]>(`/listen/${topicParam}`),
+        apiGet<Episode[]>(`/briefings/${topicParam}`),
       ]);
 
       // An UnauthorizedError from EITHER protected request is a hard auth failure
@@ -261,7 +261,7 @@ export function useListenRails() {
     // empty page. Let react-query surface the error; UnauthorizedError propagates
     // so the shared client can route to sign-in.
     queryFn: async () => {
-      const raw = await apiGet<unknown>("/listen?limit=100");
+      const raw = await apiGet<unknown>("/listen/?limit=100");
       return (Array.isArray(raw) ? (raw as Episode[]) : [])
         .filter(e => !e.is_briefing)
         .map(withEntities);

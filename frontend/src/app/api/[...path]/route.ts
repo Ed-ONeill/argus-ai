@@ -54,18 +54,32 @@ async function proxy(
   //   2. otherwise fall back to the server cookie session (SSR/no-JS callers).
   const forwarded = req.headers.get("authorization");
   const hasClientBearer = !!forwarded && /^Bearer\s+\S+/i.test(forwarded);
+  let usedCookieFallback = false;
   if (!hasClientBearer) {
     headers.delete("authorization");
     try {
       const supabase = await createClient();
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      if (token) headers.set("authorization", `Bearer ${token}`);
+      if (token) { headers.set("authorization", `Bearer ${token}`); usedCookieFallback = true; }
     } catch (err) {
       console.error("[proxy] session read failed (forwarding unauthenticated):", err);
     }
   }
   // else: leave the caller's fresh Bearer in place.
+
+  // TEMP sanitized boundary diagnostic — inspect the FINAL Headers object that
+  // is about to be sent upstream. NEVER logs the token value.
+  const finalAuth = headers.get("authorization");
+  const bearerFormatValid = !!finalAuth && /^Bearer\s+\S+/i.test(finalAuth);
+  const tokenLength = bearerFormatValid ? finalAuth!.replace(/^Bearer\s+/i, "").length : 0;
+  const backendHost = (() => { try { return new URL(backendBase).host; } catch { return "invalid"; } })();
+  console.log(
+    `[proxy-auth] path=${req.nextUrl.pathname} has_authorization=${!!finalAuth} ` +
+    `bearer_format_valid=${bearerFormatValid} token_length=${tokenLength} ` +
+    `used_client_header=${hasClientBearer} used_cookie_fallback=${usedCookieFallback} ` +
+    `backend_target_host=${backendHost}`,
+  );
 
   const body =
     req.method !== "GET" && req.method !== "HEAD"
