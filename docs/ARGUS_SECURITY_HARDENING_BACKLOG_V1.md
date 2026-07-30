@@ -79,36 +79,94 @@ contract. Do not `git revert` to the prior mutating implementation.
 
 ---
 
-## Phase 2 — transport validation for bearer forwarding · High · `code` + `railway`/`dns`
+## Phase 2 — transport validation for bearer forwarding · High · `code` (+ `railway`/`dns` verification)
 
-**Confirmed issue.** The proxy decides redirect safety on **host only**; a same-host
-`Location: http://…` re-sends `Authorization: Bearer` over cleartext. The **initial** hop
-also inherits `BACKEND_URL`'s scheme — a public HTTP upstream leaks the token before any
-redirect.
+**Status: implemented locally (not committed/deployed).** Railway had a platform-wide
+deployment incident during this phase, so Phase 2 remains local until Phase 1 is confirmed
+healthy in production.
+
+**Confirmed issue.** The proxy decided redirect safety on **host only**; a same-host
+`Location: http://…` re-sent `Authorization: Bearer` over cleartext. The **initial** hop also
+inherited `BACKEND_URL`'s scheme — a public-HTTP upstream leaks the token before any redirect,
+and HTTP→HTTPS redirecting does **not** retroactively make that first plaintext hop safe.
 
 **Why it matters.** Plaintext bearer exposure = full session takeover on any network hop.
 
-**Evidence.** `frontend/src/app/api/[...path]/route.ts:~39` (`next.host !== new URL(url).host`,
-scheme ignored) + inline comment; initial scheme from `BACKEND_URL`.
+**Evidence.** `frontend/src/app/api/[...path]/route.ts` — old `fetchFollowingSameHost` compared
+`next.host !== new URL(url).host` (scheme ignored) and followed same-host downgrades "WITH the
+Authorization header intact"; the initial scheme came straight from `BACKEND_URL`.
 
-**Exact implementation.** In `fetchFollowingSameHost`: forward `Authorization` only when the
-target is **HTTPS** *or* an asserted-private host (e.g. `*.railway.internal`); reject/strip on
-HTTPS→HTTP downgrade; keep existing cross-host stripping. Add a startup assertion that
-`BACKEND_URL` is HTTPS-or-private in production. Files: proxy route + one config check.
+**Exact implementation.** New pure, network-free helper
+`frontend/src/lib/backendTransport.ts` answers three questions:
+`isSafeInitialDestination(url, policy)`, `evaluateRedirect(from, to, policy)`,
+`isApprovedPrivateHttpHost(url, policy)`, and drives `secureBackendFetch(...)` (redirect
+follower with an injected `fetchImpl`). The proxy (`route.ts`) now:
+1. builds a policy via `transportPolicyFromEnv()`;
+2. **refuses an unsafe initial destination before any session read or fetch** (early guard) —
+   returns a normalized 502;
+3. delegates redirect-following to `secureBackendFetch`, which revalidates every hop and
+   refuses unsafe hops *before* issuing the next request (the bearer never reaches an unsafe
+   URL), returning a normalized 502.
 
-**Regression risks.** Local dev over `http://localhost` must still work (treat loopback/private
-as allowed). Railway internal HTTP networking must be recognized as private, not public.
+Transport rules: **HTTPS always allowed**; **HTTP allowed only** for an allowlisted private
+host, `*.railway.internal`, or loopback in dev/test; **HTTPS→HTTP downgrade rejected** even
+same-host; **cross-host never receives Authorization**; **HTTP→HTTPS** is an upgrade of an
+already-safe request (never a fix for an unsafe initial); **malformed URLs fail closed**; the
+**hop limit (5) is preserved** and **exhausting it while still redirecting fails closed**
+(`too-many-redirects` → normalized 502; the final unchecked `Location` is **never** forwarded
+to the browser, and no further fetch occurs). **IPv6 loopback** hostnames (WHATWG returns
+`[::1]`) are bracket-normalized before comparison, so `http://[::1]:…` follows the same
+dev-only / allowlist rules as `127.0.0.1`.
 
-**Tests.** Unit the transport matrix (audit §J): 7 scenarios — HTTPS/HTTP public initial,
-private HTTP initial, HTTPS→HTTPS, HTTPS→HTTP, same-host, cross-host.
+**Configuration mechanism for approved internal HTTP.**
+- `BACKEND_INTERNAL_HTTP_HOSTS` — comma-separated exact `hostname` or `hostname:port` entries
+  permitted over HTTP (case-insensitive, exact match — never a substring test).
+- `*.railway.internal` — recognized structurally (exact dotted-suffix at a label boundary) as
+  Railway private networking; documented platform domain, not a hardcoded personal hostname.
+- Loopback (`localhost`/`127.0.0.1`/`::1`) over HTTP is a **development/test-only** exception;
+  in production it is refused unless explicitly listed in `BACKEND_INTERNAL_HTTP_HOSTS`.
 
-**Rollback plan.** Revert proxy change; the startup assertion is independent and can be
-reverted separately.
+**Regression risks.** Preserved and covered by tests: client-Bearer precedence, cookie→Bearer
+fallback, backend response/Set-Cookie forwarding, methods/bodies, 307/308 same-host replay,
+canonical trailing-slash redirects, and `http://localhost` dev. No change to cookie `Secure`,
+anti-cache propagation, cache policy, body-size, or rate limiting (later phases).
+
+**Tests.**
+`frontend/src/lib/__tests__/backendTransport.test.ts` — initial-destination matrix (incl. IPv6
+loopback: `http://[::1]:…` dev-allowed, prod-rejected, prod-allowlisted-allowed), redirect
+matrix, private-host recognition, and `secureBackendFetch` behavior: zero fetch on unsafe
+initial; no second fetch on downgrade / cross-host / malformed; auth preserved on a safe
+same-host redirect; and **redirect exhaustion fails closed** (`too-many-redirects`, exactly
+`maxHops+1` fetches, no success).
+`frontend/src/app/api/[...path]/__tests__/route.test.ts` — through the real route:
+(A) an unsafe public-HTTP initial destination returns 502 and makes **no `fetch`, no
+`createClient`, no `getSession`** (guard precedes session access); (B) a safe same-host 307
+preserves **method, body bytes, and Authorization** on the followed hop (POST); (C) upstream
+**Set-Cookie, Content-Type, and a custom header are forwarded**; (D) downgrade and cross-host
+redirects return 502 with a single fetch and **no forwarded `Location`**; (E) redirect
+exhaustion returns 502, bounded at 6 fetches, **no forwarded `Location`**; plus client-Bearer
+precedence and cookie-session fallback on a safe destination.
+
+**Rollback plan.** **Rollback must fail closed — it must never restore unconditional same-host
+bearer forwarding or scheme-downgrade forwarding.** If backed out, keep the initial-destination
+guard and cross-host/downgrade refusal; at most relax the private-host *configuration* (e.g.
+widen the allowlist) — never the scheme/downgrade rules. Do not `git revert` to the
+host-only `fetchFollowingSameHost`.
+
+**Production verification still required (`railway`/`dns`).** Source validation does **not**
+prove the deployed backend endpoint is actually private. Verify the real Railway `BACKEND_URL`
+scheme, that every redirect hop stays same-host and non-downgrading, and that any HTTP upstream
+is a genuinely private (`*.railway.internal` / allowlisted) address — see §Q of the audit.
 
 **Codex verification checklist.**
-- [ ] Bearer never sent to a public HTTP destination (initial or redirect).
-- [ ] Loopback/private hosts still allowed for dev + Railway internal.
-- [ ] Cross-host stripping preserved; client-Bearer precedence preserved.
+- [ ] Bearer never sent to a public HTTP destination (initial or any redirect hop).
+- [ ] HTTPS→HTTP downgrade and cross-host redirects refused before the next fetch.
+- [ ] Redirect-limit exhaustion fails closed (502) and never forwards the final `Location`.
+- [ ] IPv6 loopback (`[::1]`) normalized; dev-only unless allowlisted, like `127.0.0.1`.
+- [ ] Loopback allowed in dev only; `*.railway.internal`/allowlist allowed; public HTTP fails closed.
+- [ ] Initial transport guard runs before `createClient`/`getSession`.
+- [ ] Client-Bearer precedence and cookie fallback preserved; method/body preserved on safe 307/308.
+- [ ] Set-Cookie and response headers forwarded; malformed initial/redirect URLs fail closed.
 
 ---
 

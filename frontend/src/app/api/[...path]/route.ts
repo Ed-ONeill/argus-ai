@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  isSafeInitialDestination,
+  secureBackendFetch,
+  transportPolicyFromEnv,
+} from "@/lib/backendTransport";
 
 // Reads BACKEND_URL at request time (runtime), not at build time.
 // This means you can update the Railway env var and restart without rebuilding.
@@ -14,39 +19,6 @@ function resolveBackendUrl(): string {
     "BACKEND_URL is not set. Add it to the Railway frontend service variables " +
       "(e.g. https://your-backend.up.railway.app) and redeploy.",
   );
-}
-
-/**
- * Fetch that FOLLOWS redirects manually so `Authorization` is never stripped.
- *
- * `fetch(..., { redirect: "follow" })` (undici) deletes `Authorization` on any
- * redirect that changes origin — including an `https→http` scheme downgrade that
- * Railway's TLS-terminating edge produces for a backend-generated redirect (e.g.
- * a Starlette trailing-slash 307). That silently turns an authed request into an
- * unauthenticated one at the backend. So we use `redirect: "manual"` and re-issue
- * the request ourselves, re-attaching the same headers — but ONLY when the
- * redirect stays on the SAME HOST, so the token can never leak to a foreign host.
- */
-async function fetchFollowingSameHost(
-  startUrl: string,
-  init: { method: string; headers: Record<string, string>; body?: BodyInit; signal?: AbortSignal },
-  maxHops = 5,
-): Promise<{ res: Response; hops: number; crossHostRedirect: boolean }> {
-  let url = startUrl;
-  for (let hop = 0; hop <= maxHops; hop++) {
-    const res = await fetch(url, { ...init, redirect: "manual" });
-    const loc = (res.status >= 300 && res.status < 400) ? res.headers.get("location") : null;
-    if (!loc) return { res, hops: hop, crossHostRedirect: false };
-    const next = new URL(loc, url);
-    if (next.host !== new URL(url).host) {
-      // Different host → refuse to forward the token; surface as a redirect.
-      return { res, hops: hop, crossHostRedirect: true };
-    }
-    // Same host (scheme may differ, e.g. http↔https on Railway's edge): follow
-    // WITH the Authorization header intact — exactly what undici would drop.
-    url = next.toString();
-  }
-  return { res: await fetch(url, { ...init, redirect: "manual" }), hops: maxHops, crossHostRedirect: false };
 }
 
 async function proxy(
@@ -67,6 +39,24 @@ async function proxy(
   // Reconstruct the full upstream URL, preserving query string.
   const upstream = `${backendBase}/api/${segments.join("/")}${req.nextUrl.search}`;
   console.log(`[proxy] ${req.method} ${req.nextUrl.pathname} → ${upstream}`);
+
+  // TRANSPORT GUARD (Phase 2): validate the backend destination BEFORE building
+  // auth headers or reading the session — an unsafe public-HTTP upstream must
+  // never receive the bearer, and HTTP→HTTPS redirecting does NOT retroactively
+  // make an initial plaintext hop safe. Fails closed. (secureBackendFetch
+  // re-checks; this early guard avoids a needless session read for a doomed req.)
+  const transportPolicy = transportPolicyFromEnv();
+  if (!isSafeInitialDestination(upstream, transportPolicy)) {
+    console.error(
+      `[proxy] refused: backend transport is not secure (must be HTTPS or an ` +
+      `approved private internal host). path=${req.nextUrl.pathname} ` +
+      `backend_host=${(() => { try { return new URL(backendBase).host; } catch { return "invalid"; } })()}`,
+    );
+    return NextResponse.json(
+      { error: "Backend transport is not secure (must be HTTPS or an approved private internal host). Check BACKEND_URL." },
+      { status: 502 },
+    );
+  }
 
   const headers = new Headers(req.headers);
   headers.delete("host");            // let the upstream set its own Host
@@ -126,16 +116,19 @@ async function proxy(
   headers.forEach((value, key) => { outHeaders[key] = value; });
 
   const t0 = Date.now();
-  let res: Response;
-  let hops = 0;
-  let crossHostRedirect = false;
+  let result;
   try {
-    ({ res, hops, crossHostRedirect } = await fetchFollowingSameHost(upstream, {
-      method:  req.method,
-      headers: outHeaders,
-      body:    body as BodyInit | undefined,
-      signal:  AbortSignal.timeout(30_000),
-    }));
+    result = await secureBackendFetch(
+      upstream,
+      {
+        method:  req.method,
+        headers: outHeaders,
+        body:    body as BodyInit | undefined,
+        signal:  AbortSignal.timeout(30_000),
+      },
+      transportPolicy,
+      fetch,
+    );
   } catch (err) {
     console.error("[proxy] fetch failed:", err);
     return NextResponse.json(
@@ -144,18 +137,27 @@ async function proxy(
     );
   }
 
-  if (crossHostRedirect) {
+  if (!result.ok) {
+    // The bearer was NEVER sent to the unsafe hop — secureBackendFetch refuses
+    // before issuing the request. Surface a normalized 502; never forward.
     console.error(
-      `[proxy] cross-host redirect from backend (auth NOT forwarded) — check BACKEND_URL host/scheme. ` +
-      `path=${req.nextUrl.pathname} status=${res.status} location_host=${res.headers.get("location")}`,
+      `[proxy] refused unsafe backend transport: reason=${result.error} ` +
+      `path=${req.nextUrl.pathname} hops=${result.hops}`,
     );
-    return NextResponse.json(
-      { error: "Backend issued a cross-host redirect; Authorization was withheld. Check BACKEND_URL." },
-      { status: 502 },
-    );
+    const message =
+      result.error === "cross-host"
+        ? "Backend issued a cross-host redirect; Authorization was withheld. Check BACKEND_URL."
+        : result.error === "unsafe-initial"
+          ? "Backend transport is not secure (must be HTTPS or an approved private internal host). Check BACKEND_URL."
+          : result.error === "too-many-redirects"
+            ? "Backend exceeded the redirect limit; the request was refused."
+            : "Backend issued an unsafe redirect (scheme downgrade or disallowed destination); Authorization was withheld.";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
+
+  const { res, hops } = result;
   if (hops > 0) {
-    // Diagnostic: a same-host redirect was followed WITH auth preserved.
+    // Diagnostic: a validated same-host redirect was followed WITH auth preserved.
     console.log(`[proxy-auth] followed_redirect hops=${hops} auth_preserved=true path=${req.nextUrl.pathname}`);
   }
 
