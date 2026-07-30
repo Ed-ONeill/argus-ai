@@ -16,6 +16,39 @@ function resolveBackendUrl(): string {
   );
 }
 
+/**
+ * Fetch that FOLLOWS redirects manually so `Authorization` is never stripped.
+ *
+ * `fetch(..., { redirect: "follow" })` (undici) deletes `Authorization` on any
+ * redirect that changes origin — including an `https→http` scheme downgrade that
+ * Railway's TLS-terminating edge produces for a backend-generated redirect (e.g.
+ * a Starlette trailing-slash 307). That silently turns an authed request into an
+ * unauthenticated one at the backend. So we use `redirect: "manual"` and re-issue
+ * the request ourselves, re-attaching the same headers — but ONLY when the
+ * redirect stays on the SAME HOST, so the token can never leak to a foreign host.
+ */
+async function fetchFollowingSameHost(
+  startUrl: string,
+  init: { method: string; headers: Record<string, string>; body?: BodyInit; signal?: AbortSignal },
+  maxHops = 5,
+): Promise<{ res: Response; hops: number; crossHostRedirect: boolean }> {
+  let url = startUrl;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    const res = await fetch(url, { ...init, redirect: "manual" });
+    const loc = (res.status >= 300 && res.status < 400) ? res.headers.get("location") : null;
+    if (!loc) return { res, hops: hop, crossHostRedirect: false };
+    const next = new URL(loc, url);
+    if (next.host !== new URL(url).host) {
+      // Different host → refuse to forward the token; surface as a redirect.
+      return { res, hops: hop, crossHostRedirect: true };
+    }
+    // Same host (scheme may differ, e.g. http↔https on Railway's edge): follow
+    // WITH the Authorization header intact — exactly what undici would drop.
+    url = next.toString();
+  }
+  return { res: await fetch(url, { ...init, redirect: "manual" }), hops: maxHops, crossHostRedirect: false };
+}
+
 async function proxy(
   req: NextRequest,
   segments: string[],
@@ -86,22 +119,44 @@ async function proxy(
       ? await req.arrayBuffer()
       : undefined;
 
+  // Build the outbound headers as a PLAIN OBJECT (not the incoming Headers
+  // instance). This forwards a clean, explicit set — Authorization included —
+  // and removes any dependence on how the runtime carries a Headers instance.
+  const outHeaders: Record<string, string> = {};
+  headers.forEach((value, key) => { outHeaders[key] = value; });
+
   const t0 = Date.now();
   let res: Response;
+  let hops = 0;
+  let crossHostRedirect = false;
   try {
-    res = await fetch(upstream, {
+    ({ res, hops, crossHostRedirect } = await fetchFollowingSameHost(upstream, {
       method:  req.method,
-      headers,
-      body,
-      redirect: "follow",
-      signal:   AbortSignal.timeout(30_000),
-    });
+      headers: outHeaders,
+      body:    body as BodyInit | undefined,
+      signal:  AbortSignal.timeout(30_000),
+    }));
   } catch (err) {
     console.error("[proxy] fetch failed:", err);
     return NextResponse.json(
       { error: "Could not reach backend.", detail: String(err) },
       { status: 502 },
     );
+  }
+
+  if (crossHostRedirect) {
+    console.error(
+      `[proxy] cross-host redirect from backend (auth NOT forwarded) — check BACKEND_URL host/scheme. ` +
+      `path=${req.nextUrl.pathname} status=${res.status} location_host=${res.headers.get("location")}`,
+    );
+    return NextResponse.json(
+      { error: "Backend issued a cross-host redirect; Authorization was withheld. Check BACKEND_URL." },
+      { status: 502 },
+    );
+  }
+  if (hops > 0) {
+    // Diagnostic: a same-host redirect was followed WITH auth preserved.
+    console.log(`[proxy-auth] followed_redirect hops=${hops} auth_preserved=true path=${req.nextUrl.pathname}`);
   }
 
   console.log(`[perf] proxy ${req.method} ${req.nextUrl.pathname} status=${res.status} total=${Date.now() - t0}ms`);
