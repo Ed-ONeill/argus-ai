@@ -8,6 +8,7 @@ import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle } from "lucide-r
 import { useAuth } from "@/context/AuthContext";
 import { createSingleFlight } from "@/lib/singleFlight";
 import { sanitizeInternalRedirect } from "@/lib/safeRedirect";
+import { startSigninTrace, type SigninMark } from "@/lib/authTiming";
 
 type Tab      = "signin" | "signup";
 type InputKey = "name" | "lastname" | "email" | "password";
@@ -53,9 +54,13 @@ function AuthPageInner() {
   // /auth tree and races the replace transition — the intermittent "click again"
   // symptom); the destination is client-rendered and reads the live session.
   const navigatedRef = useRef(false);
+  // TEMP: current attempt's timing marker (set at submit; read by nav/effects).
+  const traceRef = useRef<SigninMark | null>(null);
   const navigateToApp = useCallback(() => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
+    traceRef.current?.("navigateToApp_invoked");
+    traceRef.current?.("router_replace_invoked", { target: redirectTo });
     router.replace(redirectTo);
   }, [router, redirectTo]);
 
@@ -64,8 +69,17 @@ function AuthPageInner() {
   // (a session being torn down by a definitive-401 must never bounce /auth back
   // into the app). Deduped by navigateToApp so it can't double-redirect.
   useEffect(() => {
-    if (session?.access_token && !invalidatingSession) navigateToApp();
+    if (session?.access_token && !invalidatingSession) {
+      traceRef.current?.("auth_event_session_present");   // TEMP
+      navigateToApp();
+    }
   }, [session, invalidatingSession, navigateToApp]);
+
+  // TEMP: fires after React commits `loading=true` — i.e. when the button
+  // actually re-renders disabled + "Signing in…". Reveals any render lag.
+  useEffect(() => {
+    if (loading) traceRef.current?.("loading_committed_render");
+  }, [loading]);
 
   useEffect(() => {
     if (searchParams.get("error") === "auth_failed") {
@@ -81,23 +95,31 @@ function AuthPageInner() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (loading) return;   // fast path: button is disabled while pending
+    const trace = startSigninTrace();   // TEMP timing
+    traceRef.current = trace;
+    trace("onSubmit_received", { tab });
+    if (loading) { trace("blocked_loading_guard"); return; }  // button disabled while pending
     setError(null);
     setMessage(null);
 
     // The single-flight collapses concurrent submits into ONE request even if
     // clicks slip in before `loading` re-renders the disabled button.
     await submitFlight.current(async () => {
+      trace("singleflight_entered");
       setLoading(true);
+      trace("loading_set_called");
       try {
         if (tab === "signin") {
+          trace("signIn_started");
           const { error: err, session: newSession } = await signIn(email, password);
+          trace("signIn_resolved", { has_session: !!newSession?.access_token, has_error: !!err });
           if (err) {
             // Failure: stay on /auth, show the sanitized error, do NOT navigate.
             setError(friendlyError(err.message));
           } else if (newSession?.access_token) {
             // Success: the RETURNED session is authoritative. Navigate IMMEDIATELY
             // — do not wait for a second onAuthStateChange event or context update.
+            trace("returned_session_present");
             navigateToApp();
           }
           // If signIn returned no error but no session yet, the session effect

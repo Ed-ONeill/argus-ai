@@ -48,6 +48,32 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+describe("AuthPage — first-click sign-in sequence (browser-level)", () => {
+  it("one real submit: onSubmit fires, button disables + says Signing in, signIn once, resolves→navigates, no 2nd click", async () => {
+    let resolveSignIn!: (v: unknown) => void;
+    h.signIn.mockImplementation(() => new Promise((r) => { resolveSignIn = r; }));
+    const { container } = render(<AuthPage />);
+    fill(container);
+
+    // FIRST click only.
+    fireEvent.click(submitBtn(container));
+
+    // onSubmit fired on the first click → signIn started exactly once.
+    expect(h.signIn).toHaveBeenCalledTimes(1);
+    // Button is immediately disabled and shows the signing-in state.
+    await waitFor(() => expect(submitBtn(container).disabled).toBe(true));
+    expect(container.textContent).toMatch(/signing in/i);
+    // Still on /auth (no premature navigation) while the request is pending.
+    expect(h.replace).not.toHaveBeenCalled();
+
+    // Successful resolution IMMEDIATELY invokes navigation — no second click.
+    await act(async () => { resolveSignIn({ error: null, session: SESSION }); });
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/"));
+    expect(h.replace).toHaveBeenCalledTimes(1);
+    expect(h.signIn).toHaveBeenCalledTimes(1);   // never needed a second attempt
+  });
+});
+
 describe("AuthPage — sign-in completion transition (single-flight + immediate navigation)", () => {
   it("one click calls signIn once and navigates once, even if session context is delayed", async () => {
     h.signIn.mockResolvedValue({ error: null, session: SESSION });
