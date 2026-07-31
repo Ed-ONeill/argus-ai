@@ -172,38 +172,88 @@ is a genuinely private (`*.railway.internal` / allowlisted) address — see §Q 
 
 ## Phase 3 — Supabase cookie `Secure` + anti-cache header propagation · High · `code`
 
-**Confirmed issue.** (a) The session cookie carries **no `Secure`** attribute (package
-default sets none; Argus adds no override). (b) `@supabase/ssr` passes anti-cache headers via
-the `setAll(cookies, headers)` **second argument**; Argus's callbacks ignore it, so
-session-refresh responses ship without `no-store`.
+**Status: implemented locally (not committed/deployed).**
 
-**Why it matters.** Without `Secure`, the cookie can transit HTTP (compounds Phase 2). Without
-the anti-cache headers, a cached refresh response can leak one user's session to another.
+**Confirmed issue.** (a) The session cookie carries **no `Secure`** attribute (package default
+sets none; Argus adds no override). (b) `@supabase/ssr` passes anti-cache headers via the
+`setAll(cookies, headers)` **second argument**; Argus's callbacks ignore it, so session-refresh
+/ session-establishment responses ship without `no-store`. (c) The middleware's unauthenticated
+`/auth` redirect discarded the pending `setAll` cookie mutations entirely (including Supabase
+**clearing** an invalid session), so a stale invalid cookie could persist.
 
-**Evidence.** Defaults `@supabase/ssr/dist/main/utils/constants.js:4` (no `secure`, `maxAge`
-400d, `sameSite:lax`, `httpOnly:false`); headers source `.../cookies.js:334–349`; dropped at
-`frontend/src/middleware.ts:15` and `frontend/src/lib/supabase/server.ts:22`.
+**Why it matters.** Without `Secure`, the cookie can transit HTTP (deployment-conditional).
+Without the anti-cache headers, a cached session-bearing response can leak one user's session to
+another (needs a shared cache). Dropping the clearing cookie on the redirect leaves an
+invalidated session live in the browser.
 
-**Exact implementation.** Two *distinct* fixes (see audit §O):
-- **middleware.ts** (owns the response): extend `setAll(cookiesToSet, headers)` to apply the
-  headers directly to the `NextResponse`; add `secure: true` in production only.
-- **server.ts** (does *not* own the response): expose the pending anti-cache headers to the
-  caller via an explicit accumulator/return contract, or a response-owning wrapper — do **not**
-  fake header-setting inside a Server Component context. Add production-only `secure`.
-Preserve HttpOnly=false, SameSite, chunking, Max-Age, deletion behavior.
+**Evidence.** Defaults `@supabase/ssr/dist/main/utils/constants.js:4-11` (no `secure`, `maxAge`
+400d, `sameSite:lax`, `httpOnly:false`); headers source `.../cookies.js:334-348`; dropped at
+`frontend/src/middleware.ts:15` and `frontend/src/lib/supabase/server.ts:22`; the redirect
+branch dropping cookies at `frontend/src/middleware.ts` (old `return NextResponse.redirect`).
+Verified merge: `cookies.js:320-333` computes `{...DEFAULT_COOKIE_OPTIONS, ...cookieOptions,
+maxAge}`, so passing only `{secure}` preserves the other attributes.
 
-**Regression risks.** Local HTTP dev must not set `Secure` (would drop the cookie). Server
-Components that legitimately cannot set headers must instead be covered by Phase 4 cache rules.
+**Exact implementation.**
+- **Production-build-gated `Secure`, all three factories** (`client.ts`, `server.ts`,
+  `middleware.ts`): `cookieOptions: { secure: process.env.NODE_ENV === "production" }` — **never**
+  `location.protocol`; pass **only** `secure` (no `name`, no storage-key change). Fail-closed:
+  in production a page reached over HTTP simply cannot persist the cookie.
+- **Middleware response preservation** (`middleware.ts`): accumulate the pending `setAll` cookie
+  mutations **and** all three anti-cache headers (`Cache-Control`, `Expires`, `Pragma`) across
+  **multiple** `setAll` calls (Supabase may call it more than once) — **last-write-wins per cookie
+  identity** (`name` + `path` + `domain`, via a `Map`), latest value per header name — and apply
+  them **exactly once** via one `applyPending()` helper to **whichever** response is returned —
+  the authed pass-through **and** the unauthenticated `/auth` redirect. No-op when `setAll` never
+  ran (page caching preserved). Matcher, gate logic, and redirect target unchanged.
+- **Auth callback** (`auth/callback/route.ts`): on success set the full anti-cache set
+  (`Cache-Control: private, no-cache, no-store, must-revalidate, max-age=0`, `Expires: 0`,
+  `Pragma: no-cache`) on the redirect that carries the session `Set-Cookie`. Failure/no-code
+  path unchanged (`/auth?error=auth_failed`, no cookie).
+- **`server.ts` is NOT re-architected** to return response headers (avoids Server-Component /
+  read-only-cookie breakage). Its two consumers are the callback (handled above) and the proxy
+  (**Phase 4**). Preserves HttpOnly=false, SameSite=Lax, Path=/, chunking, Max-Age, deletion.
 
-**Tests.** Cookie options snapshot (prod vs dev `Secure`); middleware response carries
-`Cache-Control: …no-store…`; chunked-cookie round-trip preserved.
+**Regression risks.** Local HTTP dev must not set `Secure` (gated on `NODE_ENV`); browser
+singleton preserved and no storage-key change; delete cookies follow the same env rule;
+middleware adds headers **only** when `setAll` ran; no double-set cookies; redirect target and
+gate logic unchanged.
 
-**Rollback plan.** Revert per file; middleware and server changes are independent.
+**Tests (implemented).**
+- `frontend/src/lib/supabase/__tests__/effectiveCookies.test.ts` — **effective serialized cookies
+  driven through the REAL installed `@supabase/ssr` pipeline** (no manual `DEFAULT_COOKIE_OPTIONS`
+  merge): real `setSession` produces SET (normal) and **chunked** SET cookies; real `signOut`
+  produces **chunked** DELETE cookies. Asserts each serialized cookie: `Secure` present in prod /
+  absent in dev, `SameSite=Lax`, `Path=/`, `Max-Age` (default on set, 0 on delete), no `HttpOnly`.
+- `frontend/src/lib/supabase/__tests__/cookieOptions.test.ts` — **supplemental** factory-option
+  capture (each factory passes `{ secure: NODE_ENV==="production" }`, only `secure`, no `name`) +
+  browser singleton + env isolation.
+- `frontend/src/__tests__/middleware.test.ts` — (A) authed refresh keeps every cookie + all three
+  headers; (B) `setAll` then unauth redirect retains the clearing cookie + all three headers,
+  target unchanged; (C) no `setAll` → nothing added; (D) multiple cookies in one call, no
+  duplicates; (E) **accumulation across two separate `setAll` calls** (last-write-wins: updated
+  cookie once, untouched cookie preserved, new cookie added, no stale duplicate, latest headers) —
+  on **both** the authed and the unauth-redirect branch; (F) middleware passes
+  `cookieOptions:{secure:true}` in prod / `{secure:false}` in dev (removing `cookieOptions` fails).
+- `frontend/src/app/auth/callback/__tests__/route.test.ts` — success: the **actual returned
+  response** (via a cookies()→response glue harness) carries `Location`, the session `Set-Cookie`,
+  and all three anti-cache headers, and `createClient` is called once; failure → error redirect,
+  no `Set-Cookie`; **no-code → error redirect, no `Set-Cookie`, `createClient` never called**.
+
+**Rollback plan.** Revert per file; the four changes are independent. Reverting must not
+reintroduce the redirect-branch cookie loss if only the `Secure`/header changes are backed out.
+
+**Deployment facts (verification required, not source-provable).** Actual prod `Set-Cookie`
+attributes; whether the frontend is ever HTTP-reachable; **HSTS** — the repo does not configure
+it and whether an edge/CDN/proxy enforces it is a deployment fact to inspect; whether any
+CDN/edge caches a `Set-Cookie`-bearing response. Proxy Set-Cookie/cache policy remains **Phase
+4**; general security-header/HSTS work remains **Phase 11**.
 
 **Codex verification checklist.**
-- [ ] `Secure` set in prod, absent in dev; HttpOnly=false, SameSite, chunking, Max-Age intact.
-- [ ] Session-refresh responses carry `no-store`.
-- [ ] `server.ts` fix does not break Server Components / cookie refresh / request-cookie sync.
+- [ ] `Secure` set in prod (set/delete/chunked), absent in dev; `HttpOnly=false`, `SameSite=Lax`, `Path=/`, `Max-Age` intact — proven through the **real `@supabase/ssr` pipeline**.
+- [ ] Secure decision is `NODE_ENV`-gated, never `location.protocol`; production-over-HTTP persists no cookie; middleware Secure config directly tested (prod/dev).
+- [ ] Middleware accumulates across **multiple** `setAll` calls (last-write-wins per name+path+domain, no duplicates) and preserves cookies + `Cache-Control`/`Expires`/`Pragma` on **both** the authed response and the `/auth` redirect; no headers when `setAll` didn't run.
+- [ ] Auth-callback success carries the session `Set-Cookie` + all three headers on the **actual returned response**; `createClient` called once; no-code path never calls `createClient`; failure unchanged.
+- [ ] `server.ts` not re-architected; browser singleton and storage key unchanged; proxy cache is Phase 4.
 
 ---
 

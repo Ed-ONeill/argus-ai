@@ -18,7 +18,16 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      // The session Set-Cookie is applied to this redirect by Next from the
+      // cookies() mutation exchangeCodeForSession performed. server.ts cannot
+      // reach this response to attach Supabase's anti-cache headers, so — since
+      // this response owns the session cookie — we set the full anti-cache set
+      // here to keep a session-bearing response out of any shared cache.
+      const res = NextResponse.redirect(`${origin}${next}`);
+      res.headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate, max-age=0");
+      res.headers.set("Expires", "0");
+      res.headers.set("Pragma", "no-cache");
+      return res;
     }
   }
 

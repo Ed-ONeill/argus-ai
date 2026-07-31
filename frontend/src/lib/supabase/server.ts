@@ -15,6 +15,12 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Production always marks the session cookie Secure (never inferred from
+      // location.protocol); dev/test omit it so local HTTP keeps the session.
+      // Only `secure` is set — other attributes and the storage key stay default.
+      cookieOptions: {
+        secure: process.env.NODE_ENV === "production",
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll();

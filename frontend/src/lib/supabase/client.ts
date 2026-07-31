@@ -29,6 +29,15 @@ export function createClient(): SupabaseClient {
     );
   }
 
-  _client = createBrowserClient(url, key);
+  _client = createBrowserClient(url, key, {
+    // Production always marks the session cookie Secure (never inferred from
+    // location.protocol). In production this is fail-closed: a page reached over
+    // HTTP simply cannot persist the cookie. Dev/test omit Secure so local HTTP
+    // keeps the session. Only `secure` is set — SameSite/HttpOnly/Path/Max-Age
+    // and the storage key are left to the @supabase/ssr defaults.
+    cookieOptions: {
+      secure: process.env.NODE_ENV === "production",
+    },
+  });
   return _client;
 }
