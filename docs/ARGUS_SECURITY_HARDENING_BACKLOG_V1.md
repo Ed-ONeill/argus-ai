@@ -259,31 +259,63 @@ CDN/edge caches a `Set-Cookie`-bearing response. Proxy Set-Cookie/cache policy r
 
 ## Phase 4 — proxy caching rules for cookie-refresh-capable responses · High · `code`
 
-**Confirmed issue.** Global body content ≠ publicly cacheable: the catch-all proxy may call
-`getSession()`, refresh the session, and emit `Set-Cookie`. Feed/Listen through this path must
-not be treated as public.
+**Status: implemented locally (not committed/deployed).**
+
+**Confirmed issue.** The catch-all proxy adds **no** cache policy and forwards backend
+`Cache-Control`/`Expires`/`Pragma` verbatim. Every request it serves is either authenticated
+(client Bearer) or runs the cookie→bearer fallback, whose `getSession()` can **refresh** an
+expired session or **clear** an invalid one and emit `Set-Cookie` (appended by the Next route
+runtime after the handler returns). `Set-Cookie` does **not** by itself prevent caching — an
+otherwise-storable response carrying a session cookie can be stored and replayed — so the
+absence of explicit `private, no-store` is a **source-level** risk (deployment decides whether a
+given Railway/CDN/edge actually caches it).
 
 **Why it matters.** Shared caching of a session-touching response bleeds sessions across users.
 
-**Evidence.** Cookie→Bearer fallback `frontend/src/app/api/[...path]/route.ts:57–67`; audit §M.
+**Evidence.** Cookie→Bearer fallback `frontend/src/app/api/[...path]/route.ts:81–91`
+(`getSession` at :85); backend refresh/clear via auth-js `GoTrueClient.js:2361`; headers
+forwarded at `route.ts:166–169`. Backend currently sets **no** `Cache-Control` and **no**
+`Set-Cookie` (verified) — backend cookie/cache cases are **latent** but handled safely.
 
-**Exact implementation.** Classify by content **and** session behavior (audit §M): any response
-carrying `Set-Cookie` or served via the cookie-refresh-capable path → `private, no-store`;
-explicit-Bearer responses → cache key includes `Authorization` or shared caching disabled; only
-provably session-free global routes may be publicly cacheable. Enforce in the proxy response
-headers.
+**Exact implementation.** One helper `applyAntiCache(response)` sets exactly
+`Cache-Control: private, no-cache, no-store, must-revalidate, max-age=0`, `Expires: 0`,
+`Pragma: no-cache` (via `headers.set`, overwriting any backend values), applied to **every**
+response the route returns — **unconditionally**. Rationale: request classification is
+exhaustive (Bearer or fallback), and framework-added cookies are appended after the handler and
+cannot be reliably detected inside it, so a uniform policy is the safest and simplest correct
+choice. **No** `Vary`; **no** public/session-free exception in this route; **no** final-response
+`Set-Cookie` classification. The helper touches only the three cache headers — `Set-Cookie`
+(backend-forwarded or framework-added), `Location`, `Content-Type`, CORS, and all other headers
+are untouched, and the body is streamed through (`new NextResponse(res.body, …)`, never
+buffered). Multiple backend `Set-Cookie` values remain separate (regression boundary).
 
-**Regression risks.** Do not over-apply `no-store` to genuinely global, session-free data
-(preserve intended caching). Keep the CDN/edge behavior consistent with these headers.
+**Regression risks.** Do not fold/dedup/lose multiple `Set-Cookie` (touch only cache headers via
+`.set`, never rebuild from `.get("set-cookie")`); do not read the body; do not touch `Location`
+or non-cache headers; apply on every return path. The separate public Next routes are **not**
+in this file and are unaffected.
 
-**Tests.** Matrix test: Set-Cookie response → `no-store`; cookie-fallback Feed response →
-`no-store`; explicit-Bearer response → keyed/!shared; public route → cacheable.
+**Tests (implemented).** `frontend/src/app/api/[...path]/__tests__/route.test.ts` — Phase 4
+matrix A–Q asserting the **exact** three-header policy on every return: client-Bearer success;
+no-Bearer/no-session (unconditional); cookie fallback with refresh and with clearing (framework
+Set-Cookie coexists via a glue harness); backend unsafe cache directives overwritten; multiple
+backend Set-Cookie preserved; backend Set-Cookie + body/status/headers; fetch failure;
+unsafe-initial; downgrade; cross-host; malformed redirect; redirect exhaustion; missing
+BACKEND_URL (503); forwarded 304; forwarded 3xx-without-Location; streaming preserved (route
+never calls `text()`/`json()`/`arrayBuffer()`). Phase 2 transport and Phase 3 cookie tests
+remain green.
 
-**Rollback plan.** Header-only change in the proxy; revert commit.
+**Rollback plan.** Header-only change in the proxy; revert commit. Rollback must not reintroduce
+caching of session-touching responses.
+
+**Deployment verification required (not source-provable).** Whether Railway / any CDN / edge
+stores or reuses these responses; the edge cache key; whether `Cache-Control` is rewritten
+upstream; actual production headers. Phase 2 transport and Phase 3 cookie behavior are unchanged.
 
 **Codex verification checklist.**
-- [ ] Every Set-Cookie / cookie-refresh-capable response is `private, no-store`.
-- [ ] Session-free global responses remain cacheable (no blanket no-store).
+- [ ] Every catch-all proxy response carries the exact `private, no-store` policy (all three headers), overwriting backend cache headers.
+- [ ] Policy is unconditional (no public/session-free exception, no final-Set-Cookie classification, no `Vary`).
+- [ ] Multiple Set-Cookie preserved (no fold/dup/loss); body streamed (never buffered); Location/non-cache headers intact.
+- [ ] Applied on every return path (config-missing, transport failures, forwarded success/304/3xx, errors).
 
 ---
 

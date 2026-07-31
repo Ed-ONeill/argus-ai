@@ -6,6 +6,23 @@ import {
   transportPolicyFromEnv,
 } from "@/lib/backendTransport";
 
+// Phase 4 — uniform anti-cache policy for EVERY response this catch-all proxy
+// emits. This proxy only ever serves authenticated (client-Bearer) or
+// session-touching (cookie→bearer fallback runs getSession(), which can refresh
+// or clear the session and emit Set-Cookie) traffic, and framework-added
+// refresh/clearing cookies are appended by the Next route runtime AFTER the
+// handler returns — so they cannot be reliably detected here. The policy is
+// therefore unconditional: applied to every return path, overwriting any backend
+// Cache-Control/Expires/Pragma. Touches ONLY those three headers — Set-Cookie
+// (backend-forwarded or framework-added), Location, Content-Type, CORS, and all
+// other headers are left untouched, and the body/stream is never read.
+function applyAntiCache(response: NextResponse): NextResponse {
+  response.headers.set("cache-control", "private, no-cache, no-store, must-revalidate, max-age=0");
+  response.headers.set("expires", "0");
+  response.headers.set("pragma", "no-cache");
+  return response;
+}
+
 // Reads BACKEND_URL at request time (runtime), not at build time.
 // This means you can update the Railway env var and restart without rebuilding.
 function resolveBackendUrl(): string {
@@ -30,10 +47,10 @@ async function proxy(
     backendBase = resolveBackendUrl();
   } catch (err) {
     console.error("[proxy] configuration error:", (err as Error).message);
-    return NextResponse.json(
+    return applyAntiCache(NextResponse.json(
       { error: "Backend not configured, BACKEND_URL missing." },
       { status: 503 },
-    );
+    ));
   }
 
   // Reconstruct the full upstream URL, preserving query string.
@@ -52,10 +69,10 @@ async function proxy(
       `approved private internal host). path=${req.nextUrl.pathname} ` +
       `backend_host=${(() => { try { return new URL(backendBase).host; } catch { return "invalid"; } })()}`,
     );
-    return NextResponse.json(
+    return applyAntiCache(NextResponse.json(
       { error: "Backend transport is not secure (must be HTTPS or an approved private internal host). Check BACKEND_URL." },
       { status: 502 },
-    );
+    ));
   }
 
   const headers = new Headers(req.headers);
@@ -131,10 +148,10 @@ async function proxy(
     );
   } catch (err) {
     console.error("[proxy] fetch failed:", err);
-    return NextResponse.json(
+    return applyAntiCache(NextResponse.json(
       { error: "Could not reach backend.", detail: String(err) },
       { status: 502 },
-    );
+    ));
   }
 
   if (!result.ok) {
@@ -152,7 +169,7 @@ async function proxy(
           : result.error === "too-many-redirects"
             ? "Backend exceeded the redirect limit; the request was refused."
             : "Backend issued an unsafe redirect (scheme downgrade or disallowed destination); Authorization was withheld.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return applyAntiCache(NextResponse.json({ error: message }, { status: 502 }));
   }
 
   const { res, hops } = result;
@@ -168,11 +185,14 @@ async function proxy(
   resHeaders.delete("content-encoding");  // body already decoded by Node fetch; header would lie to browser
   resHeaders.delete("content-length");    // decoded body length differs from compressed; let Next.js recalculate
 
-  return new NextResponse(res.body, {
+  // Stream the backend body straight through (never buffered) and apply the
+  // uniform anti-cache policy, overwriting any backend Cache-Control/Expires/
+  // Pragma while leaving every Set-Cookie and other header intact.
+  return applyAntiCache(new NextResponse(res.body, {
     status: res.status,
     statusText: res.statusText,
     headers: resHeaders,
-  });
+  }));
 }
 
 // Next.js 15: params is a Promise — must be awaited.
