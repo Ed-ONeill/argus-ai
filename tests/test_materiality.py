@@ -537,6 +537,380 @@ def test_mandatory_class_available_in_inputs_present_both_ways():
     assert "mandatory_class" in off.inputs_present           # available even when False
 
 
+# ── Wave 0.2a: source-kind evidence ───────────────────────────────────────────
+
+def _ev(kind, tier=1, qualified=True, source="Src", url=None):
+    return EventEvidence(source=source, title="t", url=url or f"u-{kind}-{tier}-{source}",
+                         published=ISO, tier=tier, kind=kind, qualified=qualified)
+
+
+def test_source_evidence_reflects_evidence_kinds():
+    e = _event(evidence=[_ev("sec_filing"), _ev("transcript"), _ev("news"), _ev("news")])
+    se = assess(e).source_evidence
+    assert se is not None
+    assert (se.sec_filing_count, se.transcript_count, se.ir_release_count, se.news_count) == (1, 1, 0, 2)
+    assert se.evidence_count == 4
+    assert se.has_primary_source is True                     # sec_filing/transcript present
+
+
+def test_primary_source_definition_matches_repo_semantics():
+    for primary in ("sec_filing", "transcript", "ir_release"):
+        assert assess(_event(evidence=[_ev(primary)])).source_evidence.has_primary_source is True
+    only_news = assess(_event(evidence=[_ev("news"), _ev("news")])).source_evidence
+    assert only_news.has_primary_source is False
+    assert assess(_event(evidence=[])).source_evidence.has_primary_source is False
+
+
+def test_source_evidence_tier_and_qualified_count():
+    e = _event(corroboration_count=3,
+               evidence=[_ev("news", tier=1), _ev("news", tier=3, qualified=False)])
+    se = assess(e).source_evidence
+    assert se.best_tier == 1                                 # best (lowest) tier
+    assert se.qualified_source_count == 3                    # == event.corroboration_count
+    assert se.evidence_count == 2
+
+
+def test_source_kinds_in_inputs_present_iff_evidence():
+    assert "source_kinds" in assess(_event(evidence=[_ev("news")])).inputs_present
+    assert "source_kinds" not in assess(_event(evidence=[])).inputs_present
+
+
+def test_unknown_kind_counts_as_news_conservatively():
+    se = assess(_event(evidence=[_ev("weird_kind")])).source_evidence
+    assert se.news_count == 1 and se.has_primary_source is False
+
+
+# ── Wave 0.2a: censored breadth evidence ──────────────────────────────────────
+
+def test_breadth_evidence_counts_caps_unthemed():
+    e = _event(companies=["A", "B"], industries=["X"], transmission_chain=[])
+    e.theme_ids = ["t1"]
+    be = assess(e).breadth_evidence
+    assert (be.company_count, be.industry_count) == (2, 1)
+    assert be.company_capped is False and be.industry_capped is False
+    assert be.unthemed is False
+
+
+def test_breadth_capped_flags_are_honest_lower_bounds():
+    capped = _event(companies=[f"C{i}" for i in range(8)], industries=[f"I{i}" for i in range(6)])
+    be = assess(capped).breadth_evidence
+    assert be.company_count == 8 and be.company_capped is True     # >= cap 8
+    assert be.industry_count == 6 and be.industry_capped is True   # >= cap 6
+    below = _event(companies=[f"C{i}" for i in range(7)], industries=[f"I{i}" for i in range(5)])
+    be2 = assess(below).breadth_evidence
+    assert be2.company_capped is False and be2.industry_capped is False
+
+
+def test_unthemed_flag_captured():
+    themed = _event()
+    themed.theme_ids = ["t1"]
+    unthemed = _event()
+    unthemed.theme_ids = []
+    assert assess(themed).breadth_evidence.unthemed is False
+    assert assess(unthemed).breadth_evidence.unthemed is True
+
+
+def test_breadth_stays_diagnostic_not_in_inputs_present():
+    a = assess(_event(companies=["A"], industries=["X"]))
+    assert "breadth" not in a.inputs_present
+    assert "breadth_censored" not in a.inputs_present         # diagnostic only
+
+
+def test_source_and_breadth_deterministic():
+    e = _event(companies=["A"], evidence=[_ev("sec_filing"), _ev("news")])
+    assert assess(e) == assess(e)
+
+
+def test_membership_unresolved_with_new_evidence():
+    a = assess(_event(companies=["A"], evidence=[_ev("sec_filing")]))
+    assert a.state is MaterialityState.UNRESOLVED
+    assert a.materiality_rank is None
+
+
+# ── Wave 0.2a: aggregation of the new evidence (max, not sum; permutation-inv.) ─
+
+def _asmt(*, eid, source_evidence=None, breadth_evidence=None,
+          state=MaterialityState.UNRESOLVED):
+    return MaterialityAssessment(state=state, policy_version=POLICY_VERSION,
+                                 event_id=eid, source_evidence=source_evidence,
+                                 breadth_evidence=breadth_evidence)
+
+
+def test_aggregate_source_evidence_max_not_sum():
+    from app.materiality import SourceEvidence
+    a = _asmt(eid="a", source_evidence=SourceEvidence(
+        sec_filing_count=1, news_count=2, has_primary_source=True, best_tier=2,
+        qualified_source_count=2, evidence_count=3))
+    b = _asmt(eid="b", source_evidence=SourceEvidence(
+        sec_filing_count=0, news_count=3, has_primary_source=False, best_tier=1,
+        qualified_source_count=1, evidence_count=4))
+    agg1, agg2 = aggregate([a, b]), aggregate([b, a])
+    assert agg1 == agg2                                       # permutation-invariant
+    se = agg1.source_evidence
+    assert se.sec_filing_count == 1                          # max (NOT sum=1)
+    assert se.news_count == 3                                # max (NOT sum=5)
+    assert se.has_primary_source is True                     # OR
+    assert se.best_tier == 1                                 # min (best)
+    assert se.qualified_source_count == 2                    # max (overlap-safe, not summed)
+    assert se.counts_are_lower_bounds is True                # aggregate → not exact
+    # internal consistency: total >= sum of disjoint kind lower bounds
+    assert se.evidence_count >= (se.sec_filing_count + se.transcript_count
+                                 + se.ir_release_count + se.news_count)
+
+
+def test_aggregate_source_evidence_count_internally_consistent_disjoint_kinds():
+    from app.materiality import SourceEvidence
+    # disjoint kinds across contributors: sec=5 from one, news=6 from another.
+    a = _asmt(eid="a", source_evidence=SourceEvidence(
+        sec_filing_count=5, news_count=0, evidence_count=5, has_primary_source=True))
+    b = _asmt(eid="b", source_evidence=SourceEvidence(
+        sec_filing_count=0, news_count=6, evidence_count=6))
+    agg = aggregate([a, b])
+    se = agg.source_evidence
+    assert (se.sec_filing_count, se.news_count) == (5, 6)    # max per kind
+    # disjoint kinds ⇒ total is at least 5 + 6 = 11, never the impossible max()=6
+    assert se.evidence_count >= 11
+    assert se.evidence_count == (se.sec_filing_count + se.transcript_count
+                                 + se.ir_release_count + se.news_count)
+    assert se.counts_are_lower_bounds is True
+    assert aggregate([a, b]) == aggregate([b, a])            # permutation-invariant
+
+
+def test_aggregate_source_evidence_overlapping_same_kind_uses_max():
+    from app.materiality import SourceEvidence
+    a = _asmt(eid="a", source_evidence=SourceEvidence(news_count=3, evidence_count=3))
+    b = _asmt(eid="b", source_evidence=SourceEvidence(news_count=4, evidence_count=4))
+    se = aggregate([a, b]).source_evidence
+    assert se.news_count == 4                                # max (may overlap; never sum=7)
+    assert se.evidence_count == 4                            # max(4, kind_sum=4)
+
+
+def test_aggregate_source_evidence_missing_on_one_contributor():
+    from app.materiality import SourceEvidence
+    a = _asmt(eid="a", source_evidence=SourceEvidence(sec_filing_count=2, evidence_count=2,
+                                                      has_primary_source=True))
+    b = _asmt(eid="b", source_evidence=None)
+    se = aggregate([a, b]).source_evidence
+    assert se is not None and se.sec_filing_count == 2 and se.has_primary_source is True
+
+
+def test_single_event_source_counts_are_exact_not_lower_bounds():
+    se = assess(_event(evidence=[_ev("sec_filing"), _ev("news"), _ev("news")])).source_evidence
+    assert se.counts_are_lower_bounds is False               # single event → exact
+    assert se.evidence_count == 3
+    # exact: the four disjoint kind counts sum to the total
+    assert (se.sec_filing_count + se.transcript_count
+            + se.ir_release_count + se.news_count) == se.evidence_count
+
+
+def test_aggregate_unthemed_all_observed_and_unthemed():
+    from app.materiality import BreadthEvidence
+    a = _asmt(eid="a", breadth_evidence=BreadthEvidence(unthemed=True))
+    b = _asmt(eid="b", breadth_evidence=BreadthEvidence(unthemed=True))
+    be = aggregate([a, b]).breadth_evidence
+    assert be.unthemed is True and be.unthemed_known is True
+
+
+def test_aggregate_unthemed_false_when_one_themed():
+    from app.materiality import BreadthEvidence
+    a = _asmt(eid="a", breadth_evidence=BreadthEvidence(unthemed=True))
+    b = _asmt(eid="b", breadth_evidence=BreadthEvidence(unthemed=False))
+    be = aggregate([a, b]).breadth_evidence
+    assert be.unthemed is False and be.unthemed_known is True   # observed themed → known
+
+
+def test_aggregate_unthemed_unknown_when_observation_missing():
+    from app.materiality import BreadthEvidence
+    a = _asmt(eid="a", breadth_evidence=BreadthEvidence(unthemed=True))
+    b = _asmt(eid="b", breadth_evidence=None)                # theme status unobserved
+    be = aggregate([a, b]).breadth_evidence
+    assert be.unthemed is False                             # never asserted on incomplete info
+    assert be.unthemed_known is False                       # UNKNOWN, not "all unthemed"
+    assert aggregate([a, b]) == aggregate([b, a])           # permutation-invariant
+
+
+def test_aggregate_all_breadth_missing_stays_none():
+    agg = aggregate([_asmt(eid="a"), _asmt(eid="b")])
+    assert agg.breadth_evidence is None
+
+
+# ── Blocker 1: nested breadth UNKNOWN must not decay into known-themed ─────────
+
+def test_nested_breadth_unknown_stays_unknown():
+    from app.materiality import BreadthEvidence
+    unknown = aggregate([
+        _asmt(eid="a", breadth_evidence=BreadthEvidence(unthemed=True)),   # known-unthemed
+        _asmt(eid="b"),                                                     # breadth unobserved
+    ]).breadth_evidence
+    assert unknown.unthemed is False and unknown.unthemed_known is False    # UNKNOWN
+    # feed the UNKNOWN aggregate back in — must stay UNKNOWN, never "themed"
+    outer = aggregate([_asmt(eid="x", breadth_evidence=unknown)]).breadth_evidence
+    assert outer.unthemed is False and outer.unthemed_known is False
+
+
+def test_unknown_plus_known_unthemed_stays_unknown():
+    from app.materiality import BreadthEvidence
+    unknown = BreadthEvidence(unthemed=False, unthemed_known=False)
+    known_unthemed = BreadthEvidence(unthemed=True, unthemed_known=True)
+    a = _asmt(eid="a", breadth_evidence=unknown)
+    b = _asmt(eid="b", breadth_evidence=known_unthemed)
+    be1, be2 = aggregate([a, b]).breadth_evidence, aggregate([b, a]).breadth_evidence
+    assert be1 == be2
+    assert be1.unthemed is False and be1.unthemed_known is False
+
+
+def test_unknown_plus_known_themed_is_known_themed():
+    from app.materiality import BreadthEvidence
+    unknown = BreadthEvidence(unthemed=False, unthemed_known=False)
+    known_themed = BreadthEvidence(unthemed=False, unthemed_known=True)
+    be = aggregate([_asmt(eid="a", breadth_evidence=unknown),
+                    _asmt(eid="b", breadth_evidence=known_themed)]).breadth_evidence
+    assert be.unthemed is False and be.unthemed_known is True   # a known-themed member ⇒ known
+
+
+# ── Blocker 2: exact vs lower-bound source counts (single complete stays exact) ─
+
+def _se(**kw):
+    from app.materiality import SourceEvidence
+    base = dict(observation_complete=True, has_primary_source_known=True, best_tier_known=True)
+    base.update(kw)
+    return SourceEvidence(**base)
+
+
+def test_aggregate_one_exact_source_stays_exact():
+    exact = _se(news_count=2, evidence_count=2, counts_are_lower_bounds=False)
+    agg = aggregate([_asmt(eid="a", source_evidence=exact)])
+    assert agg.source_evidence.counts_are_lower_bounds is False   # single complete exact → exact
+
+
+def test_aggregate_one_lower_bound_source_stays_lower_bound():
+    lb = _se(news_count=2, evidence_count=2, counts_are_lower_bounds=True)
+    agg = aggregate([_asmt(eid="a", source_evidence=lb)])
+    assert agg.source_evidence.counts_are_lower_bounds is True
+
+
+def test_aggregate_multiple_exact_sources_become_lower_bound():
+    e = _se(news_count=1, evidence_count=1, counts_are_lower_bounds=False)
+    agg = aggregate([_asmt(eid="a", source_evidence=e), _asmt(eid="b", source_evidence=e)])
+    assert agg.source_evidence.counts_are_lower_bounds is True
+
+
+def test_aggregate_exact_plus_missing_source_becomes_lower_bound():
+    e = _se(news_count=1, evidence_count=1, counts_are_lower_bounds=False)
+    agg = aggregate([_asmt(eid="a", source_evidence=e), _asmt(eid="b", source_evidence=None)])
+    assert agg.source_evidence.counts_are_lower_bounds is True
+    assert agg.source_evidence.observation_complete is False
+
+
+def test_nested_lower_bound_source_stays_lower_bound():
+    e = _se(news_count=1, evidence_count=1, counts_are_lower_bounds=False)
+    inner = aggregate([_asmt(eid="a", source_evidence=e), _asmt(eid="b", source_evidence=e)])
+    assert inner.source_evidence.counts_are_lower_bounds is True
+    outer = aggregate([_asmt(eid="x", source_evidence=inner.source_evidence)])
+    assert outer.source_evidence.counts_are_lower_bounds is True   # incomplete/lower-bound propagates
+
+
+# ── Blocker 3: source completeness / known-state ──────────────────────────────
+
+def test_single_event_news_only_primary_status_is_known():
+    se = assess(_event(evidence=[_ev("news"), _ev("news")])).source_evidence
+    assert se.has_primary_source is False
+    assert se.has_primary_source_known is True     # complete evidence: judged, none primary
+    assert se.best_tier_known is True
+
+
+def test_single_event_no_evidence_primary_status_unknown():
+    se = assess(_event(evidence=[])).source_evidence
+    assert se.has_primary_source is False
+    assert se.has_primary_source_known is False    # no evidence → cannot know
+    assert se.best_tier_known is False
+    assert se.observation_complete is True         # complete for the (empty) recorded set
+
+
+def test_aggregate_news_only_plus_missing_primary_unknown():
+    se_news = assess(_event(evidence=[_ev("news")])).source_evidence
+    agg = aggregate([_asmt(eid="a", source_evidence=se_news), _asmt(eid="b", source_evidence=None)])
+    se = agg.source_evidence
+    assert se.has_primary_source is False
+    assert se.has_primary_source_known is False     # incomplete → cannot claim "no primary"
+    assert se.observation_complete is False
+
+
+def test_aggregate_primary_plus_missing_is_known():
+    se_prim = assess(_event(evidence=[_ev("sec_filing")])).source_evidence
+    agg = aggregate([_asmt(eid="a", source_evidence=se_prim), _asmt(eid="b", source_evidence=None)])
+    se = agg.source_evidence
+    assert se.has_primary_source is True and se.has_primary_source_known is True   # found one → known
+
+
+def test_aggregate_best_tier_known_only_when_complete():
+    se1 = assess(_event(evidence=[_ev("news", tier=2)])).source_evidence
+    assert aggregate([_asmt(eid="a", source_evidence=se1)]).source_evidence.best_tier_known is True
+    incomplete = aggregate([_asmt(eid="a", source_evidence=se1), _asmt(eid="b", source_evidence=None)])
+    assert incomplete.source_evidence.best_tier_known is False
+
+
+def test_nested_incomplete_source_propagates():
+    se_news = assess(_event(evidence=[_ev("news")])).source_evidence
+    inner = aggregate([_asmt(eid="a", source_evidence=se_news), _asmt(eid="b", source_evidence=None)])
+    assert inner.source_evidence.observation_complete is False
+    outer = aggregate([_asmt(eid="x", source_evidence=inner.source_evidence)]).source_evidence
+    assert outer.observation_complete is False and outer.has_primary_source_known is False
+
+
+def test_nested_uncertainty_permutation_invariant():
+    from app.materiality import BreadthEvidence
+    xs = [
+        _asmt(eid="a", state=MaterialityState.UNIVERSAL,
+              source_evidence=_se(sec_filing_count=2, has_primary_source=True, evidence_count=2),
+              breadth_evidence=BreadthEvidence(unthemed=False, unthemed_known=False)),   # UNKNOWN
+        _asmt(eid="b", source_evidence=None,
+              breadth_evidence=BreadthEvidence(unthemed=True, unthemed_known=True)),
+        _asmt(eid="c", source_evidence=_se(news_count=3, evidence_count=3),
+              breadth_evidence=None),
+    ]
+    results = [aggregate(list(p)) for p in itertools.permutations(xs)]
+    first = results[0]
+    for r in results[1:]:
+        assert r == first                          # complete equality incl. known/complete flags
+
+
+def test_aggregate_breadth_max_not_sum():
+    from app.materiality import BreadthEvidence
+    a = _asmt(eid="a", breadth_evidence=BreadthEvidence(
+        company_count=8, company_capped=True, industry_count=3, unthemed=False))
+    b = _asmt(eid="b", breadth_evidence=BreadthEvidence(
+        company_count=2, company_capped=False, industry_count=6, industry_capped=True, unthemed=True))
+    agg1, agg2 = aggregate([a, b]), aggregate([b, a])
+    assert agg1 == agg2
+    be = agg1.breadth_evidence
+    assert be.company_count == 8                             # max lower bound (NOT sum=10)
+    assert be.industry_count == 6                            # max
+    assert be.company_capped is True and be.industry_capped is True   # OR
+    assert be.unthemed is False                              # all() — one contributor is themed
+
+
+def test_aggregate_none_evidence_stays_none():
+    agg = aggregate([_asmt(eid="a"), _asmt(eid="b")])
+    assert agg.source_evidence is None and agg.breadth_evidence is None
+
+
+def test_aggregate_with_new_evidence_permutation_invariant():
+    from app.materiality import BreadthEvidence, SourceEvidence
+    xs = [
+        _asmt(eid="a", state=MaterialityState.UNIVERSAL,
+              source_evidence=SourceEvidence(sec_filing_count=2, has_primary_source=True, best_tier=1),
+              breadth_evidence=BreadthEvidence(company_count=8, company_capped=True, unthemed=False)),
+        _asmt(eid="b", source_evidence=SourceEvidence(news_count=5, best_tier=2),
+              breadth_evidence=BreadthEvidence(company_count=1, unthemed=True)),
+        _asmt(eid="c", state=MaterialityState.NOT_UNIVERSAL),
+    ]
+    results = [aggregate(list(p)) for p in itertools.permutations(xs)]
+    first = results[0]
+    for r in results[1:]:
+        assert r == first                                    # complete equality incl. new fields
+
+
 def test_rich_aggregate_permutation_invariant_no_evidence_loss():
     def mk(eid, uid, state, ver, rank, factor):
         return MaterialityAssessment(
@@ -736,5 +1110,6 @@ def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
         with open(p, "rb") as fh:
             data = fh.read()
         for forbidden in (b"MaterialityAssessment", b"MaterialityShadowResult",
+                          b"SourceEvidence", b"BreadthEvidence",
                           b"shadow_sink", b"app.materiality"):
             assert forbidden not in data

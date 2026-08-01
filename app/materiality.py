@@ -122,6 +122,72 @@ class ReasonCode:
     available: bool
 
 
+# ── Wave 0.2a evidence: source-kind + censored breadth (deterministic) ─────────
+# The canonical evidence-kind vocabulary produced by app.events.evidence_kind().
+# Do NOT invent new kinds here.
+SOURCE_KINDS = ("sec_filing", "transcript", "ir_release", "news")
+# Primary sources per the repo's "management commentary honesty rule"
+# (app/events.py:152-154): transcript / sec_filing / ir_release are the ONLY
+# first-party (management / regulatory / IR) document kinds; `news` is
+# third-party reporting.
+PRIMARY_SOURCE_KINDS = frozenset({"sec_filing", "transcript", "ir_release"})
+
+# Canonical caps applied in app.events.build_market_events (companies[:8],
+# industries[:6]) — used only to mark censoring honestly, never to claim exactness.
+COMPANIES_CAP = 8
+INDUSTRIES_CAP = 6
+
+
+@dataclass(frozen=True)
+class SourceEvidence:
+    """Higher-fidelity source-quality evidence, derived deterministically from the
+    canonical EventEvidence.kind / tier values already on the event.
+
+    For a SINGLE event's assessment the kind counts and `evidence_count` are EXACT
+    document counts (each document has exactly one kind, so the four counts sum to
+    `evidence_count`) and `counts_are_lower_bounds` is False. For an AGGREGATE of
+    several assessments (evidence identities unavailable), the per-kind counts are
+    overlap-safe LOWER BOUNDS (aggregated by max), `evidence_count` is at least the
+    sum of the disjoint per-kind lower bounds, and `counts_are_lower_bounds` is
+    True — the aggregate never presents counts as exact."""
+    sec_filing_count: int = 0
+    transcript_count: int = 0
+    ir_release_count: int = 0
+    news_count: int = 0
+    has_primary_source: bool = False
+    # `has_primary_source_known` distinguishes "complete evidence proves no primary
+    # source" (False, known) from "no evidence / incomplete observation" (False,
+    # unknown). Never assert absence of a primary source on incomplete information.
+    has_primary_source_known: bool = True
+    best_tier: int = 4
+    best_tier_known: bool = True         # False when the best tier is not globally observed
+    qualified_source_count: int = 0      # distinct qualified sources (== event.corroboration_count);
+    #                                      on an aggregate this is an OVERLAP-SAFE LOWER BOUND (max),
+    #                                      not an exact distinct-source total.
+    evidence_count: int = 0              # total evidence documents (>= sum of the disjoint kind counts)
+    counts_are_lower_bounds: bool = False  # True unless exactly one complete exact contributor
+    observation_complete: bool = True    # False on an aggregate when a contributor's source obs. is missing/incomplete
+
+
+@dataclass(frozen=True)
+class BreadthEvidence:
+    """Censored / lower-bound breadth. Counts are honest lower bounds only: the
+    canonical arrays are capped and registry-limited, so a value at the cap means
+    '>= cap' (possibly more), never an exact population. Diagnostic / weak only —
+    asset-class, geography, and cross-*-transmission remain MISSING.
+
+    Theme status is tri-valued via (`unthemed`, `unthemed_known`): all observed and
+    all unthemed → (True, True); any observed themed → (False, True); a missing
+    observation with no themed contributor → (False, False) = UNKNOWN — never
+    asserted unthemed on incomplete information."""
+    company_count: int = 0              # lower bound (companies[:8], registry-limited)
+    company_capped: bool = False        # reached the cap → possibly more
+    industry_count: int = 0             # lower bound (theme-derived industries[:6])
+    industry_capped: bool = False
+    unthemed: bool = False              # no linked themes → industries are [] by construction
+    unthemed_known: bool = True         # False on an aggregate when some contributor's theme status is unobserved
+
+
 @dataclass(frozen=True)
 class MaterialityAssessment:
     """The deterministic assessment record for a candidate/canonical event. It
@@ -161,6 +227,9 @@ class MaterialityAssessment:
     source_count: int | None = None                 # DIAGNOSTIC: distinct sources of any tier
     companies_count: int = 0                        # DIAGNOSTIC: censored breadth lower bound (weak; not exact)
     industries_count: int = 0                       # DIAGNOSTIC: censored breadth lower bound (weak; not exact)
+    # ── Wave 0.2a typed evidence (higher-fidelity source quality; censored breadth) ──
+    source_evidence: SourceEvidence | None = None   # refines the evidence-quality DECISION INPUT
+    breadth_evidence: BreadthEvidence | None = None  # DIAGNOSTIC only — censored lower bounds
     # ── explainability + rollup ──
     reasons: tuple[ReasonCode, ...] = ()            # decomposable "why" evidence
     materiality_rank: float | None = None           # None in 0.1 — no calibrated ordering value
@@ -234,14 +303,51 @@ def assess(event: object, *, policy_version: str = POLICY_VERSION) -> Materialit
     reasons.append(ReasonCode("mandatory_class", f"mandatory={mandatory}", True))
     present.append("mandatory_class")
 
+    # Source-kind evidence (Wave 0.2a) — deterministic higher-fidelity refinement
+    # of the already-valid evidence-quality input, from EventEvidence.kind/tier.
+    _kc = {k: 0 for k in SOURCE_KINDS}
+    for e in evidence:
+        k = str(getattr(e, "kind", "news") or "news")
+        _kc[k if k in _kc else "news"] += 1
+    has_primary = any(_kc[k] > 0 for k in PRIMARY_SOURCE_KINDS)
+    _has_evidence = bool(evidence)
+    source_evidence = SourceEvidence(
+        sec_filing_count=_kc["sec_filing"], transcript_count=_kc["transcript"],
+        ir_release_count=_kc["ir_release"], news_count=_kc["news"],
+        has_primary_source=has_primary,
+        # single event: we observed its complete recorded evidence set, but the
+        # primary/tier facts are only KNOWN if there was any evidence to judge.
+        has_primary_source_known=_has_evidence,
+        best_tier=best_tier, best_tier_known=_has_evidence,
+        qualified_source_count=corroboration, evidence_count=len(evidence),
+        counts_are_lower_bounds=False,      # exact document counts for one event
+        observation_complete=True,          # complete for the event's recorded evidence set
+    )
+    reasons.append(ReasonCode(
+        "source_kinds",
+        f"sec_filing={_kc['sec_filing']} transcript={_kc['transcript']} "
+        f"ir_release={_kc['ir_release']} news={_kc['news']} primary={has_primary}",
+        bool(evidence),
+    ))
+    if evidence:
+        present.append("source_kinds")     # available evidence-quality refinement
+
     # Breadth — CENSORED presence only. companies (cap 8) / industries (cap 6)
-    # are lower bounds, never exact counts; recorded as weak evidence, not a
-    # precise quantity.
+    # are lower bounds, never exact counts; DIAGNOSTIC / weak, never in
+    # inputs_present.
     n_companies = len(getattr(event, "companies", None) or [])
     n_industries = len(getattr(event, "industries", None) or [])
+    theme_ids = list(getattr(event, "theme_ids", None) or [])
+    breadth_evidence = BreadthEvidence(
+        company_count=n_companies, company_capped=(n_companies >= COMPANIES_CAP),
+        industry_count=n_industries, industry_capped=(n_industries >= INDUSTRIES_CAP),
+        unthemed=(not theme_ids),
+    )
     reasons.append(ReasonCode(
         "breadth_censored",
-        f"companies>={n_companies} industries>={n_industries} (censored lower bound)",
+        f"companies>={n_companies}{'(capped)' if n_companies >= COMPANIES_CAP else ''} "
+        f"industries>={n_industries}{'(capped)' if n_industries >= INDUSTRIES_CAP else ''} "
+        f"unthemed={not theme_ids} (censored lower bound)",
         (n_companies + n_industries) > 0,
     ))
 
@@ -282,6 +388,8 @@ def assess(event: object, *, policy_version: str = POLICY_VERSION) -> Materialit
         source_count=source_count,
         companies_count=n_companies,
         industries_count=n_industries,
+        source_evidence=source_evidence,
+        breadth_evidence=breadth_evidence,
         reasons=tuple(reasons),
         materiality_rank=None,                      # Wave 0.1: no calibrated ordering value
     )
@@ -402,6 +510,65 @@ def aggregate(assessments) -> MaterialityAssessment | None:
     source_counts = [a.source_count for a in items if a.source_count is not None]
     ranks = [a.materiality_rank for a in universal if a.materiality_rank is not None]
 
+    # Wave 0.2a evidence aggregation — deterministic, commutative, and HONEST about
+    # overlap: contributor evidence identities are not available here, so kind
+    # counts and breadth counts are combined by MAX (a lower-bound representative),
+    # NEVER summed; boolean flags by OR; best tier by min; unthemed only when ALL
+    # contributors are unthemed.
+    _n = len(items)
+    ses = [a.source_evidence for a in items if a.source_evidence is not None]
+    if not ses:
+        source_evidence = None
+    else:
+        _sec = max(s.sec_filing_count for s in ses)
+        _tr = max(s.transcript_count for s in ses)
+        _ir = max(s.ir_release_count for s in ses)
+        _nw = max(s.news_count for s in ses)
+        # Kinds are DISJOINT, so the aggregate total is at least the sum of the
+        # per-kind lower bounds (and at least the largest single contributor's
+        # total). Never sum contributor totals (documents may overlap).
+        _ev = max(max(s.evidence_count for s in ses), _sec + _tr + _ir + _nw)
+        _src_present_all = (len(ses) == _n)
+        _src_complete_all = _src_present_all and all(s.observation_complete for s in ses)
+        _any_primary = any(s.has_primary_source for s in ses)
+        # has_primary known iff we found one, or every contributor is completely
+        # observed AND each individually knew its primary-source status.
+        _primary_known = _any_primary or (
+            _src_complete_all and all(s.has_primary_source_known for s in ses))
+        # best tier known only if every contributor observed AND each knew it.
+        _best_tier_known = _src_present_all and all(s.best_tier_known for s in ses)
+        # exact only for exactly one complete, exact contributor.
+        _single_exact = (_n == 1 and len(ses) == 1
+                         and ses[0].observation_complete
+                         and not ses[0].counts_are_lower_bounds)
+        source_evidence = SourceEvidence(
+            sec_filing_count=_sec, transcript_count=_tr, ir_release_count=_ir, news_count=_nw,
+            has_primary_source=_any_primary, has_primary_source_known=_primary_known,
+            best_tier=min(s.best_tier for s in ses), best_tier_known=_best_tier_known,
+            qualified_source_count=max(s.qualified_source_count for s in ses),
+            evidence_count=_ev,
+            counts_are_lower_bounds=(not _single_exact),
+            observation_complete=_src_complete_all,
+        )
+    bes = [a.breadth_evidence for a in items if a.breadth_evidence is not None]
+    if not bes:
+        breadth_evidence = None
+    else:
+        # A contributor is KNOWN-THEMED only when its own status is known AND
+        # themed. Theme status is complete only when every input was observed AND
+        # every input's status is known (an UNKNOWN nested aggregate is NOT
+        # observed-themed just because its `unthemed` is False).
+        _brd_complete = (len(bes) == _n) and all(b.unthemed_known for b in bes)
+        _any_known_themed = any(b.unthemed_known and not b.unthemed for b in bes)
+        breadth_evidence = BreadthEvidence(
+            company_count=max(b.company_count for b in bes),
+            company_capped=any(b.company_capped for b in bes),
+            industry_count=max(b.industry_count for b in bes),
+            industry_capped=any(b.industry_capped for b in bes),
+            unthemed=(_brd_complete and all(b.unthemed for b in bes)),
+            unthemed_known=(_brd_complete or _any_known_themed),
+        )
+
     return MaterialityAssessment(
         state=state,
         policy_version=versions[0],
@@ -421,6 +588,8 @@ def aggregate(assessments) -> MaterialityAssessment | None:
         source_count=(max(source_counts) if source_counts else None),
         companies_count=max(a.companies_count for a in items),
         industries_count=max(a.industries_count for a in items),
+        source_evidence=source_evidence,
+        breadth_evidence=breadth_evidence,
         reasons=reasons,
         materiality_rank=(max(ranks) if ranks else None),
         version_mismatch=mismatch,
@@ -437,8 +606,14 @@ def observe(result: MaterialityShadowResult) -> None:
         return
     n_unresolved = sum(1 for a in adm if a.state is MaterialityState.UNRESOLVED)
     n_mandatory = sum(1 for a in adm if a.mandatory_class)
+    n_primary = sum(1 for a in adm if a.source_evidence and a.source_evidence.has_primary_source)
+    n_comp_capped = sum(1 for a in adm if a.breadth_evidence and a.breadth_evidence.company_capped)
+    n_ind_capped = sum(1 for a in adm if a.breadth_evidence and a.breadth_evidence.industry_capped)
+    n_unthemed = sum(1 for a in adm if a.breadth_evidence and a.breadth_evidence.unthemed)
     log.info(
         "[materiality:shadow NON-AUTHORITATIVE] policy=%s pre_admission_qualified=%d "
-        "admitted=%d admitted_unresolved=%d admitted_mandatory_class=%d",
+        "admitted=%d admitted_unresolved=%d admitted_mandatory_class=%d "
+        "primary_source=%d company_capped=%d industry_capped=%d unthemed=%d",
         result.policy_version, len(pre), len(adm), n_unresolved, n_mandatory,
+        n_primary, n_comp_capped, n_ind_capped, n_unthemed,
     )
