@@ -482,9 +482,18 @@ def last_build_stats() -> dict:
 
 
 def build_market_events(clusters: list, themes: list,
-                        now: datetime | None = None) -> list[MarketEvent]:
+                        now: datetime | None = None,
+                        *, shadow_sink: list | None = None) -> list[MarketEvent]:
     """Elevate story clusters into ranked Market Events (one event per
-    cluster, exactly once). Pure and deterministic for fixed inputs."""
+    cluster, exactly once). Pure and deterministic for fixed inputs.
+
+    `shadow_sink` (Wave 0.1, RD-5): None → no-op (byte-identical legacy behavior
+    — the default). A list → the non-authoritative universal-materiality shadow
+    path is active: each post-fold QUALIFIED candidate (corroboration ≥ 1),
+    including those the admission floor will drop, is assessed and its
+    `MaterialityAssessment` APPENDED to the caller's list, BEFORE `_admit`.
+    Nothing is attached to the events themselves and nothing about `_admit` or
+    the returned admitted set changes — the sink is an isolated side channel."""
     now = now or datetime.now(timezone.utc)
 
     # theme linkage: contributing_cluster_ids are event ids by identity
@@ -641,6 +650,17 @@ def build_market_events(clusters: list, themes: list,
 
     events = _fold_duplicate_earnings(events, now)
     events = _fold_near_duplicates(events, now)
+    # Wave 0.1 (RD-5 lifecycle) — assess the FINAL FOLDED candidates BEFORE
+    # ordinary admission, into an isolated side channel. Qualified candidates
+    # (corroboration ≥ 1) the floor is about to drop are observed here so shadow
+    # mode can see materially-qualified events ordinary admission excludes. The
+    # assessment is a standalone object appended to the sink; nothing is attached
+    # to the event, `_admit` is unchanged, and the returned set is unaffected.
+    if shadow_sink is not None:
+        from app.materiality import assess
+        for _ev in events:
+            if _ev.corroboration_count >= 1:
+                shadow_sink.append(assess(_ev))
     _built = len(events)                      # diagnostics: before the admission floor
     events = _admit(events)
     from app.diagnostics import set_stage_stat   # observability only, context-scoped

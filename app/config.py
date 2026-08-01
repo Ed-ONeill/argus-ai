@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     prediction_ledger_enabled: bool = False
     prediction_types_enabled:  str  = "relationship_persistence"
 
+    # ── Universal-materiality classifier (Wave 0, RD-5) ───────────────────────
+    # "off" | "shadow" | "active". Wave 0.1 operates only off/shadow; "active"
+    # is reserved for Wave 1 enforcement and is downgraded to a non-authoritative
+    # shadow until then (see app.materiality.effective_mode). Invalid values fail
+    # safe to "off". Default "off": the classifier is dark until explicitly
+    # enabled for shadow calibration.
+    materiality_mode: str = "off"
+
     @field_validator("documents_dir", "embeddings_dir", "models_dir",
                      "chroma_dir", "conversations_dir", "log_file", mode="after")
     @classmethod

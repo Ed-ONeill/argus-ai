@@ -505,9 +505,17 @@ def run_pipeline(
     # unit; articles become evidence. Event.id == cluster.id, so theme
     # contributing_cluster_ids and the M3 archive's evidence refs already point
     # at these events. Wrapped so an event-build failure never breaks the feed.
+    # Wave 0.1 — resolve the (fail-safe) universal-materiality mode once; OFF by
+    # default. `_mat_shadow_pre` is the isolated, transient side channel that
+    # collects pre-admission candidate assessments (below-floor qualified ones
+    # included). It never touches the events, ProcessedFeed, or any consumer.
+    from app.materiality import MaterialityMode, effective_mode
+    _mat_mode = effective_mode(settings.materiality_mode)
+    _mat_shadow_pre: list | None = [] if _mat_mode is not MaterialityMode.OFF else None
     try:
         from app.events import build_market_events
-        events = build_market_events(clusters, theme_intelligence)
+        events = build_market_events(
+            clusters, theme_intelligence, shadow_sink=_mat_shadow_pre)
         # OP1.5 — corroboration histogram of admitted events, one line per
         # cycle. The audit's OP1 success metrics are computed from this.
         _hist: dict[str, int] = {"1": 0, "2": 0, "3+": 0}
@@ -541,6 +549,21 @@ def run_pipeline(
             events = resolve_and_fold(events, now=_cycle_now, cycle_id=_cycle_id)
         except Exception:
             log.exception("[bg] identity continuity FAILED — continuing (feed unaffected)")
+
+    # Wave 0.1 — now that identity resolution/folding has run, FRESHLY assess
+    # each final canonical admitted event (never a mutation of the pre-admission
+    # assessment) into the transient shadow result, emit the isolated
+    # observation, and DISCARD it. `_shadow` is local and referenced by nothing
+    # that follows — no feed / ProcessedFeed / identity / memory / API / cache
+    # consumer. Best-effort; never breaks the pipeline. No-op when OFF.
+    if _mat_mode is not MaterialityMode.OFF:
+        try:
+            from app.materiality import build_shadow_result, observe
+            _shadow = build_shadow_result(_mat_shadow_pre or [], events)
+            observe(_shadow)
+            del _shadow                       # explicit: never enters the object graph
+        except Exception:
+            log.exception("[bg] materiality shadow assess/observe FAILED — continuing (feed unaffected)")
 
     feed = ProcessedFeed(
         items=items,
