@@ -38,7 +38,10 @@ isolated, explicitly NON-AUTHORITATIVE shadow log.
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 
 log = logging.getLogger(__name__)
@@ -616,4 +619,490 @@ def observe(result: MaterialityShadowResult) -> None:
         "primary_source=%d company_capped=%d industry_capped=%d unthemed=%d",
         result.policy_version, len(pre), len(adm), n_unresolved, n_mandatory,
         n_primary, n_comp_capped, n_ind_capped, n_unthemed,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1): deterministic typed-figure extraction — PARSER ONLY.
+#
+# This block is fully SELF-CONTAINED and NOT WIRED into anything: it is not
+# referenced by assess(), aggregate(), observe(), MaterialityAssessment, or the
+# background pipeline. It exists so N1 can be reviewed and tested in isolation
+# before N2 wires it into a fresh assessment (capture-only, diagnostic).
+#
+# Contract (from the approved Wave 0.2b plan):
+#   • Parses ONLY deterministic-recorded headline text (MarketEvent.title /
+#     EventEvidence.title). It NEVER parses LLM-authored or built-later fields.
+#   • Integer-exact normalization to a canonical minor unit; NO floats anywhere
+#     (Decimal in, int out). A value that cannot be represented EXACTLY in the
+#     minor unit is EXCLUDED (never rounded) and flags `truncated`.
+#   • Exclusion-on-ambiguity: unit-anchored matching ($, %, bps, per-share) plus
+#     explicit guards, so tickers / years / quarter+FY labels / filing codes /
+#     index labels / tenors / FX-slash forms / retirement-plan codes / bare
+#     unit-less numbers never become figures.
+#   • Occurrence counts are HONEST: `max_occurrences_per_title` records only
+#     provable textual repetition within one title; it does NOT claim distinct
+#     semantic facts. Distinct-normalized-value counts are exact; occurrence
+#     totals are lower bounds; the raw mention tally is diagnostic and may be
+#     duplicate-inflated across overlapping titles.
+#   • CAPTURE-ONLY: nothing here participates in any decision, threshold,
+#     membership, admission, ranking, serialization, or persistence.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Deterministic caps (fail-closed: excluded/flagged, never rounded, never raised).
+MAX_TITLE_SCAN_CHARS = 512            # per-title scan ceiling (headlines are short)
+MAX_FIGURE_KEYS = 16                  # cap on distinct normalized figure keys
+MAX_SIGNIFICANT_DIGITS = 15           # a numeric token with more digits is excluded
+MAX_MONEY_MINOR = 10_000_000_000_000_000   # $100 trillion in integer cents (inclusive)
+MAX_PERCENTAGE_BPS = 1_000_000        # 10,000% in integer basis points (inclusive)
+
+FIGURE_KINDS = ("money", "percentage", "basis_points", "per_share")
+
+# A candidate's numeric core is detected PERMISSIVELY (a maximal `[\d.,]` run)
+# so a malformed token like "5.00.1" or "12,34" is captured WHOLE and then
+# rejected — never silently shrunk to a valid-looking prefix. Matching never uses
+# a permissive subpattern that can backtrack to a shorter match.
+_NUM_RUN = r"[\d.,]+"
+# A well-formed number: grouped (1,200,000) OR plain (500000), optional decimal.
+# NO leading/trailing separators — trailing sentence punctuation is handled by
+# the money path explicitly, never absorbed here.
+_NUM_STRICT = re.compile(r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+_ALPHA_RUN = re.compile(r"[A-Za-z]+")
+
+# Scale words GLUED to the digits (no space). A glued alpha run MUST be a
+# supported abbreviation, else the whole candidate is rejected (so "$5k",
+# "$5x", "$5quadrillion" never fall back to a bare "$5").
+_GLUED_SCALE: dict[str, int] = {
+    "b": 10**9, "bn": 10**9, "billion": 10**9,
+    "m": 10**6, "mn": 10**6, "million": 10**6,
+    "t": 10**12, "tn": 10**12, "trillion": 10**12,
+}
+# Scale words SEPARATED from the digits by whitespace. Only these are honoured;
+# a following prose word (e.g. "$5 deal") is not a scale and yields plain $5.
+_SPACED_SCALE: dict[str, int] = {
+    "billion": 10**9, "bn": 10**9,
+    "million": 10**6, "mn": 10**6,
+    "trillion": 10**12, "tn": 10**12,
+}
+# Explicitly UNSUPPORTED magnitude words — a following one of these REJECTS the
+# whole candidate (never a silent fall-back to a bare dollar amount).
+_UNSUPPORTED_SCALE = frozenset({
+    "thousand", "thousands", "hundred", "hundreds", "k", "grand",
+    "quadrillion", "quintillion", "sextillion", "septillion", "zillion",
+    "gazillion", "bajillion",
+})
+
+# Unit anchors. Each detector grabs the PERMISSIVE numeric run bounded by its
+# unit; the run is then strictly validated. `%`/bps bound the run on the right,
+# so a trailing malformed continuation is caught by strict validation.
+_PER_SHARE_RE = re.compile(
+    rf"\$\s?({_NUM_RUN})\s*(?:per[\s-]+share|a\s+share|/\s*share)",
+    re.IGNORECASE,
+)
+_MONEY_RE = re.compile(r"\$\s?(\d[\d.,]*)")   # must start with a digit ($AAPL, "$." never match)
+_PCT_RE = re.compile(rf"({_NUM_RUN})\s?%")
+_BPS_RE = re.compile(rf"({_NUM_RUN})\s?(?:basis\s+points?|bps|bp)\b", re.IGNORECASE)
+
+# Words that, appearing as the FIRST DISCARDED token at the scan boundary, could
+# grammatically complete an otherwise-incomplete multi-token figure head left in
+# the retained prefix — a bare/`$` amount + a spaced scale ("$5" + "billion"), a
+# number + basis-point unit ("50" + "basis points"), or a `$` amount + per-share
+# unit ("$1.25" + "per share"). Only then is the retained numeric head dropped; a
+# self-contained figure ("$5B", "8%", "25bps") is NEVER removed.
+_BOUNDARY_CONTINUATIONS = frozenset({
+    # spaced scale words
+    "billion", "bn", "million", "mn", "trillion", "tn", "b", "m", "t",
+    "thousand", "thousands", "hundred", "hundreds", "k", "grand",
+    "quadrillion", "quintillion", "sextillion", "septillion",
+    "zillion", "gazillion", "bajillion",
+    # basis-point words
+    "basis", "point", "points", "bps", "bp",
+    # per-share words
+    "per", "a", "share", "shares",
+})
+
+
+@dataclass(frozen=True)
+class FigureFact:
+    """One distinct normalized figure key parsed from recorded headline text.
+
+    `value_minor` is an integer canonical minor unit: USD cents for
+    money / per_share, integer basis points for percentage / basis_points.
+
+    `max_occurrences_per_title` is the maximum number of times this exact
+    (kind, value_minor, currency) key was parsed in ANY ONE scanned title. It
+    records provable textual repetition / co-occurrence ONLY. It does NOT claim
+    that those occurrences are distinct semantic facts — headline syntax alone
+    cannot establish that (e.g. "worth $5B, nearly $5B" is one fact stated
+    twice). Aggregated by max, so cross-title re-reports never inflate it."""
+    kind: str                        # one of FIGURE_KINDS
+    value_minor: int                 # USD cents (money/per_share) or basis points (percentage/bps)
+    currency: str | None             # "USD" for money/per_share; None otherwise
+    max_occurrences_per_title: int = 1
+
+
+@dataclass(frozen=True)
+class FigureEvidence:
+    """Deterministic typed-figure evidence for a set of recorded headline titles.
+
+    CAPTURE-ONLY / DIAGNOSTIC: never a decision input, never thresholded, never
+    a membership signal. Names are chosen so no quantity is mistaken for a
+    distinct-semantic-fact count:
+
+      • distinct_<kind>_values      — EXACT count of unique normalized values.
+      • <kind>_occurrence_lower_bound — sum of per-key max_occurrences_per_title;
+                                        a LOWER BOUND on textual occurrences.
+      • mention_count               — raw parsed-occurrence tally across titles;
+                                        DIAGNOSTIC, may be duplicate-inflated
+                                        across overlapping titles; never exact.
+      • max_<kind>_minor            — largest magnitude of a kind; DIAGNOSTIC only.
+    """
+    distinct_figures: tuple[FigureFact, ...] = ()
+
+    distinct_money_values: int = 0
+    money_occurrence_lower_bound: int = 0
+    distinct_percentage_values: int = 0
+    percentage_occurrence_lower_bound: int = 0
+    distinct_basis_points_values: int = 0
+    basis_points_occurrence_lower_bound: int = 0
+    distinct_per_share_values: int = 0
+    per_share_occurrence_lower_bound: int = 0
+
+    has_money: bool = False
+    has_percentage: bool = False
+    has_basis_points: bool = False
+    has_per_share: bool = False
+
+    max_money_minor: int | None = None       # DIAGNOSTIC only — largest money magnitude (cents)
+    max_percentage_bps: int | None = None    # DIAGNOSTIC only — largest percentage (bps)
+
+    mention_count: int = 0                    # raw diagnostic tally (lower bound; may double-count)
+    truncated: bool = False                   # information was dropped (key/scan cap, precision, bound)
+    # figures_complete is the honest completeness contract: the returned figure
+    # set losslessly represents every figure in the source. In N1 it is exactly
+    # `not truncated` (any dropped candidate ⇒ incomplete). When N3 folds several
+    # sources it additionally requires every contributor's figure evidence to be
+    # present — so `truncated` and `figures_complete` are never both "clean" over
+    # a parse that discarded information.
+    figures_complete: bool = True
+
+
+def _to_minor(num_str: str, kind: str, multiplier: int) -> int | None:
+    """Convert a STRICT-VALIDATED numeric string (already `_NUM_STRICT`) plus a
+    scale multiplier to an EXACT integer minor unit, or None if it is imprecise,
+    over-digit, or out of bounds. No floats (Decimal in, int out)."""
+    core = num_str.replace(",", "")
+    bare = core.replace(".", "")
+    if not bare.isdigit() or len(bare) > MAX_SIGNIFICANT_DIGITS:
+        return None
+    try:
+        dec = Decimal(core)
+    except InvalidOperation:
+        return None
+
+    if kind in ("money", "per_share"):
+        minor = dec * multiplier * 100                           # → cents
+    elif kind == "percentage":
+        minor = dec * 100                                        # 1% = 100 bps
+    else:  # basis_points already in bps
+        minor = dec
+
+    if minor != minor.to_integral_value():
+        return None                          # not exactly representable → exclude
+    minor_int = int(minor)
+    if minor_int < 0:
+        return None
+    if kind in ("money", "per_share"):
+        if minor_int > MAX_MONEY_MINOR:
+            return None
+    elif minor_int > MAX_PERCENTAGE_BPS:
+        return None
+    return minor_int
+
+
+def _overlaps(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start < e and s < end for (s, e) in spans)
+
+
+def _signed_before(text: str, start: int) -> bool:
+    """True if the character immediately before `start` is a +/- sign (Wave 0.2b
+    rejects signed candidates rather than converting them to unsigned)."""
+    return start > 0 and text[start - 1] in "+-"
+
+
+def _left_boundary_ok(text: str, start: int) -> bool:
+    """True if a bare number begins at a clean left boundary. A preceding
+    alphanumeric / `$` / `.` / `,` means we are inside or glued to a larger
+    token (ambiguous) → the caller rejects it. A `+`/`-` is handled separately as
+    a signed rejection."""
+    if start == 0:
+        return True
+    p = text[start - 1]
+    if p in "+-":
+        return True                          # sign handled by _signed_before
+    return not (p.isalnum() or p in "$.,")
+
+
+def _scan_prefix(text: str) -> tuple[str, bool]:
+    """Return (scannable_text, over_cap). If the title exceeds the scan cap, cut
+    at the last whitespace within the cap so every RETAINED token is whole (a
+    token straddling the boundary is never parsed). A retained figure is dropped
+    ONLY when the discarded text could grammatically complete it — i.e. the last
+    retained token is a numeric head and the first discarded token is a boundary
+    continuation ("$5"+"billion", "50"+"basis points", "$1.25"+"per share"). A
+    self-contained figure that ends safely before the boundary ("$5B", "8%",
+    "25bps") is preserved. over_cap is True whenever the original exceeded the cap
+    — the parse is then always incomplete, even if the retained prefix is
+    figure-free."""
+    if len(text) <= MAX_TITLE_SCAN_CHARS:
+        return text, False
+    prefix = text[:MAX_TITLE_SCAN_CHARS]
+    cut = prefix.rfind(" ")
+    if cut == -1:
+        return "", True                      # no safe delimiter in the prefix
+    tokens = prefix[:cut].split()
+    # First discarded token, read from the FULL text so a token straddling the
+    # boundary is seen whole (not as a truncated fragment).
+    rest = text[cut:].lstrip()
+    first_discarded = rest.split(None, 1)[0] if rest else ""
+    # Classify by the token's LEADING ALPHABETIC COMPONENT, so a compound
+    # continuation still counts: "per-share"→per, "billion-dollar"/"billion2"→
+    # billion, "basis-point"→basis. Unrelated words stay unrelated.
+    lead = _ALPHA_RUN.search(first_discarded)
+    disc_word = lead.group(0).lower() if lead else ""
+    # Deterministic boundary-continuation check: only remove the retained tail
+    # when discarded text can complete an incomplete multi-token figure head.
+    if (tokens
+            and disc_word in _BOUNDARY_CONTINUATIONS
+            and any(ch.isdigit() for ch in tokens[-1])):
+        tokens.pop()
+    return " ".join(tokens), True
+
+
+def _scan_title(text: str) -> tuple[dict[tuple[str, int, str | None], int], bool]:
+    """Parse one title into {(kind, value_minor, currency): occurrences_in_title}
+    plus a `truncated` flag. truncated is True whenever information was lost or a
+    candidate was rejected: scan-cap overflow, a boundary-discarded token, a
+    signed candidate, a malformed numeric token, an unsupported scale/unit
+    continuation, or a precision/bounds/digit exclusion. Deterministic, pure,
+    title-only. Uses permissive candidate detection + strict validation so a
+    malformed token is rejected WHOLE, never shrunk to a valid-looking prefix."""
+    text, truncated = _scan_prefix(str(text))
+    counts: dict[tuple[str, int, str | None], int] = {}
+    claimed: list[tuple[int, int]] = []      # per-share/money spans, to avoid double counting
+
+    def _add(kind: str, minor: int | None, currency: str | None) -> bool:
+        nonlocal truncated
+        if minor is None:
+            truncated = True
+            return False
+        key = (kind, minor, currency)
+        counts[key] = counts.get(key, 0) + 1
+        return True
+
+    # 1. per-share (highest priority; masks the underlying `$` from money).
+    for m in _PER_SHARE_RE.finditer(text):
+        claimed.append((m.start(), m.end()))
+        if _signed_before(text, m.start()):
+            truncated = True
+            continue
+        raw = m.group(1)
+        if not _NUM_STRICT.fullmatch(raw):
+            truncated = True
+            continue
+        _add("per_share", _to_minor(raw, "per_share", 1), "USD")
+
+    # 2. money — permissive `$`+run, then trailing-punctuation / scale analysis.
+    for m in _MONEY_RE.finditer(text):
+        if _overlaps(m.start(), m.end(), claimed):
+            continue
+        if _signed_before(text, m.start()):
+            truncated = True
+            continue
+        minor = _money_minor(text, m)
+        _add("money", minor, "USD")
+
+    # 3. percentage — `%` bounds the run on the right; strict-validate the run.
+    for m in _PCT_RE.finditer(text):
+        if _signed_before(text, m.start(1)) or not _left_boundary_ok(text, m.start(1)):
+            truncated = True
+            continue
+        raw = m.group(1)
+        if not _NUM_STRICT.fullmatch(raw):
+            truncated = True
+            continue
+        _add("percentage", _to_minor(raw, "percentage", 1), None)
+
+    # 4. basis points — unit bounds the run on the right.
+    for m in _BPS_RE.finditer(text):
+        if _signed_before(text, m.start(1)) or not _left_boundary_ok(text, m.start(1)):
+            truncated = True
+            continue
+        raw = m.group(1)
+        if not _NUM_STRICT.fullmatch(raw):
+            truncated = True
+            continue
+        _add("basis_points", _to_minor(raw, "basis_points", 1), None)
+
+    return counts, truncated
+
+
+# Characters that close a token/phrase without continuing a number, identifier,
+# or unit. A recognized amount (bare or scaled) may be followed by a run of these
+# and still be validly terminated.
+_CLOSING_PUNCT = frozenset("\"')]}")
+# Ordinary sentence/terminal punctuation. Like '.'/',' it terminates a token ONLY
+# when what immediately follows is not an alphanumeric/underscore continuation.
+_TERMINAL_PUNCT = frozenset(".,;:!?")
+
+
+def _terminated(text: str, p: int) -> bool:
+    """The SINGLE terminator contract, shared by bare amounts and recognized scale
+    tokens (money). A token ending at index `p` is validly terminated iff —
+    skipping a run of genuine closing punctuation (" ' ) ] }) and ordinary
+    terminal punctuation (. , ; : ! ?) — we reach whitespace or end of text.
+
+    Terminal/closing punctuation is a valid terminator ONLY when it actually ends
+    the token: a '.'/','/';'/':'/'!'/'?' immediately followed by an alphanumeric
+    or underscore is a numeric/identifier continuation and does NOT terminate
+    ("$5B.5", "$5,2", "$5;foo", "$5!2"). A letter, digit, or underscore never
+    terminates ("$5B2", "$5B_foo"). Closing punctuation must itself resolve to
+    whitespace/end ("$5.)" ok, but "$5.)2" rejected because a digit follows ')')."""
+    while p < len(text):
+        c = text[p]
+        if c.isspace():
+            return True
+        if c in _CLOSING_PUNCT:
+            p += 1
+            continue
+        if c in _TERMINAL_PUNCT:
+            nxt = text[p + 1] if p + 1 < len(text) else ""
+            if nxt.isalnum() or nxt == "_":
+                return False
+            p += 1
+            continue
+        return False                         # letter / digit / underscore / other
+    return True
+
+
+def _money_minor(text: str, m: re.Match) -> int | None:
+    """Resolve a `$`+run money candidate to an exact cents value, or None if the
+    token is malformed, has a malformed numeric/identifier continuation, or
+    carries an unsupported scale/unit. Returning None makes the caller flag
+    truncation. All boundary decisions go through the shared `_terminated` rule."""
+    raw = m.group(1)
+    end = m.end(1)
+
+    # Split at most ONE trailing '.'/',' off the permissive run: it is sentence
+    # punctuation re-examined by the shared terminator (so "$5," / "$5." / "$5.)"
+    # parse, while "$5,," / "$5." → core "5." fail as malformed). A second trailing
+    # separator survives in the core and fails strict validation below.
+    if raw and raw[-1] in ".,":
+        core = raw[:-1]
+        term_start = end - 1                 # re-examine the split punctuation
+        has_trailing_punct = True
+    else:
+        core = raw
+        term_start = end
+        has_trailing_punct = False
+    if not _NUM_STRICT.fullmatch(core):
+        return None                          # "12,34", "5.00.1", "5,,", "5."
+
+    multiplier = 1
+    p = term_start
+    if not has_trailing_punct:
+        after = text[end] if end < len(text) else ""
+        if after.isalpha():                  # GLUED scale — must be supported
+            alpha = _ALPHA_RUN.match(text, end).group(0)
+            factor = _GLUED_SCALE.get(alpha.lower())
+            if factor is None:
+                return None                  # "$5k", "$5x", "$5quadrillion"
+            multiplier = factor
+            p = end + len(alpha)
+        elif after.isspace():                # SPACED word — scale, or prose, or unsupported
+            j = end
+            while j < len(text) and text[j].isspace():
+                j += 1
+            wm = _ALPHA_RUN.match(text, j)
+            if wm:
+                word = wm.group(0).lower()
+                if word in _SPACED_SCALE:
+                    multiplier = _SPACED_SCALE[word]
+                    p = j + len(wm.group(0))
+                elif word in _UNSUPPORTED_SCALE:
+                    return None              # "$5 thousand", "$5 quadrillion"
+                # else: prose word ("$5 deal") → plain dollars; p stays at the space
+
+    if not _terminated(text, p):             # "$5B2", "$5 million2", "$5,B", "$5.)2"
+        return None
+    return _to_minor(core, "money", multiplier)
+
+
+def build_figure_evidence(titles: Iterable[str]) -> FigureEvidence:
+    """Build FigureEvidence from an ordered iterable of recorded headline titles.
+
+    Pure and deterministic. Per normalized key, `max_occurrences_per_title` is
+    the MAX occurrences seen in any single title (cross-title re-reports never
+    inflate it). Distinct-value counts are exact; occurrence totals are lower
+    bounds; `mention_count` is the raw duplicate-prone tally. This helper is for
+    isolated N1 testing; it is NOT called by assess() in N1."""
+    per_key_max: dict[tuple[str, int, str | None], int] = {}
+    mention_count = 0
+    truncated = False
+
+    for title in titles:
+        if not title:
+            continue
+        counts, trunc = _scan_title(str(title))
+        truncated = truncated or trunc
+        for key, c in counts.items():
+            mention_count += c
+            if c > per_key_max.get(key, 0):
+                per_key_max[key] = c
+
+    # Deterministic LEXICOGRAPHIC ordering by the normalized key
+    # (kind, value_minor, currency) — NOT largest-magnitude and NOT
+    # first-encountered. When the distinct-key cap trips, the lexicographically
+    # smallest MAX_FIGURE_KEYS keys are retained; this ordering is the stable
+    # reproducibility contract and must not change silently.
+    keys_sorted = sorted(per_key_max, key=lambda k: (k[0], k[1], k[2] or ""))
+    if len(keys_sorted) > MAX_FIGURE_KEYS:
+        keys_sorted = keys_sorted[:MAX_FIGURE_KEYS]
+        truncated = True
+
+    distinct_figures = tuple(
+        FigureFact(kind=k[0], value_minor=k[1], currency=k[2],
+                   max_occurrences_per_title=per_key_max[k])
+        for k in keys_sorted
+    )
+
+    def _distinct(kind: str) -> int:
+        return sum(1 for f in distinct_figures if f.kind == kind)
+
+    def _occ(kind: str) -> int:
+        return sum(f.max_occurrences_per_title for f in distinct_figures if f.kind == kind)
+
+    def _max_minor(kind: str) -> int | None:
+        vals = [f.value_minor for f in distinct_figures if f.kind == kind]
+        return max(vals) if vals else None
+
+    return FigureEvidence(
+        distinct_figures=distinct_figures,
+        distinct_money_values=_distinct("money"),
+        money_occurrence_lower_bound=_occ("money"),
+        distinct_percentage_values=_distinct("percentage"),
+        percentage_occurrence_lower_bound=_occ("percentage"),
+        distinct_basis_points_values=_distinct("basis_points"),
+        basis_points_occurrence_lower_bound=_occ("basis_points"),
+        distinct_per_share_values=_distinct("per_share"),
+        per_share_occurrence_lower_bound=_occ("per_share"),
+        has_money=any(f.kind == "money" for f in distinct_figures),
+        has_percentage=any(f.kind == "percentage" for f in distinct_figures),
+        has_basis_points=any(f.kind == "basis_points" for f in distinct_figures),
+        has_per_share=any(f.kind == "per_share" for f in distinct_figures),
+        max_money_minor=_max_minor("money"),
+        max_percentage_bps=_max_minor("percentage"),
+        mention_count=mention_count,
+        truncated=truncated,
+        figures_complete=not truncated,      # honest: any dropped candidate ⇒ incomplete
     )

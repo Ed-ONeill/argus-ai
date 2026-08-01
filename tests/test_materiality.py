@@ -25,7 +25,13 @@ from app.event_identity import IdentityAuthority, resolve_and_fold
 from app.events import EventEvidence, MarketEvent, build_market_events
 from app.feeds import FeedItem
 from app.materiality import (
+    MAX_FIGURE_KEYS,
+    MAX_MONEY_MINOR,
+    MAX_PERCENTAGE_BPS,
+    MAX_TITLE_SCAN_CHARS,
     POLICY_VERSION,
+    FigureEvidence,
+    FigureFact,
     MaterialityAssessment,
     MaterialityMode,
     MaterialityShadowResult,
@@ -33,6 +39,7 @@ from app.materiality import (
     ReasonCode,
     aggregate,
     assess,
+    build_figure_evidence,
     build_shadow_result,
     effective_mode,
     observe,
@@ -1113,3 +1120,707 @@ def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
                           b"SourceEvidence", b"BreadthEvidence",
                           b"shadow_sink", b"app.materiality"):
             assert forbidden not in data
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1): isolated typed-figure parser / dataclass tests.
+#
+# These exercise build_figure_evidence() and the FigureFact / FigureEvidence
+# dataclasses ONLY. N1 wires nothing into assess()/aggregate()/observe()/the
+# pipeline, so there are deliberately NO integration tests here (those belong to
+# N2/N4). Every assertion is about what headline syntax alone proves: exact
+# distinct-normalized-value counts and occurrence LOWER BOUNDS — never a
+# distinct-semantic-fact claim.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _only(ev, kind):
+    return [f for f in ev.distinct_figures if f.kind == kind]
+
+
+# ── Supported forms + equivalent normalization ────────────────────────────────
+
+@pytest.mark.parametrize("text,cents", [
+    ("Acme agrees $5 billion deal", 5 * 10**9 * 100),
+    ("Acme agrees $5B deal", 5 * 10**9 * 100),
+    ("Acme agrees $3.5bn deal", 3_500_000_000 * 100),
+    ("Acme agrees $500 million deal", 500 * 10**6 * 100),
+    ("Acme agrees $500M deal", 500 * 10**6 * 100),
+    ("Buyback of $1,200,000 announced", 1_200_000 * 100),
+])
+def test_money_forms_normalize_to_cents(text, cents):
+    ev = build_figure_evidence([text])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].value_minor == cents
+    assert money[0].currency == "USD"
+    assert ev.has_money and ev.distinct_money_values == 1
+
+
+def test_money_scale_word_equivalence():
+    # "$5 billion" and "$5B" are the SAME normalized value -> one distinct key.
+    ev = build_figure_evidence(["$5 billion buyout", "$5B buyout"])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].value_minor == 5 * 10**9 * 100
+    assert money[0].max_occurrences_per_title == 1     # one per title, not inflated
+    assert ev.mention_count == 2
+
+
+@pytest.mark.parametrize("text,bps", [
+    ("Shares rose 8%", 800),
+    ("Margin up 12.5%", 1250),
+    ("Rate cut of 0.25%", 25),
+])
+def test_percentage_forms_normalize_to_bps(text, bps):
+    ev = build_figure_evidence([text])
+    pct = _only(ev, "percentage")
+    assert len(pct) == 1
+    assert pct[0].value_minor == bps
+    assert pct[0].currency is None
+    assert ev.has_percentage and ev.distinct_percentage_values == 1
+
+
+@pytest.mark.parametrize("text,bps", [
+    ("Fed hikes 50 basis points", 50),
+    ("Fed hikes 25bps", 25),
+    ("Fed hikes 75 bp", 75),
+])
+def test_basis_points_forms_normalize_to_bps(text, bps):
+    ev = build_figure_evidence([text])
+    b = _only(ev, "basis_points")
+    assert len(b) == 1
+    assert b[0].value_minor == bps
+    assert b[0].currency is None
+    assert ev.has_basis_points and ev.distinct_basis_points_values == 1
+
+
+@pytest.mark.parametrize("text,cents", [
+    ("Dividend of $1.25 per share", 125),
+    ("Dividend of $2.10 a share", 210),
+    ("Dividend of $1.25/share", 125),
+])
+def test_per_share_forms_normalize_and_not_double_counted_as_money(text, cents):
+    ev = build_figure_evidence([text])
+    ps = _only(ev, "per_share")
+    assert len(ps) == 1
+    assert ps[0].value_minor == cents
+    assert ps[0].currency == "USD"
+    # the underlying `$` amount must NOT also register as a bare money figure
+    assert _only(ev, "money") == []
+    assert ev.distinct_per_share_values == 1
+
+
+# ── Exclusion-on-ambiguity (each hazard from the plan's §D) ───────────────────
+
+@pytest.mark.parametrize("text", [
+    "$AAPL upgraded to buy",          # ticker: $ + letters
+    "$NVDA hits record",
+    "Q4 2025 results due",            # quarter + year
+    "FY2025 guidance raised",         # fiscal-year label
+    "Outlook for 2026 improves",      # bare year
+    "Files 10-K with the SEC",        # filing codes
+    "Files 8-K and 20-F",
+    "S-1 registration filed",
+    "Reports under Item 5.02",        # SEC item code
+    "S&P 500 closes higher",          # index labels
+    "Russell 2000 rebounds",
+    "10-year yield steady",           # tenor label (no % here)
+    "10Y note in focus",
+    "eur/usd drifts lower",           # FX pair
+    "Open 24/7 this quarter",         # slash form
+    "Rollover your 401(k) now",       # retirement-plan code
+    "About 500 workers affected",     # bare unit-less number
+])
+def test_excluded_forms_produce_no_figures(text):
+    ev = build_figure_evidence([text])
+    assert ev.distinct_figures == ()
+    assert ev.mention_count == 0
+    assert not (ev.has_money or ev.has_percentage
+                or ev.has_basis_points or ev.has_per_share)
+
+
+def test_tenor_label_excluded_but_adjacent_percentage_kept():
+    # "10-year" is a tenor label (excluded); the 4.5% beside it is a real figure.
+    ev = build_figure_evidence(["Treasury 10-year yield rose to 4.5%"])
+    assert _only(ev, "money") == []
+    pct = _only(ev, "percentage")
+    assert len(pct) == 1 and pct[0].value_minor == 450
+
+
+# ── Repetition semantics (max_occurrences_per_title; NO semantic-fact claim) ──
+
+def test_repeated_same_key_in_one_title_counts_occurrences_not_distinct_facts():
+    # Two $5B occurrences in ONE headline: one distinct normalized value, an
+    # occurrence lower bound of 2 — NOT a claim of two distinct semantic facts.
+    ev = build_figure_evidence(["Acme reports $5B revenue and $5B buyback"])
+    money = _only(ev, "money")
+    assert len(money) == 1                                  # one distinct normalized VALUE
+    assert money[0].max_occurrences_per_title == 2          # provable textual repetition only
+    assert ev.distinct_money_values == 1                    # exact distinct-value count
+    assert ev.money_occurrence_lower_bound == 2             # occurrence LOWER BOUND
+    assert ev.mention_count == 2
+
+
+def test_repeated_percentage_in_one_title_same_fact_restated():
+    # "Shares fell 8%, an 8% decline" is ONE fact restated: the contract must
+    # NOT overclaim two facts — only repeated occurrence.
+    ev = build_figure_evidence(["Shares fell 8%, an 8% decline"])
+    pct = _only(ev, "percentage")
+    assert len(pct) == 1
+    assert pct[0].max_occurrences_per_title == 2
+    assert ev.distinct_percentage_values == 1
+    assert ev.percentage_occurrence_lower_bound == 2
+
+
+def test_repeated_same_key_across_titles_does_not_inflate():
+    # Cross-title re-reports of the SAME figure: occurrence lower bound stays 1
+    # (max, not sum); mention_count is the raw duplicate-prone tally.
+    ev = build_figure_evidence([
+        "Acme to buy Beta for $500M",
+        "Acme $500M acquisition of Beta",
+        "$500M deal: Acme buys Beta",
+    ])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].max_occurrences_per_title == 1
+    assert ev.distinct_money_values == 1
+    assert ev.money_occurrence_lower_bound == 1
+    assert ev.mention_count == 3                            # raw diagnostic tally
+
+
+def test_cross_title_max_takes_larger_repetition():
+    ev = build_figure_evidence([
+        "$5B buyback",                         # 1 occurrence
+        "$5B revenue and $5B buyback",         # 2 occurrences in one title
+    ])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].max_occurrences_per_title == 2          # max across titles
+    assert ev.money_occurrence_lower_bound == 2
+    assert ev.mention_count == 3
+
+
+# ── Deterministic ordering & multi-kind mix ───────────────────────────────────
+
+def test_distinct_figures_deterministic_sorted_order():
+    text = "Acme: $5B revenue, up 8%, dividend $1.25 per share, hike 50 bps"
+    ev1 = build_figure_evidence([text])
+    ev2 = build_figure_evidence([text])
+    assert ev1.distinct_figures == ev2.distinct_figures     # determinism
+    kinds = [f.kind for f in ev1.distinct_figures]
+    # sorted by (kind, value_minor, currency): alphabetical kind order
+    assert kinds == ["basis_points", "money", "per_share", "percentage"]
+    assert ev1.distinct_money_values == 1
+    assert ev1.distinct_percentage_values == 1
+    assert ev1.distinct_basis_points_values == 1
+    assert ev1.distinct_per_share_values == 1
+
+
+def test_max_magnitude_diagnostics():
+    ev = build_figure_evidence(["$1B here, $5B there, up 3% and 8%"])
+    assert ev.max_money_minor == 5 * 10**9 * 100
+    assert ev.max_percentage_bps == 800
+    assert ev.distinct_money_values == 2
+    assert ev.distinct_percentage_values == 2
+
+
+# ── Integer-exactness boundary acceptance / just-beyond rejection ─────────────
+
+def test_money_boundary_accepted_exactly_at_ceiling():
+    ev = build_figure_evidence(["A $100 trillion notional"])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].value_minor == MAX_MONEY_MINOR          # $100T cents == ceiling
+    assert not ev.truncated
+
+
+def test_money_just_beyond_ceiling_excluded_and_flagged():
+    ev = build_figure_evidence(["A $101 trillion notional"])
+    assert _only(ev, "money") == []
+    assert ev.truncated                                     # excluded, not rounded
+
+
+def test_percentage_boundary_accepted_exactly_at_ceiling():
+    ev = build_figure_evidence(["An extreme 10000% move"])
+    pct = _only(ev, "percentage")
+    assert len(pct) == 1
+    assert pct[0].value_minor == MAX_PERCENTAGE_BPS
+    assert not ev.truncated
+
+
+def test_percentage_just_beyond_ceiling_excluded_and_flagged():
+    ev = build_figure_evidence(["An impossible 10001% move"])
+    assert _only(ev, "percentage") == []
+    assert ev.truncated
+
+
+@pytest.mark.parametrize("text", [
+    "Rate moved 0.005%",      # half a basis point — not exactly representable
+    "Margin of 4.567%",       # finer than 1 bp
+])
+def test_inexact_precision_excluded_and_flagged(text):
+    ev = build_figure_evidence([text])
+    assert _only(ev, "percentage") == []
+    assert ev.truncated
+
+
+def test_percentage_one_bp_precision_accepted():
+    ev = build_figure_evidence(["A 0.01% tweak"])
+    pct = _only(ev, "percentage")
+    assert len(pct) == 1 and pct[0].value_minor == 1       # exactly 1 bp
+    assert not ev.truncated
+
+
+def test_ambiguous_thousands_grouping_excluded():
+    ev = build_figure_evidence(["Odd figure $12,34 reported"])
+    assert _only(ev, "money") == []
+    assert ev.truncated
+
+
+def test_too_many_significant_digits_excluded():
+    ev = build_figure_evidence(["$12345678901234567 balance"])   # 17 digits > 15
+    assert _only(ev, "money") == []
+    assert ev.truncated
+
+
+# ── Distinct-key cap / truncation ─────────────────────────────────────────────
+
+def test_distinct_key_cap_truncates_deterministically():
+    parts = [f"${n}M item" for n in range(1, MAX_FIGURE_KEYS + 5)]  # > cap distinct values
+    ev = build_figure_evidence([" ".join(parts)])
+    assert len(ev.distinct_figures) == MAX_FIGURE_KEYS
+    assert ev.truncated
+    assert not ev.figures_complete             # dropped keys ⇒ not lossless
+    # deterministic LEXICOGRAPHIC truncation: the smallest MAX_FIGURE_KEYS survive
+    kept = [f.value_minor for f in ev.distinct_figures]
+    assert kept == sorted(kept)
+    assert kept[0] == 1 * 10**6 * 100
+
+
+@pytest.mark.parametrize("text", [
+    "A $101 trillion notional",   # bound exclusion
+    "Margin of 4.567%",           # precision exclusion
+    "Odd figure $12,34 reported",  # ambiguous grouping
+    "$12345678901234567 balance",  # too many significant digits
+])
+def test_truncated_always_implies_incomplete(text):
+    # truncated=True and figures_complete=True must never co-occur.
+    ev = build_figure_evidence([text])
+    assert ev.truncated
+    assert not ev.figures_complete
+
+
+def test_clean_parse_is_complete():
+    ev = build_figure_evidence(["Acme buys Beta for $5B, up 8%"])
+    assert not ev.truncated
+    assert ev.figures_complete
+
+
+def test_equivalent_money_forms_produce_identical_figurefact():
+    # $5, $5.00, $5.000 are the SAME normalized value → identical FigureFact.
+    expected = FigureFact(kind="money", value_minor=500, currency="USD",
+                          max_occurrences_per_title=1)
+    for text in ("Deal worth $5 total", "Deal worth $5.00 total",
+                 "Deal worth $5.000 total"):
+        ev = build_figure_evidence([text])
+        money = _only(ev, "money")
+        assert len(money) == 1
+        assert money[0] == expected
+    # and together in one title they collapse to one distinct key, occurrence 3
+    ev = build_figure_evidence(["Priced at $5, or $5.00, or $5.000"])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].value_minor == 500
+    assert money[0].max_occurrences_per_title == 3
+    assert ev.distinct_money_values == 1
+    assert ev.money_occurrence_lower_bound == 3
+
+
+# ── Empty / whitespace inputs ─────────────────────────────────────────────────
+
+def test_empty_and_none_titles_yield_empty_evidence():
+    ev = build_figure_evidence(["", None, "   plain headline, no figures  "])
+    assert ev.distinct_figures == ()
+    assert ev.mention_count == 0
+    assert not ev.truncated
+    assert ev.figures_complete
+
+
+# ── Dataclass hygiene (frozen, capture-only shape) ────────────────────────────
+
+def test_figure_dataclasses_are_frozen():
+    f = FigureFact(kind="money", value_minor=100, currency="USD")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        f.value_minor = 200                                # type: ignore[misc]
+    ev = FigureEvidence()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        ev.truncated = True                                # type: ignore[misc]
+
+
+def test_n1_not_wired_into_assessment_dataclass():
+    # N1 must not add a figure field to the assessment record yet (that is N2).
+    a = assess(_event())
+    assert not hasattr(a, "figure_evidence")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1) parser-correction regressions: boundary-safe scan cap, complete
+# numeric-token validation, signed/unsupported-suffix rejection. All exercise
+# build_figure_evidence() in isolation.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Blocker 1: boundary-safe title-scan truncation ────────────────────────────
+
+def test_complete_figure_entirely_after_scan_boundary_is_lost_and_incomplete():
+    # "$5B" sits well past the 512-char boundary → it must NOT appear, and the
+    # parse must be marked incomplete.
+    title = ("filler " * 100) + "$5B acquisition"     # 700 chars before the figure
+    assert len(title) > MAX_TITLE_SCAN_CHARS
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()
+    assert ev.truncated and not ev.figures_complete
+
+
+def test_money_fragment_at_boundary_never_emitted_as_shorter_figure():
+    # Boundary falls inside "$5 billion"; the retained tail "$5" must be DROPPED,
+    # never emitted as a bare $5 (the "$5B becomes $5" defect).
+    title = ("z " * 254) + "$5 billion mega deal " + ("z " * 300)
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()                  # neither "$5" nor "$5 billion" survives
+    assert ev.truncated and not ev.figures_complete
+
+
+def test_percentage_token_straddling_boundary_not_emitted():
+    # "45%" starts before the 512 boundary and extends past it → discarded whole.
+    title = ("z " * 255) + "45%"
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()
+    assert ev.truncated and not ev.figures_complete
+
+
+def test_basis_point_token_straddling_boundary_not_emitted():
+    title = ("z " * 255) + "50bps"
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()
+    assert ev.truncated and not ev.figures_complete
+
+
+def test_safe_side_figure_retained_but_parse_marked_incomplete():
+    # A complete figure on the safe side of the boundary is kept, yet the over-cap
+    # title is still incomplete.
+    title = "$5B " + ("z " * 300)
+    assert len(title) > MAX_TITLE_SCAN_CHARS
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100
+    assert ev.truncated and not ev.figures_complete   # over cap ⇒ incomplete
+
+
+def test_over_cap_figure_free_title_is_incomplete():
+    title = "plain headline words " * 40               # > cap, no figures at all
+    assert len(title) > MAX_TITLE_SCAN_CHARS
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()
+    assert ev.truncated and not ev.figures_complete
+
+
+def test_title_exactly_at_cap_with_leading_figure_is_complete():
+    title = "$5B " + ("z" * (MAX_TITLE_SCAN_CHARS - 4))
+    assert len(title) == MAX_TITLE_SCAN_CHARS
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100
+    assert not ev.truncated and ev.figures_complete
+
+
+# ── Blocker 2: complete numeric-token validation (no backtracking to a prefix) ─
+
+@pytest.mark.parametrize("title", [
+    "Odd $5,, here",          # doubled punctuation
+    "Weird $5,B thing",       # comma glued to a scale letter → NOT $5 billion
+    "Priced $5.00.1 today",   # malformed decimal continuation
+    "Bad $12,34 grouping",    # malformed internal grouping
+    "Broken $5.5.5 value",    # double decimal
+])
+def test_malformed_money_tokens_rejected_whole(title):
+    ev = build_figure_evidence([title])
+    assert _only(ev, "money") == []
+    assert ev.truncated and not ev.figures_complete
+
+
+def test_malformed_percentage_continuation_rejected_whole():
+    # "5.00.1%" must NOT shrink to "0.1%" — the whole candidate is rejected.
+    ev = build_figure_evidence(["Margin of 5.00.1% reported"])
+    assert _only(ev, "percentage") == []
+    assert ev.truncated and not ev.figures_complete
+
+
+@pytest.mark.parametrize("title,cents", [
+    ("Deal worth $5, and more upside", 500),     # trailing comma is punctuation
+    ("Priced at $5. Then rallied", 500),          # trailing period is punctuation
+    ("A clean $5,000 grant", 500000),             # valid grouping
+])
+def test_valid_money_with_ordinary_punctuation_parses(title, cents):
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == cents
+    assert not ev.truncated and ev.figures_complete
+
+
+# ── Blocker 3: signed values and unsupported scale/unit continuations ──────────
+
+@pytest.mark.parametrize("title", [
+    "Shares moved -5% today",
+    "Shares moved +5% today",
+    "Cut of -25 bps announced",
+    "Hike of +25 bp announced",
+    "A loss of -$5 per unit",
+])
+def test_signed_candidates_rejected_not_made_positive(title):
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()
+    assert ev.truncated and not ev.figures_complete
+
+
+@pytest.mark.parametrize("title", [
+    "Grant of $5 thousand awarded",
+    "Grant of $5k awarded",
+    "A $5 quadrillion fantasy",
+    "A $5quintillion fantasy",
+])
+def test_unsupported_scale_rejected_not_downgraded_to_plain_dollars(title):
+    ev = build_figure_evidence([title])
+    assert _only(ev, "money") == []           # must NOT fall back to a bare $5
+    assert ev.truncated and not ev.figures_complete
+
+
+@pytest.mark.parametrize("title,cents", [
+    ("A $5 deal was struck", 500),            # prose word after → plain $5
+    ("Gain of $5 in value", 500),
+    ("A $5 million round", 5 * 10**6 * 100),  # supported spaced scale still works
+])
+def test_plain_dollars_and_supported_scale_still_parse(title, cents):
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == cents
+    assert not ev.truncated and ev.figures_complete
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1) scale-terminator regressions: a recognized money scale token
+# must be followed by a valid terminator, else the whole candidate is rejected —
+# never accepted as the recognized prefix.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("title", [
+    "Deal $5B2 announced",        # digit after scale
+    "Deal $5B_foo announced",     # underscore/identifier continuation
+    "Deal $5B.5 announced",       # decimal continuation after scale
+    "Deal $5 million2 announced",  # digit after spaced scale
+])
+def test_scale_with_invalid_terminator_rejected_whole(title):
+    ev = build_figure_evidence([title])
+    assert _only(ev, "money") == []           # must NOT accept the "$5B"/"$5 million" prefix
+    assert ev.truncated and not ev.figures_complete
+
+
+@pytest.mark.parametrize("title,cents", [
+    ("A $5B deal", 5 * 10**9 * 100),                       # end-adjacent / whitespace
+    ("A $5B, per the filing", 5 * 10**9 * 100),            # comma terminator
+    ("A $5B. Then it rallied", 5 * 10**9 * 100),           # period terminator
+    ("A ($5B) buyout", 5 * 10**9 * 100),                   # close-paren terminator
+    ("A $5B acquisition", 5 * 10**9 * 100),                # whitespace + word
+    ("A $5 million round", 5 * 10**6 * 100),               # spaced scale
+    ("A $5 million, according to the filing", 5 * 10**6 * 100),  # spaced scale + comma
+])
+def test_scale_with_valid_terminator_parses(title, cents):
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == cents
+    assert not ev.truncated and ev.figures_complete
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1) bare-money closing-punctuation regressions. A bare `$` amount
+# followed by a stripped trailing '.'/',' must terminate cleanly not only before
+# whitespace/end but also before genuine closing punctuation (" ' ) ] }), via the
+# SAME shared terminator used for scale tokens. A continuation (letter/digit/
+# underscore/decimal) still rejects the whole candidate.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("title", [
+    'cost "$5," today',        # trailing comma then double-quote
+    "cost '$5,' today",        # trailing comma then single-quote
+    "(cost $5.)",              # trailing period then close-paren
+    "[cost $5,]",              # trailing comma then close-bracket
+    "{cost $5.}",              # trailing period then close-brace
+    "cost $5, according to the filing",   # trailing comma then whitespace
+    "cost $5.",                # trailing period at end of text
+])
+def test_bare_money_closing_punctuation_accepted(title):
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1
+    assert money[0].value_minor == 500          # exactly one $5 fact
+    assert not ev.truncated and ev.figures_complete
+
+
+@pytest.mark.parametrize("title", [
+    "cost $5,B here",          # letter continuation after separator
+    "cost $5,_foo here",       # underscore continuation
+    "cost $5,2 here",          # digit / grouping continuation
+    "cost $5.. here",          # doubled separator
+    "cost $5.)2 here",         # closing punct then digit continuation
+])
+def test_bare_money_malformed_continuation_rejected(title):
+    ev = build_figure_evidence([title])
+    assert _only(ev, "money") == []             # no false "$5" prefix
+    assert ev.truncated and not ev.figures_complete
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1) ordinary terminal-punctuation regressions. The shared terminator
+# accepts ; : ! ? as token terminators (like . ,) — but only when they actually
+# end the token, never when an alphanumeric/underscore continuation follows.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("title,cents", [
+    ("cost $5; then rallied", 500),
+    ("cost $5: the stated price", 500),
+    ("shares at $5!", 500),
+    ("shares at $5?", 500),
+    ('a "cost $5!" note', 500),               # terminal punct then closing quote
+    ("(cost $5?)", 500),                       # terminal punct then close-paren
+])
+def test_bare_money_terminal_punctuation_accepted(title, cents):
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == cents
+    assert not ev.truncated and ev.figures_complete
+
+
+@pytest.mark.parametrize("title,cents", [
+    ("cost $5B; then rallied", 5 * 10**9 * 100),
+    ("cost $5B: the stated value", 5 * 10**9 * 100),
+    ("value $5B!", 5 * 10**9 * 100),
+    ("value $5B?", 5 * 10**9 * 100),
+    ("cost $5 million; according to the filing", 5 * 10**6 * 100),
+])
+def test_scaled_money_terminal_punctuation_accepted(title, cents):
+    ev = build_figure_evidence([title])
+    money = _only(ev, "money")
+    assert len(money) == 1 and money[0].value_minor == cents
+    assert not ev.truncated and ev.figures_complete
+
+
+@pytest.mark.parametrize("title", [
+    "cost $5;foo here",
+    "cost $5:bar here",
+    "cost $5!2 here",
+    "cost $5?abc here",
+    "cost $5B;foo here",
+    "cost $5B:bar here",
+    "cost $5B!2 here",
+    "cost $5B?abc here",
+])
+def test_terminal_punctuation_with_continuation_rejected(title):
+    ev = build_figure_evidence([title])
+    assert _only(ev, "money") == []             # no false "$5"/"$5B" prefix
+    assert ev.truncated and not ev.figures_complete
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1) boundary-continuation regressions. At the scan boundary a
+# complete, self-contained figure that ends safely inside the retained prefix is
+# PRESERVED; a numeric head is removed only when the FIRST DISCARDED token can
+# grammatically complete it. Every over-cap title stays truncated / incomplete.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _figure_ends_before_boundary(figure):
+    """Build an over-cap title in which `figure` is the LAST retained token,
+    ending immediately before the scan-boundary whitespace, followed by a long
+    discarded prose tail."""
+    fill_len = MAX_TITLE_SCAN_CHARS - len(figure) - 1     # + figure + one space == cap
+    filler = ("z" * (fill_len - 1)) + " "
+    title = filler + figure + " " + ("z " * 400)
+    assert len(title) > MAX_TITLE_SCAN_CHARS
+    return title
+
+
+def _head_then_discarded_continuation(head, continuation_tail):
+    """Build an over-cap title where `head` is the last retained token and
+    `continuation_tail` (its first word grammatically continues `head`) begins the
+    discarded region."""
+    fill_len = MAX_TITLE_SCAN_CHARS - len(head) - 1       # + head + one space == cap
+    filler = ("z" * (fill_len - 1)) + " "
+    title = filler + head + " " + continuation_tail + " " + ("z " * 400)
+    assert len(title) > MAX_TITLE_SCAN_CHARS
+    return title
+
+
+@pytest.mark.parametrize("figure,kind,value", [
+    ("$5B", "money", 5 * 10**9 * 100),
+    ("$5 million", "money", 5 * 10**6 * 100),
+    ("8%", "percentage", 800),
+    ("25bps", "basis_points", 25),
+    ("25 bp", "basis_points", 25),
+    ("$1.25/share", "per_share", 125),
+])
+def test_complete_figure_before_boundary_is_preserved(figure, kind, value):
+    ev = build_figure_evidence([_figure_ends_before_boundary(figure)])
+    hits = _only(ev, kind)
+    assert len(hits) == 1 and hits[0].value_minor == value   # complete figure survives
+    assert ev.truncated and not ev.figures_complete          # but title exceeded the cap
+
+
+@pytest.mark.parametrize("head,continuation_tail", [
+    ("$5", "billion deal"),          # amount + spaced scale
+    ("50", "basis points cut"),      # number + basis-point unit
+    ("$1.25", "per share payout"),   # amount + per-share unit
+])
+def test_split_figure_head_removed_when_discarded_text_completes_it(head, continuation_tail):
+    ev = build_figure_evidence([_head_then_discarded_continuation(head, continuation_tail)])
+    assert ev.distinct_figures == ()                         # no partial figure emitted
+    assert ev.truncated and not ev.figures_complete
+
+
+@pytest.mark.parametrize("token", ["$5B", "45%", "50bps"])
+def test_token_split_inside_figure_discarded_whole(token):
+    # The token straddles the boundary and cannot be completed from retained text.
+    title = ("z " * 255) + token
+    ev = build_figure_evidence([title])
+    assert ev.distinct_figures == ()
+    assert ev.truncated and not ev.figures_complete
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N1) compound-boundary-token regressions. The discarded token is
+# classified by its LEADING ALPHABETIC COMPONENT, so a compound continuation
+# ("per-share", "billion-dollar", "billion2", "basis-point") still completes an
+# incomplete retained head — while unrelated compounds never delete a complete
+# retained figure.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("head,continuation_tail", [
+    ("$1.25", "per-share payout"),      # per-share → per
+    ("$5", "billion-dollar deal"),      # billion-dollar → billion
+    ("$5", "billion2 deal"),            # billion2 → billion
+    ("50", "basis-point cut"),          # basis-point → basis
+])
+def test_compound_discarded_continuation_removes_split_head(head, continuation_tail):
+    ev = build_figure_evidence([_head_then_discarded_continuation(head, continuation_tail)])
+    assert ev.distinct_figures == ()                         # no bare/partial emission
+    assert ev.truncated and not ev.figures_complete
+
+
+@pytest.mark.parametrize("figure,kind,value", [
+    ("$5B", "money", 5 * 10**9 * 100),
+    ("8%", "percentage", 800),
+])
+def test_unrelated_compound_discarded_word_preserves_complete_figure(figure, kind, value):
+    ev = build_figure_evidence([
+        _head_then_discarded_continuation(figure, "record-breaking rally")
+    ])
+    hits = _only(ev, kind)
+    assert len(hits) == 1 and hits[0].value_minor == value   # complete figure survives
+    assert ev.truncated and not ev.figures_complete
