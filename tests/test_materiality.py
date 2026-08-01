@@ -1081,8 +1081,12 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
     assert b"app.materiality" not in blob
     assert b"MaterialityAssessment" not in blob
     assert b"MaterialityShadowResult" not in blob
+    assert b"FigureEvidence" not in blob            # N2.1: typed figures never persist
+    assert b"FigureFact" not in blob
+    assert b"figure_evidence" not in blob
     for e in feed.events:
         assert not hasattr(e, "materiality")
+        assert not hasattr(e, "figure_evidence")
 
 
 def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
@@ -1118,6 +1122,7 @@ def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
             data = fh.read()
         for forbidden in (b"MaterialityAssessment", b"MaterialityShadowResult",
                           b"SourceEvidence", b"BreadthEvidence",
+                          b"FigureEvidence", b"FigureFact", b"figure_evidence",
                           b"shadow_sink", b"app.materiality"):
             assert forbidden not in data
 
@@ -1457,10 +1462,11 @@ def test_figure_dataclasses_are_frozen():
         ev.truncated = True                                # type: ignore[misc]
 
 
-def test_n1_not_wired_into_assessment_dataclass():
-    # N1 must not add a figure field to the assessment record yet (that is N2).
+def test_n21_assessment_carries_figure_evidence():
+    # N2.1 wires figure_evidence onto the assessment (capture-only diagnostic).
     a = assess(_event())
-    assert not hasattr(a, "figure_evidence")
+    assert hasattr(a, "figure_evidence")
+    assert a.figure_evidence is None or isinstance(a.figure_evidence, FigureEvidence)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1824,3 +1830,172 @@ def test_unrelated_compound_discarded_word_preserves_complete_figure(figure, kin
     hits = _only(ev, kind)
     assert len(hits) == 1 and hits[0].value_minor == value   # complete figure survives
     assert ev.truncated and not ev.figures_complete
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N2.1): figure evidence wired into assess() — capture-only.
+#
+# assess() parses ONLY recorded headline text (event title, then evidence titles)
+# and attaches FigureEvidence to the transient MaterialityAssessment. It must not
+# influence any decision field; every assessment stays UNRESOLVED; nothing is
+# aggregated (N3) or persisted.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _fig_event(*, id="c-fig001", title="Plain headline", evidence_titles=("t",),
+               why_it_matters="", transmission="", event_type="macro",
+               corroboration_count=2, uid=""):
+    ev = [EventEvidence(source="Reuters", title=t, url=f"u{i}", published=ISO,
+                        tier=1, kind="news", qualified=True)
+          for i, t in enumerate(evidence_titles)]
+    return MarketEvent(
+        id=id, title=title, event_type=event_type, first_seen=ISO, last_updated=ISO,
+        corroboration_count=corroboration_count, source_count=len(ev),
+        evidence=ev, companies=[], industries=[], confidence=0, uid=uid,
+        why_it_matters=why_it_matters, transmission=transmission,
+        transmission_chain=[],
+    )
+
+
+def test_assess_parses_event_title():
+    fe = assess(_fig_event(title="Buyback of $5B", evidence_titles=("plain",))).figure_evidence
+    assert fe is not None
+    money = _only(fe, "money")
+    assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100
+
+
+def test_assess_parses_evidence_titles():
+    fe = assess(_fig_event(title="Plain", evidence_titles=("Shares rose 8%",))).figure_evidence
+    pct = _only(fe, "percentage")
+    assert len(pct) == 1 and pct[0].value_minor == 800
+
+
+def test_assess_repeated_title_occurrence_semantics():
+    # event title duplicates an evidence title; N1 max-per-title + raw mention hold.
+    ev = _fig_event(title="$5B deal", evidence_titles=("$5B deal", "another $5B deal"))
+    fe = assess(ev).figure_evidence
+    money = _only(fe, "money")
+    assert len(money) == 1                              # one distinct value
+    assert money[0].max_occurrences_per_title == 1      # once per title, never inflated
+    assert fe.distinct_money_values == 1
+    assert fe.mention_count == 3                         # three titles, one mention each
+
+
+def test_assess_skips_empty_titles():
+    ev = _fig_event(title="", evidence_titles=("", "Gain of $5B"))
+    fe = assess(ev).figure_evidence
+    money = _only(fe, "money")
+    assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100
+    assert fe.mention_count == 1
+
+
+def test_assess_malformed_figure_marks_incomplete():
+    fe = assess(_fig_event(title="Odd $12,34 grouping")).figure_evidence
+    assert _only(fe, "money") == []
+    assert fe.truncated and not fe.figures_complete
+
+
+def test_assess_ignores_llm_authored_fields():
+    # why_it_matters / transmission are LLM-authored / built-later — never parsed.
+    ev = _fig_event(title="Plain macro update", evidence_titles=("also plain",),
+                    why_it_matters="a $5 billion writedown looms",
+                    transmission="yields rose 8% on the news")
+    fe = assess(ev).figure_evidence
+    assert fe.distinct_figures == ()
+
+
+def test_assess_state_and_rank_unchanged_by_figures():
+    ev = _fig_event(title="Massive $999 trillion, 8%, 50 bps, $1.25/share",
+                    evidence_titles=("$5B",))
+    a = assess(ev)
+    assert a.state is MaterialityState.UNRESOLVED
+    assert a.materiality_rank is None
+
+
+def test_figures_do_not_enter_inputs_present():
+    a = assess(_fig_event(title="Buyback $5B up 8%", evidence_titles=("$5B",)))
+    for banned in ("typed_figures", "money", "percentage", "basis_points",
+                   "per_share", "magnitude", "figures"):
+        assert banned not in a.inputs_present
+
+
+def test_same_event_with_and_without_figures_has_identical_decision_fields():
+    no_fig = _fig_event(title="Fed holds rates steady", evidence_titles=("wire report",))
+    with_fig = _fig_event(title="Fed cuts 50 bps to a $5B backstop",
+                          evidence_titles=("wire report",))
+    a0, a1 = assess(no_fig), assess(with_fig)
+    assert a0.state == a1.state == MaterialityState.UNRESOLVED
+    assert a0.materiality_rank is None and a1.materiality_rank is None
+    assert a0.inputs_present == a1.inputs_present
+    assert a0.mandatory_class == a1.mandatory_class
+    assert a0.corroboration_count == a1.corroboration_count
+    assert a0.best_evidence_tier == a1.best_evidence_tier
+    assert a0.source_evidence == a1.source_evidence
+    assert a0.breadth_evidence == a1.breadth_evidence
+    # ONLY the diagnostic figure evidence differs
+    assert a0.figure_evidence.distinct_figures == ()
+    assert a1.figure_evidence.distinct_money_values == 1
+    assert a1.figure_evidence.distinct_basis_points_values == 1
+
+
+def test_reason_codes_typed_figures_and_magnitude_guard():
+    a = assess(_fig_event(title="Buyback $5B", evidence_titles=("$5B",)))
+    factors = {r.factor: r for r in a.reasons}
+    assert "typed_figures" in factors
+    assert factors["typed_figures"].available is True          # figures captured
+    assert "diagnostic" in factors["typed_figures"].detail.lower()
+    # magnitude remains a decision guard: excluded / never available as an input
+    assert factors["magnitude"].available is False
+    # a figure-free event records typed_figures as not-available
+    b = assess(_fig_event(title="Plain", evidence_titles=("plain",)))
+    assert {r.factor: r for r in b.reasons}["typed_figures"].available is False
+
+
+def test_aggregate_does_not_fold_figure_evidence():
+    # Two figure-bearing assessments: neither figure_evidence nor the figure-derived
+    # typed_figures reason may survive aggregation in N2.1.
+    a = assess(_fig_event(title="Buyback $5B", evidence_titles=("$5B",)))
+    b = assess(_fig_event(id="c-fig002", title="Deal 8%", evidence_titles=("8%",)))
+    assert "typed_figures" in {r.factor for r in a.reasons}   # present on direct assessments
+    assert "typed_figures" in {r.factor for r in b.reasons}
+    agg = aggregate([a, b])
+    assert agg is not None
+    assert agg.figure_evidence is None            # N2.1 does not aggregate figures; N3 owns it
+    assert "typed_figures" not in {r.factor for r in agg.reasons}   # no figure-derived leak
+    assert agg.state is MaterialityState.UNRESOLVED
+
+
+def test_aggregate_excludes_typed_figures_reason_but_keeps_the_rest():
+    with_fig = assess(_fig_event(title="Buyback $5B up 8%", evidence_titles=("$5B",)))
+    no_fig = assess(_fig_event(id="c-fig002", title="Fed holds steady",
+                               evidence_titles=("wire report",)))
+    agg = aggregate([with_fig, no_fig])
+    assert agg is not None
+    # figure evidence and its derived reason are both gone
+    assert agg.figure_evidence is None
+    assert "typed_figures" not in {r.factor for r in agg.reasons}
+    # every non-figure reason is still unioned (magnitude guard, and the rest)
+    agg_factors = {r.factor for r in agg.reasons}
+    direct_factors = ({r.factor for r in with_fig.reasons}
+                      | {r.factor for r in no_fig.reasons}) - {"typed_figures"}
+    assert agg_factors == direct_factors
+    assert "magnitude" in agg_factors                          # decision guard preserved
+    mag = next(r for r in agg.reasons if r.factor == "magnitude")
+    assert mag.available is False
+    # decision fields / provenance are unchanged by the figure filtering
+    assert agg.state is MaterialityState.UNRESOLVED
+    assert agg.materiality_rank is None
+    assert agg.inputs_present == tuple(sorted(
+        set(with_fig.inputs_present) | set(no_fig.inputs_present)))
+    assert set(agg.contributing_ids) == {with_fig.event_id, no_fig.event_id}
+
+
+def test_post_identity_fresh_reassessment_reflects_final_titles():
+    # build_shadow_result assesses FINAL admitted events FRESH — figure evidence is
+    # rebuilt from the final canonical title + evidence, not a stale pre-identity copy.
+    final = _fig_event(title="Deal valued at $5B", evidence_titles=("$5B agreed",))
+    result = build_shadow_result([], [final])
+    assert len(result.admitted) == 1
+    fe = result.admitted[0].figure_evidence
+    assert fe is not None
+    money = _only(fe, "money")
+    assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100

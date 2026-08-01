@@ -53,6 +53,11 @@ log = logging.getLogger(__name__)
 # It must change when the decision logic or its calibration changes.
 POLICY_VERSION = "umc-0.1.0-uncalibrated"
 
+# Reason factors derived from typed-figure evidence (Wave 0.2b). aggregate() drops
+# these from its reason union so no figure-derived data survives aggregation while
+# figure folding is deferred to N3 (aggregate sets figure_evidence=None).
+_FIGURE_DERIVED_REASONS = frozenset({"typed_figures"})
+
 
 class MaterialityState(str, Enum):
     """The tri-state membership lattice. `unresolved` is a first-class third
@@ -233,6 +238,12 @@ class MaterialityAssessment:
     # ── Wave 0.2a typed evidence (higher-fidelity source quality; censored breadth) ──
     source_evidence: SourceEvidence | None = None   # refines the evidence-quality DECISION INPUT
     breadth_evidence: BreadthEvidence | None = None  # DIAGNOSTIC only — censored lower bounds
+    # ── Wave 0.2b typed-figure evidence (N2.1: capture-only, title-only) ──
+    # DIAGNOSTIC ONLY. Parsed deterministically from recorded headline text; it
+    # influences NO decision (state stays UNRESOLVED, never enters inputs_present /
+    # materiality_rank / membership) and is aggregate-dropped until N3. `FigureEvidence`
+    # is defined later in this module; the string annotation (PEP 563) forward-refs it.
+    figure_evidence: FigureEvidence | None = None
     # ── explainability + rollup ──
     reasons: tuple[ReasonCode, ...] = ()            # decomposable "why" evidence
     materiality_rank: float | None = None           # None in 0.1 — no calibrated ordering value
@@ -354,13 +365,36 @@ def assess(event: object, *, policy_version: str = POLICY_VERSION) -> Materialit
         (n_companies + n_industries) > 0,
     ))
 
+    # Typed-figure evidence (Wave 0.2b N2.1) — DIAGNOSTIC capture only. Parsed
+    # deterministically from recorded headline text in a fixed order: the event
+    # title first, then each EventEvidence.title in canonical list order; empty
+    # titles are skipped. It reads NO LLM-authored / later-built field (why_it_matters,
+    # impact, summary, transmission, transmission_chain) and feeds NO decision — it
+    # is never added to inputs_present and is not a materiality input.
+    _fig_titles = [str(getattr(event, "title", "") or "")]
+    _fig_titles += [str(getattr(e, "title", "") or "") for e in evidence]
+    figure_evidence = build_figure_evidence([t for t in _fig_titles if t])
+    reasons.append(ReasonCode(
+        "typed_figures",
+        f"distinct money={figure_evidence.distinct_money_values} "
+        f"percentage={figure_evidence.distinct_percentage_values} "
+        f"basis_points={figure_evidence.distinct_basis_points_values} "
+        f"per_share={figure_evidence.distinct_per_share_values} "
+        f"complete={figure_evidence.figures_complete} "
+        "(diagnostic capture only; not a decision input; no magnitude interpretation)",
+        bool(figure_evidence.distinct_figures),
+    ))
+
     # ── Explicitly excluded / missing inputs (recorded, never consumed) ────────
     reasons.append(ReasonCode(
         "confidence", "excluded: uncalibrated theme-conviction proxy (not decision-ready)", False))
     reasons.append(ReasonCode(
         "transmission_chain", "excluded: populated later in explanation construction; unavailable here", False))
     reasons.append(ReasonCode(
-        "magnitude", "missing: raw figures untyped; not a Wave-0.1 input", False))
+        "magnitude",
+        "excluded from decision: typed figures may now be captured (see typed_figures) but "
+        "remain diagnostic only — no magnitude interpretation or calibration exists yet",
+        False))
 
     # ── Provenance + canonical diagnostic inputs (reflect the FINAL event) ─────
     event_id = str(getattr(event, "id", "") or "")
@@ -393,6 +427,7 @@ def assess(event: object, *, policy_version: str = POLICY_VERSION) -> Materialit
         industries_count=n_industries,
         source_evidence=source_evidence,
         breadth_evidence=breadth_evidence,
+        figure_evidence=figure_evidence,            # Wave 0.2b N2.1: DIAGNOSTIC capture only
         reasons=tuple(reasons),
         materiality_rank=None,                      # Wave 0.1: no calibrated ordering value
     )
@@ -501,7 +536,16 @@ def aggregate(assessments) -> MaterialityAssessment | None:
         | {a.event_uid for a in items
            if a.state is MaterialityState.UNIVERSAL and a.event_uid}
     ))
-    reason_keys = sorted({(r.factor, r.detail, r.available) for a in items for r in a.reasons})
+    # Figure-derived reasons (typed_figures) are EXCLUDED from the aggregate union:
+    # aggregate() intentionally sets figure_evidence=None (N3 owns figure folding),
+    # so no figure-derived data may survive indirectly through reasons either. The
+    # `magnitude` guard is NOT figure evidence (a static excluded-input marker,
+    # available=False) and is preserved.
+    reason_keys = sorted({
+        (r.factor, r.detail, r.available)
+        for a in items for r in a.reasons
+        if r.factor not in _FIGURE_DERIVED_REASONS
+    })
     reasons = tuple(ReasonCode(f, d, av) for (f, d, av) in reason_keys)
     inputs = tuple(sorted({i for a in items for i in a.inputs_present}))
 
@@ -593,6 +637,11 @@ def aggregate(assessments) -> MaterialityAssessment | None:
         industries_count=max(a.industries_count for a in items),
         source_evidence=source_evidence,
         breadth_evidence=breadth_evidence,
+        # figure_evidence is intentionally NOT folded here — the aggregate leaves it
+        # None (its default). N2.1 does no figure aggregation; the exact key union,
+        # occurrence-bound folding, completeness propagation, and permutation/nesting
+        # guarantees are owned by N3. Dropping it (rather than combining partially) is
+        # the documented, non-authoritative behavior until then.
         reasons=reasons,
         materiality_rank=(max(ranks) if ranks else None),
         version_mismatch=mismatch,
