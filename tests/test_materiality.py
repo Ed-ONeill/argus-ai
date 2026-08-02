@@ -1999,3 +1999,55 @@ def test_post_identity_fresh_reassessment_reflects_final_titles():
     assert fe is not None
     money = _only(fe, "money")
     assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Wave 0.2b (N2.2): FigureEvidence propagates through the shadow pipeline via each
+# assessment's OWN field — MaterialityShadowResult.admitted[*].figure_evidence.
+#
+# There is NO top-level figure projection on MaterialityShadowResult (a single
+# field cannot represent many events without aggregation, deferred to N3). N2.2 is
+# a pure carry: assess() already computed figure_evidence per event; the shadow
+# result simply holds those assessments. No reparse, no aggregation, no
+# persistence change.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_shadow_result_has_no_top_level_figure_field():
+    # The redundant top-level projection must NOT exist; propagation is per-assessment.
+    r = MaterialityShadowResult(policy_version=POLICY_VERSION)
+    assert not hasattr(r, "figure_evidence")
+
+
+def test_admitted_assessment_carries_its_own_figure_evidence():
+    ev = _fig_event(title="Deal at $5B", evidence_titles=("$5B agreed",))
+    result = build_shadow_result([], [ev])
+    assert len(result.admitted) == 1
+    fe = result.admitted[0].figure_evidence
+    assert fe is not None
+    money = _only(fe, "money")
+    assert len(money) == 1 and money[0].value_minor == 5 * 10**9 * 100
+    # value-equal to a fresh direct assessment (deterministic parse; no double-parse
+    # semantics diverge) — build_shadow_result computes it via its single assess() call.
+    assert fe == assess(ev).figure_evidence
+
+
+def test_multiple_admitted_each_retain_independent_figure_evidence():
+    a = _fig_event(id="c-1", title="Deal $5B", evidence_titles=("$5B",))
+    b = _fig_event(id="c-2", title="Cut 8%", evidence_titles=("8%",))
+    result = build_shadow_result([], [a, b])
+    assert len(result.admitted) == 2
+    fe_a, fe_b = result.admitted[0].figure_evidence, result.admitted[1].figure_evidence
+    # each assessment keeps its OWN evidence — no cross-contamination, no aggregation
+    assert _only(fe_a, "money") and not _only(fe_a, "percentage")
+    assert _only(fe_b, "percentage") and not _only(fe_b, "money")
+    assert _only(fe_a, "money")[0].value_minor == 5 * 10**9 * 100
+    assert _only(fe_b, "percentage")[0].value_minor == 800
+
+
+def test_shadow_result_figure_propagation_is_capture_only():
+    # Carrying figure evidence changes no decision surface.
+    ev = _fig_event(title="Massive $999 trillion, 8%", evidence_titles=("$5B",))
+    result = build_shadow_result([], [ev])
+    assert result.authoritative is False
+    assert result.admitted[0].state is MaterialityState.UNRESOLVED
+    assert result.admitted[0].materiality_rank is None
