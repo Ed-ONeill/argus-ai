@@ -30,6 +30,7 @@ from app.materiality import (
     MAX_PERCENTAGE_BPS,
     MAX_TITLE_SCAN_CHARS,
     POLICY_VERSION,
+    FigureDiagnostics,
     FigureEvidence,
     FigureFact,
     MaterialityAssessment,
@@ -42,6 +43,7 @@ from app.materiality import (
     build_figure_evidence,
     build_shadow_result,
     effective_mode,
+    figure_diagnostics,
     observe,
     parse_mode,
 )
@@ -1084,9 +1086,70 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
     assert b"FigureEvidence" not in blob            # N2.1: typed figures never persist
     assert b"FigureFact" not in blob
     assert b"figure_evidence" not in blob
+    assert b"FigureDiagnostics" not in blob         # N2.3: diagnostics never persist
     for e in feed.events:
         assert not hasattr(e, "materiality")
         assert not hasattr(e, "figure_evidence")
+
+
+def test_real_below_floor_figure_appears_only_in_pre_admission(fresh_identity, monkeypatch, caplog):
+    """N2.3 population scope: a qualified, figure-bearing, below-ADMISSION_FLOOR
+    candidate is present in pre_admission but genuinely excluded from admitted by
+    _admit. Its figure must show in the pre_admission diagnostics and be ABSENT
+    from the admitted diagnostics — proving the populations are summarized
+    independently, not concatenated."""
+    import logging
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    import app.background as bg
+    import app.feeds as feeds_mod
+    import app.observation_ledger as obs
+    import app.summarizer as summ
+
+    now = _dt.now(_tz.utc)
+    # recent → admitted; carries a MONEY figure.
+    strong = FeedItem(title="Fed unveils a $5B liquidity facility", url="https://t/live-s",
+                      source="Bloomberg Markets", category="Markets",
+                      published_dt=now - timedelta(minutes=20), snippet="wire")
+    # 200h old → below the admission floor; carries a BASIS-POINTS figure (a kind
+    # the admitted event does NOT have, so the two populations are distinguishable).
+    aged = FeedItem(title="ECB signals a 250 basis point tightening path", url="https://t/live-a",
+                    source="Bloomberg Markets", category="Markets",
+                    published_dt=now - timedelta(hours=200), snippet="wire")
+
+    monkeypatch.setattr(settings, "materiality_mode", "shadow")
+    monkeypatch.setattr(feeds_mod.feed_manager, "fetch_all", lambda **kw: [strong, aged])
+    monkeypatch.setattr(feeds_mod.feed_manager, "fetch_errors", {}, raising=False)
+    monkeypatch.setattr(feeds_mod.feed_manager, "promo_excluded", 0, raising=False)
+    monkeypatch.setattr(feeds_mod.feed_manager, "last_source_stats", {}, raising=False)
+
+    class _SumRes:
+        new = cached = skipped = 0
+    monkeypatch.setattr(summ, "summarize_items", lambda *a, **k: _SumRes())
+    monkeypatch.setattr(summ, "generate_market_take", lambda *a, **k: "")
+    monkeypatch.setattr(summ, "generate_market_brief", lambda *a, **k: None)
+    monkeypatch.setattr(obs.observation_ledger, "record_observations", lambda *a, **k: 0, raising=False)
+    monkeypatch.setattr(obs.observation_ledger, "record_assessments", lambda *a, **k: 0, raising=False)
+    monkeypatch.setattr(obs.observation_ledger, "compress_old", lambda *a, **k: None, raising=False)
+
+    with caplog.at_level(logging.INFO, logger="app.materiality"):
+        feed = bg.run_pipeline(categories="", sources="")
+
+    titles = {e.title for e in feed.events}
+    assert "Fed unveils a $5B liquidity facility" in titles            # admitted
+    assert "ECB signals a 250 basis point tightening path" not in titles   # _admit excluded it
+    # both qualified candidates are observed pre-admission; only one is admitted
+    assert "pre_admission_qualified=2" in caplog.text
+    assert "admitted=1" in caplog.text
+    # the below-floor candidate's basis-points figure is in the pre_admission
+    # population but NOT in the admitted population.
+    assert "pre_admission_basis_points=1" in caplog.text
+    assert "admitted_basis_points=0" in caplog.text
+    # the admitted event's money figure is in the admitted population.
+    assert "admitted_money=1" in caplog.text
+    assert "pre_admission_total=2" in caplog.text
+    assert "admitted_total=1" in caplog.text
 
 
 def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
@@ -1123,6 +1186,7 @@ def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
         for forbidden in (b"MaterialityAssessment", b"MaterialityShadowResult",
                           b"SourceEvidence", b"BreadthEvidence",
                           b"FigureEvidence", b"FigureFact", b"figure_evidence",
+                          b"FigureDiagnostics",
                           b"shadow_sink", b"app.materiality"):
             assert forbidden not in data
 
@@ -2051,3 +2115,99 @@ def test_shadow_result_figure_propagation_is_capture_only():
     assert result.authoritative is False
     assert result.admitted[0].state is MaterialityState.UNRESOLVED
     assert result.admitted[0].materiality_rank is None
+
+
+# ==============================================================================
+# Wave 0.2b (N2.3): typed-figure diagnostic observability.
+#
+# figure_diagnostics() is a pure, read-only summary of the FigureEvidence that
+# assess() already computed. It never reparses, never aggregates, never mutates,
+# and influences no decision; it is produced transiently (observe()/tests) and
+# stored/serialized nowhere.
+# ==============================================================================
+
+def test_diagnostics_summarize_existing_evidence():
+    aa = [
+        assess(_fig_event(id="c-1", title="Deal $5B", evidence_titles=("$5B",))),
+        assess(_fig_event(id="c-2", title="Cut 8%", evidence_titles=("8%",))),
+        assess(_fig_event(id="c-3", title="Hike 50 bps", evidence_titles=("50 bps",))),
+        assess(_fig_event(id="c-4", title="Div $1.25/share", evidence_titles=("$1.25/share",))),
+        assess(_fig_event(id="c-5", title="Plain headline", evidence_titles=("plain",))),
+        assess(_fig_event(id="c-6", title="Odd $12,34 grouping", evidence_titles=("plain",))),
+    ]
+    d = figure_diagnostics(aa)
+    assert d.total == 6
+    assert d.with_figures == 4
+    assert d.no_figures == 2                 # plain + malformed(no figures emitted)
+    assert d.with_money == 1
+    assert d.with_percentage == 1
+    assert d.with_basis_points == 1
+    assert d.with_per_share == 1
+    assert d.truncated == 1                  # the "$12,34" malformed grouping
+    assert d.complete == 5                   # all except the truncated one
+    assert d.distinct_values_total == 4
+
+
+def test_diagnostics_do_not_reparse(monkeypatch):
+    import app.materiality as m
+    assessments = [assess(_fig_event(title="Deal $5B", evidence_titles=("$5B",)))]
+
+    def _boom(*a, **k):
+        raise AssertionError("figure_diagnostics must not reparse")
+
+    monkeypatch.setattr(m, "build_figure_evidence", _boom)
+    d = figure_diagnostics(assessments)      # must not call build_figure_evidence
+    assert d.with_figures == 1 and d.with_money == 1
+
+
+def test_diagnostics_order_invariance():
+    # distinct categories, completeness, and truncation states so any order
+    # dependence would change the result.
+    a = assess(_fig_event(id="a", title="Deal $5B", evidence_titles=("$5B",)))            # money, complete
+    b = assess(_fig_event(id="b", title="Odd $12,34 grouping", evidence_titles=("x",)))    # truncated, no figures
+    c = assess(_fig_event(id="c", title="Cut 8% and 50 bps", evidence_titles=("8%",)))     # pct + bps, complete
+    assert figure_diagnostics([a, b, c]) == figure_diagnostics([c, a, b])
+
+
+def test_diagnostics_handle_none_figure_evidence():
+    a = assess(_fig_event(title="Deal $5B", evidence_titles=("$5B",)))
+    b = assess(_fig_event(id="c-2", title="Cut 8%", evidence_titles=("8%",)))
+    agg = aggregate([a, b])
+    assert agg.figure_evidence is None       # aggregate carries no figure evidence
+    d = figure_diagnostics([agg])
+    assert d.total == 1 and d.no_figures == 1 and d.with_figures == 0
+
+
+def test_diagnostics_empty_input():
+    assert figure_diagnostics([]) == FigureDiagnostics()      # all zeros
+    assert figure_diagnostics(None) == FigureDiagnostics()
+
+
+def test_diagnostics_not_attached_and_do_not_mutate():
+    ev = _fig_event(title="Deal $5B", evidence_titles=("$5B",))
+    r = build_shadow_result([], [ev])
+    # diagnostics are not a field on any transient carrier — computed on demand only
+    assert not hasattr(r, "diagnostics")
+    assert not hasattr(r, "figure_diagnostics")
+    assert not hasattr(r.admitted[0], "diagnostics")
+    before = r.admitted[0]
+    figure_diagnostics(r.admitted)           # read-only; must not mutate
+    assert r.admitted[0] == before
+
+
+def test_observe_emits_bounded_figure_diagnostics_line(caplog):
+    import logging
+    ev = _fig_event(title="Deal $5B up 8%", evidence_titles=("$5B",))
+    r = build_shadow_result([], [ev])                     # pre_admission empty; one admitted
+    with caplog.at_level(logging.INFO, logger="app.materiality"):
+        observe(r)
+    # the diagnostic line is emitted on the NON-AUTHORITATIVE shadow channel only,
+    # with the two populations labelled unambiguously (no combined total).
+    assert "[materiality:shadow NON-AUTHORITATIVE figures]" in caplog.text
+    assert "admitted_with_figures=1" in caplog.text
+    assert "admitted_money=1" in caplog.text
+    assert "admitted_percentage=1" in caplog.text
+    assert "admitted_distinct_values=2" in caplog.text    # $5B + 8% across the titles
+    # the pre_admission population is summarized separately (here empty)
+    assert "pre_admission_total=0" in caplog.text
+    assert "pre_admission_with_figures=0" in caplog.text

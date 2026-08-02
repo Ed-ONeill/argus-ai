@@ -653,10 +653,67 @@ def aggregate(assessments) -> MaterialityAssessment | None:
     )
 
 
+@dataclass(frozen=True)
+class FigureDiagnostics:
+    """A transient, DESCRIPTIVE-ONLY summary of the typed-figure evidence already
+    attached to a set of MaterialityAssessments (Wave 0.2b N2.3).
+
+    Pure engineering observability for shadow execution: it TALLIES the
+    FigureEvidence that assess() already computed — it never reparses, never
+    aggregates figures, never mutates anything, and influences NO decision. It is
+    produced transiently (in observe() / tests), stored nowhere, serialized
+    nowhere, and returned to no surface."""
+    total: int = 0                    # assessments examined
+    with_figures: int = 0             # figure_evidence present AND >= 1 distinct figure
+    no_figures: int = 0               # missing figure evidence, or evidence with zero figures
+    truncated: int = 0                # a parse dropped information
+    complete: int = 0                 # lossless parse (not truncated)
+    with_money: int = 0
+    with_percentage: int = 0
+    with_basis_points: int = 0
+    with_per_share: int = 0
+    distinct_values_total: int = 0    # sum of distinct normalized figure keys
+
+
+def figure_diagnostics(assessments) -> FigureDiagnostics:
+    """Summarize already-computed FigureEvidence across `assessments`. Pure,
+    deterministic, read-only: NO reparsing, NO aggregation, NO mutation. Reads each
+    assessment's existing `figure_evidence` (None-safe) and returns a transient
+    FigureDiagnostics that is stored nowhere."""
+    total = with_figures = no_figures = truncated = complete = 0
+    money = pct = bps = per_share = distinct_total = 0
+    for a in assessments or ():
+        total += 1
+        fe = getattr(a, "figure_evidence", None)
+        if fe is None:
+            no_figures += 1
+            continue
+        if fe.distinct_figures:
+            with_figures += 1
+            distinct_total += len(fe.distinct_figures)
+        else:
+            no_figures += 1
+        if fe.truncated:
+            truncated += 1
+        if fe.figures_complete:
+            complete += 1
+        money += 1 if fe.has_money else 0
+        pct += 1 if fe.has_percentage else 0
+        bps += 1 if fe.has_basis_points else 0
+        per_share += 1 if fe.has_per_share else 0
+    return FigureDiagnostics(
+        total=total, with_figures=with_figures, no_figures=no_figures,
+        truncated=truncated, complete=complete,
+        with_money=money, with_percentage=pct, with_basis_points=bps,
+        with_per_share=per_share, distinct_values_total=distinct_total,
+    )
+
+
 def observe(result: MaterialityShadowResult) -> None:
-    """Isolated, explicitly NON-AUTHORITATIVE shadow observation channel. Emits a
-    single per-cycle summary log line from the transient shadow result and
-    touches no feed / identity / memory / API consumer."""
+    """Isolated, explicitly NON-AUTHORITATIVE shadow observation channel. Emits
+    per-cycle summary log lines from the transient shadow result (a general line
+    and, N2.3, a bounded typed-figure-diagnostics line) and touches no feed /
+    identity / memory / API consumer."""
     pre = result.pre_admission
     adm = result.admitted
     if not pre and not adm:
@@ -673,6 +730,37 @@ def observe(result: MaterialityShadowResult) -> None:
         "primary_source=%d company_capped=%d industry_capped=%d unthemed=%d",
         result.policy_version, len(pre), len(adm), n_unresolved, n_mandatory,
         n_primary, n_comp_capped, n_ind_capped, n_unthemed,
+    )
+
+    # N2.3: bounded, DESCRIPTIVE-ONLY typed-figure diagnostics over already-computed
+    # evidence (no reparse, no aggregation, no decision effect). The two shadow
+    # populations are summarized INDEPENDENTLY and labelled unambiguously — never
+    # concatenated and never combined into a single total, because they have
+    # different cardinalities and meanings:
+    #   • pre_admission_* — the qualified post-fold candidate population observed
+    #     BEFORE ordinary admission (includes below-floor candidates);
+    #   • admitted_*      — the FINAL admitted / post-identity assessment population.
+    # They are NOT directly additive or one-to-one comparable. Same NON-AUTHORITATIVE
+    # engineering channel; not persisted.
+    pre_fd = figure_diagnostics(pre)
+    adm_fd = figure_diagnostics(adm)
+    log.info(
+        "[materiality:shadow NON-AUTHORITATIVE figures] policy=%s "
+        "pre_admission_total=%d pre_admission_with_figures=%d pre_admission_no_figures=%d "
+        "pre_admission_truncated=%d pre_admission_complete=%d pre_admission_money=%d "
+        "pre_admission_percentage=%d pre_admission_basis_points=%d pre_admission_per_share=%d "
+        "pre_admission_distinct_values=%d "
+        "admitted_total=%d admitted_with_figures=%d admitted_no_figures=%d "
+        "admitted_truncated=%d admitted_complete=%d admitted_money=%d "
+        "admitted_percentage=%d admitted_basis_points=%d admitted_per_share=%d "
+        "admitted_distinct_values=%d",
+        result.policy_version,
+        pre_fd.total, pre_fd.with_figures, pre_fd.no_figures, pre_fd.truncated,
+        pre_fd.complete, pre_fd.with_money, pre_fd.with_percentage,
+        pre_fd.with_basis_points, pre_fd.with_per_share, pre_fd.distinct_values_total,
+        adm_fd.total, adm_fd.with_figures, adm_fd.no_figures, adm_fd.truncated,
+        adm_fd.complete, adm_fd.with_money, adm_fd.with_percentage,
+        adm_fd.with_basis_points, adm_fd.with_per_share, adm_fd.distinct_values_total,
     )
 
 
