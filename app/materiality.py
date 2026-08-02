@@ -272,6 +272,11 @@ class MaterialityShadowResult:
     pre_admission: tuple[MaterialityAssessment, ...] = ()
     admitted: tuple[MaterialityAssessment, ...] = ()
     authoritative: bool = False
+    # Wave 0.2b N2.2: typed-figure evidence propagates through the shadow pipeline
+    # via each assessment's own field — `admitted[*].figure_evidence` (and
+    # `pre_admission[*].figure_evidence`). There is intentionally NO top-level
+    # figure projection: a single field cannot represent many events without
+    # aggregation, which is deferred to N3. DIAGNOSTIC / capture-only throughout.
 
 
 def assess(event: object, *, policy_version: str = POLICY_VERSION) -> MaterialityAssessment:
