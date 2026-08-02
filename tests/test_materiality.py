@@ -417,8 +417,9 @@ def test_aggregate_preserves_all_evidence_and_nested_provenance():
     assert set(agg1.merged_event_ids) == {"m1", "m2"}
     assert agg1.event_uid is None                             # multiple distinct uids → None
     assert set(agg1.universal_event_uids) == {"ev_A"}         # universal contributor only
-    assert {(r.factor, r.detail) for r in agg1.reasons} == {
+    assert {(r.factor, r.detail) for r in agg1.reasons if r.factor != "typed_figures"} == {
         ("event_class", "class=macro"), ("evidence_tier", "best_tier=1 any_qualified=True")}
+    assert sum(1 for r in agg1.reasons if r.factor == "typed_figures") == 1   # N3: one folded reason
     assert set(agg1.inputs_present) == {"event_class", "corroboration", "evidence_tier"}
     assert agg1.mandatory_class is True                       # OR
     assert agg1.materiality_rank == 4.0                       # max over universal
@@ -937,7 +938,8 @@ def test_rich_aggregate_permutation_invariant_no_evidence_loss():
         assert r == first                                    # COMPLETE dataclass equality
     # nothing lost across the union fields
     assert set(first.contributing_ids) == {"a", "am", "b", "bm", "c", "cm"}
-    assert {r.factor for r in first.reasons} == {"r_a", "r_b", "r_c"}
+    assert {r.factor for r in first.reasons if r.factor != "typed_figures"} == {"r_a", "r_b", "r_c"}
+    assert sum(1 for r in first.reasons if r.factor == "typed_figures") == 1   # N3: one folded reason
     assert set(first.inputs_present) == {"in_a", "in_b", "in_c"}
 
 
@@ -2014,43 +2016,87 @@ def test_reason_codes_typed_figures_and_magnitude_guard():
     assert {r.factor: r for r in b.reasons}["typed_figures"].available is False
 
 
-def test_aggregate_does_not_fold_figure_evidence():
-    # Two figure-bearing assessments: neither figure_evidence nor the figure-derived
-    # typed_figures reason may survive aggregation in N2.1.
+def test_aggregate_folds_figure_evidence():
+    # N3: two figure-bearing assessments fold; the aggregate carries the exact union
+    # and exactly one FRESH typed_figures reason derived from that fold.
     a = assess(_fig_event(title="Buyback $5B", evidence_titles=("$5B",)))
     b = assess(_fig_event(id="c-fig002", title="Deal 8%", evidence_titles=("8%",)))
-    assert "typed_figures" in {r.factor for r in a.reasons}   # present on direct assessments
-    assert "typed_figures" in {r.factor for r in b.reasons}
     agg = aggregate([a, b])
     assert agg is not None
-    assert agg.figure_evidence is None            # N2.1 does not aggregate figures; N3 owns it
-    assert "typed_figures" not in {r.factor for r in agg.reasons}   # no figure-derived leak
+    fe = agg.figure_evidence
+    assert fe is not None
+    assert _only(fe, "money")[0].value_minor == 5 * 10**9 * 100
+    assert _only(fe, "percentage")[0].value_minor == 800
+    assert fe.distinct_money_values == 1 and fe.distinct_percentage_values == 1
+    assert fe.figures_complete and not fe.truncated
+    tf = [r for r in agg.reasons if r.factor == "typed_figures"]
+    assert len(tf) == 1 and tf[0].available is True            # one fresh folded reason
     assert agg.state is MaterialityState.UNRESOLVED
 
 
-def test_aggregate_excludes_typed_figures_reason_but_keeps_the_rest():
+def _expected_typed_figures_detail(fe):
+    """Mirror of the production folded typed_figures detail format (contract §B)."""
+    return (
+        f"distinct_money_values={fe.distinct_money_values}; "
+        f"money_occurrence_lower_bound={fe.money_occurrence_lower_bound}; "
+        f"distinct_percentage_values={fe.distinct_percentage_values}; "
+        f"percentage_occurrence_lower_bound={fe.percentage_occurrence_lower_bound}; "
+        f"distinct_basis_points_values={fe.distinct_basis_points_values}; "
+        f"basis_points_occurrence_lower_bound={fe.basis_points_occurrence_lower_bound}; "
+        f"distinct_per_share_values={fe.distinct_per_share_values}; "
+        f"per_share_occurrence_lower_bound={fe.per_share_occurrence_lower_bound}; "
+        f"truncated={fe.truncated}; "
+        f"figures_complete={fe.figures_complete}"
+    )
+
+
+def test_aggregate_folded_typed_figures_reason_and_others_preserved():
     with_fig = assess(_fig_event(title="Buyback $5B up 8%", evidence_titles=("$5B",)))
     no_fig = assess(_fig_event(id="c-fig002", title="Fed holds steady",
                                evidence_titles=("wire report",)))
     agg = aggregate([with_fig, no_fig])
     assert agg is not None
-    # figure evidence and its derived reason are both gone
-    assert agg.figure_evidence is None
-    assert "typed_figures" not in {r.factor for r in agg.reasons}
-    # every non-figure reason is still unioned (magnitude guard, and the rest)
+    fe = agg.figure_evidence
+    assert fe is not None and fe.distinct_money_values == 1 and fe.distinct_percentage_values == 1
+    # exactly one typed_figures reason, derived from the FOLD (contract §B format)
+    tf = [r for r in agg.reasons if r.factor == "typed_figures"]
+    assert len(tf) == 1
+    assert tf[0].detail == _expected_typed_figures_detail(fe)
+    assert tf[0].available is True
+    # no stale contributor-level typed_figures detail survives
+    contributor_details = {r.detail for c in (with_fig, no_fig)
+                           for r in c.reasons if r.factor == "typed_figures"}
+    assert tf[0].detail not in contributor_details
+    # every non-figure factor still unioned; magnitude guard unchanged
     agg_factors = {r.factor for r in agg.reasons}
-    direct_factors = ({r.factor for r in with_fig.reasons}
-                      | {r.factor for r in no_fig.reasons}) - {"typed_figures"}
-    assert agg_factors == direct_factors
-    assert "magnitude" in agg_factors                          # decision guard preserved
+    assert agg_factors == ({r.factor for r in with_fig.reasons}
+                           | {r.factor for r in no_fig.reasons})   # includes typed_figures + magnitude
     mag = next(r for r in agg.reasons if r.factor == "magnitude")
     assert mag.available is False
-    # decision fields / provenance are unchanged by the figure filtering
+    # decision fields / provenance unchanged by figure folding
     assert agg.state is MaterialityState.UNRESOLVED
     assert agg.materiality_rank is None
     assert agg.inputs_present == tuple(sorted(
         set(with_fig.inputs_present) | set(no_fig.inputs_present)))
     assert set(agg.contributing_ids) == {with_fig.event_id, no_fig.event_id}
+
+
+def test_typed_figures_reason_exact_literal_format():
+    # Pins the exact §B detail format (would fail if separators/order/booleans change).
+    a = assess(_fig_event(title="Buyback $5B", evidence_titles=("$5B",)))
+    b = assess(_fig_event(id="c-2", title="Up 8%", evidence_titles=("8%",)))
+    agg = aggregate([a, b])
+    tf = [r for r in agg.reasons if r.factor == "typed_figures"]
+    assert len(tf) == 1
+    assert tf[0] == ReasonCode(
+        "typed_figures",
+        "distinct_money_values=1; money_occurrence_lower_bound=1; "
+        "distinct_percentage_values=1; percentage_occurrence_lower_bound=1; "
+        "distinct_basis_points_values=0; basis_points_occurrence_lower_bound=0; "
+        "distinct_per_share_values=0; per_share_occurrence_lower_bound=0; "
+        "truncated=False; figures_complete=True",
+        True,
+    )
 
 
 def test_post_identity_fresh_reassessment_reflects_final_titles():
@@ -2170,11 +2216,13 @@ def test_diagnostics_order_invariance():
 
 
 def test_diagnostics_handle_none_figure_evidence():
-    a = assess(_fig_event(title="Deal $5B", evidence_titles=("$5B",)))
-    b = assess(_fig_event(id="c-2", title="Cut 8%", evidence_titles=("8%",)))
-    agg = aggregate([a, b])
-    assert agg.figure_evidence is None       # aggregate carries no figure evidence
-    d = figure_diagnostics([agg])
+    # A manually-constructed assessment with no figure evidence (figure_evidence None).
+    # (Post-N3 aggregates DO carry folded evidence, so the None case is exercised
+    # directly rather than via aggregate().)
+    a = MaterialityAssessment(state=MaterialityState.UNRESOLVED,
+                              policy_version=POLICY_VERSION, event_id="x")
+    assert a.figure_evidence is None
+    d = figure_diagnostics([a])
     assert d.total == 1 and d.no_figures == 1 and d.with_figures == 0
 
 
@@ -2211,3 +2259,247 @@ def test_observe_emits_bounded_figure_diagnostics_line(caplog):
     # the pre_admission population is summarized separately (here empty)
     assert "pre_admission_total=0" in caplog.text
     assert "pre_admission_with_figures=0" in caplog.text
+
+
+# ==============================================================================
+# Wave 0.2b (N3): figure-evidence AGGREGATION — exact key union, per-key MAX
+# occurrences, union-derived scalars, MAX mention_count, OR truncated; permutation
+# invariant, commutative, associative (incl. under the lexicographic-smallest-K
+# cap), with the empty-complete FigureEvidence as identity; plus the deterministic
+# folded typed_figures ReasonCode.
+# ==============================================================================
+
+def _fe(facts, mention=0, truncated=False):
+    """Build a self-consistent FigureEvidence from (kind, value_minor, occ) tuples,
+    for use as a fold contributor. Only distinct_figures / mention_count / truncated
+    are read by the fold; the derived scalars are set consistently for realism."""
+    ffs = tuple(sorted(
+        (FigureFact(k, v, ("USD" if k in ("money", "per_share") else None), occ)
+         for (k, v, occ) in facts),
+        key=lambda f: (f.kind, f.value_minor, f.currency or "")))
+
+    def dc(kind):
+        return sum(1 for f in ffs if f.kind == kind)
+
+    def oc(kind):
+        return sum(f.max_occurrences_per_title for f in ffs if f.kind == kind)
+
+    def mm(kind):
+        vals = [f.value_minor for f in ffs if f.kind == kind]
+        return max(vals) if vals else None
+
+    return FigureEvidence(
+        distinct_figures=ffs,
+        distinct_money_values=dc("money"), money_occurrence_lower_bound=oc("money"),
+        distinct_percentage_values=dc("percentage"), percentage_occurrence_lower_bound=oc("percentage"),
+        distinct_basis_points_values=dc("basis_points"), basis_points_occurrence_lower_bound=oc("basis_points"),
+        distinct_per_share_values=dc("per_share"), per_share_occurrence_lower_bound=oc("per_share"),
+        has_money=any(f.kind == "money" for f in ffs),
+        has_percentage=any(f.kind == "percentage" for f in ffs),
+        has_basis_points=any(f.kind == "basis_points" for f in ffs),
+        has_per_share=any(f.kind == "per_share" for f in ffs),
+        max_money_minor=mm("money"), max_percentage_bps=mm("percentage"),
+        mention_count=mention, truncated=truncated, figures_complete=not truncated,
+    )
+
+
+def _asmt_fig(eid, fe):
+    return MaterialityAssessment(state=MaterialityState.UNRESOLVED,
+                                 policy_version=POLICY_VERSION, event_id=eid,
+                                 figure_evidence=fe)
+
+
+def test_fold_exact_union_and_per_key_max_occurrence():
+    a = _asmt_fig("a", _fe([("money", 500, 1), ("percentage", 800, 2)]))
+    b = _asmt_fig("b", _fe([("money", 500, 3), ("basis_points", 50, 1)]))   # shares money 500
+    fe = aggregate([a, b]).figure_evidence
+    assert _only(fe, "money")[0].value_minor == 500
+    assert _only(fe, "money")[0].max_occurrences_per_title == 3             # MAX(1,3), never sum
+    assert fe.distinct_money_values == 1                                    # exact union
+    assert fe.money_occurrence_lower_bound == 3                            # sum over union keys
+    assert fe.distinct_percentage_values == 1 and fe.distinct_basis_points_values == 1
+    assert fe.has_money and fe.has_percentage and fe.has_basis_points and not fe.has_per_share
+
+
+def test_fold_permutation_and_nesting_invariant_full_equality():
+    a = _asmt_fig("a", _fe([("money", 500, 2), ("percentage", 800, 1)], mention=3))
+    b = _asmt_fig("b", _fe([("money", 500, 1), ("basis_points", 50, 4)], mention=5, truncated=True))
+    c = _asmt_fig("c", _fe([("per_share", 125, 1), ("percentage", 1250, 2)], mention=2))
+    results = [aggregate(list(p)).figure_evidence for p in itertools.permutations([a, b, c])]
+    first = results[0]
+    for r in results[1:]:
+        assert r == first                                    # COMPLETE FigureEvidence equality
+    left = aggregate([aggregate([a, b]), c]).figure_evidence
+    right = aggregate([a, aggregate([b, c])]).figure_evidence
+    flat = aggregate([a, b, c]).figure_evidence
+    assert left == right == flat == first                    # associative + nesting-invariant
+    # spot-check folded semantics
+    assert first.distinct_money_values == 1                  # 500 shared
+    assert first.money_occurrence_lower_bound == 2           # MAX(2,1)
+    assert first.distinct_percentage_values == 2             # 800, 1250
+    assert first.mention_count == 5                          # MAX, never sum
+    assert first.truncated is True and first.figures_complete is False   # OR / not-truncated
+
+
+def test_fold_identity_element_and_single_idempotence():
+    empty = _asmt_fig("e", FigureEvidence())                 # empty-but-complete identity
+    x = _asmt_fig("x", _fe([("money", 500, 2), ("basis_points", 25, 1)], mention=4))
+    assert aggregate([x]).figure_evidence == x.figure_evidence           # idempotent single fold
+    assert aggregate([empty, x]).figure_evidence == x.figure_evidence    # identity element
+    assert aggregate([x, empty]).figure_evidence == x.figure_evidence
+
+
+def test_fold_completeness_and_missing_contributor():
+    complete = _asmt_fig("a", _fe([("money", 500, 1)]))
+    truncated = _asmt_fig("b", _fe([("percentage", 800, 1)], truncated=True))
+    fe1 = aggregate([complete, truncated]).figure_evidence
+    assert fe1.truncated is True and fe1.figures_complete is False        # OR propagates truncation
+    # a missing contributor (figure_evidence None) is unrepresentable info → truncated
+    missing = MaterialityAssessment(state=MaterialityState.UNRESOLVED,
+                                    policy_version=POLICY_VERSION, event_id="m")
+    assert missing.figure_evidence is None
+    fe2 = aggregate([complete, missing]).figure_evidence
+    assert fe2.truncated is True and fe2.figures_complete is False
+    assert _only(fe2, "money")[0].value_minor == 500                     # present figures still union
+    # all-complete, no cap → complete
+    fe3 = aggregate([complete, _asmt_fig("c", _fe([("basis_points", 25, 1)]))]).figure_evidence
+    assert fe3.truncated is False and fe3.figures_complete is True
+
+
+def test_fold_capped_associativity_boundary_key():
+    # MAX_FIGURE_KEYS == 16. a:1..12, b:9..18 (inner-left fold caps, dropping 17,18),
+    # c: boundary key 16 with a DIFFERENT occurrence + keys 19,20 (flat also caps).
+    assert MAX_FIGURE_KEYS == 16
+    a = _asmt_fig("a", _fe([("money", n, 1) for n in range(1, 13)]))
+    b = _asmt_fig("b", _fe([("money", n, 1) for n in range(9, 19)]))
+    c = _asmt_fig("c", _fe([("money", 16, 5), ("money", 19, 1), ("money", 20, 1)]))
+
+    # (1) prove the INTERMEDIATE left fold itself caps correctly — do not rely on
+    # final equality to imply the inner cap occurred.
+    ab = aggregate([a, b])
+    assert ab is not None and ab.figure_evidence is not None
+    ab_fe = ab.figure_evidence
+    ab_vals = [f.value_minor for f in ab_fe.distinct_figures]
+    assert ab_vals == list(range(1, 17))                     # exactly 1..16, deterministic order
+    assert 17 not in ab_vals and 18 not in ab_vals           # dropped by the inner cap
+    assert ab_fe.truncated is True and ab_fe.figures_complete is False
+
+    left = aggregate([ab, c]).figure_evidence
+    right = aggregate([a, aggregate([b, c])]).figure_evidence
+    flat_result = aggregate([a, b, c])
+    flat = flat_result.figure_evidence
+    assert left == right == flat                              # complete FigureEvidence equality
+    assert [f.value_minor for f in flat.distinct_figures] == list(range(1, 17))
+    assert next(f for f in flat.distinct_figures if f.value_minor == 16).max_occurrences_per_title == 5
+    assert flat.truncated is True and flat.figures_complete is False      # union exceeded the cap
+    assert flat.distinct_money_values == 16
+    assert flat.money_occurrence_lower_bound == 15 * 1 + 5               # fifteen occ-1 keys + key16 occ-5
+    assert flat.max_money_minor == 16
+
+    # (2) cap-bearing permutation invariance: complete FigureEvidence AND reasons
+    # equality for EVERY permutation against the canonical flat result.
+    for perm in itertools.permutations([a, b, c]):
+        res = aggregate(list(perm))
+        assert res.figure_evidence == flat_result.figure_evidence
+        assert res.reasons == flat_result.reasons
+
+
+def test_fold_reasons_tuple_invariant_across_permutations_and_nesting():
+    a = assess(_fig_event(id="a", title="Buyback $5B", evidence_titles=("$5B",)))
+    b = assess(_fig_event(id="b", title="Up 8%", evidence_titles=("8%",)))
+    c = assess(_fig_event(id="c", title="Hike 50 bps", evidence_titles=("50 bps",)))
+    results = [aggregate(list(p)).reasons for p in itertools.permutations([a, b, c])]
+    first = results[0]
+    for r in results[1:]:
+        assert r == first                                    # COMPLETE reasons-tuple equality
+    left = aggregate([aggregate([a, b]), c]).reasons
+    right = aggregate([a, aggregate([b, c])]).reasons
+    flat = aggregate([a, b, c]).reasons
+    assert left == right == flat == first                    # nesting-invariant reasons
+    # exactly one typed_figures reason; magnitude guard preserved unchanged
+    assert sum(1 for r in first if r.factor == "typed_figures") == 1
+    mags = [r for r in first if r.factor == "magnitude"]
+    assert len(mags) == 1
+    # COMPLETE ReasonCode equality: the aggregate's magnitude guard is byte-identical
+    # to the direct-assessment guard (factor + detail + available).
+    expected_mag = next(r for r in a.reasons if r.factor == "magnitude")
+    assert mags[0] == expected_mag
+    assert expected_mag.available is False
+    # the folded typed_figures reason matches the aggregate's own folded evidence
+    tf = next(r for r in first if r.factor == "typed_figures")
+    folded_fe = aggregate([a, b, c]).figure_evidence
+    assert tf.detail == _expected_typed_figures_detail(folded_fe)
+    assert tf.available is bool(folded_fe.distinct_figures)
+
+
+def test_fold_empty_contributors_yield_empty_complete_evidence():
+    a = _asmt_fig("a", FigureEvidence())
+    b = _asmt_fig("b", FigureEvidence())
+    fe = aggregate([a, b]).figure_evidence
+    assert fe is not None                                     # non-None even when figure-free
+    assert fe.distinct_figures == () and fe.mention_count == 0
+    assert fe.truncated is False and fe.figures_complete is True
+    assert not (fe.has_money or fe.has_percentage or fe.has_basis_points or fe.has_per_share)
+
+
+def test_figure_free_aggregate_typed_figures_exact():
+    # assess()-produced figure-free contributors → empty-complete folded evidence
+    # (truncated=False), so the exact empty-complete typed_figures reason is pinned.
+    a = assess(_fig_event(id="a", title="Fed holds steady", evidence_titles=("wire report",)))
+    b = assess(_fig_event(id="b", title="ECB stays patient", evidence_titles=("policy note",)))
+    agg = aggregate([a, b])
+    fe = agg.figure_evidence
+    assert fe is not None and fe.distinct_figures == ()
+    tf = [r for r in agg.reasons if r.factor == "typed_figures"]
+    assert len(tf) == 1                                       # exactly one
+    assert tf[0] == ReasonCode(
+        "typed_figures",
+        "distinct_money_values=0; money_occurrence_lower_bound=0; "
+        "distinct_percentage_values=0; percentage_occurrence_lower_bound=0; "
+        "distinct_basis_points_values=0; basis_points_occurrence_lower_bound=0; "
+        "distinct_per_share_values=0; per_share_occurrence_lower_bound=0; "
+        "truncated=False; figures_complete=True",
+        False,
+    )
+    # no stale contributor-level typed_figures detail survives
+    contrib = {r.detail for c in (a, b) for r in c.reasons if r.factor == "typed_figures"}
+    assert tf[0].detail not in contrib
+    # typed_figures never enters inputs_present
+    assert "typed_figures" not in agg.inputs_present
+
+
+def test_aggregate_complete_expected_reason_tuple():
+    # Fixture exercises: an unrelated reason, DUPLICATE unrelated + magnitude reasons
+    # across contributors (canonical de-dup), stale contributor typed_figures (must be
+    # stripped), and folded figure evidence (one fresh typed_figures).
+    mag = next(r for r in assess(_fig_event(title="plain", evidence_titles=("plain",))).reasons
+               if r.factor == "magnitude")
+    shared = ReasonCode("shared_reason", "shared-detail", True)
+    a = MaterialityAssessment(
+        state=MaterialityState.UNRESOLVED, policy_version=POLICY_VERSION, event_id="a",
+        figure_evidence=_fe([("money", 500, 1)]),
+        reasons=(mag, shared, ReasonCode("only_a", "da", True),
+                 ReasonCode("typed_figures", "STALE-A", True)))
+    b = MaterialityAssessment(
+        state=MaterialityState.UNRESOLVED, policy_version=POLICY_VERSION, event_id="b",
+        figure_evidence=_fe([("percentage", 800, 1)]),
+        reasons=(mag, shared, ReasonCode("only_b", "db", True),
+                 ReasonCode("typed_figures", "STALE-B", False)))
+    agg = aggregate([a, b])
+    folded = agg.figure_evidence
+
+    # Build the expected reasons tuple EXACTLY as the contract prescribes.
+    triples = {(r.factor, r.detail, r.available)
+               for c in (a, b) for r in c.reasons if r.factor != "typed_figures"}
+    triples.add(("typed_figures", _expected_typed_figures_detail(folded),
+                 bool(folded.distinct_figures)))
+    expected = tuple(ReasonCode(f, d, av) for (f, d, av) in sorted(triples))
+
+    assert agg.reasons == expected                            # exact length + order + values
+    # explicit sub-properties
+    assert sum(1 for r in agg.reasons if r.factor == "typed_figures") == 1
+    assert ReasonCode("typed_figures", "STALE-A", True) not in agg.reasons
+    assert ReasonCode("typed_figures", "STALE-B", False) not in agg.reasons
+    assert mag in agg.reasons                                 # magnitude guard unchanged
+    assert sum(1 for r in agg.reasons if r.factor == "shared_reason") == 1   # deduped
+    assert sum(1 for r in agg.reasons if r.factor == "magnitude") == 1       # deduped

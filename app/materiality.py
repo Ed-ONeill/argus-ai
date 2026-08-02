@@ -541,16 +541,34 @@ def aggregate(assessments) -> MaterialityAssessment | None:
         | {a.event_uid for a in items
            if a.state is MaterialityState.UNIVERSAL and a.event_uid}
     ))
-    # Figure-derived reasons (typed_figures) are EXCLUDED from the aggregate union:
-    # aggregate() intentionally sets figure_evidence=None (N3 owns figure folding),
-    # so no figure-derived data may survive indirectly through reasons either. The
-    # `magnitude` guard is NOT figure evidence (a static excluded-input marker,
-    # available=False) and is preserved.
-    reason_keys = sorted({
+    # Wave 0.2b N3: fold typed-figure evidence across contributors (pure, exact-key
+    # union, per-key MAX occurrences, union-derived scalars, MAX mention_count,
+    # OR truncated; associative under lexicographic-smallest-K capping). The stale
+    # per-contributor `typed_figures` reasons are STRIPPED from the reason union
+    # (_FIGURE_DERIVED_REASONS), and exactly ONE fresh typed_figures reason is
+    # derived from the fold and placed deterministically by the canonical
+    # (factor, detail, available) sort. The `magnitude` guard (available=False) is
+    # NOT figure evidence and is preserved unchanged.
+    figure_evidence = _aggregate_figure_evidence([a.figure_evidence for a in items])
+    _fig_detail = (
+        f"distinct_money_values={figure_evidence.distinct_money_values}; "
+        f"money_occurrence_lower_bound={figure_evidence.money_occurrence_lower_bound}; "
+        f"distinct_percentage_values={figure_evidence.distinct_percentage_values}; "
+        f"percentage_occurrence_lower_bound={figure_evidence.percentage_occurrence_lower_bound}; "
+        f"distinct_basis_points_values={figure_evidence.distinct_basis_points_values}; "
+        f"basis_points_occurrence_lower_bound={figure_evidence.basis_points_occurrence_lower_bound}; "
+        f"distinct_per_share_values={figure_evidence.distinct_per_share_values}; "
+        f"per_share_occurrence_lower_bound={figure_evidence.per_share_occurrence_lower_bound}; "
+        f"truncated={figure_evidence.truncated}; "
+        f"figures_complete={figure_evidence.figures_complete}"
+    )
+    _reason_triples = {
         (r.factor, r.detail, r.available)
         for a in items for r in a.reasons
         if r.factor not in _FIGURE_DERIVED_REASONS
-    })
+    }
+    _reason_triples.add(("typed_figures", _fig_detail, bool(figure_evidence.distinct_figures)))
+    reason_keys = sorted(_reason_triples)
     reasons = tuple(ReasonCode(f, d, av) for (f, d, av) in reason_keys)
     inputs = tuple(sorted({i for a in items for i in a.inputs_present}))
 
@@ -642,11 +660,7 @@ def aggregate(assessments) -> MaterialityAssessment | None:
         industries_count=max(a.industries_count for a in items),
         source_evidence=source_evidence,
         breadth_evidence=breadth_evidence,
-        # figure_evidence is intentionally NOT folded here — the aggregate leaves it
-        # None (its default). N2.1 does no figure aggregation; the exact key union,
-        # occurrence-bound folding, completeness propagation, and permutation/nesting
-        # guarantees are owned by N3. Dropping it (rather than combining partially) is
-        # the documented, non-authoritative behavior until then.
+        figure_evidence=figure_evidence,        # Wave 0.2b N3: folded typed-figure evidence
         reasons=reasons,
         materiality_rank=(max(ranks) if ranks else None),
         version_mismatch=mismatch,
@@ -1247,4 +1261,86 @@ def build_figure_evidence(titles: Iterable[str]) -> FigureEvidence:
         mention_count=mention_count,
         truncated=truncated,
         figures_complete=not truncated,      # honest: any dropped candidate ⇒ incomplete
+    )
+
+
+def _aggregate_figure_evidence(figure_evidences) -> FigureEvidence:
+    """Wave 0.2b N3: fold FigureEvidence across an aggregate's contributors.
+
+    Pure, deterministic, and — under the lexicographic-smallest-K cap — permutation
+    invariant, commutative, associative, with the empty-complete FigureEvidence as
+    identity. It NEVER reparses; it reads only the contributors' already-computed
+    evidence. Rules:
+
+      • distinct_figures — EXACT set union of contributor keys (kind, value_minor,
+        currency); each surviving key's max_occurrences_per_title is the MAX over the
+        contributors that hold it (never summed);
+      • all scalar counts (distinct_*_values, *_occurrence_lower_bound, has_*,
+        max_money_minor, max_percentage_bps) are DERIVED from the folded
+        distinct_figures — never accumulated from contributor scalars (this is what
+        makes nesting associative);
+      • mention_count — MAX over contributors (overlap-safe lower bound, never sum);
+      • truncated — OR of: any contributor truncated, the key-cap tripping, or any
+        contributor whose figure_evidence is missing (None → unrepresentable info);
+      • figures_complete — exactly `not truncated`, preserving the N1 leaf invariant
+        at every nesting level.
+
+    Retention keeps the MAX_FIGURE_KEYS lexicographically smallest keys under the
+    total order (kind, value_minor, currency-or-""). This monotone retention is what
+    guarantees capped associativity."""
+    fes = list(figure_evidences)
+    present = [fe for fe in fes if fe is not None]
+    any_missing = len(present) != len(fes)
+
+    # Exact key union with per-key MAX occurrences.
+    per_key_max: dict[tuple[str, int, str | None], int] = {}
+    for fe in present:
+        for f in fe.distinct_figures:
+            key = (f.kind, f.value_minor, f.currency)
+            if f.max_occurrences_per_title > per_key_max.get(key, 0):
+                per_key_max[key] = f.max_occurrences_per_title
+
+    keys_sorted = sorted(per_key_max, key=lambda k: (k[0], k[1], k[2] or ""))
+    key_capped = len(keys_sorted) > MAX_FIGURE_KEYS
+    if key_capped:
+        keys_sorted = keys_sorted[:MAX_FIGURE_KEYS]      # lexicographically smallest survive
+
+    distinct_figures = tuple(
+        FigureFact(kind=k[0], value_minor=k[1], currency=k[2],
+                   max_occurrences_per_title=per_key_max[k])
+        for k in keys_sorted
+    )
+
+    def _distinct(kind: str) -> int:
+        return sum(1 for f in distinct_figures if f.kind == kind)
+
+    def _occ(kind: str) -> int:
+        return sum(f.max_occurrences_per_title for f in distinct_figures if f.kind == kind)
+
+    def _max_minor(kind: str) -> int | None:
+        vals = [f.value_minor for f in distinct_figures if f.kind == kind]
+        return max(vals) if vals else None
+
+    truncated = any(fe.truncated for fe in present) or key_capped or any_missing
+    mention_count = max((fe.mention_count for fe in present), default=0)
+
+    return FigureEvidence(
+        distinct_figures=distinct_figures,
+        distinct_money_values=_distinct("money"),
+        money_occurrence_lower_bound=_occ("money"),
+        distinct_percentage_values=_distinct("percentage"),
+        percentage_occurrence_lower_bound=_occ("percentage"),
+        distinct_basis_points_values=_distinct("basis_points"),
+        basis_points_occurrence_lower_bound=_occ("basis_points"),
+        distinct_per_share_values=_distinct("per_share"),
+        per_share_occurrence_lower_bound=_occ("per_share"),
+        has_money=any(f.kind == "money" for f in distinct_figures),
+        has_percentage=any(f.kind == "percentage" for f in distinct_figures),
+        has_basis_points=any(f.kind == "basis_points" for f in distinct_figures),
+        has_per_share=any(f.kind == "per_share" for f in distinct_figures),
+        max_money_minor=_max_minor("money"),
+        max_percentage_bps=_max_minor("percentage"),
+        mention_count=mention_count,
+        truncated=truncated,
+        figures_complete=not truncated,
     )
