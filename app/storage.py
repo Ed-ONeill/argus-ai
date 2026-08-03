@@ -50,6 +50,7 @@ DATA_DIR, DATA_DIR_SOURCE = _resolve()
 LEDGER_DIR       = DATA_DIR / "ledger"
 FEED_CACHE_DIR   = DATA_DIR / "feed_cache"
 THEME_MEMORY_DIR = DATA_DIR / "theme_memory"
+EVALUATION_DIR    = DATA_DIR / "materiality_evaluation"
 REGISTRY_PATH    = DATA_DIR / "event_registry.json"
 CONVERSATIONS_DIR = DATA_DIR / "conversations"
 MEMORY_DB_PATH   = DATA_DIR / "memory.db"

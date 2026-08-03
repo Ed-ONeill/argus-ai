@@ -7,9 +7,8 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import storage as _storage
@@ -182,6 +181,39 @@ class Settings(BaseSettings):
     # safe to "off". Default "off": the classifier is dark until explicitly
     # enabled for shadow calibration.
     materiality_mode: str = "off"
+
+    # Wave 0.3 C1 evaluation capture is independently gated and fail-off. It only
+    # observes completed SHADOW assessments; enabling it cannot activate the
+    # materiality classifier or alter any production decision surface.
+    materiality_evaluation_enabled: bool = False
+    materiality_evaluation_namespace: str = "argus"
+
+    @field_validator("materiality_evaluation_enabled", mode="before")
+    @classmethod
+    def _parse_materiality_evaluation_enabled(cls, value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "t", "yes", "y", "on"}:
+                return True
+            if normalized in {"0", "false", "f", "no", "n", "off", ""}:
+                return False
+        try:
+            from app.materiality_evaluation import record_diagnostic
+
+            record_diagnostic(
+                component="configuration", operation="parse",
+                error_code="invalid_activation_flag",
+                detail_code="evaluation_disabled",
+            )
+        except Exception:
+            # Diagnostics are observational; even their unavailability cannot
+            # turn malformed optional evaluation config into a startup failure.
+            pass
+        return False
 
     @field_validator("documents_dir", "embeddings_dir", "models_dir",
                      "chroma_dir", "conversations_dir", "log_file", mode="after")

@@ -22,9 +22,13 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from app import diagnostics as diag
 from app.diagnostics import CycleRecord, EMPTY, FAILED, OK, signal_score_histogram
+
+if TYPE_CHECKING:
+    from app.processed_cache import ProcessedFeed
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +112,7 @@ def run_pipeline(
     categories: str  = "",
     sources:    str  = "",
     fresh_only: bool = False,
-) -> "ProcessedFeed":  # type: ignore[name-defined]
+) -> "ProcessedFeed":
     """
     Execute the full ingestion → classification → summarisation → ranking pipeline.
 
@@ -331,7 +335,6 @@ def run_pipeline(
             _item.graph_alignment_score = round(min(30.0, _score * 5.0), 1)
 
         # Final composite re-sort: institutional_score (40%) + graph_alignment (20%) + signal_score (40%)
-        from datetime import timezone as _tz2
         _epoch2 = datetime.min.replace(tzinfo=timezone.utc)
         _SR2 = {"strong": 0, "medium": 1, "weak": 2}
         items.sort(key=lambda _i: (
@@ -427,7 +430,6 @@ def run_pipeline(
 
     # ── Audit block ────────────────────────────────────────────────────────────
     from app.feeds import category_breakdown as _cb, source_breakdown as _sb
-    from datetime  import timezone as _tz
 
     _now      = datetime.now(timezone.utc)
     _min_q    = 40
@@ -439,10 +441,14 @@ def run_pipeline(
     for _i in items:
         if _i.published_dt:
             _ah = (_now - _i.published_dt).total_seconds() / 3600
-            if   _ah <=  6: _age_hist["0-6h"]   += 1
-            elif _ah <= 24: _age_hist["6-24h"]   += 1
-            elif _ah <= 48: _age_hist["24-48h"]  += 1
-            else:           _age_hist["48h+"]    += 1
+            if _ah <= 6:
+                _age_hist["0-6h"] += 1
+            elif _ah <= 24:
+                _age_hist["6-24h"] += 1
+            elif _ah <= 48:
+                _age_hist["24-48h"] += 1
+            else:
+                _age_hist["48h+"] += 1
 
     # Per-category qualified count (signal_score >= _min_q)
     _qual = {c: sum(1 for i in items if i.category == c and i.signal_score >= _min_q)
@@ -561,6 +567,15 @@ def run_pipeline(
             from app.materiality import build_shadow_result, observe
             _shadow = build_shadow_result(_mat_shadow_pre or [], events)
             observe(_shadow)
+            # Wave 0.3 C1: downstream-only, bounded, fail-open evaluation capture.
+            # The queue receives immutable assessment values after inference has
+            # completed. It cannot alter `_shadow`, events, or any returned feed.
+            from app.materiality_evaluation import enqueue_shadow_evaluation
+            enqueue_shadow_evaluation(
+                _shadow,
+                cycle_id=_cycle_id,
+                decision_completed_at=datetime.now(timezone.utc),
+            )
             del _shadow                       # explicit: never enters the object graph
         except Exception:
             log.exception("[bg] materiality shadow assess/observe FAILED — continuing (feed unaffected)")

@@ -1042,6 +1042,7 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
 
     import app.background as bg
     import app.feeds as feeds_mod
+    import app.materiality_evaluation as evaluation
     import app.observation_ledger as obs
     import app.summarizer as summ
 
@@ -1068,6 +1069,15 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
     monkeypatch.setattr(obs.observation_ledger, "record_observations", lambda *a, **k: 0, raising=False)
     monkeypatch.setattr(obs.observation_ledger, "record_assessments", lambda *a, **k: 0, raising=False)
     monkeypatch.setattr(obs.observation_ledger, "compress_old", lambda *a, **k: None, raising=False)
+    evaluation_captures: list[tuple[int, int, str, _dt]] = []
+
+    def _capture_evaluation(result, *, cycle_id, decision_completed_at):
+        evaluation_captures.append(
+            (len(result.pre_admission), len(result.admitted), cycle_id, decision_completed_at)
+        )
+        return len(result.pre_admission) + len(result.admitted)
+
+    monkeypatch.setattr(evaluation, "enqueue_shadow_evaluation", _capture_evaluation)
 
     with caplog.at_level(logging.INFO, logger="app.materiality"):
         feed = bg.run_pipeline(categories="", sources="")     # full-feed → identity + shadow
@@ -1080,6 +1090,11 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
     assert "[materiality:shadow" in caplog.text
     assert "pre_admission_qualified=2" in caplog.text
     assert "admitted=1" in caplog.text
+    assert len(evaluation_captures) == 1
+    pre_count, admitted_count, cycle_id, decision_completed_at = evaluation_captures[0]
+    assert (pre_count, admitted_count) == (2, 1)
+    assert cycle_id
+    assert decision_completed_at.tzinfo is not None
     # no shadow payload survives into the returned ProcessedFeed
     blob = pickle.dumps(feed)
     assert b"app.materiality" not in blob
@@ -1092,6 +1107,174 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
     for e in feed.events:
         assert not hasattr(e, "materiality")
         assert not hasattr(e, "figure_evidence")
+
+
+def test_run_pipeline_output_identical_when_evaluation_disabled_or_failing(
+        fresh_identity, tmp_path, monkeypatch):
+    """A capture failure cannot alter populated production or shadow output."""
+    import app.event_identity as identity
+    import app.background as bg
+    import app.events as events_mod
+    import app.feeds as feeds_mod
+    import app.materiality as materiality
+    import app.materiality_evaluation as evaluation
+    import app.observation_ledger as obs
+    import app.processed_cache as pc
+    import app.sectors as sectors
+    import app.summarizer as summ
+    from api.routes.feed import _build_response
+
+    fixed = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed if tz is not None else fixed.replace(tzinfo=None)
+
+    calls = {"fetch": 0, "summarize": 0, "build_events": 0,
+             "assess": 0, "identity": 0}
+
+    def _fetch(**kwargs):
+        calls["fetch"] += 1
+        return [
+            FeedItem(
+                title="Fed holds rates steady", url="https://t/isolation-strong",
+                source="Bloomberg Markets", category="Markets",
+                published_dt=fixed - timedelta(minutes=20), snippet="wire",
+            ),
+            FeedItem(
+                title="ECB signals patience on the policy path",
+                url="https://t/isolation-aged", source="Bloomberg Markets",
+                category="Markets", published_dt=fixed - timedelta(hours=200),
+                snippet="wire",
+            ),
+        ]
+
+    class _SumRes:
+        new = cached = skipped = 0
+
+    def _summarize(*args, **kwargs):
+        calls["summarize"] += 1
+        return _SumRes()
+
+    original_build_events = events_mod.build_market_events
+    original_assess = materiality.assess
+    original_identity = identity.resolve_and_fold
+
+    def _build_events(*args, **kwargs):
+        calls["build_events"] += 1
+        return original_build_events(*args, **kwargs)
+
+    def _assess(*args, **kwargs):
+        calls["assess"] += 1
+        return original_assess(*args, **kwargs)
+
+    def _resolve_and_fold(*args, **kwargs):
+        calls["identity"] += 1
+        return original_identity(*args, **kwargs)
+
+    monkeypatch.setattr(bg, "datetime", _FixedDateTime)
+    monkeypatch.setattr(settings, "materiality_mode", "shadow")
+    monkeypatch.setattr(feeds_mod.feed_manager, "fetch_all", _fetch)
+    monkeypatch.setattr(feeds_mod.feed_manager, "fetch_errors", {}, raising=False)
+    monkeypatch.setattr(feeds_mod.feed_manager, "promo_excluded", 0, raising=False)
+    monkeypatch.setattr(feeds_mod.feed_manager, "last_source_stats", {}, raising=False)
+    monkeypatch.setattr(summ, "summarize_items", _summarize)
+    monkeypatch.setattr(summ, "generate_market_take", lambda *a, **k: "")
+    monkeypatch.setattr(summ, "generate_market_brief", lambda *a, **k: None)
+    monkeypatch.setattr(events_mod, "build_market_events", _build_events)
+    monkeypatch.setattr(materiality, "assess", _assess)
+    monkeypatch.setattr(identity, "resolve_and_fold", _resolve_and_fold)
+    monkeypatch.setattr(
+        sectors, "aggregate_sector_intelligence",
+        lambda *a, **k: sectors.SectorData(
+            sectors=[], industries=[], rotation_signals=[], dominant_sector=None,
+            generated_at=fixed,
+        ),
+    )
+    monkeypatch.setattr(obs.observation_ledger, "record_observations", lambda *a, **k: 0)
+    monkeypatch.setattr(obs.observation_ledger, "record_assessments", lambda *a, **k: 0)
+    monkeypatch.setattr(obs.observation_ledger, "compress_old", lambda *a, **k: None)
+    original_enqueue = evaluation.enqueue_shadow_evaluation
+    shadow_results: list[MaterialityShadowResult] = []
+
+    def _trace_enqueue(result, **kwargs):
+        shadow_results.append(result)
+        return original_enqueue(result, **kwargs)
+
+    monkeypatch.setattr(evaluation, "enqueue_shadow_evaluation", _trace_enqueue)
+    evaluation.EVALUATION_DIAGNOSTICS.clear()
+    monkeypatch.setattr(settings, "materiality_evaluation_enabled", False)
+    disabled = bg.run_pipeline(categories="", sources="")
+    disabled_diagnostics = evaluation.EVALUATION_DIAGNOSTICS.snapshot()
+
+    evaluation.EVALUATION_DIAGNOSTICS.clear()
+    monkeypatch.setattr(settings, "materiality_evaluation_enabled", True)
+    monkeypatch.setattr(
+        evaluation, "_capture_service", lambda: (_ for _ in ()).throw(OSError("down")))
+    failing = bg.run_pipeline(categories="", sources="")
+    failing_diagnostics = evaluation.EVALUATION_DIAGNOSTICS.snapshot()
+
+    assert disabled == failing
+    assert pickle.dumps(disabled) == pickle.dumps(failing)
+    assert len(shadow_results) == 2
+    assert shadow_results[0] == shadow_results[1]
+    assert len(shadow_results[0].pre_admission) == 2
+    assert len(shadow_results[0].admitted) == 1
+    for population in (shadow_results[0].pre_admission, shadow_results[0].admitted):
+        assert len({assessment.event_id for assessment in population}) == len(population)
+    assert disabled.items and failing.items
+    assert disabled.events and failing.events
+    assert disabled.events == failing.events
+    assert [event.id for event in disabled.events] == [event.id for event in failing.events]
+    assert len({event.id for event in disabled.events}) == len(disabled.events)
+    assert calls == {"fetch": 2, "summarize": 2, "build_events": 2,
+                     "assess": 6, "identity": 2}
+
+    def _cache_round_trip(key, result, cache_dir):
+        monkeypatch.setattr(pc, "_CACHE_DIR", cache_dir)
+        writer = pc.ProcessedFeedCache()
+        writer.set(key, result)
+        disk_bytes = (cache_dir / f"feed_{key}.pkl").read_bytes()
+        restored = pc.ProcessedFeedCache().get(key)
+        assert restored is not None
+        return restored, disk_bytes
+
+    cached_disabled, disabled_bytes = _cache_round_trip(
+        "isolation", disabled, tmp_path / "disabled_cache")
+    cached_failing, failing_bytes = _cache_round_trip(
+        "isolation", failing, tmp_path / "failing_cache")
+    # The cache loader may apply its existing compatibility normalization (for
+    # example, clearing orphaned activation rows when no themes exist).  The
+    # isolation invariant is complete equality between the two real reloads.
+    assert cached_disabled == cached_failing
+    assert cached_disabled.events
+    assert [event.id for event in cached_disabled.events] == [
+        event.id for event in cached_failing.events]
+    assert disabled_bytes == failing_bytes
+
+    disabled_public = _build_response(disabled, age=0.0)
+    failing_public = _build_response(failing, age=0.0)
+    assert disabled_public == failing_public
+    assert disabled_public.events
+    assert [event.id for event in disabled_public.events] == [
+        event.id for event in failing_public.events]
+    public_json = failing_public.model_dump_json()
+    assert public_json == disabled_public.model_dump_json()
+
+    blob = pickle.dumps(failing)
+    forbidden = (
+        "materiality_evaluation", "EvaluationDiagnostic", "observation_id",
+        "evaluation_id", "revision_id", "outcome_status", "queue_state",
+    )
+    for token in forbidden:
+        assert token.encode() not in blob
+        assert token.encode() not in failing_bytes
+        assert token not in public_json
+        assert token.encode() not in pickle.dumps(shadow_results[1])
+    assert disabled_diagnostics == ()
+    assert len(failing_diagnostics) == 1
+    assert failing_diagnostics[0].error_code == "enqueue_failure"
 
 
 def test_real_below_floor_figure_appears_only_in_pre_admission(fresh_identity, monkeypatch, caplog):
@@ -1189,7 +1372,8 @@ def test_real_processedfeedcache_save_load_isolation(tmp_path, monkeypatch):
                           b"SourceEvidence", b"BreadthEvidence",
                           b"FigureEvidence", b"FigureFact", b"figure_evidence",
                           b"FigureDiagnostics",
-                          b"shadow_sink", b"app.materiality"):
+                          b"shadow_sink", b"app.materiality",
+                          b"EvaluationRecordRevision", b"materiality_evaluation"):
             assert forbidden not in data
 
 
