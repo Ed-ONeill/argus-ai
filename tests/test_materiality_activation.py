@@ -279,12 +279,29 @@ def test_a1_no_activation_or_write_helper():
             for k in ("activate", "write_config", "apply_threshold", "mutate", "deploy_now"))] == []
 
 
-def test_a1_not_imported_by_production():
-    import subprocess
-    out = subprocess.run(["grep", "-rln", "materiality_activation", "app/", "--include=*.py"],
-                         capture_output=True, text=True)
-    hits = [ln for ln in out.stdout.splitlines() if not ln.endswith("materiality_activation.py")]
-    assert hits == []
+def test_a1_imported_only_by_a2_seam():
+    # Import-aware (AST) boundary: Wave 0.4 A2 integrates A1 through a single advisory
+    # seam, so frozen A1 is DIRECTLY imported by exactly the two A2 modules — and by no
+    # inference / ranking / admission / feed / API / frontend module. Substring matches
+    # (field names, docstrings) do not count; only real `import`/`from ... import` do.
+    import ast
+    import pathlib
+
+    importers = set()
+    for root in (pathlib.Path("app"), pathlib.Path("api")):
+        for path in root.rglob("*.py"):
+            if path.name == "materiality_activation.py":
+                continue
+            mods = set()
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
+                if isinstance(node, ast.Import):
+                    mods |= {alias.name for alias in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    mods.add(node.module)
+            if "app.materiality_activation" in mods:
+                importers.add(path.as_posix())
+    assert importers == {"app/materiality_activation_config.py",
+                         "app/materiality_activation_runtime.py"}
 
 
 def test_all_artifact_ids_have_expected_prefixes():

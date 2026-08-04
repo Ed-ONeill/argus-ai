@@ -580,6 +580,20 @@ def run_pipeline(
         except Exception:
             log.exception("[bg] materiality shadow assess/observe FAILED — continuing (feed unaffected)")
 
+    # ── Wave 0.4 A2 — Activation Integration (ADVISORY, read-only) ──────────────
+    # After the shadow/evaluation block and before ProcessedFeed assembly. Resolves
+    # the advisory ActivationState once per cycle and records it via A1's
+    # authoritative audit path. It governs NOTHING: the resolved state is read by no
+    # production consumer, and `_mat_mode` above remains the sole behavioral
+    # authority. Fully gated (default off) and failure-isolated. When the gate is
+    # off, nothing here runs — the block is a pure no-op, byte-identical to pre-A2.
+    if settings.materiality_activation_runtime_enabled:
+        try:
+            from app.materiality_activation_runtime import run_activation_cycle
+            run_activation_cycle(enabled=True)
+        except Exception:
+            log.exception("[bg] A2 activation integration FAILED — continuing (feed unaffected)")
+
     feed = ProcessedFeed(
         items=items,
         top_stories=top,

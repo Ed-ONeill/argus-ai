@@ -188,6 +188,28 @@ class Settings(BaseSettings):
     materiality_evaluation_enabled: bool = False
     materiality_evaluation_namespace: str = "argus"
 
+    # Wave 0.4 A2 activation integration is an independent, fail-off runtime gate.
+    # When False (default) the A2 seam is a COMPLETE no-op — it performs no input
+    # assembly, resolution, audit, accessor update, or diagnostics, and produces
+    # zero production-output difference. It is independent of materiality_mode,
+    # evaluation capture, and any activation_flag; enabling it grants no authority
+    # (the resolved ActivationState is advisory and read by no production consumer).
+    materiality_activation_runtime_enabled: bool = False
+
+    @field_validator("materiality_activation_runtime_enabled", mode="before")
+    @classmethod
+    def _parse_materiality_activation_runtime_enabled(cls, value: object) -> bool:
+        # Malformed values fail safe to False without preventing startup.
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "t", "yes", "y", "on"}:
+                return True
+        return False
+
     @field_validator("materiality_evaluation_enabled", mode="before")
     @classmethod
     def _parse_materiality_evaluation_enabled(cls, value: object) -> bool:
