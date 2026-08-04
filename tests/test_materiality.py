@@ -1122,6 +1122,7 @@ def test_run_pipeline_output_identical_when_evaluation_disabled_or_failing(
     import app.processed_cache as pc
     import app.sectors as sectors
     import app.summarizer as summ
+    import app.theme_graph as theme_graph
     from api.routes.feed import _build_response
 
     fixed = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
@@ -1174,6 +1175,13 @@ def test_run_pipeline_output_identical_when_evaluation_disabled_or_failing(
         return original_identity(*args, **kwargs)
 
     monkeypatch.setattr(bg, "datetime", _FixedDateTime)
+    # Anchor EVERY pipeline clock that drives recency/scoring to the SAME
+    # deterministic logical time, so the fixture events never age out against the
+    # real wall clock (which would depress editorial scores / theme momentum and
+    # yield 0 admitted events). Tests-only; no production behavior changes.
+    monkeypatch.setattr(theme_graph, "datetime", _FixedDateTime)
+    monkeypatch.setattr(feeds_mod, "datetime", _FixedDateTime)
+    monkeypatch.setattr(events_mod, "datetime", _FixedDateTime)
     monkeypatch.setattr(settings, "materiality_mode", "shadow")
     monkeypatch.setattr(feeds_mod.feed_manager, "fetch_all", _fetch)
     monkeypatch.setattr(feeds_mod.feed_manager, "fetch_errors", {}, raising=False)
