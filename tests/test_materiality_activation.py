@@ -300,8 +300,12 @@ def test_a1_imported_only_by_a2_seam():
                     mods.add(node.module)
             if "app.materiality_activation" in mods:
                 importers.add(path.as_posix())
+    # Frozen A1 is consumed only by the A2 activation seam and the A3 routing seam —
+    # by no inference / ranking / admission / feed / API / frontend module.
     assert importers == {"app/materiality_activation_config.py",
-                         "app/materiality_activation_runtime.py"}
+                         "app/materiality_activation_runtime.py",
+                         "app/materiality_routing.py",
+                         "app/materiality_routing_runtime.py"}
 
 
 def test_all_artifact_ids_have_expected_prefixes():

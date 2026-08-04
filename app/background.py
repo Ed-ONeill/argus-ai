@@ -594,6 +594,20 @@ def run_pipeline(
         except Exception:
             log.exception("[bg] A2 activation integration FAILED — continuing (feed unaffected)")
 
+    # ── Wave 0.4 A3 — Safe Routing & Activation Verification (ADVISORY) ─────────
+    # After A2 resolves the latest ActivationState and before any future authority
+    # point. Computes and observes a PROPOSED route once per cycle; the applied route
+    # is ALWAYS legacy. Governs nothing — read by no production consumer. Fully gated
+    # (default off), re-entry-guarded, and failure-isolated. Off ⇒ pure no-op.
+    if settings.materiality_safe_routing_enabled:
+        try:
+            from app.materiality_routing_runtime import run_routing_cycle
+            run_routing_cycle(
+                enabled=True, observation_cycle_id=_cycle_id,
+                a2_enabled=settings.materiality_activation_runtime_enabled)
+        except Exception:
+            log.exception("[bg] A3 safe routing FAILED — continuing (feed unaffected)")
+
     feed = ProcessedFeed(
         items=items,
         top_stories=top,

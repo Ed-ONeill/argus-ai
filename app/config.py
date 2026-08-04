@@ -210,6 +210,28 @@ class Settings(BaseSettings):
                 return True
         return False
 
+    # Wave 0.4 A3 safe routing is an independent, fail-off runtime gate. When False
+    # (default) the A3 seam is a COMPLETE no-op — no A2 read, context build, route
+    # resolution, observation, audit, or accessor update, and zero production-output
+    # difference. Independent of materiality_activation_runtime_enabled; enabling A3
+    # grants no authority (the resolved route is advisory; applied_route is always
+    # legacy) and does not enable A2.
+    materiality_safe_routing_enabled: bool = False
+
+    @field_validator("materiality_safe_routing_enabled", mode="before")
+    @classmethod
+    def _parse_materiality_safe_routing_enabled(cls, value: object) -> bool:
+        # Malformed values fail safe to False without preventing startup.
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "t", "yes", "y", "on"}:
+                return True
+        return False
+
     @field_validator("materiality_evaluation_enabled", mode="before")
     @classmethod
     def _parse_materiality_evaluation_enabled(cls, value: object) -> bool:
