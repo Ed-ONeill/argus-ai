@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useMarketState } from "@/hooks/useMarketState";
 import { useFeed } from "@/hooks/useFeed";
 import { useAuth } from "@/context/AuthContext";
@@ -11,9 +11,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { useSaved } from "@/hooks/useSaved";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
-import { useMorningBrief } from "@/hooks/useMorningBrief";
-import { explorerHrefForNode, nodeColor } from "@/lib/intelligenceShared";
-import type { MorningBriefVM } from "@/lib/morningBrief";
+import { LivingBrief } from "@/components/brief/LivingBrief";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -78,29 +76,6 @@ function PulseDot({ color = "#3ab880" }: { color?: string }) {
     </span>
   );
 }
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{
-      fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700,
-      color: "rgba(255,255,255,0.22)", marginBottom: "6px", textTransform: "uppercase",
-    }}>
-      {children}
-    </p>
-  );
-}
-
-/** Zone header for The Read: section label + the engine powering it
-    (centerpiece doc requirement: every zone identifies its engine). */
-function ZoneLabel({ label, engine }: { label: string; engine: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "6px" }}>
-      <p style={{ fontSize: "8.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", textTransform: "uppercase" }}>{label}</p>
-      <span style={{ fontSize: "7px", letterSpacing: "0.12em", fontWeight: 600, color: "rgba(255,255,255,0.16)", textTransform: "uppercase" }}>{engine}</span>
-    </div>
-  );
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Morning Brief — signed-out prompt
@@ -236,690 +211,8 @@ function BriefSignOutPrompt({ regimeColor, pulseDotColor, onContinue }: {
 // Morning Brief — sealed envelope state
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RegimeStatus = "unchanged" | "stronger" | "weaker" | "changed";
 
-function regimeStatusLabel(s: RegimeStatus) {
-  return s === "unchanged" ? "UNCHANGED" : s === "stronger" ? "↑ STRONGER" : s === "weaker" ? "↓ WEAKER" : "CHANGED";
-}
-function regimeStatusColor(s: RegimeStatus) {
-  return s === "unchanged" ? "rgba(255,255,255,0.32)" : s === "stronger" ? "rgba(70,168,110,0.80)" : s === "weaker" ? "rgba(200,80,80,0.80)" : "rgba(196,160,52,0.80)";
-}
-function regimeStatusBorder(s: RegimeStatus) {
-  return s === "unchanged" ? "rgba(255,255,255,0.14)" : s === "stronger" ? "rgba(70,168,110,0.30)" : s === "weaker" ? "rgba(200,80,80,0.30)" : "rgba(196,160,52,0.30)";
-}
-function regimeStatusBg(s: RegimeStatus) {
-  return s === "unchanged" ? "rgba(255,255,255,0.04)" : s === "stronger" ? "rgba(70,168,110,0.07)" : s === "weaker" ? "rgba(200,80,80,0.07)" : "rgba(196,160,52,0.07)";
-}
 
-function BriefSealed({
-  isLoading, themeCount, storyClusters, regimeLabel, regimeColor, pulseDotColor, conviction, regimeStatus, onOpen,
-}: {
-  isLoading: boolean;
-  themeCount: number;
-  storyClusters: number;
-  regimeLabel: string;
-  regimeColor: string;
-  pulseDotColor: string;
-  /** Leading-theme conviction from the Morning Brief view model (decomposable),
-      never the summarizer's self-assessed confidence. */
-  conviction?: number;
-  regimeStatus?: RegimeStatus | null;
-  onOpen: () => void;
-}) {
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric",
-  }).toUpperCase();
-
-  return (
-    <motion.div
-      key="sealed"
-      initial={{ opacity: 0, scale: 0.97, y: 8 }}
-      animate={{ opacity: 1, scale: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0, 0.25, 1] } }}
-      exit={{ opacity: 0, scale: 0.95, y: -6, transition: { duration: 0.28, ease: [0.5, 0, 1, 0] } }}
-      className="flex justify-center"
-    >
-      <div
-        className="relative w-full max-w-lg"
-        style={{
-          background: "rgba(5,9,22,0.85)",
-          border: "1px solid rgba(255,255,255,0.09)",
-          borderRadius: "8px",
-          backdropFilter: "blur(12px)",
-          overflow: "hidden",
-        }}
-      >
-        <div aria-hidden style={{
-          position: "absolute", top: 0, right: 0, width: 0, height: 0,
-          borderStyle: "solid", borderWidth: "0 28px 28px 0",
-          borderColor: `transparent rgba(255,255,255,0.035) transparent transparent`,
-        }} />
-        <div style={{ height: 2, background: `linear-gradient(to right, transparent, ${regimeColor}44, transparent)` }} />
-
-        <div className="px-10 py-10 flex flex-col items-center text-center gap-6">
-          <div className="flex items-center gap-2.5">
-            <PulseDot color={pulseDotColor} />
-            <span style={{ fontSize: "9px", letterSpacing: "0.24em", fontWeight: 700, color: "rgba(255,255,255,0.28)" }}>
-              ARGUS · MORNING BRIEF
-            </span>
-            <div style={{ width: 1, height: 10, background: "rgba(255,255,255,0.10)" }} />
-            <span style={{ fontSize: "9px", letterSpacing: "0.12em", color: "rgba(255,255,255,0.18)" }}>
-              {today}
-            </span>
-          </div>
-
-          <div style={{ width: "100%" }}>
-            <p style={{ fontSize: "12.5px", letterSpacing: "0.12em", fontWeight: 600, color: "rgba(255,255,255,0.68)", marginBottom: "3px", textAlign: "center" }}>
-              MORNING INTELLIGENCE BRIEF
-            </p>
-            <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.26)", letterSpacing: "0.04em", textAlign: "center" }}>
-              Daily market intelligence briefing
-            </p>
-          </div>
-
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            width: "100%",
-            gap: "1px",
-            background: "rgba(255,255,255,0.055)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: "5px",
-            overflow: "hidden",
-          }}>
-            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px" }}>
-              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>REGIME</p>
-              {isLoading
-                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "70%", background: "rgba(255,255,255,0.07)" }} />
-                : (
-                  <>
-                    <p style={{ fontSize: "13px", fontWeight: 700, color: regimeColor, opacity: 0.94, letterSpacing: "0.02em" }}>{regimeLabel}</p>
-                    {regimeStatus && (
-                      <span style={{ fontSize: "7.5px", letterSpacing: "0.12em", fontWeight: 700, color: regimeStatusColor(regimeStatus), display: "block", marginTop: "4px" }}>
-                        {regimeStatusLabel(regimeStatus)}
-                      </span>
-                    )}
-                  </>
-                )
-              }
-            </div>
-
-            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px" }}>
-              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>CONVICTION</p>
-              {isLoading
-                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "50%", background: "rgba(255,255,255,0.07)" }} />
-                : (
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.68)" }}>
-                      {conviction ? `${Math.round(conviction)}` : "-"}
-                    </span>
-                    {conviction && (
-                      <div style={{ flex: 1, height: "2px", background: "rgba(255,255,255,0.08)", borderRadius: "1px" }}>
-                        <div style={{ height: "100%", width: `${Math.round(conviction)}%`, background: regimeColor, opacity: 0.55, borderRadius: "1px" }} />
-                      </div>
-                    )}
-                  </div>
-                )
-              }
-            </div>
-
-            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px", borderTop: "1px solid rgba(255,255,255,0.055)" }}>
-              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>ACTIVE THEMES</p>
-              {isLoading
-                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "35%", background: "rgba(255,255,255,0.07)" }} />
-                : <p style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.65)" }}>{themeCount}</p>
-              }
-            </div>
-
-            <div style={{ background: "rgba(5,9,22,0.92)", padding: "11px 14px", borderTop: "1px solid rgba(255,255,255,0.055)" }}>
-              <p style={{ fontSize: "7.5px", letterSpacing: "0.18em", fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: "5px" }}>STORY CLUSTERS</p>
-              {isLoading
-                ? <div className="h-2.5 rounded animate-pulse" style={{ width: "35%", background: "rgba(255,255,255,0.07)" }} />
-                : <p style={{ fontSize: "12px", fontWeight: 600, color: "rgba(255,255,255,0.65)" }}>{storyClusters}</p>
-              }
-            </div>
-          </div>
-
-          <button
-            onClick={onOpen}
-            disabled={isLoading}
-            className="group flex items-center gap-2.5 transition-all duration-200"
-            style={{
-              background: isLoading ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.06)",
-              border: `1px solid ${isLoading ? "rgba(255,255,255,0.07)" : regimeColor + "40"}`,
-              borderRadius: "5px",
-              padding: "10px 24px",
-              color: isLoading ? "rgba(255,255,255,0.30)" : "rgba(255,255,255,0.78)",
-              fontSize: "10.5px",
-              letterSpacing: "0.18em",
-              fontWeight: 600,
-              cursor: isLoading ? "default" : "pointer",
-              backdropFilter: "blur(8px)",
-            }}
-            onMouseEnter={e => {
-              if (isLoading) return;
-              e.currentTarget.style.background = "rgba(255,255,255,0.10)";
-              e.currentTarget.style.color = "rgba(255,255,255,0.95)";
-            }}
-            onMouseLeave={e => {
-              if (isLoading) return;
-              e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-              e.currentTarget.style.color = "rgba(255,255,255,0.78)";
-            }}
-          >
-            {isLoading ? (
-              <>
-                <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin opacity-50" />
-                PREPARING…
-              </>
-            ) : (
-              <>
-                ▶ OPEN BRIEF
-                <ArrowRight size={11} className="transition-transform duration-200 group-hover:translate-x-0.5"
-                  style={{ opacity: 0.55 }} />
-              </>
-            )}
-          </button>
-        </div>
-
-        <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${regimeColor}22, transparent)` }} />
-      </div>
-    </motion.div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Morning Brief — opened state
-// ─────────────────────────────────────────────────────────────────────────────
-
-function BriefOpen({
-  vm, regimeColor, regimeStatus, onClose,
-}: {
-  vm: MorningBriefVM;
-  regimeColor: string;
-  regimeStatus?: RegimeStatus | null;
-  onClose: () => void;
-}) {
-  const today = new Date().toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-  }).toUpperCase();
-
-  // Every section below reads the canonical view model (lib/morningBrief.ts);
-  // sections whose status is "unavailable" render nothing (honest absence).
-  const regime = vm.regime.data;
-  const changes = vm.changes.data ?? [];
-  const conviction = vm.conviction.data;
-  const read = vm.read;
-  const thesis = read.thesis.data;
-  const evidenceRows = read.evidence.data ?? [];
-  const exposureMap = read.exposure.data;
-  const chainHops = read.chain.data ?? [];
-  const falsifiers = read.falsifiers.data;
-  const readWatch = read.watch.data ?? [];
-  const priorities = read.priorities.data ?? [];
-  const catalysts = read.catalysts.data ?? [];
-  const queue = read.queue.data ?? [];
-
-  const sv = {
-    hidden:  { opacity: 0 },
-    visible: (i: number) => ({
-      opacity: 1,
-      transition: { delay: i * 0.07, duration: 0.35, ease: "easeOut" as const },
-    }),
-  };
-
-  return (
-    <motion.div
-      key="open"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.38, ease: [0.25, 0, 0.25, 1] } }}
-      exit={{ opacity: 0, y: 6, transition: { duration: 0.22 } }}
-      style={{
-        background: "rgba(5,9,22,0.88)",
-        border: "1px solid rgba(255,255,255,0.09)",
-        borderRadius: "8px",
-        backdropFilter: "blur(14px)",
-        overflow: "hidden",
-      }}
-    >
-      <div style={{ height: 2, background: `linear-gradient(to right, transparent, ${regimeColor}55, transparent)` }} />
-
-      <motion.div custom={0} variants={sv} initial="hidden" animate="visible"
-        className="flex items-center justify-between px-6 py-4"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <div className="flex items-center gap-3">
-          <span style={{ fontSize: "9px", letterSpacing: "0.22em", fontWeight: 700, color: "rgba(255,255,255,0.30)" }}>
-            ARGUS MORNING BRIEF
-          </span>
-          <div style={{ width: 1, height: 10, background: "rgba(255,255,255,0.10)" }} />
-          <span style={{ fontSize: "9px", letterSpacing: "0.12em", color: "rgba(255,255,255,0.18)" }}>
-            {today}
-          </span>
-        </div>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-1.5 transition-opacity duration-150 hover:opacity-80"
-          style={{ color: "rgba(255,255,255,0.28)", fontSize: "9px", letterSpacing: "0.12em", background: "none", border: "none", cursor: "pointer" }}
-        >
-          <X size={11} /> CLOSE
-        </button>
-      </motion.div>
-
-      {regime && (
-        <motion.div custom={1} variants={sv} initial="hidden" animate="visible"
-          className="flex items-center justify-between px-6 py-3"
-          style={{
-            background: `${regimeColor}12`,
-            borderBottom: "1px solid rgba(255,255,255,0.05)",
-            borderLeft: `4px solid ${regimeColor}65`,
-          }}>
-          <div className="flex items-center gap-3">
-            <span style={{ fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.12em", color: regimeColor, opacity: 0.92 }}>
-              {regime.label.toUpperCase()}
-            </span>
-            {regimeStatus && (
-              <span style={{
-                fontSize: "8px", letterSpacing: "0.12em", fontWeight: 700,
-                color: regimeStatusColor(regimeStatus),
-                background: regimeStatusBg(regimeStatus),
-                border: `1px solid ${regimeStatusBorder(regimeStatus)}`,
-                borderRadius: "3px", padding: "1.5px 6px",
-              }}>
-                {regimeStatusLabel(regimeStatus)}
-              </span>
-            )}
-            {regime.assetsImpacted.length > 0 && (
-              <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.28)" }}>
-                {regime.assetsImpacted.join(" · ")}
-              </span>
-            )}
-          </div>
-          {conviction && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }} title={conviction.explanation}>
-              <div style={{ width: "44px", height: "2px", background: "rgba(255,255,255,0.10)", borderRadius: "1px", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${conviction.value}%`, background: regimeColor, opacity: 0.65 }} />
-              </div>
-              <span style={{ fontSize: "9px", letterSpacing: "0.10em", fontWeight: 600, color: "rgba(255,255,255,0.35)" }}>
-                {conviction.value}
-              </span>
-            </div>
-          )}
-        </motion.div>
-      )}
-
-      <div className="px-6 py-4 space-y-4">
-        {/* The change ledger (Sprint B2): what changed since the previous
-            intelligence cycle, from recorded memory only. Each row answers
-            what/why inline; why-it-matters and what-to-watch ride in the
-            tooltip until the v2 layout lands (B3). */}
-        {changes.length > 0 && (
-          <motion.div custom={2} variants={sv} initial="hidden" animate="visible">
-            <SectionLabel>What Changed</SectionLabel>
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-              {changes.map((d, idx) => {
-                const kColor =
-                  d.kind === "CONTRADICTED" || d.kind === "BROKEN" ? "#e05555" :
-                  d.kind === "WEAKENED" ? "#c8a040" :
-                  d.kind === "STRENGTHENED" ? "#3ab880" :
-                  d.kind === "NEW" ? "#5390c8" :
-                  d.kind === "EXPANDED" ? "#52b0c8" : "rgba(255,255,255,0.34)";
-                return (
-                  <div key={`${d.kind}-${d.entity}-${idx}`}
-                    title={`${d.matters} ${d.watch}`}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "96px 1fr",
-                      alignItems: "start",
-                      gap: "10px",
-                      padding: "6px 0",
-                      borderBottom: idx < changes.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
-                    }}>
-                    <span style={{
-                      fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
-                      color: kColor, opacity: 0.85,
-                      border: `1px solid ${kColor}40`,
-                      borderRadius: "3px", padding: "2px 5px",
-                      justifySelf: "start", marginTop: 1,
-                    }}>
-                      {d.kind}{d.basis === "device" ? " · LOCAL" : ""}
-                    </span>
-                    <div>
-                      <p style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)", lineHeight: 1.45 }}>
-                        {d.what}
-                      </p>
-                      <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", lineHeight: 1.45, marginTop: "1px" }}>
-                        {d.why}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {/* THE READ (Sprint B3, docs/ARGUS_NARRATIVE_CENTERPIECE_V1.md):
-            Z2 thesis + Z3 evidence + Z4 exposure on the left; Z5 transmission
-            chain + Z7 falsifiers as the persistent right rail. Z1 is the
-            ledger above; Z6 follows full-width. Every zone names its engine. */}
-        {thesis && (
-          <motion.div custom={3} variants={sv} initial="hidden" animate="visible"
-            className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="md:col-span-3 space-y-4">
-              {/* Z2 - the dominant narrative, argued */}
-              <div style={{ background: `${regimeColor}08`, border: "1px solid rgba(255,255,255,0.055)", borderLeft: `2px solid ${regimeColor}44`, borderRadius: "5px", padding: "10px 14px" }}>
-                <ZoneLabel label="Dominant Narrative" engine="Narrative Derivation" />
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                  <span style={{
-                    fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
-                    color: thesis.mode === "narrative" ? "#a78bfa" : "rgba(255,255,255,0.34)",
-                    border: `1px solid ${thesis.mode === "narrative" ? "#a78bfa40" : "rgba(255,255,255,0.14)"}`,
-                    borderRadius: "3px", padding: "2px 5px",
-                  }}>
-                    {thesis.mode === "narrative" ? "DERIVED NARRATIVE" : "THEME"}
-                  </span>
-                  <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.04em", color: "rgba(255,255,255,0.82)" }}>{thesis.label}</span>
-                </div>
-                <p style={{ fontSize: "12.5px", lineHeight: "1.62", color: "rgba(255,255,255,0.62)" }}>{thesis.thesisLine}</p>
-                {vm.whyToday.data && (
-                  <p style={{ fontSize: "10.5px", fontStyle: "italic", lineHeight: 1.5, color: "rgba(255,255,255,0.32)", marginTop: "6px" }}>
-                    &ldquo;{vm.whyToday.data.text}&rdquo;{" "}
-                    <span style={{ fontStyle: "normal", fontSize: "7px", fontWeight: 700, letterSpacing: "0.12em", color: "rgba(255,255,255,0.20)" }}>VOICE</span>
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1.5" style={{ marginTop: "8px" }}>
-                  {thesis.members.map(m => {
-                    const href = explorerHrefForNode({ type: "Theme", label: m.name });
-                    const chip = (
-                      <span style={{
-                        fontSize: "10px", letterSpacing: "0.04em", color: "rgba(255,255,255,0.55)",
-                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: "4px", padding: "3px 9px", display: "inline-flex", gap: "6px", alignItems: "baseline",
-                      }}>
-                        {m.name}
-                        <span style={{ fontSize: "9px", fontWeight: 700, color: m.trend === "rising" ? "#3ab880" : m.trend === "falling" ? "#e05555" : "rgba(255,255,255,0.35)" }}>
-                          {m.conviction}{m.trend === "rising" ? " ↑" : m.trend === "falling" ? " ↓" : ""}
-                        </span>
-                      </span>
-                    );
-                    return href
-                      ? <Link key={m.name} href={href} className="hover:opacity-80 transition-opacity">{chip}</Link>
-                      : <span key={m.name}>{chip}</span>;
-                  })}
-                </div>
-                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", lineHeight: 1.5, marginTop: "8px" }} title={thesis.coherence?.explanation}>
-                  {thesis.whyDominant}
-                </p>
-                {thesis.contradiction && (
-                  <div className="flex items-start gap-2" style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                    <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.65, marginTop: 1 }}>⚠</span>
-                    <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.48)", lineHeight: 1.45 }}>
-                      Standing contradiction ({thesis.contradiction.entity}, severity {thesis.contradiction.severity}): {thesis.contradiction.detail}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Z3 - evidence spine */}
-              {evidenceRows.length > 0 && (
-                <div>
-                  <ZoneLabel label="Evidence Spine" engine="Evidence Engine" />
-                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                    {evidenceRows.map((r, i) => (
-                      <div key={i} style={{
-                        display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: "10px",
-                        padding: "5px 0", borderBottom: i < evidenceRows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
-                      }}>
-                        <span style={{ fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.12em", color: "#5390c8", opacity: 0.8, border: "1px solid #5390c840", borderRadius: "3px", padding: "2px 5px", textTransform: "uppercase" }}>
-                          {r.sourceClass}
-                        </span>
-                        <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.55)", lineHeight: 1.4 }}>{r.assertion}</span>
-                        <span className="tabular-nums" style={{ fontSize: "9px", fontWeight: 600, color: "rgba(255,255,255,0.30)" }}>
-                          {r.strength !== null ? r.strength : ""}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Z4 - exposure map */}
-              {exposureMap && exposureMap.sectors.length + exposureMap.companies.length + exposureMap.other.length > 0 && (
-                <div>
-                  <ZoneLabel label="Exposure Map" engine="Narrative Derivation · Graph" />
-                  <div className="space-y-1.5">
-                    {[
-                      { label: "Sectors", items: exposureMap.sectors },
-                      { label: "Companies", items: exposureMap.companies },
-                      { label: "Cmdty / FX / Ctry", items: exposureMap.other },
-                    ].map(g => g.items.length > 0 && (
-                      <div key={g.label} className="flex flex-wrap items-baseline gap-1.5">
-                        <span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.14em", color: "rgba(255,255,255,0.24)", minWidth: 76, textTransform: "uppercase" }}>{g.label}</span>
-                        {g.items.map(it => {
-                          const href = explorerHrefForNode({ type: it.nodeType, label: it.label });
-                          const chip = (
-                            <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.50)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px", padding: "2px 8px" }}>
-                              {it.label}{it.memberCount > 1 && <span style={{ color: "rgba(255,255,255,0.28)", marginLeft: 4 }}>x{it.memberCount}</span>}
-                            </span>
-                          );
-                          return href
-                            ? <Link key={it.label} href={href} className="hover:opacity-80 transition-opacity">{chip}</Link>
-                            : <span key={it.label}>{chip}</span>;
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right rail: Z5 transmission chain + Z7 falsifiers */}
-            <div className="md:col-span-2 space-y-4">
-              {chainHops.length >= 2 && (
-                <div>
-                  <ZoneLabel label="Transmission" engine="Causal Graph · Profile" />
-                  <div>
-                    {chainHops.map(h => {
-                      const href = explorerHrefForNode({ type: h.nodeType, label: h.label });
-                      const name = <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>{h.label}</span>;
-                      return (
-                        <div key={h.label}>
-                          {h.edge && (
-                            <div className="flex items-center gap-2" style={{ padding: "2px 0 2px 5px" }}>
-                              <span style={{ width: 1, height: 14, background: "rgba(255,255,255,0.14)" }} />
-                              <span style={{ fontSize: "8.5px", letterSpacing: "0.08em", color: h.edge.trend === "strengthening" ? "#3ab880" : h.edge.trend === "weakening" ? "#e05555" : "rgba(255,255,255,0.34)" }}>
-                                {h.edge.relationship.replace(/_/g, " ")} · {h.edge.strength}{h.edge.trend === "strengthening" ? " ↑" : h.edge.trend === "weakening" ? " ↓" : ""}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2">
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: nodeColor(h.nodeType), opacity: 0.8 }} />
-                            {href ? <Link href={href} className="hover:opacity-80 transition-opacity">{name}</Link> : name}
-                            <span style={{ fontSize: "7.5px", letterSpacing: "0.10em", color: "rgba(255,255,255,0.22)", textTransform: "uppercase" }}>{h.nodeType}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {falsifiers && (
-                <div style={{ background: "rgba(255,255,255,0.022)", border: "1px solid rgba(255,255,255,0.055)", borderRadius: "5px", padding: "10px 14px" }}>
-                  <ZoneLabel label="Falsifiers" engine="Prediction · Evidence" />
-                  {falsifiers.noneNote ? (
-                    <p style={{ fontSize: "10.5px", color: "#c8a040", lineHeight: 1.5 }}>{falsifiers.noneNote}</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {falsifiers.invalidations.map((f, i) => (
-                        <div key={`inv-${i}`} className="flex items-start gap-2" title={`Invalidation condition for ${f.theme} (prediction engine)`}>
-                          <span style={{ fontSize: "10px", color: "#c8a040", opacity: 0.8, marginTop: 1 }}>⚠</span>
-                          <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)", lineHeight: 1.45 }}>{f.text}</p>
-                        </div>
-                      ))}
-                      {falsifiers.contradictions.map((c, i) => (
-                        <div key={`con-${i}`} className="flex items-start gap-2">
-                          <span style={{ fontSize: "10px", color: "#e05555", opacity: 0.7, marginTop: 1 }}>⚠</span>
-                          <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.50)", lineHeight: 1.45 }}>
-                            {c.detail} <span style={{ color: "rgba(255,255,255,0.28)" }}>sev {c.severity}</span>
-                          </p>
-                        </div>
-                      ))}
-                      {falsifiers.breakers.map((b, i) => (
-                        <div key={`brk-${i}`} className="flex items-start gap-2">
-                          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", marginTop: 1 }}>◦</span>
-                          <p style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.42)", lineHeight: 1.45 }}>
-                            {b.from} {b.relationship.replace(/_/g, " ")} {b.target}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Z6 - watch today: derived, dateless, each item bound to the zone it
-            would move (centerpiece doc). No dates, no countdowns. */}
-        {readWatch.length > 0 && (
-          <motion.div custom={7} variants={sv} initial="hidden" animate="visible">
-            <ZoneLabel label="Watch Today" engine="Derived · Dateless" />
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-              {readWatch.map((w, idx) => (
-                <div key={`${w.theme}-${idx}`} style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto auto",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "6px 0",
-                  borderBottom: idx < readWatch.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
-                }}>
-                  <span style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)" }}>
-                    Watch {w.text} <span style={{ color: "rgba(255,255,255,0.28)" }}>- {w.binding}</span>
-                  </span>
-                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", letterSpacing: "0.02em" }}>
-                    {w.theme}
-                  </span>
-                  <span style={{
-                    fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em",
-                    color: "#5390c8", opacity: 0.82,
-                    border: "1px solid #5390c840",
-                    borderRadius: "3px", padding: "2px 5px",
-                  }}>
-                    DERIVED
-                  </span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* B4 - research priority: where to spend attention next. A ranked,
-            decomposed prioritization over recorded factors; followed-theme
-            boosts are ordering-only and badged YOURS. */}
-        {priorities.length > 0 && (
-          <motion.div custom={8} variants={sv} initial="hidden" animate="visible">
-            <ZoneLabel label="Research Priority" engine="Memory · Prediction · Profiles" />
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-              {priorities.map((p, idx) => {
-                const href = explorerHrefForNode({ type: p.entity.nodeType, label: p.entity.label });
-                const name = <span style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.68)" }}>{p.entity.label}</span>;
-                return (
-                  <div key={p.entity.label} title={p.reasons.join(" · ")} style={{
-                    display: "grid", gridTemplateColumns: "auto auto 1fr auto", alignItems: "baseline", gap: "10px",
-                    padding: "6px 0", borderBottom: idx < priorities.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
-                  }}>
-                    <span className="tabular-nums" style={{ fontSize: "10px", fontWeight: 700, color: "#7cc7d8", opacity: 0.8, minWidth: 18 }}>{p.score}</span>
-                    {href ? <Link href={href} className="hover:opacity-80 transition-opacity">{name}</Link> : name}
-                    <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {p.reasons[0] ?? ""}{p.reasons.length > 1 ? ` (+${p.reasons.length - 1} more)` : ""}
-                    </span>
-                    {p.personal && (
-                      <span style={{ fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em", color: "#3ab880", opacity: 0.82, border: "1px solid #3ab88040", borderRadius: "3px", padding: "2px 5px" }}>
-                        YOURS
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {/* B4 - catalysts: verified event material only (dateless until the
-            Event provider lands); absent entirely when nothing is recorded. */}
-        {catalysts.length > 0 && (
-          <motion.div custom={9} variants={sv} initial="hidden" animate="visible">
-            <ZoneLabel label="Catalysts" engine="Providers · Graph (dateless)" />
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-              {catalysts.map((c, idx) => (
-                <div key={c.label} title={c.detail} style={{
-                  display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: "10px",
-                  padding: "6px 0", borderBottom: idx < catalysts.length - 1 ? "1px solid rgba(255,255,255,0.04)" : undefined,
-                }}>
-                  <span style={{ fontSize: "11.5px", fontWeight: 500, color: "rgba(255,255,255,0.60)" }}>{c.label}</span>
-                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)" }}>feeds {c.feeds}</span>
-                  <span style={{ fontSize: "7.5px", fontWeight: 700, letterSpacing: "0.14em", color: "#c8a040", opacity: 0.82, border: "1px solid #c8a04040", borderRadius: "3px", padding: "2px 5px" }}>
-                    VERIFIED · NO DATE
-                  </span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* B4 - investigation queue: The Read's exit ramp into Explorer. */}
-        {queue.length > 0 && (
-          <motion.div custom={10} variants={sv} initial="hidden" animate="visible">
-            <ZoneLabel label="Continue in Explorer" engine="Investigation Queue" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {queue.map(q => {
-                const href = explorerHrefForNode({ type: q.entity.nodeType, label: q.entity.label });
-                const body = (
-                  <div style={{
-                    border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)",
-                    borderRadius: "5px", padding: "9px 12px",
-                  }}>
-                    <div className="flex items-center justify-between" style={{ marginBottom: "3px" }}>
-                      <span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.16em", color: "#7cc7d8", textTransform: "uppercase" }}>{q.action}</span>
-                      <ArrowRight size={10} style={{ opacity: 0.4 }} />
-                    </div>
-                    <p style={{ fontSize: "11.5px", fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>{q.entity.label}</p>
-                    <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.32)", lineHeight: 1.4, marginTop: "2px" }}>{q.reason}</p>
-                  </div>
-                );
-                return href
-                  ? <Link key={`${q.action}-${q.entity.label}`} href={href} className="hover:opacity-85 transition-opacity">{body}</Link>
-                  : <div key={`${q.action}-${q.entity.label}`}>{body}</div>;
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        <motion.div custom={8} variants={sv} initial="hidden" animate="visible"
-          className="flex justify-end pt-1"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-          <Link href="/feed">
-            <button
-              className="group flex items-center gap-2.5 transition-all duration-200"
-              style={{
-                background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.11)",
-                borderRadius: "5px", padding: "10px 22px", color: "rgba(255,255,255,0.72)",
-                fontSize: "10.5px", letterSpacing: "0.18em", fontWeight: 600, cursor: "pointer",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.09)"; e.currentTarget.style.color = "rgba(255,255,255,0.94)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.055)"; e.currentTarget.style.color = "rgba(255,255,255,0.72)"; }}
-            >
-              ENTER PLATFORM
-              <ArrowRight size={12} className="transition-transform duration-200 group-hover:translate-x-0.5" style={{ opacity: 0.55 }} />
-            </button>
-          </Link>
-        </motion.div>
-      </div>
-    </motion.div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
@@ -928,10 +221,9 @@ function BriefOpen({
 export default function LandingPage() {
   const ms = useMarketState();
   const [mounted,           setMounted]           = useState(false);
-  const [briefOpen,         setBriefOpen]         = useState(false);
   const [guestMode,         setGuestMode]         = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-  const [regimeStatus, setRegimeStatus] = useState<null | "unchanged" | "stronger" | "weaker" | "changed">(null);
+  const [_regimeStatus, setRegimeStatus] = useState<null | "unchanged" | "stronger" | "weaker" | "changed">(null);
   const briefSectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setMounted(true); }, []);
 
@@ -941,7 +233,7 @@ export default function LandingPage() {
   const needsNameCapture = !authLoading && !!user && !profile?.first_name && !meta?.first_name;
   const { followed } = useFollowedThemes();
   const { savedIds } = useSaved();
-  const { data: feedData, isLoading: feedLoading } = useFeed();
+  const { data: feedData } = useFeed();
 
   const brief = feedData?.market_brief;
 
@@ -1003,13 +295,9 @@ export default function LandingPage() {
     ms.riskRegime === "risk-on"  ? "#3ab880" :
     ms.riskRegime === "risk-off" ? "#c05858" : "#52b0c8";
 
-  const regimeLabel =
-    ms.riskRegime === "risk-on"  ? "Risk On" :
-    ms.riskRegime === "risk-off" ? "Risk Off" : "Neutral";
 
   // Canonical Morning Brief view model (lib/morningBrief.ts): the page renders
   // this object instead of assembling brief sections inline (Sprint B1).
-  const { vm } = useMorningBrief({ regimeStatus, fallbackRegimeLabel: regimeLabel });
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
@@ -1025,7 +313,6 @@ export default function LandingPage() {
   const savedCount    = savedIds.length;
 
   function handleOpenBriefFromHero() {
-    setBriefOpen(true);
     requestAnimationFrame(() => {
       setTimeout(() => {
         briefSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1277,7 +564,8 @@ export default function LandingPage() {
           style={{ background: "linear-gradient(to bottom, transparent, rgba(3,7,16,0.80))" }} />
       </section>
 
-      {/* ── INTELLIGENCE LAYERS ───────────────────────────────────────────── */}
+      {/* ── INTELLIGENCE LAYERS (signed-out marketing only, C9) ───────────── */}
+      {!showBriefCard && (
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="max-w-5xl mx-auto px-6 sm:px-10 py-12">
           <div className="flex items-center gap-4 mb-8">
@@ -1314,57 +602,43 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      )}
 
-      {/* ── MORNING BRIEF ─────────────────────────────────────────────────── */}
+      {/* ── LIVING INTELLIGENCE BRIEF (PX1) ───────────────────────────────── */}
       <section ref={briefSectionRef} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-8 pb-12">
-
-          <div className="flex items-center gap-4 mb-7">
-            {mounted && <PulseDot color={pulseDotColor} />}
-            <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
-              MORNING BRIEF
-            </span>
-            <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
-          </div>
-
-          <AnimatePresence mode="wait">
-            {showBriefCard ? (
-              briefOpen ? (
-                <BriefOpen
-                  key="open"
-                  vm={vm}
-                  regimeColor={regimeColor}
-                  regimeStatus={regimeStatus}
-                  onClose={() => setBriefOpen(false)}
-                />
-              ) : (
-                <BriefSealed
-                  key="sealed"
-                  isLoading={feedLoading}
-                  themeCount={vm.counts.activeThemes}
-                  storyClusters={vm.counts.storyClusters}
-                  regimeLabel={vm.regime.data?.label ?? regimeLabel}
+          {showBriefCard ? (
+            // Signed-in / guest land directly on the open Living Brief (C8: the
+            // sealed-envelope theater is retired).
+            <LivingBrief
+              feed={feedData}
+              generatedAt={feedData?.generated_at}
+              isStale={feedData?.is_stale}
+            />
+          ) : (
+            <>
+              <div className="flex items-center gap-4 mb-7">
+                {mounted && <PulseDot color={pulseDotColor} />}
+                <span style={{ fontSize: "9.5px", letterSpacing: "0.18em", fontWeight: 600, color: "rgba(255,255,255,0.32)" }}>
+                  INTELLIGENCE BRIEF
+                </span>
+                <div className="flex-1 h-px" style={{ background: "linear-gradient(to right, rgba(255,255,255,0.07), transparent)" }} />
+              </div>
+              <AnimatePresence mode="wait">
+                <BriefSignOutPrompt
+                  key="prompt"
                   regimeColor={regimeColor}
                   pulseDotColor={pulseDotColor}
-                  conviction={vm.conviction.data?.value}
-                  regimeStatus={regimeStatus}
-                  onOpen={() => setBriefOpen(true)}
+                  onContinue={() => setGuestMode(true)}
                 />
-              )
-            ) : (
-              <BriefSignOutPrompt
-                key="prompt"
-                regimeColor={regimeColor}
-                pulseDotColor={pulseDotColor}
-                onContinue={() => setGuestMode(true)}
-              />
-            )}
-          </AnimatePresence>
-
+              </AnimatePresence>
+            </>
+          )}
         </div>
       </section>
 
       {/* ── CAPABILITIES ──────────────────────────────────────────────────── */}
+      {!showBriefCard && (
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="max-w-5xl mx-auto px-6 sm:px-10 py-9">
           <div className="flex items-center gap-4 mb-7">
@@ -1400,6 +674,7 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* ── ENTER CTA ─────────────────────────────────────────────────────── */}
       <section style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>

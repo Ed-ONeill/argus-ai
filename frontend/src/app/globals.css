@@ -43,6 +43,23 @@
     --ink-faint:      90  99 116;   /* #5A6374 */
   }
 
+  /* Living Intelligence Brief — the front-door dark surface. Its own refined
+     institutional palette (deeper, warmer than the Markets terminal) so the Brief
+     has a distinct, premium identity while staying fully on the token system.
+     Replaces the old bespoke #030710 inline palette (PX1.0). */
+  .brief-dark {
+    --canvas:          8  11  20;   /* #080B14  body */
+    --surface:        15  20  33;   /* #0F1421  panel */
+    --raised:         23  30  47;   /* #171E2F  hover / lift */
+    --edge:           30  39  58;   /* hairline */
+    --edge-subtle:    21  28  43;
+    --edge-strong:    48  62  90;
+    --ink:           233 237 245;   /* #E9EDF5  primary */
+    --ink-secondary: 176 186 203;   /* #B0BACB */
+    --ink-muted:     129 140 161;   /* #818CA1 */
+    --ink-faint:      86  96 117;   /* #566075 */
+  }
+
   html {
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -53,6 +70,42 @@
     @apply bg-canvas text-ink;
     min-height: 100dvh;
   }
+
+  /* ── Living Brief — premium institutional surfaces (PX1.2 visual identity) ──
+     Depth earns its place only where it aids understanding: the Market Map panel
+     and its nodes read as physical objects, the Trigger node as the origin. Nothing
+     here is decorative-for-its-own-sake. Legend / Linear restraint, reduced-safe. */
+  .brief-panel {
+    background: rgb(var(--surface) / 0.7);
+    border: 1px solid rgb(var(--edge));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 24px 50px -34px rgba(0,0,0,0.7);
+  }
+  .brief-node {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 60%),
+      rgb(var(--raised));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .brief-node-trigger {   /* the origin of the story — the one node that glows */
+    background: linear-gradient(180deg, rgba(37,99,235,0.20), rgba(37,99,235,0.04));
+    box-shadow: inset 0 0 0 1px rgba(37,99,235,0.38);
+  }
+  /* Hairline rule that fades — a Notion/Linear-style divider, used sparingly. */
+  .brief-rule {
+    height: 1px; border: 0;
+    background: linear-gradient(90deg, rgb(var(--edge-strong) / 0.6), rgb(var(--edge) / 0.12) 55%, transparent);
+  }
+
+  /* Living Brief — Market Map transmission flow (a single travelling pulse per
+     connector; calm, not busy). Disabled under reduced-motion below. */
+  @keyframes brief-travel {
+    0%   { left: 0;    opacity: 0; }
+    18%  { opacity: 1; }
+    82%  { opacity: 1; }
+    100% { left: 100%; opacity: 0; }
+  }
+  .brief-flow-dot { animation: brief-travel 2.6s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .brief-flow-dot { animation: none; opacity: 0.5; } }
 
   /* Thin scrollbar for feed column */
   ::-webkit-scrollbar        { width: 4px; height: 4px; }
