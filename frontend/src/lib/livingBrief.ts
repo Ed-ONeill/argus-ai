@@ -10,7 +10,7 @@ import type { EntityKind } from "./entity";
 import type { FeedResponse, ThemeIntelligence } from "./types";
 import { sanitizeCopy } from "./utils";
 import {
-  confidenceView, evidenceStrength, lifecycleStage, rankByImportance,
+  computeImportance, confidenceView, evidenceStrength, lifecycleStage, rankByImportance,
   type ConfidenceView, type EvidenceStrength, type Importance, type Lifecycle,
 } from "./intelligenceScore";
 
@@ -41,6 +41,31 @@ export interface MarketMap {
   losers: MapNode[];
 }
 
+// ── PX1.3 pillars: Emerging Signals + Market Memory ────────────────────────────
+export interface EmergingSignal {
+  id: string;
+  headline: string;                 // the theme beginning to matter
+  pattern: string;                  // what is beginning (short, real)
+  watchFor: string;                 // the curiosity hook — what would confirm it
+  assets: EntitySpec[];
+  importance: Importance;
+  confidence: ConfidenceView;
+  lifecycle: Lifecycle;
+}
+
+export interface MemoryMilestone { label: string; detail: string; reached: boolean; }
+export interface MarketMemory {
+  theme: string;
+  firstSeenDaysAgo: number;
+  convictionFrom: number;
+  convictionNow: number;
+  convictionTrend: string;
+  statusLine: string;               // e.g. "Strengthening for 8 sessions"
+  milestones: MemoryMilestone[];    // First detected → … → current stage
+  tickers: EntitySpec[];            // "linked to NVDA, CEG, VST"
+  openQuestion: string;             // curiosity hook
+}
+
 export interface LivingBriefVM {
   hasIntelligence: boolean;
   regime: string | null;
@@ -48,6 +73,8 @@ export interface LivingBriefVM {
   institutionalQuestion: string | null;
   whatMattersMost: WhatMattersItem[];
   marketMap: MarketMap | null;
+  emergingSignals: EmergingSignal[];
+  marketMemory: MarketMemory | null;
 }
 
 const symbolKind = (label: string): EntityKind =>
@@ -162,6 +189,81 @@ function buildInstitutionalQuestion(themes: ThemeIntelligence[]): string | null 
   return sanitizeCopy(`Can ${top.name} hold if ${tension.toLowerCase()} takes over?`) ?? null;
 }
 
+// Emerging Signals: what is becoming institutionally RELEVANT before it becomes
+// institutional CONSENSUS (§EMERGE‴). Early lifecycle + rising conviction, excluding
+// anything already surfaced in What Matters Most (insight-per-scroll).
+const _EARLY_MOMENTUM = new Set(["emerging", "accelerating", "strengthening"]);
+
+function buildEmergingSignals(themes: ThemeIntelligence[], excludeIds: Set<string>): EmergingSignal[] {
+  const candidates = themes.filter((t) => {
+    if (excludeIds.has(t.id)) return false;
+    const stage = lifecycleStage(t).stage;
+    const rising = (t.memory?.conviction_change ?? t.momentum_delta ?? 0) > 0
+      || t.momentum_label === "emerging";
+    const early = stage === "emerging"
+      || (_EARLY_MOMENTUM.has(t.momentum_label) && (t.persistence_days ?? 99) <= 12);
+    return early && rising;
+  });
+  const ranked = candidates.sort((a, b) => {
+    const ca = a.memory?.conviction_change ?? a.momentum_delta ?? 0;
+    const cb = b.memory?.conviction_change ?? b.momentum_delta ?? 0;
+    return cb - ca
+      || (a.memory?.first_seen_days_ago ?? 999) - (b.memory?.first_seen_days_ago ?? 999)
+      || a.id.localeCompare(b.id);
+  }).slice(0, 3);
+
+  return ranked.map((t) => {
+    const pattern = cap(t.causal_narrative || t.description || "", 1, 22)
+      || `${t.name} is ${t.momentum_label}.`;
+    const so = t.second_order_effects?.[0];
+    const watchFor = sanitizeCopy(so ? `Confirms if ${so.toLowerCase()} follows.`
+      : "Confirms if corroboration broadens across sectors.") ?? "";
+    return {
+      id: t.id, headline: t.name, pattern, watchFor,
+      assets: (t.related_assets ?? []).slice(0, 3).map((a) => ({ label: a, kind: symbolKind(a) })),
+      importance: computeImportance(t),
+      confidence: confidenceView(t),
+      lifecycle: lifecycleStage(t),
+    };
+  });
+}
+
+const _STATUS_WORD: Record<string, string> = {
+  new: "New", strengthening: "Strengthening", weakening: "Weakening",
+  recurring: "Recurring", active: "Active", stale: "Fading",
+};
+const _MEMORY_STAGES = ["First detected", "Conviction built", "Became dominant", "Cooling", "Resolved"];
+
+function buildMarketMemory(themes: ThemeIntelligence[]): MarketMemory | null {
+  const lead = rankByImportance(themes).map((r) => r.theme).find((t) => t.memory);
+  const m = lead?.memory;
+  if (!lead || !m) return null;
+
+  const idx = lifecycleStage(lead).index;
+  const from = Math.round(m.conviction_first);
+  const now = Math.round(m.conviction_current);
+  const milestones: MemoryMilestone[] = _MEMORY_STAGES.map((label, i) => ({
+    label,
+    detail: i === 0 ? `${m.first_seen_days_ago}d ago`
+      : i === 1 ? `${from} → ${now}` : "",
+    reached: i <= idx,
+  }));
+
+  return {
+    theme: lead.name,
+    firstSeenDaysAgo: m.first_seen_days_ago,
+    convictionFrom: from,
+    convictionNow: now,
+    convictionTrend: m.conviction_trend,
+    statusLine: `${_STATUS_WORD[m.status] ?? "Tracked"} for ${m.sessions_in_status} ${m.sessions_in_status === 1 ? "session" : "sessions"}`,
+    milestones,
+    tickers: (m.historical_tickers ?? []).slice(0, 4).map((t) => ({ label: t, kind: symbolKind(t) })),
+    openQuestion: sanitizeCopy(m.conviction_trend === "falling"
+      ? `Is ${lead.name} resolving, or just pausing?`
+      : `Has ${lead.name} peaked, or is conviction still building?`) ?? "",
+  };
+}
+
 export function buildLivingBrief(feed: FeedResponse | undefined, regimeOverride?: string | null): LivingBriefVM {
   const themes = (feed?.theme_intelligence ?? []).filter((t) => t && t.name);
   const regime = regimeOverride
@@ -173,14 +275,19 @@ export function buildLivingBrief(feed: FeedResponse | undefined, regimeOverride?
     return {
       hasIntelligence: false, regime, executiveSummary: null,
       institutionalQuestion: null, whatMattersMost: [], marketMap: null,
+      emergingSignals: [], marketMemory: null,
     };
   }
+  const whatMattersMost = buildWhatMattersMost(themes);
+  const excludeIds = new Set(whatMattersMost.map((w) => w.id));
   return {
     hasIntelligence: true,
     regime,
     executiveSummary: buildExecutiveSummary(themes, regime),
     institutionalQuestion: buildInstitutionalQuestion(themes),
-    whatMattersMost: buildWhatMattersMost(themes),
+    whatMattersMost,
     marketMap: buildMarketMap(themes, regime),
+    emergingSignals: buildEmergingSignals(themes, excludeIds),
+    marketMemory: buildMarketMemory(themes),
   };
 }

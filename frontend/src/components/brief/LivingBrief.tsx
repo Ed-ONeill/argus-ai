@@ -13,6 +13,8 @@ import { timeAgo } from "@/lib/utils";
 import type { FeedResponse } from "@/lib/types";
 import { WhatMattersMost } from "./WhatMattersMost";
 import { MarketMap } from "./MarketMap";
+import { EmergingSignals } from "./EmergingSignals";
+import { MarketMemory } from "./MarketMemory";
 
 /** Client-only session clock — avoids SSR/hydration drift; ticks each minute. */
 function useSession(): SessionInfo | null {
@@ -113,6 +115,18 @@ export function LivingBrief({ feed, generatedAt, isStale }: {
           {vm.marketMap && (
             <div className="pt-16">
               <MarketMap map={vm.marketMap} live={session?.live} />
+            </div>
+          )}
+
+          {/* Anticipation: what is beginning before consensus (permanent pillar). */}
+          <div className="pt-16">
+            <EmergingSignals signals={vm.emergingSignals} />
+          </div>
+
+          {/* Memory: Argus remembers the narrative's whole life, not just today. */}
+          {vm.marketMemory && (
+            <div className="pt-16">
+              <MarketMemory memory={vm.marketMemory} />
             </div>
           )}
 
