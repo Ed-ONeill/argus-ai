@@ -81,10 +81,22 @@ const symbolKind = (label: string): EntityKind =>
   /^[A-Z]{1,5}$/.test(label.trim()) ? "ticker" : "theme";
 
 function exposures(t: ThemeIntelligence): Pick<WhatMattersItem, "winners" | "losers" | "exposure"> {
+  // Real SIGNED sector exposure from the curated theme relationship graph
+  // (relationship_weights[sector].direction ∈ positive|negative). This is the honest
+  // source of who benefits vs who is hurt — both sides populated, per sector.
+  const rels = Object.entries(t.relationship_weights ?? {});
+  const pick = (dir: "positive" | "negative"): EntitySpec[] =>
+    rels.filter(([, r]) => r.direction === dir)
+      .sort((a, b) => (b[1].weight ?? 0) - (a[1].weight ?? 0))
+      .slice(0, 4)
+      .map(([name]) => ({ label: name, kind: "sector" as EntityKind }));
+  const winners = pick("positive");
+  const losers = pick("negative");
+  if (winners.length > 0 || losers.length > 0) return { winners, losers, exposure: [] };
+
+  // No signed graph → honest unsigned asset exposure, never a fabricated sign.
   const assets: EntitySpec[] = (t.related_assets ?? []).slice(0, 4)
     .map((a) => ({ label: a, kind: symbolKind(a) }));
-  if (t.momentum_direction === "bullish") return { winners: assets, losers: [], exposure: [] };
-  if (t.momentum_direction === "bearish") return { winners: [], losers: assets, exposure: [] };
   return { winners: [], losers: [], exposure: assets };
 }
 

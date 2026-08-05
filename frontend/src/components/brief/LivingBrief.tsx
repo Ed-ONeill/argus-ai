@@ -15,6 +15,7 @@ import { WhatMattersMost } from "./WhatMattersMost";
 import { MarketMap } from "./MarketMap";
 import { EmergingSignals } from "./EmergingSignals";
 import { MarketMemory } from "./MarketMemory";
+import { MarketPulse } from "./MarketPulse";
 
 /** Client-only session clock — avoids SSR/hydration drift; ticks each minute. */
 function useSession(): SessionInfo | null {
@@ -90,6 +91,10 @@ export function LivingBrief({ feed, generatedAt, isStale }: {
           </p>
         )}
       </header>
+
+      {/* The market breathing — a quiet live cross-asset band. Ambient context; the
+          summary below remains the apex. Renders only when real prices are present. */}
+      {vm.hasIntelligence && <MarketPulse />}
 
       {!vm.hasIntelligence ? (
         <p className="max-w-[52ch] text-[15px] leading-relaxed text-ink-secondary">

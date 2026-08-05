@@ -93,7 +93,7 @@ export function MarketMap({ map, live }: { map: MarketMapVM; live?: boolean }) {
       {(map.winners.length > 0 || map.losers.length > 0) && (
         <div className="mt-7 flex flex-wrap justify-center gap-x-12 gap-y-5">
           <Leaves label="Who benefits" nodes={map.winners} color={WIN} />
-          <Leaves label="Who is exposed" nodes={map.losers} color={LOSE} />
+          <Leaves label="Who is hurt" nodes={map.losers} color={LOSE} />
         </div>
       )}
 
