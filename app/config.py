@@ -232,6 +232,27 @@ class Settings(BaseSettings):
                 return True
         return False
 
+    # Wave 0.4 A4 controlled authority is an independent, fail-off runtime gate. When
+    # False (default) the A4 seam is a COMPLETE no-op — no upstream read, eligibility,
+    # decision, audit, accessor update, or diagnostics, and zero production-output
+    # difference. Independent of the A2/A3 gates; enabling A4 enables neither. A4 is
+    # advisory and applies authority nowhere (the current engine resolves denied).
+    materiality_authority_enabled: bool = False
+
+    @field_validator("materiality_authority_enabled", mode="before")
+    @classmethod
+    def _parse_materiality_authority_enabled(cls, value: object) -> bool:
+        # Malformed values fail safe to False without preventing startup.
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "t", "yes", "y", "on"}:
+                return True
+        return False
+
     @field_validator("materiality_evaluation_enabled", mode="before")
     @classmethod
     def _parse_materiality_evaluation_enabled(cls, value: object) -> bool:

@@ -364,8 +364,12 @@ def test_c4_no_activation_or_write_helper():
 
 
 def test_c4_not_imported_by_production():
+    # C4 is consumed by no inference/feed/API module. Wave 0.4 A4 (controlled authority)
+    # consumes the C4 ReadinessResult read-only via its core, so materiality_authority.py
+    # is the single authorized importer; nothing else may reference C4.
     import subprocess
     out = subprocess.run(["grep", "-rln", "materiality_readiness", "app/", "--include=*.py"],
                          capture_output=True, text=True)
-    hits = [ln for ln in out.stdout.splitlines() if not ln.endswith("materiality_readiness.py")]
-    assert hits == []
+    hits = [ln.replace("\\", "/") for ln in out.stdout.splitlines()
+            if not ln.endswith("materiality_readiness.py")]
+    assert hits == ["app/materiality_authority.py"]

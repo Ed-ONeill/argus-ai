@@ -411,15 +411,21 @@ def test_import_boundaries():
             core_importers.add(name)
         if path.name != "materiality_routing_runtime.py" and _RTM in mods:
             rt_importers.add(name)
-    assert core_importers == {"app/materiality_routing_runtime.py"}   # core only via the seam
-    assert rt_importers == {"app/background.py"}                       # seam only via background
+    # A3 core is imported by the A3 seam and the A4 authority core (read-only); the A3
+    # seam by background and the A4 authority seam (read-only proposed-route accessor).
+    assert core_importers == {"app/materiality_routing_runtime.py",
+                              "app/materiality_authority.py"}
+    assert rt_importers == {"app/background.py", "app/materiality_authority_runtime.py"}
     bg = _imported(pathlib.Path("app/background.py"))
     assert _RTM in bg and _CORE not in bg                              # background imports seam, not core
 
 
 def test_accessor_not_read_by_production():
+    # The A4 authority seam reads latest_proposed_route() read-only (advisory) — the only
+    # authorized reader besides the A3 module itself.
+    authorized_readers = {"materiality_routing_runtime.py", "materiality_authority_runtime.py"}
     for path in _production_py():
-        if path.name == "materiality_routing_runtime.py":
+        if path.name in authorized_readers:
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
             if isinstance(node, ast.ImportFrom) and node.module == _RTM:

@@ -608,6 +608,18 @@ def run_pipeline(
         except Exception:
             log.exception("[bg] A3 safe routing FAILED — continuing (feed unaffected)")
 
+    # ── Wave 0.4 A4 — Controlled Authority (ADVISORY) ──────────────────────────
+    # After the A3 routing seam. Computes AuthorityEligibility -> AuthorityDecision
+    # -> AuthorityAudit once per cycle and APPLIES authority nowhere; no production
+    # control flow branches on the result. Fully gated (default off), re-entry-
+    # guarded, failure-isolated. Off => pure no-op. Current engine resolves denied.
+    if settings.materiality_authority_enabled:
+        try:
+            from app.materiality_authority_runtime import run_authority_cycle
+            run_authority_cycle(enabled=True, observation_cycle_id=_cycle_id)
+        except Exception:
+            log.exception("[bg] A4 controlled authority FAILED — continuing (feed unaffected)")
+
     feed = ProcessedFeed(
         items=items,
         top_stories=top,

@@ -336,16 +336,20 @@ def test_import_boundaries():
             rt_importers.add(name)
         if path.name != "materiality_activation_config.py" and _CFG in mods:
             cfg_importers.add(name)
-    # Frozen A1 is imported by the two A2 modules and the two A3 routing modules only.
+    # Frozen A1 is imported by the two A2 modules, the two A3 routing modules, and the
+    # A4 authority core — by no inference / ranking / feed / API / frontend module.
     assert a1_importers == {"app/materiality_activation_config.py",
                             "app/materiality_activation_runtime.py",
                             "app/materiality_routing.py",
-                            "app/materiality_routing_runtime.py"}
-    # The A2 seam is imported by background and by the A3 routing seam (read-only);
-    # the A2 config store by the A2 seam and the A3 routing seam (read-only config).
-    assert rt_importers == {"app/background.py", "app/materiality_routing_runtime.py"}
+                            "app/materiality_routing_runtime.py",
+                            "app/materiality_authority.py"}
+    # The A2 seam is imported by background and the A3/A4 seams (read-only); the A2
+    # config store by the A2 seam and the A3/A4 seams (read-only config).
+    assert rt_importers == {"app/background.py", "app/materiality_routing_runtime.py",
+                            "app/materiality_authority_runtime.py"}
     assert cfg_importers == {"app/materiality_activation_runtime.py",
-                             "app/materiality_routing_runtime.py"}
+                             "app/materiality_routing_runtime.py",
+                             "app/materiality_authority_runtime.py"}
     # background imports the seam only — never A1 directly; config/storage import neither.
     bg = _imported_modules(pathlib.Path("app/background.py"))
     assert _RTM in bg and _A1 not in bg
@@ -357,7 +361,8 @@ def test_accessor_not_read_by_production():
     # The A3 routing seam reads latest_activation_state() read-only to build advisory
     # routing context (it alters no production behavior); it is the only authorized
     # reader besides the A2 module itself.
-    authorized_readers = {"materiality_activation_runtime.py", "materiality_routing_runtime.py"}
+    authorized_readers = {"materiality_activation_runtime.py", "materiality_routing_runtime.py",
+                          "materiality_authority_runtime.py"}
     for path in _production_py():
         if path.name in authorized_readers:
             continue

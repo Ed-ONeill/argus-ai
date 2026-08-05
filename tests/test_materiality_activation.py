@@ -305,7 +305,8 @@ def test_a1_imported_only_by_a2_seam():
     assert importers == {"app/materiality_activation_config.py",
                          "app/materiality_activation_runtime.py",
                          "app/materiality_routing.py",
-                         "app/materiality_routing_runtime.py"}
+                         "app/materiality_routing_runtime.py",
+                         "app/materiality_authority.py"}
 
 
 def test_all_artifact_ids_have_expected_prefixes():

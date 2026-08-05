@@ -53,6 +53,7 @@ THEME_MEMORY_DIR = DATA_DIR / "theme_memory"
 EVALUATION_DIR    = DATA_DIR / "materiality_evaluation"
 ACTIVATION_DIR    = DATA_DIR / "materiality_activation"   # Wave 0.4 A2 (advisory)
 ROUTING_DIR       = DATA_DIR / "materiality_routing"      # Wave 0.4 A3 (advisory)
+AUTHORITY_DIR     = DATA_DIR / "materiality_authority"    # Wave 0.4 A4 (advisory)
 REGISTRY_PATH    = DATA_DIR / "event_registry.json"
 CONVERSATIONS_DIR = DATA_DIR / "conversations"
 MEMORY_DB_PATH   = DATA_DIR / "memory.db"
