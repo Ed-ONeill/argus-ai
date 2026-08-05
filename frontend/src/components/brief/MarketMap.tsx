@@ -8,6 +8,7 @@
 
 import { EntityChip } from "@/components/common/EntityChip";
 import { cn } from "@/lib/utils";
+import { ExploreLink } from "./ExploreLink";
 import type { MapNode, MarketMap as MarketMapVM } from "@/lib/livingBrief";
 
 const WIN = "#34D399";
@@ -71,7 +72,7 @@ export function MarketMap({ map, live }: { map: MarketMapVM; live?: boolean }) {
         <h2 id="map-heading" className="text-[12px] font-semibold uppercase tracking-[0.22em] text-ink">
           Market Map
         </h2>
-        <span className="text-[9.5px] uppercase tracking-[0.16em] text-ink-faint">How this is transmitting</span>
+        <span className="text-[9.5px] uppercase tracking-[0.16em] text-ink-faint">How the #1 story transmits</span>
       </div>
 
       {/* The aha — read this in three seconds; the chain below is the proof. */}
@@ -95,6 +96,10 @@ export function MarketMap({ map, live }: { map: MarketMapVM; live?: boolean }) {
           <Leaves label="Who is exposed" nodes={map.losers} color={LOSE} />
         </div>
       )}
+
+      <div className="mt-7 flex justify-center border-t border-edge-subtle pt-4">
+        <ExploreLink label="Explore this chain" entity={map.title} />
+      </div>
     </section>
   );
 }

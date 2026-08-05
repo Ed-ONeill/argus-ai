@@ -166,12 +166,14 @@ function buildExecutiveSummary(themes: ThemeIntelligence[], regime: string | nul
   const top = ranked[0]?.theme;
   if (!top) return null;
   const second = ranked[1]?.theme;
-  const lead = ranked[0].importance.lead;
 
+  // Speak the market, not the model: sentence two is the theme's real causal story
+  // in plain English, never meta-commentary about the score.
   const s1 = regime
     ? `Markets are trading a ${regime.toLowerCase()} tape, led by ${top.name}.`
     : `${top.name} is the dominant force in markets right now.`;
-  const s2 = `It matters most on ${lead.label.toLowerCase()}: ${lead.detail}.`;
+  const s2 = cap(top.causal_narrative || top.description || "", 1, 30)
+    || `${top.related_industries?.slice(0, 2).join(" and ") || "Multiple sectors"} carry the exposure.`;
   const s3 = second ? `${second.name} is ${lifecycleStage(second).label.toLowerCase()} beneath it.` : "";
   return cap([s1, s2, s3].filter(Boolean).join(" "), 3, 80);
 }
@@ -213,10 +215,13 @@ function buildEmergingSignals(themes: ThemeIntelligence[], excludeIds: Set<strin
   }).slice(0, 3);
 
   return ranked.map((t) => {
-    const pattern = cap(t.causal_narrative || t.description || "", 1, 22)
-      || `${t.name} is ${t.momentum_label}.`;
-    const so = t.second_order_effects?.[0];
-    const watchFor = sanitizeCopy(so ? `Confirms if ${so.toLowerCase()} follows.`
+    // Frame the LEAD/LAG divergence — what is moving before the rest reflects it —
+    // so the signal reads as prescient, not just as a newer theme.
+    const lag = t.second_order_effects?.[0];
+    const pattern = sanitizeCopy(lag
+      ? `${t.name} is ${t.momentum_label} while ${lag.toLowerCase()} has not yet responded.`
+      : `${t.name} is ${t.momentum_label} beneath a quiet tape, not yet priced in.`) ?? t.name;
+    const watchFor = sanitizeCopy(lag ? `Confirms if ${lag.toLowerCase()} follows.`
       : "Confirms if corroboration broadens across sectors.") ?? "";
     return {
       id: t.id, headline: t.name, pattern, watchFor,
@@ -234,10 +239,18 @@ const _STATUS_WORD: Record<string, string> = {
 };
 const _MEMORY_STAGES = ["First detected", "Conviction built", "Became dominant", "Cooling", "Resolved"];
 
-function buildMarketMemory(themes: ThemeIntelligence[]): MarketMemory | null {
-  const lead = rankByImportance(themes).map((r) => r.theme).find((t) => t.memory);
-  const m = lead?.memory;
-  if (!lead || !m) return null;
+function buildMarketMemory(themes: ThemeIntelligence[], excludeId?: string): MarketMemory | null {
+  // The LONGEST-RUNNING narrative (tracked the most days), deliberately NOT the #1
+  // story that What Matters Most and the Market Map already own — so Memory adds a
+  // distinct thread rather than retelling the top story a fourth time.
+  const withMem = themes.filter((t) => t.memory);
+  if (withMem.length === 0) return null;
+  const longest = [...withMem].sort((a, b) =>
+    (b.memory!.first_seen_days_ago - a.memory!.first_seen_days_ago)
+    || (b.persistence_days ?? 0) - (a.persistence_days ?? 0)
+    || a.id.localeCompare(b.id));
+  const lead = longest.find((t) => t.id !== excludeId) ?? longest[0];
+  const m = lead.memory!;
 
   const idx = lifecycleStage(lead).index;
   const from = Math.round(m.conviction_first);
@@ -288,6 +301,6 @@ export function buildLivingBrief(feed: FeedResponse | undefined, regimeOverride?
     whatMattersMost,
     marketMap: buildMarketMap(themes, regime),
     emergingSignals: buildEmergingSignals(themes, excludeIds),
-    marketMemory: buildMarketMemory(themes),
+    marketMemory: buildMarketMemory(themes, whatMattersMost[0]?.id),
   };
 }

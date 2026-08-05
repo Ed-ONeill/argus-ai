@@ -7,6 +7,7 @@
 // "no strong emerging signals" state, never fabricated.
 
 import { EntityChip } from "@/components/common/EntityChip";
+import { ExploreLink } from "./ExploreLink";
 import type { EmergingSignal } from "@/lib/livingBrief";
 
 function Signal({ signal }: { signal: EmergingSignal }) {
@@ -31,9 +32,12 @@ function Signal({ signal }: { signal: EmergingSignal }) {
           ))}
         </div>
       )}
-      <p className="text-[11.5px] text-ink-muted">
-        <span className="text-ink-faint">Watch for → </span>{signal.watchFor}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[11.5px] text-ink-muted">
+          <span className="text-ink-faint">Watch for → </span>{signal.watchFor}
+        </p>
+        <ExploreLink label="Track early" entity={signal.headline} />
+      </div>
     </li>
   );
 }

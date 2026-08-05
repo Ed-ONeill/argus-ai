@@ -8,12 +8,15 @@
 
 import { EntityChip } from "@/components/common/EntityChip";
 import { cn } from "@/lib/utils";
+import { ExploreLink } from "./ExploreLink";
 import type { MarketMemory as MarketMemoryVM } from "@/lib/livingBrief";
 
 export function MarketMemory({ memory }: { memory: MarketMemoryVM }) {
   const rising = memory.convictionTrend === "rising";
+  // A lighter container than the Market Map's panel on purpose: the Map is the one
+  // object with material depth, so it stays the singular signature.
   return (
-    <section aria-labelledby="memory-heading" className="brief-panel rounded-[22px] p-6 sm:p-7">
+    <section aria-labelledby="memory-heading" className="rounded-2xl border border-edge-subtle bg-surface/25 p-6 sm:p-7">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 id="memory-heading" className="text-[12px] font-semibold uppercase tracking-[0.22em] text-ink">
           Market Memory
@@ -76,7 +79,10 @@ export function MarketMemory({ memory }: { memory: MarketMemoryVM }) {
         )}
       </div>
 
-      <p className="mt-4 text-[12.5px] italic text-ink-muted">{memory.openQuestion}</p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[12.5px] italic text-ink-muted">{memory.openQuestion}</p>
+        <ExploreLink label="See its history" entity={memory.theme} />
+      </div>
     </section>
   );
 }

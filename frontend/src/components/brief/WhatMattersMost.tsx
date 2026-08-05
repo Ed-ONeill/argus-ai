@@ -9,6 +9,7 @@
 import { EntityChip } from "@/components/common/EntityChip";
 import { IntelligenceScore } from "./IntelligenceScore";
 import { LifecycleBadge } from "./LifecycleBadge";
+import { ExploreLink } from "./ExploreLink";
 import type { EntitySpec, WhatMattersItem } from "@/lib/livingBrief";
 
 const WIN = "#34D399";
@@ -42,15 +43,16 @@ function Item({ item, rank }: { item: WhatMattersItem; rank: number }) {
           <LifecycleBadge lifecycle={item.lifecycle} />
         </div>
         <p className="max-w-[58ch] text-[13.5px] leading-relaxed text-ink-secondary">{item.why}</p>
-        {(item.winners.length > 0 || item.losers.length > 0 || item.exposure.length > 0) && (
+        {/* Benefits / at-risk only; neutral "exposed" is owned once, by the Market Map. */}
+        {(item.winners.length > 0 || item.losers.length > 0) && (
           <div className="flex flex-col gap-1.5 pt-1">
             <ChipRow label="Benefits" entities={item.winners} color={WIN} />
             <ChipRow label="At risk" entities={item.losers} color={LOSE} />
-            <ChipRow label="Exposed" entities={item.exposure} />
           </div>
         )}
-        <div className="pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <IntelligenceScore importance={item.importance} confidence={item.confidence} evidence={item.evidence} />
+          <ExploreLink label="Trace this" entity={item.headline} />
         </div>
         {item.nextCatalyst && (
           <p className="text-[11px] text-ink-muted">Next catalyst: {item.nextCatalyst}</p>
