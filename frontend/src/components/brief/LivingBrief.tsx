@@ -92,8 +92,9 @@ export function LivingBrief({ feed, generatedAt, isStale }: {
         )}
       </header>
 
-      {/* The market breathing — a quiet live cross-asset band. Ambient context; the
-          summary below remains the apex. Renders only when real prices are present. */}
+      {/* The market breathing — a quiet cross-asset sparkline band (canonical ArgusChart,
+          EOD prices honestly labeled delayed). Ambient context; the summary below remains
+          the apex. Renders only when the real market tape is present. */}
       {vm.hasIntelligence && <MarketPulse />}
 
       {!vm.hasIntelligence ? (
