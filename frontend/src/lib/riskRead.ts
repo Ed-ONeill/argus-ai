@@ -12,9 +12,8 @@
  * with Explorer, the Morning Brief, or The Read about the same entity - they
  * all bottom out in the same engine records.
  *
- * Consumers: the Markets ThemeDetailDrawer, the feed ThemeDrawer /
- * IntelligenceWorkspace / IntelligenceStream (via their pages or directly),
- * and tests (85.x). Honest degradation: when the entity is not in the graph,
+ * Consumers: the feed ThemeDrawer / IntelligenceWorkspace / IntelligenceStream
+ * (via their pages or directly), and tests (85.x). Honest degradation: when the entity is not in the graph,
  * basis is "unavailable" and only the stored-field derived watch line (which
  * needs no graph) survives - callers must fall back to explicitly LABELED
  * stored-field reads, never silently blend.

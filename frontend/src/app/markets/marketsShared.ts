@@ -1,6 +1,6 @@
-// Shared, framework-agnostic helpers, constants, and types used by BOTH the
-// Markets page and the (code-split) ThemeDetailDrawer. Keeping them in a neutral
-// module lets the drawer load lazily without importing from the route component.
+// Shared, framework-agnostic helpers, constants, and types for the Markets surface
+// and related theme intelligence. Keeping them in a neutral module lets consumers
+// load without importing from a route component.
 
 import type { ThemeIntelligence } from "@/lib/types";
 import type { RiskRead } from "@/lib/riskRead";
