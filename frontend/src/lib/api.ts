@@ -42,6 +42,26 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
+async function del<T>(path: string): Promise<T> {
+  try {
+    return await authedJson<T>(BASE + path, { method: "DELETE" }, authDeps);
+  } catch (err) {
+    if (err instanceof UnauthorizedError) notifyUnauthorized();
+    throw err;
+  }
+}
+
+// ── Account (H6) ───────────────────────────────────────────────────────────────
+/**
+ * Permanently delete the authenticated user's own account. The backend derives the user id from
+ * the verified token (the client sends NO id); the service-role credential stays server-side. This
+ * THROWS on any failure — callers must not sign the user out or claim success unless it resolves.
+ * A successful delete cascades the per-user tables (profiles/saved_items/watchlist/preferences).
+ */
+export async function deleteAccount(): Promise<{ deleted: boolean }> {
+  return del<{ deleted: boolean }>("/account/");
+}
+
 // ── Feed ─────────────────────────────────────────────────────────────────────
 
 // NOTE: trailing slashes MATCH the FastAPI routes (`/api/feed/`,

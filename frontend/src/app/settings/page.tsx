@@ -4,10 +4,11 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, AlertCircle, Mail, Lock, User } from "lucide-react";
+import { ArrowLeft, Check, AlertCircle, Mail, Lock, User, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { createClient } from "@/lib/supabase/client";
+import { DeleteAccountDialog } from "@/components/settings/DeleteAccountDialog";
 
 // ── Intelligence preference options (mirror onboarding) ──────────────────────
 
@@ -176,6 +177,7 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { profile, firstName, lastName, fullName, initials, memberSince, refetch } = useProfile();
   const supabase = useMemo(() => createClient(), []);
+  const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
     if (user === null) router.replace("/auth");
@@ -593,6 +595,39 @@ export default function SettingsPage() {
               </div>
             </SectionCard>
           </motion.div>
+
+          {/* ── Legal ─────────────────────────────────────────────────────── */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16, duration: 0.30 }}>
+            <SectionCard>
+              <SectionHeader label="Legal" />
+              <div style={{ padding: "12px 22px 16px", display: "flex", gap: "20px", flexWrap: "wrap" }}>
+                <Link href="/privacy" style={{ fontSize: 12.5, color: "rgba(124,199,216,0.88)" }}>Privacy Policy</Link>
+                <Link href="/terms" style={{ fontSize: 12.5, color: "rgba(124,199,216,0.88)" }}>Terms of Service</Link>
+              </div>
+            </SectionCard>
+          </motion.div>
+
+          {/* ── Danger Zone — permanent account deletion (H6) ─────────────── */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, duration: 0.30 }}>
+            <div style={{ borderRadius: 14, background: "rgba(22,11,13,0.5)", border: "1px solid rgba(248,113,113,0.24)", overflow: "hidden" }}>
+              <div style={{ padding: "16px 22px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(248,113,113,0.85)" }}>Danger Zone</span>
+                <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "rgba(255,255,255,0.6)", maxWidth: "62ch" }}>
+                  Permanently delete your Argus account and all associated data (profile, saved items, watchlist, preferences). This cannot be undone.
+                </p>
+                <button onClick={() => setShowDelete(true)}
+                  style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px",
+                           borderRadius: 8, fontSize: 12.5, fontWeight: 600, color: "#f87171",
+                           border: "1px solid rgba(248,113,113,0.4)", background: "transparent" }}>
+                  <Trash2 size={14} /> Delete account
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          {showDelete && user?.email && (
+            <DeleteAccountDialog email={user.email} onClose={() => setShowDelete(false)} />
+          )}
 
         </div>
       </div>

@@ -88,6 +88,8 @@ export async function middleware(request: NextRequest) {
     isStaticAsset ||
     pathname === "/auth" ||
     pathname.startsWith("/auth/") ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
     pathname === "/favicon.ico";
 
   if (!user && !isPublic) {

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import feed, saved, analyze, listen, briefings
+from api.routes import feed, saved, analyze, listen, briefings, account
 from app.auth import require_user
 from app.background import refresher
 
@@ -198,6 +198,7 @@ app.include_router(saved.router,     prefix="/api/saved",     tags=["saved"],   
 app.include_router(analyze.router,   prefix="/api/analyze",   tags=["analyze"],   dependencies=_auth)
 app.include_router(listen.router,    prefix="/api/listen",    tags=["listen"],    dependencies=_auth)
 app.include_router(briefings.router, prefix="/api/briefings", tags=["briefings"], dependencies=_auth)
+app.include_router(account.router,   prefix="/api/account",   tags=["account"],   dependencies=_auth)
 
 # Intelligence graph router — wrapped so a startup import error is logged
 # clearly rather than silently killing the entire deploy.

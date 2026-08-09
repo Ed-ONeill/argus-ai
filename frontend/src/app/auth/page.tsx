@@ -571,6 +571,13 @@ function AuthPageInner() {
           </Link>
         </div>
 
+        {/* ── Legal ─────────────────────────────────────────────────────────── */}
+        <div style={{ marginTop: "12px", textAlign: "center", display: "flex", justifyContent: "center", gap: "12px" }}>
+          <Link href="/privacy" style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.24)", textDecoration: "none" }}>Privacy Policy</Link>
+          <span style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.14)" }}>·</span>
+          <Link href="/terms" style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.24)", textDecoration: "none" }}>Terms of Service</Link>
+        </div>
+
       </motion.div>
     </div>
   );
