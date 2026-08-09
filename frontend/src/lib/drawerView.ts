@@ -12,6 +12,7 @@ import type { Episode, MarketEvent, StoryCluster, ThemeIntelligence, EventEviden
 import type { MADeal } from "@/hooks/useMAIntelligence";
 import type { IntelContext } from "./intelligenceContext";
 import type { MarketStructureVM } from "./intelligenceShared";
+import { canonicalEntityHref } from "./intelligenceShared";
 import { tickerInfo } from "./tickerMetadata";
 import { sanitizeCopy } from "./utils";
 
@@ -52,7 +53,6 @@ export interface DrawerInputs {
 
 const lc = (s: string): string => s.toLowerCase();
 const up = (s: string): string => s.toUpperCase();
-const isTicker = (s: string): boolean => /^[A-Z][A-Z.]{0,5}$/.test(s.trim());
 // Orientation must be DESCRIPTIVE only — never explain or recommend.
 const ANALYSIS_RE = /\b(because|benefits?|benefit|should|expected to|poised|likely to|due to|driven by|thanks to|set to)\b/i;
 const ENGINE_RE = /\b(themes?|conviction|transmission|momentum|signals?|regime|thesis|theses|ledger|node|graph)\b/i;
@@ -146,7 +146,9 @@ export function buildPriceStrip(ctx: IntelContext, market: MarketStructureVM | n
     symbol: up(ctx.id),
     price: p >= 1000 ? p.toFixed(0) : p.toFixed(2),
     changePct: market.changePercent,
-    freshness: market.stale ? "stale" : (market.freshness || "delayed"),
+    // Honest delay CLASS, not a relative age: these quotes are delayed/EOD (matching the Company
+    // and Markets surfaces). Showing a bare age ("just now") read a delayed quote as fresh.
+    freshness: market.stale ? "stale" : "delayed",
   };
 }
 
@@ -235,7 +237,6 @@ export function buildDrawerView(input: DrawerInputs): DrawerView | null {
   if (!ctx || !ctx.label) return null;
   const m = matchSets(input);
   const stories = buildEvidenceStories(m);
-  const ticker = ctx.kind === "company" || ctx.kind === "etf" ? up(ctx.id) : null;
 
   return {
     head: { label: ctx.label, kindLabel: KIND_LABEL[ctx.kind] },
@@ -244,6 +245,8 @@ export function buildDrawerView(input: DrawerInputs): DrawerView | null {
     referencedIn: buildReferencedIn(m),
     stories,
     hasEvidence: stories.length > 0,
-    continueHref: ticker && isTicker(ticker) ? `/company/${ticker}` : null,
+    // Onward to the entity's canonical home: company -> /intel; etf and every investigatable kind
+    // (theme/sector/driver/narrative) -> the Workstation. Never routes an ETF to the Company page.
+    continueHref: canonicalEntityHref(ctx.kind, ctx.id, ctx.label),
   };
 }

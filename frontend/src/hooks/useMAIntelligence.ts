@@ -147,7 +147,10 @@ export function useMAIntelligence(): MAIntelligence {
       sectorDistribution: {}, totalDealCount: 0, isLoading, isError: !!error,
     };
 
-    const maItems = data.items.filter(i => i.category === "M&A");
+    // Guard: sibling feed fields (events/explanations) are documented as possibly absent on stale
+    // caches, so a partial payload with a missing `items` must degrade, not crash the consumers
+    // (useMAIntelligence feeds useArgusIntelligence -> Evidence Drawer + Workstation).
+    const maItems = (data.items ?? []).filter(i => i.category === "M&A");
     const deals   = maItems.map(toMADeal).sort((a, b) => b.signalScore - a.signalScore);
 
     const breakdown    = { ...EMPTY_BREAKDOWN };

@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
+import { resolveSession, type SessionInfo } from "@/lib/marketSession";
 
 const NAV_LINKS = [
   { href: "/feed",            label: "Feed",       icon: Newspaper  },
@@ -42,6 +43,17 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
     const handleScroll = () => setScrolled(window.scrollY > 8);
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Real US-market session state (client-computed to avoid an SSR/ET-time mismatch). The status
+  // indicator reflects it truthfully — "Live" + pulse only during the regular trading session,
+  // and the honest daypart (Pre-market / After hours / Weekend / Holiday) otherwise.
+  const [session, setSession] = useState<SessionInfo | null>(null);
+  useEffect(() => {
+    const tick = () => setSession(resolveSession(new Date()));
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
   }, []);
 
   async function handleSignOut() {
@@ -81,16 +93,23 @@ export function TopNav({ onRefresh, onOpenSettings, onOpenThemeTerminal, isRefre
           </span>
         </Link>
 
-        {/* ── Live indicator ────────────────────────────────────────────── */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-55"
-              style={{ background: "#52b0c8" }} />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5"
-              style={{ background: "#3a98b0" }} />
-          </span>
-          <span className="text-2xs font-medium hidden sm:inline" style={{ color: "#4898a8" }}>Live</span>
-        </div>
+        {/* ── Market-session indicator (truthful: pulses "Live" only while the market is open) ── */}
+        {session && (
+          <div className="flex items-center gap-1.5 shrink-0" title={session.statusLine}>
+            <span className="relative flex h-1.5 w-1.5">
+              {session.live && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-55"
+                  style={{ background: "#52b0c8" }} />
+              )}
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5"
+                style={{ background: session.live ? "#3a98b0" : "#5b6b7a" }} />
+            </span>
+            <span className="text-2xs font-medium hidden sm:inline"
+              style={{ color: session.live ? "#4898a8" : "rgba(255,255,255,0.42)" }}>
+              {session.live ? "Live" : session.label}
+            </span>
+          </div>
+        )}
 
         {/* ── Nav links ─────────────────────────────────────────────────── */}
         <nav className="flex items-center gap-0.5 flex-1">

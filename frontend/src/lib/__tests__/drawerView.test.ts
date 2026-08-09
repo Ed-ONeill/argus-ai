@@ -98,10 +98,19 @@ describe("referenced in, orientation, price, honesty", () => {
     expect(buildOrientation({ kind: "theme", id: "ai", label: "AI" }, t)).toBeNull();
   });
 
-  it("shows a compact price strip only for tradable kinds, never as a hero object", () => {
-    const v = buildDrawerView(inputs({ market: { price: 176.2, changePercent: 1.4, stale: false, freshness: "delayed" } as DrawerInputs["market"] }));
-    expect(v!.price).toMatchObject({ symbol: "NVDA", price: "176.20", changePct: 1.4 });
-    expect(v!.continueHref).toBe("/company/NVDA");
+  it("shows a compact price strip only for tradable kinds, labeled delayed (not a fresh age)", () => {
+    const v = buildDrawerView(inputs({ market: { price: 176.2, changePercent: 1.4, stale: false, freshness: "3h ago" } as DrawerInputs["market"] }));
+    // freshness is the honest delay CLASS, never the relative age it was fed.
+    expect(v!.price).toMatchObject({ symbol: "NVDA", price: "176.20", changePct: 1.4, freshness: "delayed" });
+    expect(v!.continueHref).toBe("/intel/company:ticker:NVDA");   // company -> canonical /intel, direct
+  });
+
+  it("routes 'continue research' to each kind's canonical home — ETF to the Workstation, never Company", () => {
+    const etf = buildDrawerView(inputs({ context: { kind: "etf", id: "SPY", label: "SPY" } }));
+    expect(etf!.continueHref).toBe("/workstation?kind=etf&subject=SPY");
+    expect(etf!.continueHref).not.toContain("/company");
+    const theme = buildDrawerView(inputs({ context: { kind: "theme", id: "ai-infra", label: "AI Infrastructure" } }));
+    expect(theme!.continueHref).toBe("/workstation?kind=theme&subject=AI%20Infrastructure");
   });
 
   it("is honestly empty when nothing sourced references the entity", () => {
