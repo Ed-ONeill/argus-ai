@@ -35,7 +35,13 @@ export interface UseSeriesResult {
   refetch: () => void;
 }
 
-async function fetchSeries(symbol: string, opts: UseSeriesOptions): Promise<SeriesResponse> {
+// The canonical price-query path. Exported so multi-symbol consumers (useSeriesBatch) reuse
+// the SAME cache key + fetch — never a second cache or provider.
+export function seriesQueryKey(symbol: string | null | undefined, opts: UseSeriesOptions = {}) {
+  return ["reference", "prices", symbol, opts.exchange ?? "US", opts.from ?? "", opts.to ?? ""] as const;
+}
+
+export async function fetchSeries(symbol: string, opts: UseSeriesOptions): Promise<SeriesResponse> {
   const qs = new URLSearchParams({ symbol });
   if (opts.exchange) qs.set("exchange", opts.exchange);
   if (opts.from) qs.set("from", opts.from);
@@ -47,7 +53,7 @@ async function fetchSeries(symbol: string, opts: UseSeriesOptions): Promise<Seri
 export function useSeries(symbol: string | null | undefined, opts: UseSeriesOptions = {}): UseSeriesResult {
   const enabled = (opts.enabled ?? true) && !!symbol;
   const q = useQuery<SeriesResponse>({
-    queryKey: ["reference", "prices", symbol, opts.exchange ?? "US", opts.from ?? "", opts.to ?? ""],
+    queryKey: seriesQueryKey(symbol, opts),
     queryFn: () => fetchSeries(symbol as string, opts),
     enabled,
     staleTime: 6 * 60 * 60 * 1000,       // EOD — 6h

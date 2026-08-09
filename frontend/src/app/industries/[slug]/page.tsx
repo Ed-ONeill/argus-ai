@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -11,9 +11,11 @@ import {
   Radio, ShieldAlert, Target, Shuffle, RefreshCw,
   Headphones, ArrowUpRight, Activity, Network, Building2, Sprout,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeAge } from "@/lib/utils";
 import { TickerChip } from "@/components/common/TickerChip";
 import { SessionExpired } from "@/components/common/SessionExpired";
+import { useSeriesBatch } from "@/lib/platform/hooks/useSeriesBatch";
+import { buildTapeQuote, type TapeQuote } from "@/lib/industryTape";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
@@ -395,121 +397,53 @@ function LeadershipSection({ leadership, color }: { leadership: LeadershipDynami
 }
 
 // ── Industry market tape ──────────────────────────────────────────────────────
-// Bloomberg-style live ticker of the industry's own key symbols. The data layer
-// is macro-only (no per-equity quotes), so prices/percentages are DETERMINISTIC
-// placeholder values — seeded from the ticker so they are stable (no jitter) and
-// biased by the industry's real thematic exposure (beneficiary = positive lean,
-// headwind = negative). A subtle simulated tick nudges one symbol every few
-// seconds with a brief flash, so the feed feels live without flashy motion.
+// A scrolling ticker of the industry's key symbols, quoted from REAL end-of-day closes (the
+// same canonical price route the company hero uses). Each symbol shows its last close, the
+// day's move against the prior close, and a sparkline drawn from its ACTUAL recent closes.
+// The data is end-of-day, so the tape is labeled delayed / at close and never animates a fake
+// tick. Symbols the price route cannot serve are omitted, never invented.
 
-interface TapeQuote { price: number; pct: number }
+function IndustryTape({ tickers }: { tickers: string[] }) {
+  const uniq = useMemo(
+    () => Array.from(new Set(tickers.map((t) => t.toUpperCase()).filter(Boolean))).slice(0, 12),
+    [tickers],
+  );
+  // ~45 calendar days back gives enough trading sessions for a 14-point sparkline + a prior close.
+  const from = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 45);
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const batchSymbols = useMemo(() => uniq.map((symbol) => ({ symbol })), [uniq]);
+  const batch = useSeriesBatch(batchSymbols, { from });
 
-// Stable per-ticker placeholder quote (FNV-1a hash → plausible price + daily %).
-function seedTapeQuote(ticker: string, bias: number): TapeQuote {
-  let h = 2166136261;
-  for (let i = 0; i < ticker.length; i++) { h ^= ticker.charCodeAt(i); h = Math.imul(h, 16777619); }
-  const u1 = (h >>> 0) / 4294967295;
-  const u2 = (Math.imul(h ^ 0x9e3779b9, 2654435761) >>> 0) / 4294967295;
-  const price = 18 + u1 * 462;                 // ~$18 – $480
-  const pct   = Math.max(-4.4, Math.min(4.4, (u2 * 5.0 - 2.5) + bias));
-  return { price, pct };
-}
-
-// Stable, monochrome 1-day sparkline path (points seeded from the ticker), shown
-// after every few symbols for a Bloomberg-style intraday glance. No color.
-function seedSparkline(ticker: string, w = 30, h = 11, n = 14): string {
-  let h0 = 0x811c9dc5;
-  for (let i = 0; i < ticker.length; i++) { h0 ^= ticker.charCodeAt(i); h0 = Math.imul(h0, 0x01000193); }
-  const pts: number[] = [];
-  for (let i = 0; i < n; i++) {
-    h0 = Math.imul(h0 ^ (h0 >>> 15), 0x2c1b3c6d);
-    h0 = Math.imul(h0 ^ (h0 >>> 13), 0x297a2d39);
-    pts.push((h0 >>> 0) / 4294967295);
+  // Keep only symbols with real closes behind them — honest omission, never a placeholder.
+  const available: { sym: string; q: TapeQuote }[] = [];
+  for (const sym of uniq) {
+    const q = buildTapeQuote(batch[sym]?.series);
+    if (q) available.push({ sym, q });
   }
-  const max = Math.max(...pts), min = Math.min(...pts), span = Math.max(1e-6, max - min);
-  return pts.map((p, i) => `${((i / (n - 1)) * w).toFixed(1)},${(h - 1 - ((p - min) / span) * (h - 2)).toFixed(1)}`).join(" ");
-}
+  if (available.length === 0) return null;
 
-function IndustryTape({ tickers, benefit, headwind }: {
-  tickers: string[]; benefit: Set<string>; headwind: Set<string>;
-}) {
-  // One oversized group: industry's top symbols, repeated until ≥18 entries so a
-  // single group always exceeds any viewport (→ never a blank gap). Two identical
-  // groups + translate -50% = a perfectly seamless loop.
-  const group = useMemo(() => {
-    const uniq = Array.from(new Set(tickers.map(t => t.toUpperCase()))).slice(0, 12);
-    if (uniq.length === 0) return [];
-    const filled = [...uniq];
-    while (filled.length < 18) filled.push(uniq[filled.length % uniq.length]);
-    return filled;
-  }, [tickers]);
+  // One oversized group (repeated to ≥18) so a single group exceeds any viewport; two identical
+  // groups translated -50% = a seamless loop. Duration ∝ width → constant px/s regardless of count.
+  const group = [...available];
+  while (group.length < 18) group.push(available[group.length % available.length]);
+  const durationS = group.length * 2.7;
 
-  const uniqKey = group.join(",");
-  const [quotes, setQuotes] = useState<Record<string, TapeQuote>>({});
-  const [flash, setFlash] = useState<string | null>(null);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // (Re)seed when the industry's symbols change.
-  useEffect(() => {
-    const seeded: Record<string, TapeQuote> = {};
-    for (const t of new Set(group)) {
-      const bias = benefit.has(t) ? 0.7 : headwind.has(t) ? -0.7 : 0;
-      seeded[t] = seedTapeQuote(t, bias);
-    }
-    setQuotes(seeded);
-  }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Subtle live tick: nudge one symbol every ~2.6s + flash it briefly.
-  useEffect(() => {
-    const uniq = Array.from(new Set(group));
-    if (uniq.length === 0) return;
-    const id = setInterval(() => {
-      const t = uniq[Math.floor(Math.random() * uniq.length)];
-      setQuotes(prev => {
-        const cur = prev[t]; if (!cur) return prev;
-        const nudge = Math.random() * 0.22 - 0.11;                       // ±0.11%
-        const pct   = Math.max(-5, Math.min(5, cur.pct + nudge));
-        const price = Math.max(1, cur.price * (1 + nudge / 100));
-        return { ...prev, [t]: { price, pct } };
-      });
-      setFlash(t);
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlash(null), 200);   // ~150–250ms flash
-    }, 2600);
-    return () => { clearInterval(id); if (flashTimer.current) clearTimeout(flashTimer.current); };
-  }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Stable sparkline path per symbol (one per unique ticker).
-  const sparks = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const t of new Set(group)) m[t] = seedSparkline(t);
-    return m;
-  }, [uniqKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (group.length === 0) return null;
-  const durationS = group.length * 2.7;   // ∝ width → constant px/s regardless of count
-
-  // Plain render fn (not a nested component) so the <span> nodes persist across
-  // renders and the flash background-color transition runs smoothly. Number
-  // fields have a fixed min-width so a digit-count change on a tick never
-  // reflows the track — keeping the scroll perfectly constant.
-  const renderSym = (t: string, k: string, i: number) => {
-    const q = quotes[t];
-    if (!q) return null;
-    const up = q.pct >= 0;
-    const col = up ? "#34d399" : "#f87171";
-    const isFlash = flash === t;
+  const renderSym = (item: { sym: string; q: TapeQuote }, k: string, i: number) => {
+    const { sym, q } = item;
+    const col = q.up ? "#34d399" : "#f87171";
     const showSpark = i % 5 === 4;
     return (
-      <span key={k} className="tg-sym inline-flex items-baseline gap-2.5 px-[26px] shrink-0"
-        style={isFlash ? { backgroundColor: `${col}20` } : undefined}>
-        <span className="text-[13px] font-bold font-mono tracking-tight" style={{ color: "rgba(255,255,255,0.92)" }}>{t}</span>
-        <span className="text-[8.5px]" style={{ color: col }}>{up ? "▲" : "▼"}</span>
+      <span key={k} className="inline-flex items-baseline gap-2.5 px-[26px] shrink-0">
+        <span className="text-[13px] font-bold font-mono tracking-tight" style={{ color: "rgba(255,255,255,0.92)" }}>{sym}</span>
+        <span className="text-[8.5px]" style={{ color: col }}>{q.up ? "▲" : "▼"}</span>
         <span className="text-[13px] font-semibold font-mono tabular-nums inline-block text-right" style={{ color: "rgba(255,255,255,0.78)", minWidth: 48 }}>{q.price.toFixed(2)}</span>
-        <span className="text-[12.5px] font-bold font-mono tabular-nums inline-block text-right" style={{ color: col, minWidth: 52 }}>{up ? "+" : ""}{q.pct.toFixed(2)}%</span>
+        <span className="text-[12.5px] font-bold font-mono tabular-nums inline-block text-right" style={{ color: col, minWidth: 52 }}>{q.up ? "+" : ""}{q.pct.toFixed(2)}%</span>
         {showSpark && (
           <svg width={30} height={11} viewBox="0 0 30 11" className="self-center" aria-hidden style={{ opacity: 0.42 }}>
-            <polyline points={sparks[t]} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" />
+            <polyline points={q.spark} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" />
           </svg>
         )}
         <span className="text-[8px] pl-1 self-center" style={{ color: "rgba(255,255,255,0.16)" }}>•</span>
@@ -518,13 +452,18 @@ function IndustryTape({ tickers, benefit, headwind }: {
   };
 
   return (
-    <div className="relative overflow-hidden border-y border-white/[0.07]"
-      style={{ maskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)" }}>
-      <div className="flex items-stretch py-2 whitespace-nowrap tg-tape"
-        style={{ width: "max-content", animationDuration: `${durationS}s` }}>
-        <div className="flex items-center">{group.map((t, i) => renderSym(t, `a${i}`, i))}</div>
-        <div className="flex items-center" aria-hidden>{group.map((t, i) => renderSym(t, `b${i}`, i))}</div>
+    <div>
+      <div className="relative overflow-hidden border-y border-white/[0.07]"
+        style={{ maskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent)" }}>
+        <div className="flex items-stretch py-2 whitespace-nowrap tg-tape"
+          style={{ width: "max-content", animationDuration: `${durationS}s` }}>
+          <div className="flex items-center">{group.map((it, i) => renderSym(it, `a${i}`, i))}</div>
+          <div className="flex items-center" aria-hidden>{group.map((it, i) => renderSym(it, `b${i}`, i))}</div>
+        </div>
       </div>
+      <p className="px-[26px] pt-1 text-right text-[8px] font-semibold uppercase tracking-[0.15em] text-white/30">
+        End-of-day prices · delayed
+      </p>
     </div>
   );
 }
@@ -586,13 +525,14 @@ function ActiveThemeCard({ theme, color, onOpen }: {
       {narrative && (
         <p className="text-[11.5px] text-ink-secondary leading-relaxed mb-2.5 line-clamp-2">{narrative}</p>
       )}
-      {/* Footer: conviction + sources */}
+      {/* Footer: momentum + sources — each a single named metric, not one label standing in
+          for two different numbers. */}
       <div className="flex items-center gap-2 pt-2 border-t border-edge/50">
         <span className="text-[9.5px] font-bold tabular-nums" style={{ color: convColor }}>
-          {theme.momentum_delta > 0 ? "+" : ""}{theme.momentum_delta || theme.confidence} conviction
+          {theme.momentum_delta > 0 ? "+" : ""}{theme.momentum_delta} momentum
         </span>
         <span className="text-ink-muted/30">·</span>
-        <span className="text-[9.5px] font-medium text-ink-muted tabular-nums">{theme.evidence_count || theme.contributing_story_count || 0} sources</span>
+        <span className="text-[9.5px] font-medium text-ink-muted tabular-nums">{theme.evidence_count || 0} sources</span>
         <ArrowUpRight size={11} className="ml-auto text-ink-muted/25 group-hover:text-accent transition-colors" />
       </div>
     </button>
@@ -715,7 +655,7 @@ export default function IndustryDetailPage() {
   const industry = getIndustryBySlug(slug);
   const { isWatched, toggle: toggleThemeWatch } = useThemeWatchlist();
 
-  const { sectorData, regime, clusters, isLoading, isFetching, isUnauthorized } = useSectors();
+  const { sectorData, regime, clusters, isLoading, isFetching, isUnauthorized, cacheAge } = useSectors();
   const derivedRegime = sectorData?.derived_regime ?? "";
   const { data: feedData } = useFeed({});
   const whatMattersNow = feedData?.what_matters_now ?? [];
@@ -777,14 +717,6 @@ export default function IndustryDetailPage() {
   const recordedDrivers = si?.drivers ?? [];
   const fallbackDrivers = [...new Set(activeThemes.flatMap(t => (t.related_macro_factors ?? []).slice(0, 2)))]
     .map(cleanMacroLabel).slice(0, 6);
-  // Thematic exposure sets (real signal: beneficiary / headwind of active themes),
-  // shared by the market tape and the Thematic Exposure module.
-  const tapeBenefit  = new Set<string>();
-  const tapeHeadwind = new Set<string>();
-  for (const t of activeThemes) {
-    getThemeBeneficiaries(t).forEach(a => tapeBenefit.add(a.toUpperCase()));
-    getThemeHeadwinds(t).forEach(a => { if (!tapeBenefit.has(a.toUpperCase())) tapeHeadwind.add(a.toUpperCase()); });
-  }
   const liveDevelopments = getLiveDevelopments(topClusters);
   // Leadership = SHARED graph exposure: recorded beneficiaries vs recorded
   // weakening edges (the same reads Explorer shows). Never editorial lists.
@@ -887,12 +819,9 @@ export default function IndustryDetailPage() {
           {/* Status row */}
           <div className="flex flex-wrap items-center gap-2.5 mb-4">
             <div className="flex items-center gap-1.5">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inset-0 rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative rounded-full h-1.5 w-1.5 bg-emerald-500" />
-              </span>
+              <span className="rounded-full h-1.5 w-1.5 bg-emerald-500/70" />
               <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/40">
-                {industry.shortName} · Live
+                {industry.shortName}{cacheAge > 0 ? ` · Updated ${formatRelativeAge(cacheAge)}` : ""}
               </span>
             </div>
             {regimeMeta && (
@@ -1064,7 +993,7 @@ export default function IndustryDetailPage() {
         </div>
 
         {/* Live market tape — key tickers with thematic exposure (no quotes) */}
-        <IndustryTape tickers={industry.keyAssets} benefit={tapeBenefit} headwind={tapeHeadwind} />
+        <IndustryTape tickers={industry.keyAssets} />
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
@@ -1631,33 +1560,6 @@ export default function IndustryDetailPage() {
 
           </div>
         </div>
-
-        {/* ── Market Sensitivity (full width) ──────────────────────────── */}
-        <motion.section
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.32, duration: 0.25, ease: "easeOut" }}
-          className="bg-surface rounded-xl border border-edge p-5"
-        >
-          <SectionHeader icon={BarChart3}>Market Sensitivity</SectionHeader>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {industry.macroDrivers.map(driver => (
-              <div
-                key={driver}
-                className="rounded-lg p-3 text-center"
-                style={{ background: `${industry.color}0a`, border: `1px solid ${industry.color}20` }}
-              >
-                <p className="text-[11px] font-semibold text-ink leading-tight">{driver}</p>
-                <div className="mt-1.5 h-[2px] rounded-full bg-raised overflow-hidden">
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: "70%", background: industry.color }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.section>
 
       </div>
     </div>

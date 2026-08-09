@@ -145,15 +145,12 @@ export default function IndustriesPage() {
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
 
-          {/* Live pill + regime badge */}
+          {/* Intelligence pill + regime badge */}
           <div className="flex flex-wrap items-center gap-2.5 mb-5">
             <div className="flex items-center gap-1.5">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inset-0 rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative rounded-full h-1.5 w-1.5 bg-emerald-500" />
-              </span>
+              <span className="rounded-full h-1.5 w-1.5 bg-emerald-500/70" />
               <span className="text-[9.5px] font-bold uppercase tracking-[0.15em] text-emerald-400">
-                Live Intelligence
+                Market Intelligence
               </span>
             </div>
 
