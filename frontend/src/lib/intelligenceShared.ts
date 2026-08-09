@@ -273,19 +273,32 @@ export function collectCurrentThemes(parentTheme: string | null | undefined, rel
 
 export const EXPLORER_KINDS: readonly IntelKind[] = ["theme", "company", "etf", "sector", "driver", "deal", "narrative"];
 
-const normSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-
-/** /explore URL for the active intelligence context. */
-export function explorerHref(ctx: IntelContext): string {
-  const q = new URLSearchParams();
-  if (ctx.label && ctx.label !== ctx.id) q.set("label", ctx.label);
-  if (ctx.sourceTheme) q.set("theme", ctx.sourceTheme);
-  if (ctx.color) q.set("color", ctx.color);
-  const qs = q.toString();
-  return `/explore/${encodeURIComponent(`${ctx.kind}:${ctx.id}`)}${qs ? `?${qs}` : ""}`;
+/** Canonical destination for an intelligence entity. The /explore surface is RETIRED:
+ *  company/event live on the /intel surface; every investigatable non-company kind
+ *  (theme / sector / driver / narrative / etf / market) opens in the Workstation. ETFs go to
+ *  the Workstation (kind=etf), never the Company surface. These helpers keep their historical
+ *  explorer* names through the /explore deprecation window but no longer emit /explore URLs. */
+export function canonicalEntityHref(kind: string, id: string, label?: string): string {
+  const subject = encodeURIComponent((label ?? id).trim());
+  switch (kind) {
+    case "company":   return `/intel/company:ticker:${id.toUpperCase()}`;
+    case "event":     return `/intel/event:cluster:${id}`;
+    case "etf":       return `/workstation?kind=etf&subject=${subject}`;
+    case "theme":     return `/workstation?kind=theme&subject=${subject}`;
+    case "narrative": return `/workstation?kind=narrative&subject=${subject}`;
+    case "sector":    return `/workstation?kind=sector&subject=${subject}`;
+    case "driver":    return `/workstation?kind=driver&subject=${subject}`;
+    case "market":    return `/workstation?kind=market&subject=${subject}`;
+    default:          return `/workstation?subject=${subject}`;   // deal/other: no dedicated home yet
+  }
 }
 
-/** Map a graph node type onto the intelligence kind it explores as (null = not navigable). */
+/** Canonical URL for the active intelligence context (formerly the /explore URL). */
+export function explorerHref(ctx: IntelContext): string {
+  return canonicalEntityHref(ctx.kind, ctx.id, ctx.label);
+}
+
+/** Map a graph node type onto the intelligence kind it opens as (null = not navigable). */
 export function nodeTypeToIntelKind(t: string): IntelKind | null {
   if (t === "Company") return "company";
   if (t === "ETF") return "etf";
@@ -295,12 +308,13 @@ export function nodeTypeToIntelKind(t: string): IntelKind | null {
   return null;
 }
 
-/** /explore URL for a relationship-map node, or null when the type is not navigable. */
+/** Canonical URL for a relationship-map node, or null when the type is not navigable. */
 export function explorerHrefForNode(node: { type: string; label: string }, color?: string): string | null {
+  void color;   // retained for call-site compatibility; canonical routing does not use color
   const kind = nodeTypeToIntelKind(node.type);
   if (!kind) return null;
-  const id = kind === "company" || kind === "etf" ? node.label.toUpperCase() : normSlug(node.label);
-  return explorerHref({ kind, id, label: node.label, color });
+  const id = kind === "company" || kind === "etf" ? node.label.toUpperCase() : node.label;
+  return canonicalEntityHref(kind, id, node.label);
 }
 
 /** Parse the /explore/[entity] segment (kind:id, or a bare ticker) into an IntelContext. */

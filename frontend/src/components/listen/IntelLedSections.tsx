@@ -106,7 +106,7 @@ function EpisodeRow({ vm, variant, themeByName, onThemeClick }: {
           </p>
         </div>
         {explorerHref && (
-          <Link href={explorerHref} className="shrink-0 p-1 rounded text-ink-muted/50 hover:text-accent transition-colors" title="Open in Explorer">
+          <Link href={explorerHref} className="shrink-0 p-1 rounded text-ink-muted/50 hover:text-accent transition-colors" title="Open in Workstation">
             <ArrowUpRight size={13} />
           </Link>
         )}

@@ -81,7 +81,7 @@ function MonitoredRow({ item }: { item: SavedItemVM }) {
         <span className="ml-auto flex items-center gap-2 shrink-0">
           {item.conviction !== null && (
             <span className="text-[12px] font-black tabular-nums text-ink"
-              title={`Conviction ${item.conviction} (${item.convictionBasis}) - the same number Explorer shows`}>
+              title={`Conviction ${item.conviction} (${item.convictionBasis}) - the same number shown across surfaces`}>
               {item.conviction}
               {arrow && <span className="ml-1 text-[10px]" style={{ color: arrow.color }}>{arrow.glyph}</span>}
             </span>

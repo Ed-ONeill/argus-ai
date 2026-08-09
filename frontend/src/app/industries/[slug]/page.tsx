@@ -1032,7 +1032,7 @@ export default function IndustryDetailPage() {
               const href = explorerHrefForNode({ type: "Sector", label: industry.sector });
               return href ? (
                 <Link href={href} className="ml-auto inline-flex items-center gap-1 text-[9.5px] font-semibold text-accent hover:underline shrink-0">
-                  Open in Explorer <ArrowUpRight size={10} />
+                  Open in Workstation <ArrowUpRight size={10} />
                 </Link>
               ) : null;
             })()}

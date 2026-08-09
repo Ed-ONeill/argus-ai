@@ -691,7 +691,7 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
                 <button onClick={() => onNavigate(focusHref)}
                   className="w-full flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide py-1.5 rounded-sm transition-colors hover:bg-white/10"
                   style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)", background: "rgba(82,176,200,0.07)" }}>
-                  Open in Explorer <ArrowUpRight size={9} />
+                  Open <ArrowUpRight size={9} />
                 </button>
               </div>
             )}
