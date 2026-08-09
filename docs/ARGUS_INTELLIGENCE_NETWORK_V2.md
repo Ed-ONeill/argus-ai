@@ -24,7 +24,7 @@ amendment rules: see DOCUMENT GOVERNANCE at the end of this document.
 - **Part 7A — What Argus Will Never Become** (canonical anti-patterns)
 - **Part 8 — The Screenshot Test** (the still-image standard)
 - **Part 9 — Competitive Analysis** (Bloomberg, Gotham, Bloom, Figma, Linear, Apple, Bridgewater)
-- **Part 10 — Future Evolution** (the Network as the operating system of Argus)
+- **Part 10 — Future Evolution** (the Network as the spine / visual intelligence layer of Argus)
 - **Document Governance** (versioning, amendment, and conflict rules)
 
 ---
@@ -69,9 +69,9 @@ understanding of market structure.**
 Every page in the product exists to inspect that one understanding from a different
 perspective — the Feed inspects it as a stream, Markets as a regime, Themes as a
 dossier, M&A as a transaction lens, Listen as a conversation, the Morning Brief as a
-narrative. The Intelligence Network is therefore not another page. **It is the visual
-operating system of the platform** — the understanding itself, made visible, from
-which every other surface is a projection.
+narrative. The Intelligence Network is therefore not another page. **It is Argus's
+canonical interactive visual intelligence layer/environment** [V2.4] — the understanding
+itself, made visible, the spine from which every other surface is a projection.
 
 The permanent product statement, canonical from this version forward:
 
@@ -1415,13 +1415,15 @@ chain as a swipeable vertical sequence, the inspector as the native reading surf
 change chips as the daily rhythm. The constellation remains a desktop instrument; the
 language travels without it.
 
-**Endgame — the operating system.** The Network becomes the product's spine: global
+**Endgame — the spine.** The Network becomes the product's spine: global
 search lands on it; every entity mention anywhere in Argus deep-links to Entity Focus;
 the daily brief, alerts, and replay are its narrated projections; every future record
 type (outcomes, analogs, market context) arrives as a new annotation tier in an
 already-learned grammar. Pages stop being destinations and become views of one living
-structure. At that point the Intelligence Network is not a feature of Argus — it is
-what Argus *is*, and every screen is a window onto it.
+structure. At that point the Intelligence Network is not merely a feature of Argus — it
+is the spine every screen is a window onto. *(V2.4: Argus **as a whole** is the market
+intelligence operating system; the Network is its canonical interactive visual
+intelligence layer/environment and spine — not the operating system itself.)*
 
 ---
 
@@ -1457,6 +1459,7 @@ what Argus *is*, and every screen is a window onto it.
 | V2.1 | 2026-07-15 | Added Part 3A, The Argus Form Language: the five-element DNA (Cut, Rail, Figure, Notch, Thread), the object identity matrix with far-zoom silhouettes, the ink discipline (conviction = ink weight), the Still Cognition doctrine, and the operationalized no-logo crop test (a standing visual-review gate alongside Parts 1A and 8). |
 | V2.2 | 2026-07-15 | Added Part 4A, The Interrogation Model: retrieval-vs-reasoning distinction and the binding Answer Order rule; the canonical question grammar (gesture → question → choreographed answer); the tempo of thought (instant acknowledgment, staged derivation, absolute rest); trust mechanics (no dead ink, refusals as first-class answers, reversibility, cross-surface consistency, question-but-never-edit); the four protected signature interactions (Trace, Return, Seal beat, Interrogation ladder); interaction anti-patterns. |
 | V2.3 | 2026-07-15 | Added Part 4B, The Voice & Cognition Model: the character (senior strategist — calm, exact, accountable, unhurried, unimpressed); the four knowledge states (recorded / derived / gated / absent) with vocabulary law; the speaking register (numbers over adjectives, hedging fog banned, attribution in the sentence, falsifiability as politeness); the speaking order (change → dominance → exposure → falsifier → context, with hard caps and the "little changed today" doctrine); the register of doubt (four designed uncertainty patterns; contradictions ride with the thesis); the argument form (claim → because → evidence → memory → falsifier); the conversational stance (no servility, refusal as professional statement, corrections on the record); the rewrite table and the morning-meeting test. Design phases complete — V2.3 closes the pre-implementation design cycle. |
+| V2.4 | 2026-07-31 | **Terminology / authority reconciliation (not a philosophy change).** Per the ratified `ARGUS_V2_INSTITUTIONAL_EXPERIENCE_ARCHITECTURE` (Ch.1 U2, Ch.2): **Argus as a whole is the "market intelligence operating system"**; the Intelligence Network is **Argus's canonical interactive visual intelligence layer/environment** — the visible understanding and the spine from which every surface projects, but **not itself "the operating system."** Amended the three places that called the Network *itself* the operating system: Part 0 identity line, the Part 10 title, and the Part 10 "Endgame" heading/closer. **Preserved verbatim and unchanged:** the identity statement ("Argus exists to transform market complexity into institutional understanding"), the Part 0 philosophy, the Five Second Test, the anti-pattern list, and every one of the Network's substantive canonical responsibilities (position=causality, size=tier, motion=change; node/edge grammar; focus modes; inspector; replay-over-sealed-data; the protected Form Language and signature gestures). Only the operating-system *label* is reassigned to the product as a whole. **Governance note:** because the touched wording sits in Part 0, this is filed as a V2.x clarification on the basis that no philosophy, identity statement, test, or anti-pattern changed — only a metaphor's referent; if a Part-0 wording touch is judged to require V3.0 under this document's governance, this reconciliation should be escalated to a named V3.0 rather than treated as silent drift. |
 
 ---
 
