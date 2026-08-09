@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 from typing import Iterator
 
-from app.config import settings
 from app.docs   import DocumentStore, get_store
 from app.model  import Message, get_client
 
@@ -210,7 +209,8 @@ def run_deal_analysis(
         Message.user(user_content),
     ]
 
-    settings.ollama_model = model_name
+    # Uses the process default model; does not mutate the shared `settings` singleton per request
+    # (avoids the cross-user model-choice leak). model_name is retained for signature compatibility.
     client = get_client()
 
     yield from client.chat(messages, stream=True, temperature=temperature)

@@ -25,7 +25,6 @@ from pydantic import BaseModel
 from app.summarizer import _summarize_batch, analyze_item_deep
 from app.feeds  import FeedItem
 from app.model  import get_client
-from app.config import settings
 
 router = APIRouter()
 
@@ -62,9 +61,9 @@ class DeepAnalyzeResponse(BaseModel):
 @router.post("/", response_model=AnalyzeResponse)
 def analyze_item(req: AnalyzeRequest) -> AnalyzeResponse:
     """Quick 3-field AI enrichment for a single item."""
-    model = req.model_name or settings.ollama_model
-    settings.ollama_model = model
-
+    # Model selection uses the process default (settings.active_model). We deliberately do NOT
+    # write req.model_name into the shared `settings` singleton: that mutated process-global state
+    # per request and leaked one caller's model choice across concurrent users (backend integrity).
     item = FeedItem(
         title=req.title, url="", source="", category="", snippet=req.snippet,
     )
