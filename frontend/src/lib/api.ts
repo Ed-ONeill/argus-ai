@@ -172,3 +172,27 @@ export async function fetchEntityMemory(uid: string, limit = 90): Promise<Entity
       `/memory/v2/entities/${encodeURIComponent(uid)}/snapshots?limit=${limit}`);
   } catch { return null; }
 }
+
+// The recorded relationship registry (institutional_relationships). Unlike snapshots and
+// predictions — which the backend only ever writes for themes/industries — this IS populated
+// for a company: it appears as the target of the market connections named about it, each edge
+// carrying when it was first and last observed. This is the one durable memory a company has.
+export interface RelationshipRow {
+  rel_uid:            string;
+  source_uid:         string;
+  target_uid:         string;
+  relationship_type:  string;
+  direction?:         string;
+  status?:            string;
+  first_seen_at?:     string;
+  last_seen_at?:      string;
+}
+export interface EntityRelationships { entity_uid: string; count: number; relationships: RelationshipRow[] }
+
+/** Per-entity recorded relationships (M3.2). Null on transport/service error. */
+export async function fetchEntityRelationships(uid: string): Promise<EntityRelationships | null> {
+  try {
+    return await get<EntityRelationships>(
+      `/memory/v2/entities/${encodeURIComponent(uid)}/relationships`);
+  } catch { return null; }
+}
