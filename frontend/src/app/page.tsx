@@ -606,7 +606,7 @@ export default function LandingPage() {
 
       {/* ── LIVING INTELLIGENCE BRIEF (PX1) ───────────────────────────────── */}
       <section ref={briefSectionRef} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="max-w-5xl mx-auto px-6 sm:px-10 pt-8 pb-12">
+        <div className={`${showBriefCard ? "max-w-6xl" : "max-w-5xl"} mx-auto px-6 sm:px-10 pt-8 pb-12`}>
           {showBriefCard ? (
             // Signed-in / guest land directly on the open Living Brief (C8: the
             // sealed-envelope theater is retired).

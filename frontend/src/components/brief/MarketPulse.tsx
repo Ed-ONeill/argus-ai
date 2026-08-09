@@ -96,16 +96,15 @@ export function MarketPulse() {
   const { series: bellwether } = useSeries(BELLWETHER, { from });
   if (!bellwether) return null;
 
+  // No outer margin/border — the workspace band frames the tape (see LivingBrief).
   return (
-    <div className="mb-9 border-b border-edge/50 pb-5">
-      <div className="-mx-1 flex items-stretch gap-5 overflow-x-auto pb-1">
-        <span className="shrink-0 self-start pt-0.5 text-[8.5px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
-          Tape · delayed
-        </span>
-        {ASSETS.map((a) => (
-          <PulseCell key={a.symbol} symbol={a.symbol} label={a.label} from={from} />
-        ))}
-      </div>
+    <div className="-mx-1 flex items-stretch gap-5 overflow-x-auto pb-1">
+      <span className="shrink-0 self-start pt-0.5 text-[8.5px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
+        Tape · delayed
+      </span>
+      {ASSETS.map((a) => (
+        <PulseCell key={a.symbol} symbol={a.symbol} label={a.label} from={from} />
+      ))}
     </div>
   );
 }
