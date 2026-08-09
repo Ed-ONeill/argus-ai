@@ -30,6 +30,10 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUpRight, ChevronDown, Search, X } from "lucide-react";
 import { trunc, fmtDay, explorerHrefForNode, type MapNode, type MapEdge, type MapVM, type ExpansionMode, type EdgeTrend } from "@/lib/intelligenceShared";
+import type { GraphReveal } from "@/lib/graphReveal";
+
+const BREAKING_COLOR = "#f87171";   // weak / invalidating edges, called out at the "what breaks it" beat
+const PRIOR_COLOR = "#f0b429";      // prior resolved-path overlay, drawn only when real ledger data exists
 
 const TREND_META: Record<EdgeTrend, { label: string; color: string }> = {
   strengthening: { label: "Strengthening", color: "#34d399" },
@@ -267,7 +271,7 @@ function LegendGlyph({ cls }: { cls: NodeClass }) {
   );
 }
 
-export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCount, expansionOptions, appliedExpansions, onExpandMode, onResetExpansions }: {
+export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCount, expansionOptions, appliedExpansions, onExpandMode, onResetExpansions, reveal }: {
   map: MapVM;
   accent: string;
   onNavigate: (href: string) => void;
@@ -278,6 +282,10 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
   appliedExpansions?: ExpansionMode[];
   onExpandMode?: (mode: ExpansionMode) => void;
   onResetExpansions?: () => void;
+  /** Thread-driven progressive reveal (Workstation Stage 2). Non-destructive: it only shifts
+   *  emphasis over the SAME layout. Absent for every other consumer, leaving them unchanged.
+   *  Any direct user interaction (hover / pin / search) takes over from the resting reveal. */
+  reveal?: GraphReveal;
 }) {
   const [hidden, setHidden] = useState<Set<NodeClass>>(new Set());
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -295,6 +303,13 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
   const matches = useMemo(() => (q ? new Set([...placed.keys()].filter(id => placed.get(id)!.n.label.toLowerCase().includes(q))) : null), [q, placed]);
 
   const activeId = hoverId ?? pinned;
+  // Thread-driven reveal: the resting emphasis when the reader is not directly interacting. Any
+  // hover / pin / search hands control back to the user (the thread never overrides exploration).
+  const userActive = !!activeId || !!matches;
+  const revealSet = useMemo(() => (reveal?.restrict ? new Set(reveal.nodeIds) : null), [reveal]);
+  const breakingSet = useMemo(() => new Set(reveal?.breakingEdgeIds ?? []), [reveal]);
+  const priorSet = useMemo(() => new Set(reveal?.priorPathEdgeIds ?? []), [reveal]);
+  const inReveal = (n: MapNode): boolean => !revealSet || n.degree === 0 || revealSet.has(n.id);
   const neighborsOf = useMemo(() => {
     const m = new Map<string, Set<string>>();
     for (const e of edges) {
@@ -489,17 +504,25 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
             const d = edgePath(pa, pb);
             const arrow = arrowFor(e);
             const baseOp = 0.1 + (e.confidence / 100) * 0.3 + Math.min(0.14, e.sources * 0.045);
-            const op = activeId || matches ? (lit ? Math.min(0.85, baseOp + 0.24) : 0.025) : baseOp;
+            // Reveal state (resting only; any user interaction takes over via the branch above).
+            const breaking = !userActive && breakingSet.has(e.id);
+            const prior = !userActive && priorSet.has(e.id);
+            const eRevealed = !revealSet || userActive || (inReveal(pa.n) && inReveal(pb.n));
+            let op = activeId || matches ? (lit ? Math.min(0.85, baseOp + 0.24) : 0.025) : baseOp;
+            if (revealSet && !userActive) op = eRevealed ? Math.min(0.9, baseOp + (breaking ? 0.34 : 0.12)) : 0.03;
+            const stroke = hot ? accent : breaking ? BREAKING_COLOR : meta.color;
+            const sw = (0.5 + (e.strength / 100) * 2.2) * (hot || breaking ? 1.5 : 1);
             return (
               <g key={e.id} onMouseEnter={() => setHoverEdge(e.id)} onMouseLeave={() => setHoverEdge(null)}>
                 <path d={d} fill="none" stroke="transparent" strokeWidth={10} />
+                {prior && <path d={d} fill="none" stroke={PRIOR_COLOR} strokeWidth={sw + 1.6} strokeOpacity={0.5} strokeDasharray="5 4" strokeLinecap="round" />}
                 <path d={d} fill="none"
-                  stroke={hot ? accent : meta.color}
-                  strokeWidth={(0.5 + (e.strength / 100) * 2.2) * (hot ? 1.5 : 1)}
+                  stroke={stroke}
+                  strokeWidth={sw}
                   strokeOpacity={hot ? 0.95 : op}
                   strokeLinecap="round"
                   style={{ transition: "stroke-opacity 180ms ease, stroke 180ms ease" }} />
-                {arrow && <path d={arrow.d} fill="none" stroke={hot ? accent : arrow.color} strokeWidth={1.1} strokeOpacity={hot ? 0.95 : Math.min(0.8, op + 0.15)} strokeLinecap="round" strokeLinejoin="round" />}
+                {arrow && <path d={arrow.d} fill="none" stroke={hot ? accent : breaking ? BREAKING_COLOR : arrow.color} strokeWidth={1.1} strokeOpacity={hot ? 0.95 : Math.min(0.8, op + 0.15)} strokeLinecap="round" strokeLinejoin="round" />}
                 {e.evidenceCount > 1 && (
                   <circle cx={(pa.x + pb.x) / 2} cy={(pa.y + pb.y) / 2} r={1.6} fill={meta.color} fillOpacity={lit ? 0.65 : 0.1} />
                 )}
@@ -514,9 +537,11 @@ export function ExplorerGraph({ map, accent, onNavigate, onExpand, canExpandCoun
             const hot = hoverId === p.n.id || pinned === p.n.id;
             const col = isCenter ? accent : CLASS_META[p.cls].color;
             const lp = labelFor(p);
-            const showLabel = isCenter || p.cls !== "metric" || hot || !!activeId;
+            const revealed = inReveal(p.n);
+            const opacity = userActive ? (lit ? 1 : 0.12) : (revealSet && !revealed ? 0.1 : 1);
+            const showLabel = (isCenter || p.cls !== "metric" || hot || !!activeId) && (userActive || !revealSet || revealed);
             return (
-              <g key={p.n.id} style={{ cursor: "pointer" }} opacity={lit ? 1 : 0.12}
+              <g key={p.n.id} style={{ cursor: "pointer", transition: "opacity 220ms ease" }} opacity={opacity}
                 onMouseEnter={() => setHoverId(p.n.id)} onMouseLeave={() => setHoverId(null)}
                 onClick={ev => { ev.stopPropagation(); setPinned(prev => (prev === p.n.id ? null : p.n.id)); }}>
                 <circle cx={p.x} cy={p.y} r={Math.max(9, p.r + 5)} fill="transparent" />
