@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import { useActiveContext, clearActiveContext } from "@/lib/intelligenceContext";
-import { IntelligenceDrawer } from "./IntelligenceDrawer";
+import { EvidenceDrawer } from "./EvidenceDrawer";
 
 /**
  * IntelligenceOverlay - mounts the cross-page focus bar + intelligence drawer once
@@ -34,7 +34,7 @@ export function IntelligenceOverlay() {
             <button onClick={() => setOpen(true)}
               className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-colors hover:bg-white/10"
               style={{ color: "#7cc7d8", border: "1px solid rgba(82,176,200,0.3)" }}>
-              <Sparkles size={9} /> Intelligence
+              <FileText size={9} /> Evidence
             </button>
             <button onClick={() => { clearActiveContext(); setOpen(false); }}
               className="p-1 rounded-full transition-colors hover:bg-white/10" style={{ color: "rgba(255,255,255,0.45)" }} title="Clear focus">
@@ -43,7 +43,7 @@ export function IntelligenceOverlay() {
           </div>
         </div>
       )}
-      <IntelligenceDrawer ctx={ctx} open={open && !!ctx} onClose={() => setOpen(false)} />
+      <EvidenceDrawer ctx={ctx} open={open && !!ctx} onClose={() => setOpen(false)} />
     </>
   );
 }
