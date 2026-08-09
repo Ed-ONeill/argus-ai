@@ -1,18 +1,18 @@
 "use client";
 
-// platform/chart/ArgusChart.tsx — THE canonical Argus chart (PX2 / PX2.1). One renderer,
-// every surface. Stage 1B(a) implements the sparkline; Market Pulse / Drawer / Entity
-// adopt it unchanged in 1B(b)-(d) (the one-chart principle, Workstation Reuse Law).
+// platform/chart/ArgusChart.tsx — THE canonical Argus chart (PX2 / PX2.1). ONE renderer,
+// every surface and every density: the sparkline (Stage 1B(a), Market Pulse) and now the
+// FULL variant (Stage 1B(c)) that anchors the Adaptive Hero — same component, config only.
 //
-// Rendering: a custom Canvas draws the price path and a restrained optional fill; a DOM
-// overlay carries the readout and the DataQuality label and is the prepared boundary for
-// future crosshair / markers / axes / tooltips. No external charting library. The
-// component takes a canonical PriceSeries (Stage 1A) as a prop and never fetches, never
-// calls a provider, and never authors intelligence — it renders facts only.
+// Rendering: a custom Canvas draws the price path + restrained fill; a DOM overlay carries
+// the crosshair, axes, and readout (PX2.2/2.3). No external charting library. The component
+// takes a canonical PriceSeries (Stage 1A) as a prop and never fetches, never calls a
+// provider, and never authors intelligence — it renders facts only.
 //
 // Honesty: it plots only real adjusted-close values, shows real gaps as gaps, renders
 // nothing when there is no valid series, and NEVER styles delayed/stale/estimated/partial
-// data as live (a live dot appears only when the fact is genuinely realtime-and-fresh).
+// data as live (a live dot appears only when the fact is genuinely realtime-and-fresh). The
+// crosshair snaps to real bars — no value is ever read between samples.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -20,9 +20,11 @@ import type { DataQuality } from "@/lib/platform/quality";
 import type { PriceSeries } from "@/lib/platform/types/prices";
 import { densityFeatures, effectiveDensity } from "./density";
 import {
+  axisTicks,
   changeInfo,
   computeExtent,
   downsample,
+  nearestIndex,
   project,
   toDisplayPoints,
   type ChangeInfo,
@@ -42,40 +44,26 @@ function rgb(triplet: string, alpha = 1): string {
   return alpha >= 1 ? `rgb(${triplet})` : `rgb(${triplet} / ${alpha})`;
 }
 
-interface DrawColors {
-  line: string;
-  fillTop: string;
-  fillBottom: string;
-  liveDot: boolean;
+function directionTriplet(change: ChangeInfo | null, semantic: boolean): string {
+  if (semantic && change && change.direction !== "flat") {
+    return change.direction === "up" ? FALLBACK.up : FALLBACK.down;
+  }
+  return FALLBACK.neutral;
 }
 
-function pickColors(
-  el: HTMLElement | null,
-  change: ChangeInfo | null,
-  semantic: boolean,
-  live: boolean,
-): DrawColors {
+interface DrawColors { line: string; fillTop: string; fillBottom: string; liveDot: boolean; }
+
+function pickColors(el: HTMLElement | null, change: ChangeInfo | null, semantic: boolean, live: boolean): DrawColors {
   const styles = el ? getComputedStyle(el) : null;
-  let triplet = tokenRGB(styles, "--ink-secondary", FALLBACK.neutral);
-  if (semantic && change && change.direction !== "flat") {
-    triplet = change.direction === "up" ? FALLBACK.up : FALLBACK.down;
-  }
-  return {
-    line: rgb(triplet),
-    fillTop: rgb(triplet, 0.14),
-    fillBottom: rgb(triplet, 0),
-    liveDot: live,   // never true for delayed/stale/estimated/partial data
-  };
+  let triplet = tokenRGB(styles, "--ink-secondary", directionTriplet(change, semantic));
+  if (semantic && change && change.direction !== "flat") triplet = directionTriplet(change, semantic);
+  return { line: rgb(triplet), fillTop: rgb(triplet, 0.14), fillBottom: rgb(triplet, 0), liveDot: live };
 }
 
 // ── pure canvas paint (guarded; a no-op when there is no 2D context) ──
 function paint(
-  canvas: HTMLCanvasElement,
-  projected: ProjectedPoint[],
-  dims: ChartDimensions,
-  colors: DrawColors,
-  fill: boolean,
-  progress: number,
+  canvas: HTMLCanvasElement, projected: ProjectedPoint[], dims: ChartDimensions,
+  colors: DrawColors, fill: boolean, progress: number,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -119,7 +107,6 @@ function paint(
   ctx.stroke();
   ctx.restore();
 
-  // Live affordance: a small solid dot at the last real bar, ONLY when genuinely live.
   if (colors.liveDot) {
     const last = projected[projected.length - 1];
     ctx.beginPath();
@@ -131,11 +118,23 @@ function paint(
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    : false;
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false;
 }
 
-const PADDING = { top: 3, right: 2, bottom: 3, left: 2 };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function axisDate(t: string): string {
+  const [y, m] = t.split("-");
+  const mon = MONTHS[(Number(m) || 1) - 1] ?? "";
+  return `${mon} '${(y ?? "").slice(2)}`;
+}
+function longDate(t: string): string {
+  const [y, m, d] = t.split("-");
+  return `${MONTHS[(Number(m) || 1) - 1] ?? ""} ${Number(d)}, ${y}`;
+}
+
+function paddingFor(showAxes: boolean) {
+  return showAxes ? { top: 10, right: 46, bottom: 20, left: 8 } : { top: 3, right: 2, bottom: 3, left: 2 };
+}
 
 function primarySeries(series: ArgusChartProps["series"]): PriceSeries | null {
   if (!series) return null;
@@ -156,11 +155,11 @@ export function ArgusChart(props: ArgusChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: cfg.height });
+  const [hover, setHover] = useState<number | null>(null);
 
   const series = primarySeries(props.series);
   const quality: DataQuality | null = series?.quality ?? null;
 
-  // ── pure geometry (deterministic; asOf-truncated; downsampled past the threshold) ──
   const displayPoints = useMemo(
     () => downsample(toDisplayPoints(series, { asOf: cfg.asOf }), cfg.downsample),
     [series, cfg.asOf, cfg.downsample],
@@ -172,11 +171,20 @@ export function ArgusChart(props: ArgusChartProps) {
   const live = !!badge?.live;
   const density = effectiveDensity(variant, size.width, size.height);
   const features = densityFeatures(density);
-  const showReadout =
-    !absent && features.readout && cfg.showLastValue !== "never" && change != null;
-  const showQualityLabel = showReadout && cfg.showQuality && !!badge && !badge.live;
+  const showAxes = !absent && features.annotations;   // large+ : full variant
+  const interactive = showAxes;                        // crosshair only where axes live
 
-  // ── responsive sizing (ResizeObserver); reserved height prevents layout shift ──
+  const dims: ChartDimensions = useMemo(
+    () => ({ width: size.width, height: size.height, padding: paddingFor(showAxes) }),
+    [size.width, size.height, showAxes],
+  );
+  const extent = useMemo(() => computeExtent(displayPoints), [displayPoints]);
+  const projected = useMemo(
+    () => (extent && size.width > 0 && !absent ? project(displayPoints, extent, dims) : []),
+    [displayPoints, extent, dims, size.width, absent],
+  );
+
+  // ── responsive sizing; reserved height prevents layout shift ──
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -191,16 +199,14 @@ export function ArgusChart(props: ArgusChartProps) {
     return () => ro.disconnect();
   }, [cfg.height]);
 
+  // Reset the crosshair when the data or range changes (no stale hover across series).
+  useEffect(() => { setHover(null); }, [series, cfg.asOf]);
+
   // ── paint: high-DPI canvas, one-shot draw-in (instant under reduced motion) ──
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || absent || size.width <= 0) return;
-    const dims: ChartDimensions = { width: size.width, height: size.height, padding: PADDING };
-    const extent = computeExtent(displayPoints);
-    if (!extent) return;
-    const projected = project(displayPoints, extent, dims);
+    if (!canvas || absent || projected.length === 0) return;
     const colors = pickColors(containerRef.current, change, cfg.semanticColor, live);
-
     if (!cfg.animate || prefersReducedMotion() || typeof requestAnimationFrame === "undefined") {
       paint(canvas, projected, dims, colors, cfg.fill, 1);
       return;
@@ -216,17 +222,52 @@ export function ArgusChart(props: ArgusChartProps) {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [displayPoints, change, live, size.width, size.height, cfg.animate, cfg.fill, cfg.semanticColor, absent]);
+  }, [projected, dims, change, live, cfg.animate, cfg.fill, cfg.semanticColor, absent]);
 
-  // ── accessible summary (color-independent; honest about reliability) ──
+  // ── interaction: crosshair snaps to the nearest REAL bar (never between samples) ──
+  const onMove = (e: React.PointerEvent) => {
+    if (!interactive || projected.length === 0) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const x = e.clientX - el.getBoundingClientRect().left;
+    const idx = nearestIndex(projected, x);
+    setHover(idx >= 0 ? idx : null);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (!interactive || projected.length === 0) return;
+    const cur = hover ?? projected.length - 1;
+    if (e.key === "ArrowLeft") { setHover(Math.max(0, cur - 1)); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { setHover(Math.min(projected.length - 1, cur + 1)); e.preventDefault(); }
+    else if (e.key === "Home") { setHover(0); e.preventDefault(); }
+    else if (e.key === "End") { setHover(projected.length - 1); e.preventDefault(); }
+    else if (e.key === "Escape") { setHover(null); }
+  };
+
+  // ── readout: the ACTIVE bar (hovered, else last) and its change from the range start ──
+  const activeIndex = !absent ? hover ?? displayPoints.length - 1 : -1;
+  const activePoint = activeIndex >= 0 ? displayPoints[activeIndex] : null;
+  const first = displayPoints[0]?.v;
+  const activeDelta = activePoint && first != null ? activePoint.v - first : 0;
+  const activePct = activePoint && first ? (activeDelta / first) * 100 : 0;
+  const activeDir = activeDelta > 0 ? "up" : activeDelta < 0 ? "down" : "flat";
+  const idle = hover == null;
+  // "hover" keeps the idle chart quiet (a single price authority elsewhere owns the quote);
+  // the readout still appears on scrub. "auto"/"always" show it at rest as before.
+  const showReadout = !absent && features.readout && !!activePoint
+    && cfg.showLastValue !== "never" && !(cfg.showLastValue === "hover" && idle);
+  const showQualityLabel = showReadout && cfg.showQuality && !!badge && !badge.live;
+  const dotColor = rgb(directionTriplet(change, cfg.semanticColor));
+
   const symbol = series?.symbol ?? "";
   const dirWord = change?.direction === "up" ? "up" : change?.direction === "down" ? "down" : "flat";
   const computedLabel = absent
     ? symbol ? `${symbol} price chart unavailable` : "Price chart unavailable"
     : `${symbol} ${dirWord} ${Math.abs(change?.pctChange ?? 0).toFixed(2)} percent over ${displayPoints.length} sessions${badge ? `, ${badge.label.toLowerCase()} data` : ""}`;
   const ariaLabel = props.ariaLabel ?? computedLabel;
+  const signGlyph = activeDir === "up" ? "+" : activeDir === "down" ? "-" : "";
 
-  const signGlyph = change?.direction === "up" ? "+" : change?.direction === "down" ? "-" : "";
+  const plotTop = dims.padding.top;
+  const plotBottom = size.height - dims.padding.bottom;
 
   return (
     <div
@@ -236,35 +277,77 @@ export function ArgusChart(props: ArgusChartProps) {
       data-argus-chart={variant}
       data-density={density}
       data-absent={absent ? "true" : "false"}
+      tabIndex={interactive ? 0 : undefined}
+      onPointerMove={interactive ? onMove : undefined}
+      onPointerLeave={interactive ? () => setHover(null) : undefined}
+      onKeyDown={interactive ? onKey : undefined}
       className={props.className}
-      style={{ position: "relative", height: cfg.height, minHeight: cfg.minHeight, width: "100%" }}
+      style={{ position: "relative", height: cfg.height, minHeight: cfg.minHeight, width: "100%", outline: "none" }}
     >
-      {/* Reserved space always occupies the same box; absence never collapses it. */}
       {!absent && (
         <canvas ref={canvasRef} aria-hidden="true" style={{ display: "block", width: "100%", height: "100%" }} />
       )}
 
-      {showReadout && change && (
+      {/* Sparse axes (full variant) */}
+      {showAxes && projected.length > 1 && (
+        <>
+          {axisTicks(displayPoints.length, 4).map((i) => (
+            <span key={`d${i}`} aria-hidden data-axis="date"
+              style={{
+                position: "absolute", left: projected[i].x, top: plotBottom + 4, transform: "translateX(-50%)",
+                fontSize: 9, whiteSpace: "nowrap", color: "rgb(var(--ink-faint))", fontVariantNumeric: "tabular-nums",
+              }}>
+              {axisDate(displayPoints[i].t)}
+            </span>
+          ))}
+          {extent && [extent.max, extent.min].map((v, k) => (
+            <span key={`v${k}`} aria-hidden data-axis="value"
+              style={{
+                position: "absolute", right: 2, top: k === 0 ? plotTop - 5 : plotBottom - 5,
+                fontSize: 9, color: "rgb(var(--ink-faint))", fontVariantNumeric: "tabular-nums",
+              }}>
+              {fmt(v)}
+            </span>
+          ))}
+        </>
+      )}
+
+      {/* Crosshair — snaps to a real bar */}
+      {interactive && hover != null && activePoint && projected[activeIndex] && (
+        <>
+          <div aria-hidden data-crosshair="line"
+            style={{
+              position: "absolute", left: projected[activeIndex].x, top: plotTop, height: Math.max(0, plotBottom - plotTop),
+              width: 1, background: "rgba(148,163,184,0.35)", pointerEvents: "none",
+            }} />
+          <div aria-hidden data-crosshair="dot"
+            style={{
+              position: "absolute", left: projected[activeIndex].x - 3, top: projected[activeIndex].y - 3,
+              width: 6, height: 6, borderRadius: 6, background: dotColor, pointerEvents: "none",
+            }} />
+        </>
+      )}
+
+      {/* Readout — active bar + change from the range start */}
+      {showReadout && activePoint && (
         <div
           className="argus-chart-readout"
+          aria-live="polite"
           style={{
-            position: "absolute", top: 0, right: 0, display: "flex", alignItems: "baseline",
-            gap: 6, pointerEvents: "none",
+            position: "absolute", top: 0, ...(showAxes ? { left: 0 } : { right: 0 }),
+            display: "flex", alignItems: "baseline", gap: 6, pointerEvents: "none",
           }}
         >
-          <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 12 }}>{fmt(change.last)}</span>
-          <span
-            data-direction={change.direction}
-            style={{ fontVariantNumeric: "tabular-nums", fontSize: 11 }}
-          >
-            {signGlyph}{Math.abs(change.pctChange).toFixed(2)}%
+          {showAxes && (
+            <span data-readout="date" style={{ fontSize: 10, color: "rgb(var(--ink-faint))" }}>{longDate(activePoint.t)}</span>
+          )}
+          <span style={{ fontVariantNumeric: "tabular-nums", fontSize: showAxes ? 14 : 12 }}>{fmt(activePoint.v)}</span>
+          <span data-direction={activeDir} style={{ fontVariantNumeric: "tabular-nums", fontSize: showAxes ? 12 : 11 }}>
+            {signGlyph}{Math.abs(activePct).toFixed(2)}%
           </span>
           {showQualityLabel && badge && (
-            <span
-              data-quality={badge.label}
-              data-live="false"
-              style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.6 }}
-            >
+            <span data-quality={badge.label} data-live="false"
+              style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.6 }}>
               {badge.label}
             </span>
           )}

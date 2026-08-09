@@ -20,6 +20,8 @@ export {
   project,
   buildPath,
   changeInfo,
+  nearestIndex,
+  axisTicks,
 } from "./geometry";
 export {
   densityForSize,

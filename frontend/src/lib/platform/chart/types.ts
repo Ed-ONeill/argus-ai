@@ -109,7 +109,7 @@ export interface ChartConfig {
   minHeight: number;
   fill: boolean;             // restrained gradient fill under the line
   semanticColor: boolean;    // gain/loss color ONLY when semantically valid, else neutral
-  showLastValue: "auto" | "always" | "never";
+  showLastValue: "auto" | "always" | "never" | "hover";   // "hover" = idle readout hidden, shown only on scrub
   showQuality: boolean;      // surface the DataQuality label when not live
   downsample: DownsampleConfig;
   animate: boolean;          // one-shot draw-in; never a loop

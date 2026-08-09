@@ -7,13 +7,16 @@ import { describe, expect, it } from "vitest";
 import type { PricePoint, PriceSeries } from "@/lib/platform/types/prices";
 import { makeQuality } from "@/lib/platform/quality";
 import {
+  axisTicks,
   buildPath,
   changeInfo,
   computeExtent,
   downsample,
+  nearestIndex,
   project,
   toDisplayPoints,
 } from "@/lib/platform/chart/geometry";
+import type { ProjectedPoint } from "@/lib/platform/chart/types";
 import type { ChartDimensions, DownsampleConfig } from "@/lib/platform/chart/types";
 
 function pt(t: string, c: number, adjClose = c): PricePoint {
@@ -147,6 +150,30 @@ describe("downsample", () => {
   it("strategy 'none' is always identity", () => {
     const dp = many(500);
     expect(downsample(dp, { strategy: "none", threshold: 1, target: 10 })).toBe(dp);
+  });
+});
+
+describe("nearestIndex (crosshair snaps to a real bar)", () => {
+  const pp = (xs: number[]): ProjectedPoint[] => xs.map((x, i) => ({ x, y: 0, t: `d${i}`, v: i, i }));
+  it("returns the index of the nearest bar by x, clamping at the ends", () => {
+    const p = pp([0, 25, 50, 75, 100]);
+    expect(nearestIndex(p, -10)).toBe(0);
+    expect(nearestIndex(p, 12)).toBe(0);   // nearer 0 than 25
+    expect(nearestIndex(p, 13)).toBe(1);   // nearer 25
+    expect(nearestIndex(p, 60)).toBe(2);
+    expect(nearestIndex(p, 999)).toBe(4);
+  });
+  it("returns -1 for an empty set", () => {
+    expect(nearestIndex([], 5)).toBe(-1);
+  });
+});
+
+describe("axisTicks", () => {
+  it("returns evenly spaced, endpoint-inclusive indices", () => {
+    expect(axisTicks(10, 4)).toEqual([0, 3, 6, 9]);
+    expect(axisTicks(5, 1)).toEqual([0]);
+    expect(axisTicks(0, 4)).toEqual([]);
+    expect(axisTicks(2, 4)).toEqual([0, 1]);   // never more ticks than points
   });
 });
 

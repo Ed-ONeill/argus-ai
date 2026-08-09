@@ -175,3 +175,30 @@ export function changeInfo(points: DisplayPoint[]): ChangeInfo | null {
   const direction: ChangeDirection = absChange > 0 ? "up" : absChange < 0 ? "down" : "flat";
   return { first, last, absChange, pctChange, direction };
 }
+
+/** Index of the projected point nearest a pointer x — the crosshair always snaps to a real
+ *  bar (PX2.2 interaction soundness), never between samples. Binary search on monotonic x. */
+export function nearestIndex(projected: ProjectedPoint[], x: number): number {
+  const n = projected.length;
+  if (n === 0) return -1;
+  if (x <= projected[0].x) return 0;
+  if (x >= projected[n - 1].x) return n - 1;
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (projected[mid].x < x) lo = mid;
+    else hi = mid;
+  }
+  return x - projected[lo].x <= projected[hi].x - x ? lo : hi;
+}
+
+/** Evenly spaced tick indices across [0, n-1] — sparse axis labels. Deterministic. */
+export function axisTicks(n: number, count: number): number[] {
+  if (n <= 0) return [];
+  const c = Math.max(1, Math.min(count, n));
+  if (c === 1) return [0];
+  const out: number[] = [];
+  for (let k = 0; k < c; k++) out.push(Math.round((k / (c - 1)) * (n - 1)));
+  return Array.from(new Set(out));
+}

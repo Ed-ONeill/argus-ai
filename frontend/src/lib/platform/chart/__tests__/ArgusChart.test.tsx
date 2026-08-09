@@ -5,7 +5,7 @@
 // context); we assert the draw contract, not pixels.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 import type { PricePoint, PriceSeries } from "@/lib/platform/types/prices";
 import { makeQuality, type QualityGrade } from "@/lib/platform/quality";
@@ -183,6 +183,50 @@ describe("no network / no provider", () => {
     render(<ArgusChart series={makeSeries()} />);
     await waitFor(() => expect(calls.stroke).toBeGreaterThan(0));
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("full variant (Adaptive Hero)", () => {
+  it("renders sparse axes at large size", async () => {
+    setup({ reduce: true, width: 700, height: 260 });
+    installCanvas();
+    const { container } = render(<ArgusChart series={makeSeries()} variant="full" config={{ height: 260 }} />);
+    await waitFor(() => {
+      expect(container.querySelector('[data-density="large"]')).not.toBeNull();
+      expect(container.querySelectorAll('[data-axis="date"]').length).toBeGreaterThan(0);
+      expect(container.querySelectorAll('[data-axis="value"]').length).toBe(2);
+    });
+  });
+
+  it("shows a crosshair snapped to a real bar on pointer move", async () => {
+    setup({ reduce: true, width: 700, height: 260 });
+    installCanvas();
+    const { container } = render(<ArgusChart series={makeSeries()} variant="full" config={{ height: 260 }} />);
+    const root = container.querySelector('[data-argus-chart="full"]') as HTMLElement;
+    await waitFor(() => expect(root.getAttribute("data-density")).toBe("large"));
+    fireEvent.pointerMove(root, { clientX: 350 });
+    await waitFor(() => {
+      expect(container.querySelector('[data-crosshair="line"]')).not.toBeNull();
+      expect(container.querySelector('[data-crosshair="dot"]')).not.toBeNull();
+    });
+  });
+
+  it("shows a dated readout at full density", async () => {
+    setup({ reduce: true, width: 700, height: 260 });
+    installCanvas();
+    const { container } = render(<ArgusChart series={makeSeries()} variant="full" config={{ height: 260 }} />);
+    await waitFor(() => expect(container.querySelector('[data-readout="date"]')).not.toBeNull());
+  });
+
+  it("with showLastValue 'hover', the readout is hidden at rest and appears on scrub", async () => {
+    setup({ reduce: true, width: 700, height: 260 });
+    installCanvas();
+    const { container } = render(<ArgusChart series={makeSeries()} variant="full" config={{ height: 260, showLastValue: "hover" }} />);
+    const root = container.querySelector('[data-argus-chart="full"]') as HTMLElement;
+    await waitFor(() => expect(root.getAttribute("data-density")).toBe("large"));
+    expect(container.querySelector('[data-readout="date"]')).toBeNull();   // idle: the hero owns the quote
+    fireEvent.pointerMove(root, { clientX: 350 });
+    await waitFor(() => expect(container.querySelector('[data-readout="date"]')).not.toBeNull());
   });
 });
 
