@@ -17,7 +17,7 @@ interface CacheEntry { data: IPOFiler[]; fetchedAt: number }
 let _cache: CacheEntry | null = null;
 const CACHE_TTL = 60 * 60 * 1_000; // 1 hour
 
-const UA = "Argus Intelligence research@argusintel.com";
+const UA = "Argus Intelligence support@argus-market-intelligence.com";
 
 // ── SIC → sector mapping (abbreviated) ───────────────────────────────────────
 

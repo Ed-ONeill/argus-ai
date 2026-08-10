@@ -858,7 +858,7 @@ FEED_REGISTRY: list[tuple[str, str, str]] = [
 # items are materially thesis-relevant (earnings, M&A, debt, control/exec changes,
 # guidance). Routine filings (vote results, bylaw tweaks, exhibit-only) are dropped.
 # CIKs verified against SEC's official company_tickers.json.
-_SEC_UA = "Argus-AI/1.0 (contact: research@argus.example)"   # SEC fair-access: descriptive UA
+_SEC_UA = "Argus-AI/1.0 (contact: support@argus-market-intelligence.com)"   # SEC fair-access: descriptive UA
 
 _SEC_WATCHLIST: dict[str, str] = {
     # AI compute / hyperscaler / semis
