@@ -20,6 +20,7 @@ import { tickerInfo } from "./tickerMetadata";
 import type { ThemeIntelligence, StoryCluster, FeedItem, Episode, MarketEvent } from "./types";
 import { matchEpisodeThemesDetailed } from "./listenIntelligence";
 import type { ThemeSnapshot } from "./themeSnapshots";
+import { industryNodeId, parentSectorOf, unresolvedReason } from "./sectorTaxonomy";
 import type { MADeal } from "@/hooks/useMAIntelligence";
 
 /* ------------------------------------------------------------------ *
@@ -91,6 +92,31 @@ function addCompany(entity: string, source: SourcePage): string | null {
     label: raw, type: "Company",
     aliases: [raw, shortName(raw)],
     sources: [source],
+  });
+  return node.id;
+}
+
+/**
+ * Upsert a canonical Industry node (RC2-G3).
+ *
+ * Identity is NAMESPACED and exact (`industry:<key>`, exactIdentity), reusing
+ * the same mechanism that keeps an Event from being absorbed by its Story. The
+ * bare label is deliberately NOT registered as an alias: the global alias index
+ * is type-blind, so aliasing "Energy" here would hijack `getNode("Energy")`
+ * away from Sector("Energy") and silently repoint every existing untyped
+ * caller. Industry("Energy") and Sector("Energy") therefore coexist with
+ * identical display labels and distinct canonical ids; typed reads use
+ * `getNodeOfType(name, "Industry")`.
+ */
+function addIndustry(name: string, source: SourcePage): string | null {
+  const label = s(name);
+  if (!label) return null;
+  const id = industryNodeId(label);
+  const node = G.addNode({
+    id, exactIdentity: true, label, type: "Industry",
+    aliases: [id], sources: [source],
+    metadata: { canonicalIndustry: true, parentSector: parentSectorOf(label),
+                unresolved: unresolvedReason(label) },
   });
   return node.id;
 }
@@ -219,10 +245,21 @@ export function ingestThemes(themes: ThemeIntelligence[]): IngestStats {
           const c = addCompany(asset, PAGE_THEMES);
           link(themeId, "supports", c, { strength, confidence: strength, page: PAGE_THEMES });
         }
+        // RC2-G3: related_industries is an INDUSTRY vocabulary. Record the
+        // most-specific claim on an Industry node and express the hierarchy
+        // with belongs_to; never duplicate a Theme -> Sector edge.
         for (const ind of t.related_industries ?? []) {
-          const sec = addLabeled(ind, "Sector", PAGE_THEMES);
-          link(themeId, "affects",    sec, { strength, page: PAGE_THEMES });
-          link(themeId, "correlates", sec, { strength, page: PAGE_THEMES });
+          const industryId = addIndustry(ind, PAGE_THEMES);
+          link(themeId, "affects",    industryId, { strength, page: PAGE_THEMES });
+          link(themeId, "correlates", industryId, { strength, page: PAGE_THEMES });
+          const parent = parentSectorOf(ind);
+          if (parent) {
+            // The hierarchy edge. Same causal layer on both ends, so the
+            // profile/causal engines treat it as neither driver nor
+            // beneficiary — it is structure, not transmission.
+            link(industryId, "belongs_to", addLabeled(parent, "Sector", PAGE_THEMES),
+                 { strength: 100, confidence: 100, page: PAGE_THEMES });
+          }
         }
         for (const macro of t.related_macro_factors ?? []) {
           const m = addLabeled(macro, "Macro", PAGE_THEMES);
