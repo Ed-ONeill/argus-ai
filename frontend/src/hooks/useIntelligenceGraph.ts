@@ -26,7 +26,7 @@ import {
   type IntegrityReport, type ThemeIntelligenceReport, type CompanyIntelligenceReport,
 } from "@/lib/intelligenceGraphDebug";
 import { provisionGraphState } from "@/lib/intelligenceProvisioning";
-import type { ThemeIntelligence, StoryCluster, FeedItem, Episode } from "@/lib/types";
+import type { ThemeIntelligence, StoryCluster, FeedItem, Episode, MarketEvent } from "@/lib/types";
 import type { MADeal } from "@/hooks/useMAIntelligence";
 import type { ThemeSnapshot } from "@/lib/themeSnapshots";
 
@@ -41,6 +41,11 @@ export interface UseIntelligenceGraphInput {
   deals?:          MADeal[];
   privateSignals?: PrivateSignalInput[];
   snapshots?:      ThemeSnapshot[];
+  // OP4.1 — the canonical event layer. These MUST be declared here: this input
+  // type is the narrow point of the provisioning path, and a key it does not
+  // name is silently dropped before provisionGraphState (RC2 root cause E).
+  events?:         MarketEvent[];
+  explanations?:   Record<string, unknown>;
 }
 
 export interface UseIntelligenceGraphResult {
@@ -63,7 +68,8 @@ const EMPTY_INTEGRITY: IntegrityReport = {
 
 export function useIntelligenceGraph(input: UseIntelligenceGraphInput = {}): UseIntelligenceGraphResult {
   const enabled = input.enabled ?? true;
-  const { themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots } = input;
+  const { themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots,
+          events, explanations } = input;
 
   // Rebuild the shared graph from current state, then read summary + integrity in the
   // same pass. Clearing first keeps the graph a faithful projection of the data passed
@@ -76,9 +82,11 @@ export function useIntelligenceGraph(input: UseIntelligenceGraphInput = {}): Use
     const built = provisionGraphState({
       themes, stories, storyThemes: storyThemes ?? themes,
       episodes, matchedThemes, deals, privateSignals, snapshots,
+      events, explanations,
     });
     return { build: built, summary: summarizeGraph(), integrity: validateGraphIntegrity() };
-  }, [enabled, themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots]);
+  }, [enabled, themes, stories, storyThemes, episodes, matchedThemes, deals, privateSignals, snapshots,
+      events, explanations]);
 
   // Reports and validation read the live singleton at call time, so results always
   // reflect the current graph regardless of function identity. Stable references.
