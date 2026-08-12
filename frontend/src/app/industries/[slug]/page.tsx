@@ -64,6 +64,8 @@ import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { IndustryArtwork, industryIcon } from "@/components/industries/industryIdentity";
 import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
 import type { IndustryConfig } from "@/lib/industryConfig";
+import { industriesOfSector } from "@/lib/sectorTaxonomy";
+import { intelligenceGraph } from "@/lib/intelligenceGraph";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -671,14 +673,25 @@ export default function IndustryDetailPage() {
     const risks = new Map<string, RiskRead>();
     if (argus.ready) profiles.set(sectorKey.toLowerCase(), cachedProfile(sectorKey));
     risks.set(sectorKey.toLowerCase(), buildRiskRead(sectorKey));
+    // RC2-G4: the upstream causal chain lives on the CARRYING INDUSTRY
+    // (Macro -> Theme -> Industry). The Sector node cannot see the macro head,
+    // which sits three hops away through the structural belongs_to edge.
+    const industryProfiles = new Map<string, IntelligenceProfile>();
+    if (argus.ready) {
+      for (const ind of industriesOfSector(sectorKey)) {
+        const node = intelligenceGraph.getNodeOfType(ind, "Industry");
+        if (node) industryProfiles.set(ind.toLowerCase(), cachedProfile(node.id));
+      }
+    }
     const dr = deriveMorningBriefDeltas({ themes: argus.themes, previouslyTracked: getTrackedThemes(), graphReady: argus.ready });
     const vm = buildIndustriesIntel({
-      sectors: [sectorKey], themes: argus.themes, profiles, risks,
+      sectors: [sectorKey], themes: argus.themes, profiles, risks, industryProfiles,
       narratives: argus.ready ? deriveNarratives() : [],
       deltas: dr.deltas, graphReady: argus.ready,
     });
     return vm.sectors.data?.[0] ?? null;
   }, [sectorKey, argus.themes, argus.ready]);
+
 
   // Not found state
   if (!industry) {

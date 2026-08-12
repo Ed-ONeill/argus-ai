@@ -27,6 +27,7 @@
 
 import type { ThemeIntelligence } from "./types";
 import type { IntelligenceProfile, ProfileSection, ProfileStatus, ProfileForward } from "./intelligenceProfile";
+import { sectorExposure } from "./sectorTaxonomy";
 import type { RiskRead } from "./riskRead";
 import type { MorningBriefDelta } from "./intelligenceDeltas";
 import type { DerivedNarrative } from "./narrativeDerivation";
@@ -65,8 +66,19 @@ export interface SectorIntelVM {
   latestChange: MorningBriefDelta | null;
   /** Canonical themes recording exposure to this sector (selection). */
   themes: ThemeIntelligence[];
-  /** One recorded transmission path (profile.transmission.strongestPath). */
+  /** RC2-G4: which Industry carried each exposed theme into this sector.
+   *  Provenance is NEVER collapsed — a theme reaches Technology because it
+   *  affects Semiconductors, and the surface must be able to say so. */
+  themeProvenance: { theme: string; viaIndustry: string }[];
+  /** One recorded transmission path. RC2-G4: the causal chain is computed on
+   *  the CARRYING INDUSTRY (Macro -> Theme -> Industry), because that is where
+   *  the recorded relationships live. The structural Industry -> Sector hop is
+   *  deliberately absent: belongs_to is membership, not transmission. */
   transmission: string[] | null;
+  /** The Industry whose profile produced `transmission` (attribution for the
+   *  chain shown on a Sector surface). Null when the chain came from the
+   *  Sector's own profile or is unavailable. */
+  transmissionVia: string | null;
   /** Cross-session evolution lines (memory engine via profile). */
   evolutionLines: string[];
 }
@@ -78,6 +90,11 @@ export interface IndustriesIntelInputs {
   /** Injected shared profiles / risk reads, keyed by lower-cased sector name. */
   profiles?:   Map<string, IntelligenceProfile>;
   risks?:      Map<string, RiskRead>;
+  /** RC2-G4: profiles of the CARRYING INDUSTRIES, keyed by lower-cased
+   *  industry name. Supplies the upstream causal chain that the Sector node
+   *  cannot see (the Macro head sits three hops away through belongs_to).
+   *  Optional: absent means the chain falls back to the Sector's own profile. */
+  industryProfiles?: Map<string, IntelligenceProfile>;
   /** Derived narratives (shared derivation), for exposure membership. */
   narratives?: DerivedNarrative[];
   /** The canonical change ledger, canonical order. */
@@ -101,6 +118,7 @@ export function buildIndustriesIntel(inputs: IndustriesIntelInputs = {}): Indust
   const themes = inputs.themes ?? [];
   const profiles = inputs.profiles ?? new Map<string, IntelligenceProfile>();
   const risks = inputs.risks ?? new Map<string, RiskRead>();
+  const industryProfiles = inputs.industryProfiles ?? new Map<string, IntelligenceProfile>();
   const narratives = inputs.narratives ?? [];
   const deltas = inputs.deltas ?? [];
   const graphReady = inputs.graphReady === true;
@@ -117,15 +135,23 @@ export function buildIndustriesIntel(inputs: IndustriesIntelInputs = {}): Indust
     const risk = risks.get(key) ?? null;
     const live = !!profile && profile.identity.status !== "unavailable";
 
-    // Themes recording exposure to this sector (canonical stored fields).
-    const sectorThemes = themes.filter(t =>
-      (t.related_industries ?? []).some(s => s.toLowerCase() === key));
+    // RC2-G4: thematic exposure now rolls up through the canonical hierarchy
+    // (Theme -> Industry -> Sector) instead of string-matching the sector name
+    // against related_industries — which silently returned nothing for a sector
+    // whose industries are named differently (Technology / Semiconductors).
+    const exposure = sectorExposure(name);
+    const themeProvenance = exposure.themes.map(t => ({ theme: t.label, viaIndustry: t.viaIndustry }));
+    const sectorThemes = exposure.themes
+      .map(t => themeByName.get(t.label.toLowerCase()))
+      .filter((t): t is ThemeIntelligence => !!t);
     const sectorThemeNames = new Set(sectorThemes.map(t => t.name.toLowerCase()));
 
     // The canonical ledger record touching an exposed theme, in ledger order.
+    const exposedIndustries = new Set(exposure.industries.map(i => i.toLowerCase()));
     const ledgerIdx = deltas.findIndex(d =>
       sectorThemeNames.has(d.entity.toLowerCase()) ||
-      (themeByName.get(d.entity.toLowerCase())?.related_industries ?? []).some(s => s.toLowerCase() === key));
+      (themeByName.get(d.entity.toLowerCase())?.related_industries ?? [])
+        .some(s => exposedIndustries.has(s.toLowerCase())));
     const latestChange = ledgerIdx >= 0 ? deltas[ledgerIdx] : null;
 
     // Derived-narrative membership by recorded exposure.
@@ -135,6 +161,20 @@ export function buildIndustriesIntel(inputs: IndustriesIntelInputs = {}): Indust
     const drivers: SectorLink[] = live
       ? (profile!.drivers.data ?? []).map(l => ({ label: l.label, nodeType: l.nodeType, relationship: l.relationship, strength: l.strength }))
       : [];
+    // Upstream causal chain: prefer the carrying Industry's own profile, which
+    // holds the Macro -> Theme -> Industry path. Industries are tried in the
+    // exposure's canonical order, so the choice is deterministic. The Sector's
+    // own path is the fallback (it still holds story/deal-side context).
+    const chain: { path: string[] | null; via: string | null } = (() => {
+      for (const ind of exposure.industries) {
+        const ip = industryProfiles.get(ind.toLowerCase());
+        const p = ip?.transmission.data?.strongestPath ?? [];
+        if (p.length >= 2) return { path: p, via: ind };
+      }
+      const own = live ? profile!.transmission.data?.strongestPath ?? [] : [];
+      return own.length >= 2 ? { path: own, via: null } : { path: null, via: null };
+    })();
+
     const beneficiaries: SectorLink[] = live
       ? (profile!.beneficiaries.data ?? [])
           .filter(l => l.nodeType === "Company" || l.nodeType === "ETF")
@@ -155,9 +195,9 @@ export function buildIndustriesIntel(inputs: IndustriesIntelInputs = {}): Indust
       narrative,
       latestChange,
       themes: sectorThemes,
-      transmission: live && (profile!.transmission.data?.strongestPath ?? []).length >= 2
-        ? profile!.transmission.data!.strongestPath
-        : null,
+      themeProvenance,
+      transmission: chain.path,
+      transmissionVia: chain.via,
       evolutionLines: live ? profile!.evolution.data?.lines ?? [] : [],
       _ledgerIdx: ledgerIdx >= 0 ? ledgerIdx : Number.POSITIVE_INFINITY,
     };

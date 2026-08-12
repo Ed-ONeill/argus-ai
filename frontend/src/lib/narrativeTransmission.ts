@@ -44,13 +44,44 @@ function stateOf(node: IntelNode): Direction {
   return "mixed";
 }
 
-/** The theme at the center of a narrative for any starting node. */
+/** The theme at the center of a narrative for any starting node.
+ *
+ *  RC2-G4: under the canonical hierarchy (Theme --affects--> Industry
+ *  --belongs_to--> Sector) a Sector has no direct Theme neighbour, so a plain
+ *  first-degree scan returns null and the sector's narrative silently
+ *  disappears. A Sector therefore resolves its theme context through its child
+ *  Industries. The structural belongs_to edge is never treated as the carrying
+ *  relationship: `via` stays the real Theme -> Industry edge, so provenance
+ *  points at the industry that actually carries the theme. No Theme -> Sector
+ *  edge is created or assumed. */
 function centralTheme(node: IntelNode): { theme: IntelNode; via: IntelEdge | null } | null {
   if (node.type === "Theme") return { theme: node, via: null };
-  const themes = G.getNeighbors(node.id).filter(x => x.node.type === "Theme");
-  if (!themes.length) return null;
-  const best = themes.sort((a, b) => (b.edge.strength * (num(b.node.conviction) || 50)) - (a.edge.strength * (num(a.node.conviction) || 50)))[0];
-  return { theme: best.node, via: best.edge };
+
+  const rank = (c: { node: IntelNode; edge: IntelEdge }) =>
+    c.edge.strength * (num(c.node.conviction) || 50);
+  // Deterministic: score first, then label, so equal scores never flip.
+  const best = (cands: Array<{ node: IntelNode; edge: IntelEdge }>) =>
+    [...cands].sort((a, b) => (rank(b) - rank(a)) || a.node.label.localeCompare(b.node.label))[0];
+
+  const direct = G.getNeighbors(node.id).filter(x => x.node.type === "Theme");
+  if (direct.length) {
+    const b = best(direct);
+    return { theme: b.node, via: b.edge };
+  }
+
+  if (node.type === "Sector") {
+    const industries = G.getNeighbors(node.id)
+      .filter(x => x.node.type === "Industry" && x.edge.relationshipType === "belongs_to")
+      .map(x => x.node)
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const viaIndustry = industries.flatMap(ind =>
+      G.getNeighbors(ind.id).filter(x => x.node.type === "Theme"));
+    if (viaIndustry.length) {
+      const b = best(viaIndustry);
+      return { theme: b.node, via: b.edge };
+    }
+  }
+  return null;
 }
 
 /** The strongest upstream driver of a theme (macro first, then story / deal / podcast). */
