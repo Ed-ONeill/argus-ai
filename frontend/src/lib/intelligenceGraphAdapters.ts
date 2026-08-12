@@ -13,7 +13,7 @@
  * No UI. No em/en dashes in produced strings.
  */
 
-import { intelligenceGraph as G } from "./intelligenceGraph";
+import { intelligenceGraph as G, normalizeKey } from "./intelligenceGraph";
 import type { SourcePage, IntelNode } from "./intelligenceGraph";
 import { observationEpochs, toEpochMs } from "./timestamps";
 import { tickerInfo } from "./tickerMetadata";
@@ -103,6 +103,43 @@ function addLabeled(label: string, type: IntelNode["type"], source: SourcePage):
   return node.id;
 }
 
+/* ------------------------------------------------------------------ *
+ * RC2-F2 — entity typing for the ingestion entity channel.
+ *
+ * `FeedItem.affected_entities` is NOT a list of companies. Since RC2-A it is
+ * "resolved company tickers, then at most one SECTOR LABEL" — the sector label
+ * is appended by app/feeds.py::_SECTOR_ENTITY_MAP. Adapters that called
+ * addCompany() over the whole list therefore minted Company nodes named
+ * "Banks", "Insurance", "Energy", "Defense", "Retail".
+ *
+ * These labels mirror the backend's _SECTOR_ENTITY_MAP display labels exactly;
+ * they are a closed, curated set, not a heuristic. Anything else in the channel
+ * is already registry-resolved by RC2-A, so it is a company.
+ * ------------------------------------------------------------------ */
+
+const SECTOR_ENTITY_LABELS: ReadonlySet<string> = new Set([
+  "Semiconductors", "Banks", "Insurance", "Energy", "Healthcare", "Defense",
+  "Autos", "Airlines", "Retail", "Technology", "Commodities", "Real Estate",
+  "Telecom", "Media",
+]);
+
+/** True when the entity string is a curated sector label, not a company. */
+export const isSectorEntityLabel = (entity: string): boolean =>
+  SECTOR_ENTITY_LABELS.has(s(entity));
+
+/**
+ * Type one value from the entity channel and upsert it as the RIGHT node kind:
+ * a curated sector label becomes a Sector, everything else a Company. Never
+ * invents a node for an empty value.
+ */
+function addEntityNode(entity: string, source: SourcePage): string | null {
+  const raw = s(entity);
+  if (!raw) return null;
+  return isSectorEntityLabel(raw)
+    ? addLabeled(raw, "Sector", source)
+    : addCompany(raw, source);
+}
+
 const link = (
   source: string | null,
   relationshipType: string,
@@ -123,9 +160,31 @@ const link = (
 
 const PAGE_THEMES: SourcePage = "Theme Intelligence";
 
-/** Stable node id/label for a theme (name before a dash/colon qualifier). */
+/** Stable node id/label for a theme (name before a dash/colon QUALIFIER).
+ *
+ *  RC2-F1: the separator must be surrounded by whitespace. The previous
+ *  `/\s*[-:].*$/` allowed zero leading whitespace, so it cut at the first
+ *  INTRA-WORD hyphen and renamed canonical themes to their first token:
+ *      "Higher-for-Longer Repricing" -> "Higher"
+ *      "Non-Bank Lending Ascendancy" -> "Non"
+ *      "Supply-Side Energy Shock"    -> "Supply"
+ *  The full name survived only as an alias, so lookups worked while every
+ *  rendered transmission path showed the stump. A real qualifier
+ *  ("Theme Name - subtitle", "Theme Name: subtitle") is still stripped. */
 function themeLabel(t: { name: string }): string {
-  return t.name.replace(/\s*[-:].*$/, "").trim() || t.name;
+  // A dash qualifier needs whitespace on BOTH sides (so intra-word hyphens are
+  // safe); a colon only needs trailing whitespace (it never appears mid-word).
+  return t.name.replace(/(?:\s+[-–—]\s+|:\s+).*$/, "").trim() || t.name;
+}
+
+/** Exact (normalized) match of a free label against a canonical theme's own
+ *  identifiers — its name, its display label, and its id. Deliberately NOT
+ *  fuzzy: RC2-F1 removes fabricated themes, it does not add a matcher that
+ *  manufactures coverage. */
+function matchesThemeLabel(t: ThemeIntelligence, label: string): boolean {
+  const key = normalizeKey(label);
+  if (!key) return false;
+  return [t.name, themeLabel(t), t.id].some(v => v && normalizeKey(String(v)) === key);
 }
 
 function addTheme(t: ThemeIntelligence, source: SourcePage = PAGE_THEMES): string | null {
@@ -209,13 +268,26 @@ export function ingestStories(stories: StoryInput[], themes: ThemeIntelligence[]
         }).id;
 
         for (const entity of item.affected_entities ?? []) {
-          const c = addCompany(entity, PAGE_FEED);
+          // RC2-F2: sector labels ride this channel too — type them as Sector.
+          const c = addEntityNode(entity, PAGE_FEED);
           link(storyId, "mentions", c, { strength: num(item.signal_score, 40), page: PAGE_FEED });
         }
 
-        // Theme link: cluster theme_label, then any theme claiming this cluster/story.
-        if (themeLbl) {
-          const th = G.addNode({ label: themeLbl, type: "Theme", aliases: [themeLbl], sources: [PAGE_FEED] }).id;
+        // Theme link. RC2-F1: `cluster.theme_label` is an EDITORIAL CLUSTER
+        // HEADLINE built from the story title by app/clustering.py
+        // (_make_theme_label: "<entity> <news noun>", else the first four title
+        // words) — it is not, and never was, a canonical Argus theme. Minting a
+        // Theme node from it produced 73 story-title pseudo-themes ("Deal
+        // Lakers Sold", "YOU Earnings", "Cava Sales Jump...") that then stood
+        // in the middle of rendered transmission paths and were served as M&A
+        // "related themes". It is now only ever RESOLVED against the canonical
+        // theme set passed in; a label that matches nothing creates nothing, so
+        // an unthemed story stays honestly unthemed.
+        const canonicalMatch = themeLbl
+          ? themes.find(t => matchesThemeLabel(t, themeLbl))
+          : undefined;
+        if (canonicalMatch) {
+          const th = addTheme(canonicalMatch, PAGE_FEED);
           link(storyId, "mentions", th, { page: PAGE_FEED });
           link(storyId, "supports", th, { strength: num(item.signal_score, 40), page: PAGE_FEED });
         }
@@ -412,7 +484,16 @@ export function ingestMA(deals: MADeal[], themes: ThemeIntelligence[] = []): Ing
         }).id;
 
         // Acquirer / target inference: PE firm (Fund) or first entity acquires the next.
-        const companies = (d.entities ?? []).map(e => addCompany(e, PAGE_MA)).filter(Boolean) as string[];
+        // RC2-F2: `d.entities` is FeedItem.affected_entities, so it carries the
+        // same sector label — type it, never mint a Company from it. Sector
+        // nodes are excluded from acquirer/target, which must be real parties.
+        const entityNodes = (d.entities ?? [])
+          .map(e => ({ raw: e, id: addEntityNode(e, PAGE_MA), sector: isSectorEntityLabel(e) }))
+          .filter(x => x.id) as { raw: string; id: string; sector: boolean }[];
+        const companies = entityNodes.filter(x => !x.sector).map(x => x.id);
+        for (const x of entityNodes) {
+          if (x.sector) link(dealId, "affects", x.id, { strength: num(d.signalScore, 50), page: PAGE_MA });
+        }
         for (const c of companies) link(dealId, "mentions", c, { strength: num(d.signalScore, 50), page: PAGE_MA });
 
         const acquirer = d.peFirm ? addLabeled(d.peFirm, "Fund", PAGE_MA) : companies[0] ?? null;
