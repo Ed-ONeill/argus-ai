@@ -64,8 +64,11 @@ import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { IndustryArtwork, industryIcon } from "@/components/industries/industryIdentity";
 import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
 import type { IndustryConfig } from "@/lib/industryConfig";
-import { industriesOfSector } from "@/lib/sectorTaxonomy";
+import { industriesOfSector, sectorExposure } from "@/lib/sectorTaxonomy";
 import { intelligenceGraph } from "@/lib/intelligenceGraph";
+import { buildSectorForwardView, forwardViewSentence, sectorPriceProxy } from "@/lib/sectorForward";
+import { measureSector } from "@/lib/marketRotation";
+import { SECTOR_BENCHMARK } from "@/lib/marketBlocks";
 
 // ── Regime badge (dark-hero variant) ─────────────────────────────────────────
 
@@ -692,6 +695,36 @@ export default function IndustryDetailPage() {
     return vm.sectors.data?.[0] ?? null;
   }, [sectorKey, argus.themes, argus.ready]);
 
+  // ── RC2-G2: Sector Forward View ────────────────────────────────────────────
+  // A projection, not a prediction: recorded thematic exposure (through the
+  // canonical Industry hierarchy), qualified by the pipeline's own support
+  // fields, reconciled against the sector's measured leadership from the frozen
+  // Market-surface engine. No model, no score, no percentage.
+  const forwardProxy = sectorKey ? sectorPriceProxy(sectorKey) : null;
+  const forwardFrom = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 66);   // ~1M window, doubled, matching the Market surface
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const forwardSymbols = useMemo(
+    () => (forwardProxy ? [{ symbol: forwardProxy }, SECTOR_BENCHMARK] : []),
+    [forwardProxy],
+  );
+  const forwardSeries = useSeriesBatch(forwardSymbols, { from: forwardFrom });
+  const forwardView = useMemo(() => {
+    if (!sectorKey || !argus.ready) return null;
+    const proxyPts = forwardProxy ? forwardSeries[forwardProxy]?.series?.points ?? null : null;
+    const benchPts = forwardSeries[SECTOR_BENCHMARK.symbol]?.series?.points ?? null;
+    const leadership = proxyPts && benchPts ? measureSector(proxyPts, benchPts) : null;
+    return buildSectorForwardView({
+      sector: sectorKey,
+      exposure: sectorExposure(sectorKey),
+      themes: argus.themes,
+      leadership,
+      chain: si?.transmission ?? null,
+      chainVia: si?.transmissionVia ?? null,
+    });
+  }, [sectorKey, argus.ready, argus.themes, forwardProxy, forwardSeries, si?.transmission, si?.transmissionVia]);
 
   // Not found state
   if (!industry) {
@@ -1051,16 +1084,27 @@ export default function IndustryDetailPage() {
             })()}
           </div>
           <div className="space-y-2">
-            {si?.forward ? (
-              <p className="text-[13px] text-ink-secondary leading-relaxed">
-                <span className="font-semibold text-ink capitalize">{si.forward.direction}</span>
-                <span className="text-ink-muted"> · prediction engine, confidence {si.forward.confidence}</span>
-                {si.forward.reasons.length > 0 && <> — {si.forward.reasons.join("; ")}.</>}
-              </p>
+            {forwardView && forwardView.reconciliation !== "unavailable" ? (
+              <>
+                <p className="text-[13px] text-ink-secondary leading-relaxed">
+                  <span className="font-semibold text-ink capitalize">{forwardView.reconciliation.replace("-", " ")}</span>
+                  <span className="text-ink-muted"> · recorded exposure reconciled with measured leadership</span>
+                  {" — "}{forwardViewSentence(forwardView)}
+                </p>
+                {forwardView.exposure.length > 0 && (
+                  <p className="text-[10.5px] text-ink-muted leading-snug">
+                    {forwardView.exposure.slice(0, 4).map(e => `${e.theme} via ${e.viaIndustry}${e.signalQuality ? ` (${e.signalQuality})` : ""}`).join(" · ")}
+                  </p>
+                )}
+                {forwardView.chain && forwardView.chain.length >= 2 && (
+                  <p className="text-[10.5px] text-ink-muted leading-snug">
+                    {forwardView.chain.join(" → ")}{forwardView.chainVia ? ` · via ${forwardView.chainVia}` : ""}
+                  </p>
+                )}
+              </>
             ) : (
               <p className="text-[11.5px] text-ink-muted leading-relaxed">
-                No resolvable forward view for {industry.sector} yet
-                {si?.live ? " (insufficient recorded signal)." : " (sector entity not in the shared graph)."}
+                {forwardView ? forwardViewSentence(forwardView) : `No resolvable forward view for ${industry.sector} yet.`}
               </p>
             )}
             {si?.latestChange && (
@@ -1107,9 +1151,7 @@ export default function IndustryDetailPage() {
               <div>
                 <p className="text-[8.5px] font-bold uppercase tracking-[0.13em] text-emerald-500/80 mb-1">Forward View</p>
                 <p className="text-[11px] text-ink-secondary leading-relaxed">
-                  {si?.forward
-                    ? `${si.forward.direction} (prediction engine, confidence ${si.forward.confidence}).`
-                    : "No resolvable forward view yet."}
+                  {forwardView ? forwardViewSentence(forwardView) : "No resolvable forward view yet."}
                 </p>
               </div>
               <div>
