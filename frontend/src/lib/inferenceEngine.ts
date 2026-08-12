@@ -80,6 +80,55 @@ function grouped(id: string) {
   };
 }
 
+/**
+ * RC2-G4: the canonical hierarchy is Theme --affects--> Industry
+ * --belongs_to--> Sector, so a Sector node has NO direct Theme neighbours. A
+ * Sector read must therefore resolve its child Industries through `belongs_to`
+ * and aggregate over them, otherwise it reports "no active theme linkage" while
+ * canonical exposure demonstrably exists — a false statement, worse than an
+ * honest empty.
+ *
+ * The Sector's OWN neighbours (stories, deals, companies recorded against the
+ * sector itself) are kept and come first, so nothing the sector genuinely owns
+ * is displaced. Aggregation is deterministic: sector-owned first, then each
+ * child industry in canonical taxonomy order, de-duplicated by node id.
+ * belongs_to itself is never surfaced — it is structure, not transmission.
+ */
+function childIndustriesOf(sectorId: string): IntelNode[] {
+  return G.getNeighbors(sectorId)
+    .filter(x => x.node.type === "Industry" && x.edge.relationshipType === "belongs_to")
+    .map(x => x.node)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Neighbour grouping that follows the hierarchy when the subject is a Sector. */
+function groupedThroughHierarchy(node: IntelNode) {
+  const own = grouped(node.id);
+  if (node.type !== "Sector") return own;
+
+  const industries = childIndustriesOf(node.id);
+  if (industries.length === 0) return own;
+
+  const merged = [...own.all];
+  const seen = new Set(merged.map(x => x.node.id));
+  for (const ind of industries) {
+    for (const n of G.getNeighbors(ind.id)) {
+      // Never fold the sector itself, and never carry the structural edge.
+      if (n.node.id === node.id || n.edge.relationshipType === "belongs_to") continue;
+      if (seen.has(n.node.id)) continue;
+      seen.add(n.node.id);
+      merged.push(n);
+    }
+  }
+  const by = (t: NodeType): Neigh[] => merged.filter(x => x.node.type === t);
+  return {
+    all: merged,
+    companies: by("Company"), sectors: by("Sector"), macros: by("Macro"),
+    stories: by("Story"), podcasts: by("Podcast"), deals: by("Deal"),
+    funds: by("Fund"), themes: by("Theme"), persons: by("Person"),
+  };
+}
+
 interface EdgeStats { count: number; evidence: number; pages: SourcePage[]; strength: number; confidence: number }
 function edgeStats(edges: IntelEdge[]): EdgeStats {
   return {
@@ -408,7 +457,10 @@ export function inferSector(sectorOrIndustry: string): SectorInference {
     reasoningSteps: [{ claim: `No graph node resolved for ${sectorOrIndustry}`, evidence: "The entity is not present in the current graph.", confidence: 0, sourceType: "graph" }],
   };
 
-  const g = grouped(node.id);
+  // RC2-G4: a Sector reads through its child Industries (belongs_to), so
+  // canonical Theme -> Industry -> Sector exposure is seen. Non-sector
+  // subjects are byte-identical to before.
+  const g = groupedThroughHierarchy(node);
   const themeNeigh = g.themes;
   const strengtheningThemes = uniq(themeNeigh.filter(x => num(x.node.momentum) >= 3).map(x => x.node.label)).slice(0, 8);
   const weakeningThemes     = uniq(themeNeigh.filter(x => num(x.node.momentum) <= -3).map(x => x.node.label)).slice(0, 8);
