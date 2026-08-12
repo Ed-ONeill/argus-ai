@@ -22,6 +22,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+# RC2-A: the ONE canonical entity resolver. Market Events already resolved
+# companies through app.companies; ingestion now uses the same authority so the
+# product has a single definition of "this token is a company".
+from app.companies import resolve_entities
+
 log = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -347,32 +352,15 @@ _PRICE_ACTION_SUBJ_RE = re.compile(
 
 
 # ── Affected-entity extraction ────────────────────────────────────────────────
-# Extracts up to 4 entities per item: $tickers first, bare all-caps tickers
-# second, sector keywords as fallback.
+# Up to 4 entities per item: resolved companies first (app.companies), then at
+# most one sector label. Typed non-company entities ride on item.typed_entities.
 
-_NON_TICKER_ACRONYMS: frozenset[str] = frozenset({
-    # Geopolitical / org
-    "AI", "US", "UK", "EU", "UN", "UAE", "KSA", "G7", "G20",
-    "NATO", "OPEC", "ASEAN", "BRICS", "OECD", "WHO", "WTO",
-    "IRAN", "CHINA", "INDIA", "RUSSIA",
-    # Regulatory / financial institutions
-    "FED", "SEC", "FTC", "DOJ", "IRS", "IMF", "ECB", "BOE", "BOJ", "RBA", "SNB", "BIS", "IEA",
-    # C-suite / roles
-    "CEO", "CFO", "COO", "CTO", "MD",
-    # Corporate suffixes
-    "LLC", "INC", "LTD", "PLC", "LP", "GP",
-    # Finance acronyms
-    "IPO", "PE", "VC", "ETF", "VIX", "SPV", "CDO", "CLO", "ABS",
-    "LBO", "MBO", "EPS", "FCF", "ROI", "ROE",
-    "YOY", "QOQ", "YTD", "FY", "H1", "H2",
-    "Q1", "Q2", "Q3", "Q4",
-    # News outlets
-    "WSJ", "FT", "NYT", "BBC", "CNN", "AP", "IT",
-    # Misc
-    "OK", "RE", "BB", "AM", "PM", "ET", "PT", "ESG",
-})
-
-_BARE_TICKER_ENTITY_RE = re.compile(r'\b[A-Z]{2,5}\b')
+# RC2-A: the hand-maintained acronym blocklist and the bare-uppercase-token
+# regex that used to live here are GONE. They were a denylist trying to hold
+# back an open vocabulary, and every acronym they missed (FOMC, CPI, PJM,
+# ERCOT, NERC, GW, LBNL...) became a company. Entity resolution now lives in
+# app.companies: a token is a company only when it resolves against the
+# registry, non-company tokens are typed, and unknown tokens stay unknown.
 
 # (pattern, display_label) — first match wins, one sector per item max
 _SECTOR_ENTITY_MAP: list[tuple[re.Pattern, str]] = [
@@ -397,34 +385,34 @@ def _extract_entities(item: "FeedItem") -> list[str]:
     """
     Return up to 4 display names for entities affected by this story.
 
-    Priority: explicit $TICKER > bare all-caps in title > sector keyword.
-    At most 1 sector label is appended (prevents noisy generic tags).
+    RC2-A: this used to accept ANY 2-5 char uppercase token in the title that
+    was not on a hand-maintained acronym blocklist, which turned FOMC, CPI,
+    PJM, ERCOT, NERC and friends into "companies" everywhere downstream. It now
+    delegates to the ONE canonical resolver (app.companies) that Market Events
+    already use, so a token is a company only when it resolves against the
+    registry. Non-company tokens are typed on `item.typed_entities` instead of
+    being forced into this list, and unrecognized tokens stay unknown.
+
+    Composition is unchanged: company entities first, then at most one sector
+    label — so every existing consumer keeps the shape it expects.
     """
-    entities: list[str] = []
-    seen:     set[str]  = set()
-
-    def _add(name: str) -> None:
-        if name not in seen and len(entities) < 4:
-            seen.add(name)
-            entities.append(name)
-
     text = item.title + " " + item.snippet
 
-    # 1. Explicit $TICKER — highest precision
-    for m in _TICKER_RE.finditer(text):
-        _add(m.group(0)[1:])   # strip leading $
+    resolved = resolve_entities(text, limit=4)
+    entities: list[str] = list(resolved.companies)
 
-    # 2. Bare all-caps tokens in title (2–5 chars) that aren't known acronyms
-    if len(entities) < 3:
-        for tok in _BARE_TICKER_ENTITY_RE.findall(item.title):
-            if tok not in _NON_TICKER_ACRONYMS:
-                _add(tok)
+    # Typed non-companies ride alongside (additive; never mixed into the
+    # company channel). Recorded even when the company list is full.
+    item.typed_entities = [
+        {"token": t.token, "kind": t.kind} for t in resolved.typed
+    ]
 
-    # 3. Sector keyword — at most one, only when space remains
+    # Sector keyword — at most one, only when space remains (unchanged).
     if len(entities) < 4:
         for pattern, sector in _SECTOR_ENTITY_MAP:
             if pattern.search(text):
-                _add(sector)
+                if sector not in entities:
+                    entities.append(sector)
                 break   # one sector label is enough
 
     return entities
@@ -601,6 +589,12 @@ class FeedItem:
     signal_score:          float      = 0.0       # 0–100, higher = more relevant
     signal_strength:       str        = "medium"  # "strong" | "medium" | "weak"
     affected_entities:     list[str]  = field(default_factory=list)  # tickers / sectors
+    # RC2-A: correctly-typed NON-company entities (indicator, institution,
+    # market_operator, geography, unit, instrument, technology, finance_term,
+    # publication). Additive and defaulted so pre-change pickles load; no
+    # consumer reads it yet. These used to be silently mixed into
+    # affected_entities as if they were companies.
+    typed_entities:        list[dict] = field(default_factory=list)
     summary:               str        = ""        # AI: what happened
     why_it_matters:        str        = ""        # AI: investor implication
     impact:                str        = ""        # AI: directional market impact label

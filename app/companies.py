@@ -20,6 +20,8 @@ one. Extending coverage = adding rows, never loosening the rule.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass
 
@@ -205,10 +207,65 @@ def company_name(ticker: str) -> str | None:
 # "ON earnings") — deliberately narrow; "CAT scan" and "IT spending" must fail
 _CTX_NOUNS = r"(?:shares?|stock|earnings|results|guidance|revenue|dividend)"
 
+# ── Authoritative security validation (RC2-A follow-up) ──────────────────────
+# The SEC issuer snapshot is a VALIDATION set for EXPLICIT ticker intent only.
+# It is never used for bare-uppercase resolution: opening 10k+ symbols to the
+# bare path would reinstate exactly the false positives RC2-A removed. It gates
+# the two notations that carry unambiguous authorial intent:
+#     "Global Indemnity (GBLI)"   — a company name immediately before (TICKER)
+#     "$GBLI"                     — explicit ticker notation
+# Refresh with scripts/refresh_sec_tickers.py.
+
+_SEC_SNAPSHOT_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "data", "reference", "sec_registered_tickers.json",
+)
+_sec_tickers: frozenset[str] | None = None
+
+
+def _registered_securities() -> frozenset[str]:
+    """The SEC-registered ticker set, loaded once. A missing/broken snapshot
+    fails SAFE to empty: long-tail resolution simply stops, and nothing that
+    was not already resolvable becomes a company."""
+    global _sec_tickers
+    if _sec_tickers is None:
+        try:
+            with open(_SEC_SNAPSHOT_PATH, encoding="utf-8") as fh:
+                _sec_tickers = frozenset(json.load(fh)["tickers"])
+        except Exception:
+            _sec_tickers = frozenset()
+    return _sec_tickers
+
+
+def is_registered_security(token: str) -> bool:
+    """True when the token is a ticker in the authoritative SEC issuer set."""
+    return token.upper() in _registered_securities()
+
+
+# A capitalized name-like phrase immediately followed by (TICKER). The preceding
+# word must be capitalized so a bare "(CPI)" or "in (GW) terms" cannot match.
+_PAREN_TICKER_RE = re.compile(
+    r"\b[A-Z][\w&.'’-]*(?:[\s-][A-Z][\w&.'’-]*){0,4}\s*\(([A-Z]{1,5})\)"
+)
+
+
+def _explicit_ticker_candidates(text: str) -> list[str]:
+    """Tickers named with unambiguous intent, in discovery order.
+    Validation against the registry / SEC set is the caller's job."""
+    out: list[str] = []
+    for m in _PAREN_TICKER_RE.finditer(text):
+        out.append(m.group(1))
+    for m in _DOLLAR_RE.finditer(text):
+        out.append(m.group(1))
+    return out
+
 
 def _has_ticker_context(ticker: str, text: str) -> bool:
-    return bool(re.search(
-        rf"(?:\${ticker}\b|\b{ticker}(?=\s+{_CTX_NOUNS}\b))", text))
+    """Explicit company evidence for an otherwise ambiguous token: $TICKER,
+    a Name (TICKER) parenthetical, or a market noun immediately after it."""
+    if re.search(rf"(?:\${ticker}\b|\b{ticker}(?=\s+{_CTX_NOUNS}\b))", text):
+        return True
+    return ticker in _explicit_ticker_candidates(text)
 
 
 def resolve_companies(text: str, entities: list[str] | None = None,
@@ -229,9 +286,14 @@ def resolve_companies(text: str, entities: list[str] | None = None,
         if f" {alias} " in norm:
             _add(ticker)
 
-    # 2. explicit $TICKER notation
-    for m in _DOLLAR_RE.finditer(text):
-        _add(m.group(1))
+    # 2. EXPLICIT ticker intent — "Name (TICKER)" or "$TICKER". This is the only
+    # path that reaches beyond the curated registry, and it accepts a long-tail
+    # symbol ONLY when the authoritative SEC issuer set confirms it is a real
+    # security. "(CPI)", "(PJM)", "(FOMC)" therefore cannot resolve: they carry
+    # the notation but are not securities.
+    for tok in _explicit_ticker_candidates(text):
+        if tok in COMPANY_REGISTRY or is_registered_security(tok):
+            _add(tok)
 
     # 3. bare uppercase registry tickers (ambiguous ones need context)
     for tok in _CAPS_RE.findall(text):
@@ -252,3 +314,127 @@ def looks_like_ticker(token: str) -> bool:
     """Shape check only — used for curated sources (theme ontology assets)
     that are already canonical and must not be re-litigated here."""
     return bool(_TICKER_SHAPE_RE.match(token))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Typed non-company entities (RC2-A)
+#
+# The registry above answers "is this token a company?". It cannot answer "then
+# what IS it?", so every non-company uppercase token used to be either silently
+# converted into a Company (the RC2-A defect) or thrown away.
+#
+# This lexicon does NOT gate anything — the registry still decides what a
+# company is, and an unrecognized token resolves to nothing. Its jobs are:
+#   1. PRESERVE useful non-company entities with a correct kind, so downstream
+#      consumers can use "PJM" as a grid operator instead of a fake issuer.
+#   2. OVERRIDE registry collisions: tokens that are real tickers AND have a
+#      dominant non-company sense (RTO, DC, FC, HBM, LNG, RL, COLA, INSM).
+#      The override yields to explicit company context ($TICKER, a company-name
+#      mention, or a market noun) via the same _has_ticker_context rule, so a
+#      genuine "LNG shares" or "$RL" still resolves to the security.
+#
+# Adding a row types an entity better; it never turns an unknown into a
+# company. Unknown stays unknown, by design.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Entity kinds. "company" is produced by the registry, never by this lexicon.
+KIND_COMPANY = "company"
+KIND_INDICATOR = "indicator"            # economic statistics / data releases
+KIND_INSTITUTION = "institution"        # agencies, central banks, regulators, bodies
+KIND_MARKET_OPERATOR = "market_operator"  # grid / exchange / clearing operators
+KIND_GEOGRAPHY = "geography"            # places and jurisdictions
+KIND_UNIT = "unit"                      # units of measure
+KIND_INSTRUMENT = "instrument"          # indices, yields, non-equity instruments
+KIND_TECHNOLOGY = "technology"          # product / component / method acronyms
+KIND_FINANCE_TERM = "finance_term"      # market vocabulary, not an issuer
+KIND_PUBLICATION = "publication"        # media outlets and research desks
+KIND_SECTOR = "sector"                  # curated sector label (see feeds.py)
+
+NON_COMPANY_LEXICON: dict[str, str] = {}
+
+
+def _lex(kind: str, *tokens: str) -> None:
+    for t in tokens:
+        NON_COMPANY_LEXICON[t] = kind
+
+
+_lex(KIND_INDICATOR,
+     "CPI", "CPIH", "PPI", "PCE", "GDP", "NFP", "ISM", "PMI", "JOLTS", "COLA",
+     "HICP", "RPI", "CPE", "GNP", "IIP", "NHS")
+_lex(KIND_INSTITUTION,
+     "FOMC", "FERC", "NERC", "FDIC", "OCC", "CFTC", "FINRA", "FASB", "FHFA",
+     "NCUA", "SIPC", "PBOC", "SNB", "RBI", "RBNZ", "BOC", "CBO", "GAO", "OMB",
+     "NIST", "NRC", "FAA", "FDA", "EPA", "DOE", "DOD", "DHS", "USDA", "USTR",
+     "OSHA", "NHTSA", "NOAA", "IAEA", "ICE", "LBNL", "NREL", "MIT", "CERN",
+     "LAFPP", "CALPERS", "CDPQ", "GIC", "PIF", "NBIM")
+_lex(KIND_MARKET_OPERATOR,
+     "PJM", "ERCOT", "CAISO", "NYISO", "MISO", "SPP", "ISONE", "IESO", "AESO",
+     "NEISO", "RTO", "ISO", "NEM", "EPEX", "NORDPOOL", "DTCC", "OCC2")
+_lex(KIND_GEOGRAPHY,
+     "LA", "DC", "NYC", "SF", "LDN", "HK", "SG", "UAE", "KSA", "ROK", "PRC")
+_lex(KIND_UNIT,
+     "GW", "MW", "KW", "TWH", "GWH", "MWH", "KWH", "BBL", "MMBTU", "BCF", "TCF",
+     "BPS", "BPD", "MTPA")
+_lex(KIND_INSTRUMENT,
+     "TNX", "VIX", "DXY", "SPX", "NDX", "RUT", "JGB", "OAT", "BTP", "BUND",
+     "SOFR", "ESTR", "SONIA", "TIPS", "OAS", "CDS", "CDX", "ETF", "ETN")
+_lex(KIND_TECHNOLOGY,
+     "HBM", "NAND", "DRAM", "GPU", "CPU", "TPU", "ASIC", "SSD", "HDD", "LLM",
+     "EUV", "DUV", "CPX", "CHPE", "INSM", "SMR", "CCS", "EV", "BESS", "PPA")
+_lex(KIND_FINANCE_TERM,
+     "PIK", "OTC", "LBO", "MBO", "NAV", "AUM", "IRR", "MOIC", "EBITDA", "CAGR",
+     "ARR", "NRR", "FCF", "EPS", "ROE", "ROI", "IPO", "SPAC", "PIPE", "ESG",
+     "CLO", "CDO", "ABS", "MBS", "REIT", "SPV", "GP", "LP", "FD", "IBD2")
+_lex(KIND_PUBLICATION,
+     "IBD", "WSJ", "FT", "NYT", "CNBC", "BBC", "AP", "AFP", "DJ", "MW")
+
+
+def classify_non_company(token: str) -> str | None:
+    """The token's non-company kind, or None if it has no known such sense."""
+    return NON_COMPANY_LEXICON.get(token.upper())
+
+
+@dataclass(frozen=True)
+class TypedEntity:
+    token: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class ResolvedEntities:
+    """Companies and correctly-typed non-companies from one piece of text."""
+    companies: list[str]
+    typed: list[TypedEntity]
+
+
+def resolve_entities(text: str, limit: int = 4,
+                     typed_limit: int = 4) -> ResolvedEntities:
+    """The single entity-resolution entry point for ingestion.
+
+    Companies come from the registry (name-first, then $TICKER, then bare
+    registry tokens with the ambiguity rule). Non-company tokens are typed
+    from the lexicon. An uppercase token that is neither is UNKNOWN and is
+    deliberately dropped — never promoted to a company.
+    """
+    # A lexicon token only loses to the registry when the text gives explicit
+    # company context, so "LNG terminal" stays a commodity and "LNG shares"
+    # stays the issuer.
+    companies = [
+        t for t in resolve_companies(text, limit=limit * 2)
+        if classify_non_company(t) is None or _has_ticker_context(t, text)
+    ][:limit]
+
+    typed: list[TypedEntity] = []
+    seen: set[str] = set()
+    for tok in _CAPS_RE.findall(text):
+        if tok in seen or tok in companies:
+            continue
+        kind = classify_non_company(tok)
+        if kind is None:
+            continue          # unknown — stays unknown
+        seen.add(tok)
+        typed.append(TypedEntity(token=tok, kind=kind))
+        if len(typed) >= typed_limit:
+            break
+
+    return ResolvedEntities(companies=companies, typed=typed)
