@@ -96,6 +96,10 @@ export interface IntelNode {
   importance:   number;             // 0..100 relative weight in the graph
   sources:      SourcePage[];       // pages that have contributed to this node
   metadata:     Record<string, unknown>;
+  /** RC2-G3: this node merges by id only and never auto-aliases its label, so
+   *  a namespaced kind (Industry, Event) can share a display label with another
+   *  node without collapsing into it. Set at creation; never patched away. */
+  exactIdentity?: boolean;
 }
 
 export interface IntelEdge {
@@ -189,7 +193,15 @@ export class IntelligenceGraph {
     const node: IntelNode = {
       id,
       label:        input.label,
-      aliases:      uniq([input.label, ...(input.aliases ?? [])]),
+      // RC2-G3: an exactIdentity node merges by id ONLY, so its display label
+      // must not be auto-aliased into the type-blind alias index either —
+      // otherwise Industry("Energy") would claim the "energy" alias and the
+      // next addNode({label:"Energy", type:"Sector"}) would merge into it and
+      // flip its type. Only the explicitly supplied (namespaced) aliases index.
+      ...(input.exactIdentity ? { exactIdentity: true } : {}),
+      aliases:      input.exactIdentity
+                      ? uniq(input.aliases ?? [])
+                      : uniq([input.label, ...(input.aliases ?? [])]),
       type:         input.type,
       description:  input.description ?? "",
       confidence:   clamp(input.confidence ?? 50),
@@ -225,13 +237,39 @@ export class IntelligenceGraph {
     if (patch.firstSeen !== undefined) node.firstSeen = Math.min(node.firstSeen, patch.firstSeen);
     node.lastSeen = Math.max(node.lastSeen, patch.lastSeen ?? now());
     if (patch.aliases?.length || patch.label) {
-      node.aliases = uniq([node.label, ...node.aliases, ...(patch.aliases ?? [])]);
+      // exactIdentity nodes never fold their display label into the alias index.
+      node.aliases = node.exactIdentity
+        ? uniq([...node.aliases, ...(patch.aliases ?? [])])
+        : uniq([node.label, ...node.aliases, ...(patch.aliases ?? [])]);
     }
     if (patch.sources?.length) node.sources = uniq([...node.sources, ...patch.sources]);
     if (patch.metadata) node.metadata = { ...node.metadata, ...patch.metadata };
 
     this.indexNode(node); // refresh alias index for any new aliases
     return node;
+  }
+
+  /**
+   * Resolve a node of a SPECIFIC type (RC2-G3).
+   *
+   * The global alias index is deliberately type-blind, so `getNode("Energy")`
+   * answers with whichever node owns that alias — which stays the Sector, since
+   * namespaced nodes (Industry, Event) register only their namespaced aliases.
+   * This is the explicit, type-scoped read for callers that must have one kind:
+   * it never falls back across types, so an absent Industry returns undefined
+   * rather than silently handing back the Sector.
+   */
+  getNodeOfType(idOrLabel: string, type: NodeType): IntelNode | undefined {
+    const direct = this.getNode(idOrLabel);
+    if (direct?.type === type) return direct;
+    const key = normalizeKey(idOrLabel);
+    for (const id of this.typeIndex.get(type) ?? []) {
+      const node = this.nodes.get(id);
+      if (!node) continue;
+      if (node.id === key || node.aliases.some(a => normalizeKey(a) === key)) return node;
+      if (normalizeKey(node.label) === key) return node;
+    }
+    return undefined;
   }
 
   getNode(idOrAlias: string): IntelNode | undefined {
