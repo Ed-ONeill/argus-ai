@@ -8,7 +8,10 @@ import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useFeed } from "@/hooks/useFeed";
 import { useArgusIntelligence } from "@/hooks/useArgusIntelligence";
-import { buildIntelligenceProfile, type ProfileKind } from "@/lib/intelligenceProfile";
+import { buildIntelligenceProfile, type ProfileKind, type IntelligenceProfile } from "@/lib/intelligenceProfile";
+import { buildSectorForwardView, type SectorForwardView } from "@/lib/sectorForward";
+import { sectorExposure, industriesOfSector } from "@/lib/sectorTaxonomy";
+import { intelligenceGraph } from "@/lib/intelligenceGraph";
 import { buildRelationshipMap, type MapVM } from "@/lib/causalMap";
 import { buildWorkstationView, type DocketItem, type WorkstationView } from "@/lib/workstationView";
 import { Docket } from "./Docket";
@@ -28,7 +31,28 @@ export default function WorkstationPage() {
     if (!subjectLabel) return { view: buildWorkstationView({ subject: null, profile: null, ledger: null, themes }), mapVM: null };
     const profile = buildIntelligenceProfile(subjectLabel, { kindHint: kind as ProfileKind });
     const map = buildRelationshipMap(subjectLabel);
-    const view = buildWorkstationView({ subject: { kind, id: subjectLabel, label: subjectLabel }, profile, ledger: null, themes });
+
+    // RC2-G5: a Sector subject reads its chain from the CARRYING INDUSTRY and
+    // its open question from the canonical forward projection. Both already
+    // exist; the Workstation simply was not consuming them, so the hypothesis
+    // was always "insufficient" and the chain collapsed to Theme -> Sector.
+    let industryProfiles: Map<string, IntelligenceProfile> | undefined;
+    let forward: SectorForwardView | null = null;
+    if (kind === "sector") {
+      forward = buildSectorForwardView({
+        sector: subjectLabel, exposure: sectorExposure(subjectLabel), themes, leadership: null,
+      });
+      industryProfiles = new Map<string, IntelligenceProfile>();
+      for (const ind of industriesOfSector(subjectLabel)) {
+        const node = intelligenceGraph.getNodeOfType(ind, "Industry");
+        if (node) industryProfiles.set(ind.toLowerCase(), buildIntelligenceProfile(node.id, { kindHint: "sector" }));
+      }
+    }
+
+    const view = buildWorkstationView({
+      subject: { kind, id: subjectLabel, label: subjectLabel },
+      profile, ledger: null, themes, industryProfiles, forward,
+    });
     return { view, mapVM: map };
   }, [subjectLabel, kind, themeData]);
 

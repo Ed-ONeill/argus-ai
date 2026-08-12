@@ -12,6 +12,7 @@
 // Workstation only INVESTIGATES a view. The seven-beat order is frozen grammar.
 
 import type { IntelligenceProfile } from "./intelligenceProfile";
+import type { SectorForwardView } from "./sectorForward";
 import type { ThemeIntelligence } from "./types";
 
 export type BeatId = "hypothesis" | "transmission" | "evidence" | "support" | "breaks" | "history" | "watch";
@@ -26,6 +27,10 @@ export interface TransmissionExhibit {
   primaryChain: string[];                            // strongest path — the graph's INITIAL reveal
   stages: { caption: string; entities: string[] }[]; // full stages — revealed as evidence is read
   weakLinks: string[];                               // links to highlight at "what breaks it"
+  /** RC2-G5: the Industry whose recorded profile produced this chain, when the
+   *  subject is a Sector. The chain ends AT the industry; the structural
+   *  Industry -> Sector hop is membership and is never rendered as a link. */
+  viaIndustry: string | null;
 }
 export interface EvidenceLink { link: string; sources: number; strength: "strong" | "moderate" | "thin"; outlets: string[] }
 export interface EvidenceBeat { links: EvidenceLink[]; independentSources: number }
@@ -56,6 +61,14 @@ export interface WorkstationInputs {
   profile: IntelligenceProfile | null;
   ledger: LedgerCounts | null;                                    // outcome ledger; gated when absent
   themes: ThemeIntelligence[];
+  /** RC2-G5: profiles of the carrying INDUSTRIES, keyed by lower-cased industry
+   *  name. A Sector cannot see its own macro head - it sits three hops away
+   *  through the structural belongs_to edge - so the chain is taken from the
+   *  industry that actually carries it (the same source RC2-G4 gave Industries).
+   *  Optional: absent falls back to the subject's own recorded path. */
+  industryProfiles?: Map<string, IntelligenceProfile>;
+  /** RC2-G5: the canonical forward projection for a Sector subject (RC2-G2). */
+  forward?: SectorForwardView | null;
 }
 
 // The frozen seven-beat grammar: each beat's unique question, and the tiny transition that
@@ -105,25 +118,74 @@ export function buildCaseHeader(subject: WorkstationInputs["subject"]): { label:
 }
 
 // ── Beat builders (each reads one profile section; honest absence when unavailable) ──
-export function buildHypothesis(p: IntelligenceProfile | null): Hypothesis | null {
-  if (!p || p.thesis.status === "unavailable" || !p.thesis.data) return null;
-  const statement = p.thesis.data.headline ?? (p.identity.data ? p.identity.data.label : null);
-  if (!statement) return null;
-  const basis = p.identity.status !== "unavailable" && p.identity.data?.description ? firstSentence(p.identity.data.description) : null;
-  return { statement, basis };
+export function buildHypothesis(
+  p: IntelligenceProfile | null,
+  ctx?: { forward?: SectorForwardView | null; chain?: string[] | null; viaIndustry?: string | null } | null,
+): Hypothesis | null {
+  // 1. A recorded narrative or a resolvable forward view always wins.
+  if (p && p.thesis.status !== "unavailable" && p.thesis.data) {
+    const statement = p.thesis.data.headline ?? (p.identity.data ? p.identity.data.label : null);
+    if (statement) {
+      const basis = p.identity.status !== "unavailable" && p.identity.data?.description
+        ? firstSentence(p.identity.data.description) : null;
+      return { statement, basis };
+    }
+  }
+
+  // 2. RC2-G5: a Sector has no forward view by construction (intelligenceProfile
+  //    supplies one only for company/etf/theme/driver), so this beat was
+  //    ALWAYS insufficient for a sector even when canonical intelligence
+  //    existed. Compose the open question from two recorded projections - the
+  //    canonical transmission chain and the RC2-G2 forward state. This is
+  //    composition of recorded fields only: no new inference, no scoring, and
+  //    no claim about direction beyond what the projection already states.
+  const f = ctx?.forward ?? null;
+  const chain = ctx?.chain ?? null;
+  if (f && f.exposure.length > 0) {
+    const lead = f.exposure[0];
+    const via = ctx?.viaIndustry ?? lead.viaIndustry;
+    const statement = `Testing whether ${lead.theme}, carried through ${via}, shows up in ${f.sector} leadership.`;
+    const support = lead.signalQuality
+      ? `${f.exposure.length} recorded theme${f.exposure.length === 1 ? "" : "s"}, lead support ${lead.signalQuality}`
+      : `${f.exposure.length} recorded theme${f.exposure.length === 1 ? "" : "s"}`;
+    const price =
+      f.reconciliation === "confirmed" ? "price confirms it"
+      : f.reconciliation === "divergent" ? "price disagrees"
+      : f.reconciliation === "price-only" ? "no established thematic direction yet"
+      : f.price.direction === "unavailable" ? "no price confirmation available"
+      : "no directional price evidence";
+    const head = chain && chain.length >= 2 ? `${chain[0]} -> ${chain[chain.length - 1]}. ` : "";
+    return { statement, basis: `${head}${support}; ${price}.` };
+  }
+
+  // 3. Nothing recorded to test - stay honestly insufficient.
+  return null;
 }
 
-export function buildTransmission(p: IntelligenceProfile | null): TransmissionExhibit | null {
-  if (!p || p.transmission.status === "unavailable" || !p.transmission.data) return null;
-  const t = p.transmission.data;
+export function buildTransmission(
+  p: IntelligenceProfile | null,
+  carrying?: { profile: IntelligenceProfile; industry: string } | null,
+): TransmissionExhibit | null {
+  // RC2-G5: prefer the CARRYING INDUSTRY's recorded chain. Reading the Sector's
+  // own path collapsed "Power Load Growth -> Grid Bottleneck Trade ->
+  // Semiconductors" into "Grid Bottleneck Trade -> Technology", losing both the
+  // macro head and the industry that carries the exposure.
+  const src = carrying?.profile ?? p;
+  if (!src || src.transmission.status === "unavailable" || !src.transmission.data) return null;
+  const t = src.transmission.data;
   const path = t.strongestPath ?? [];
-  const weakLinks = p.risks.status !== "unavailable" && p.risks.data ? p.risks.data.weakening.map((w) => w.label) : [];
-  const reading = path.length >= 2 ? `${path[0]} leads through to ${path[path.length - 1]}.` : "The mechanism is still forming.";
+  // Weak links stay the SUBJECT's own recorded risks, never the industry's.
+  const weakLinks = p && p.risks.status !== "unavailable" && p.risks.data ? p.risks.data.weakening.map((w) => w.label) : [];
+  const via = carrying?.industry ?? null;
+  const reading = path.length >= 2
+    ? `${path[0]} leads through to ${path[path.length - 1]}${via ? `, carried by ${via}` : ""}.`
+    : "The mechanism is still forming.";
   return {
     reading,
     primaryChain: path,
     stages: (t.stages ?? []).map((s) => ({ caption: s.caption, entities: s.entities })),
     weakLinks,
+    viaIndustry: via,
   };
 }
 
@@ -203,13 +265,25 @@ export function buildWorkstationView(input: WorkstationInputs): WorkstationView 
     return { mode: "docket", docket: buildDocket(input.themes), header: null, beats: null };
   }
   const p = input.profile;
+  // RC2-G5: pick the carrying industry deterministically - the forward
+  // projection's own canonical order, first one with a recorded chain.
+  const carrying = (() => {
+    const profiles = input.industryProfiles;
+    const order = input.forward?.carryingIndustries ?? [];
+    if (!profiles || order.length === 0) return null;
+    for (const ind of order) {
+      const ip = profiles.get(ind.toLowerCase());
+      if ((ip?.transmission.data?.strongestPath ?? []).length >= 2) return { profile: ip!, industry: ind };
+    }
+    return null;
+  })();
   return {
     mode: "case",
     docket: [],
     header: buildCaseHeader(input.subject),
     beats: [
-      beat("hypothesis", buildHypothesis(p)),
-      beat("transmission", buildTransmission(p)),
+      beat("hypothesis", buildHypothesis(p, { forward: input.forward ?? null, chain: carrying?.profile.transmission.data?.strongestPath ?? p?.transmission.data?.strongestPath ?? null, viaIndustry: carrying?.industry ?? null })),
+      beat("transmission", buildTransmission(p, carrying)),
       beat("evidence", buildEvidence(p)),
       beat("support", buildSupport(p)),
       beat("breaks", buildBreakConditions(p)),

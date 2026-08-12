@@ -65,7 +65,7 @@ import { IndustryArtwork, industryIcon } from "@/components/industries/industryI
 import { cleanThemeName, cleanMacroLabel } from "@/app/markets/marketsShared";
 import type { IndustryConfig } from "@/lib/industryConfig";
 import { industriesOfSector, sectorExposure } from "@/lib/sectorTaxonomy";
-import { intelligenceGraph } from "@/lib/intelligenceGraph";
+import { intelligenceGraph, normalizeKey } from "@/lib/intelligenceGraph";
 import { buildSectorForwardView, forwardViewSentence, sectorPriceProxy } from "@/lib/sectorForward";
 import { measureSector } from "@/lib/marketRotation";
 import { SECTOR_BENCHMARK } from "@/lib/marketBlocks";
@@ -186,7 +186,7 @@ function IndustryDealRow({ deal, color }: { deal: SectorDealItem; color: string 
 
 // ── Theme cluster row ─────────────────────────────────────────────────────────
 
-function ThemeRow({ cluster, color, index }: { cluster: StoryCluster; color: string; index: number }) {
+function ThemeRow({ cluster, theme, color, index }: { cluster: StoryCluster; theme: ThemeIntelligence; color: string; index: number }) {
   const score     = cluster.cluster_score;
   const scoreColor = score >= 70 ? "#10b981" : score >= 40 ? "#f59e0b" : color;
   return (
@@ -202,7 +202,7 @@ function ThemeRow({ cluster, color, index }: { cluster: StoryCluster; color: str
       />
       <div className="flex-1 min-w-0">
         <p className="text-[12px] font-semibold text-ink leading-tight mb-0.5">
-          {cluster.theme_label}
+          {theme.name}
         </p>
         <p className="text-[10px] text-ink-muted">
           {cluster.story_count} {cluster.story_count === 1 ? "story" : "stories"}
@@ -726,6 +726,11 @@ export default function IndustryDetailPage() {
     });
   }, [sectorKey, argus.ready, argus.themes, forwardProxy, forwardSeries, si?.transmission, si?.transmissionVia]);
 
+  // The canonical one-line read for the hero, when the projection resolves.
+  const forwardSentence = forwardView && forwardView.reconciliation !== "unavailable"
+    ? forwardViewSentence(forwardView)
+    : null;
+
   // Not found state
   if (!industry) {
     return (
@@ -779,7 +784,24 @@ export default function IndustryDetailPage() {
 
   const maClusters    = topClusters.filter(c => c.primary.category === "M&A").slice(0, 5);
   const storyClusters = topClusters.filter(c => c.primary.category !== "M&A").slice(0, 10);
-  const themeClusters = topClusters.slice(0, 6);
+  // RC2-G5 (Live Themes): `cluster.theme_label` is an EDITORIAL CLUSTER HEADLINE
+  // built from the story title by app/clustering.py::_make_theme_label - never a
+  // canonical Argus theme. Rendering it under a "Themes" heading presented
+  // "Pivot Regulator Makes" and "Energy Contrarian Investor" as themes. Each
+  // cluster is now RESOLVED against the canonical theme set (exact match on the
+  // theme's own identifiers, or the theme claiming this cluster id); a cluster
+  // that resolves to nothing is OMITTED, never renamed heuristically. The
+  // section is empty when nothing resolves, which is the honest answer.
+  const canonicalThemes = feedData?.theme_intelligence ?? [];
+  const themeClusters = topClusters
+    .map(c => {
+      const theme = canonicalThemes.find(t =>
+        (t.contributing_cluster_ids ?? []).includes(c.id) ||
+        normalizeKey(t.name) === normalizeKey(c.theme_label));
+      return theme ? { cluster: c, theme } : null;
+    })
+    .filter((x): x is { cluster: StoryCluster; theme: ThemeIntelligence } => x !== null)
+    .slice(0, 6);
   const topTheme      = getTopTheme(industry, clusters, whatMattersNow);
 
   // Phase 3 + 4 intelligence
@@ -816,8 +838,18 @@ export default function IndustryDetailPage() {
   const regimeMeta = regime ? (REGIME_DARK[regime] ?? null) : null;
   const maxInd     = indSignals[0]?.signal_score ?? 1;
 
-  // Live narrative from best industry signal
-  const heroNarrative = bestIndSignal?.narrative ?? null;
+  // RC2-G5 (hero narrative): the primary source is the CANONICAL intelligence
+  // this page already computes - the sector forward projection (RC2-G2), which
+  // states recorded exposure, its carrying industries and the measured price
+  // reconciliation. The previous source, IndustrySignal.narrative, is
+  // deterministic TEMPLATE prose (app/sectors.py _INDUSTRY_DESCRIPTOR +
+  // _NARRATIVE_VARIANTS) keyed on the backend's PARALLEL thematic industry axis
+  // (Energy Transition, LNG, Nuclear), not this page's industryConfig identity -
+  // so a page could be headlined by an unrelated industry's template. It is
+  // retained only as an explicitly-labelled fallback when the canonical
+  // projection has nothing to say, and never overrides it.
+  const heroNarrative = forwardSentence ?? bestIndSignal?.narrative ?? null;
+  const heroNarrativeIsCanonical = forwardSentence !== null;
   const topStoryTitle = bestIndSignal?.top_story_title ?? null;
   const topStoryUrl   = bestIndSignal?.top_story_url   ?? null;
 
@@ -939,6 +971,11 @@ export default function IndustryDetailPage() {
               transition={{ duration: 0.4, delay: 0.15 }}
               className="text-[13px] text-white/65 mb-7 leading-relaxed max-w-2xl italic"
             >
+              {!heroNarrativeIsCanonical && (
+                <span className="not-italic text-[9px] font-bold uppercase tracking-[0.14em] text-white/35 mr-2">
+                  Sector template
+                </span>
+              )}
               {heroNarrative}
             </motion.p>
           )}
@@ -1296,8 +1333,8 @@ export default function IndustryDetailPage() {
               >
                 <SectionHeader icon={Activity}>Live Themes</SectionHeader>
                 <div>
-                  {themeClusters.map((cl, i) => (
-                    <ThemeRow key={cl.id} cluster={cl} color={industry.color} index={i} />
+                  {themeClusters.map((x, i) => (
+                    <ThemeRow key={x.cluster.id} cluster={x.cluster} theme={x.theme} color={industry.color} index={i} />
                   ))}
                 </div>
               </motion.section>

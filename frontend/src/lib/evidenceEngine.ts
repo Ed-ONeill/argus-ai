@@ -77,6 +77,24 @@ export function rankEvidenceSources(): SourceRank[] {
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const POSITIVE_REL = new Set(["supports", "drives", "raises_demand_for", "supplies", "owns", "mentions", "affects", "correlates"]);
 const NEGATIVE_REL = new Set(["weakens", "reduces_supply_of", "competes_with"]);
+
+/**
+ * RC2-G5: STRUCTURAL relationships are membership, not evidence.
+ *
+ * `belongs_to` (Industry -> Sector, RC2-G3) says where a node sits in the
+ * taxonomy; it asserts nothing about whether a view is supported. Counting it
+ * made a sector's own child industry its single strongest "supporting evidence"
+ * at strength 100, inflating verdicts to `strong` on structure alone. On Energy,
+ * where the Industry and Sector share a label, it rendered as the sector
+ * supporting ITSELF.
+ *
+ * Excluded once, at the only place edges enter this engine, so it can never
+ * reach an evidence item, a source list, a support count, or the verdict.
+ * intelligenceProfile already excludes it from drivers/beneficiaries by causal
+ * layer; this closes the same hole here.
+ */
+const STRUCTURAL_REL = new Set(["belongs_to"]);
+const isStructural = (e: IntelEdge): boolean => STRUCTURAL_REL.has(e.relationshipType);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
@@ -122,8 +140,10 @@ export interface Contradiction { kind: string; detail: string; severity: number 
 
 function contradictionsForNode(node: IntelNode): Contradiction[] {
   const findings: Contradiction[] = [];
-  const neigh = G.getNeighbors(node.id);
-  const edges = G.getRelationships(node.id);
+  // RC2-G5: structural membership edges are excluded here too, so they cannot
+  // move confidence or diversity findings either.
+  const neigh = G.getNeighbors(node.id).filter(x => !isStructural(x.edge));
+  const edges = G.getRelationships(node.id).filter(e => !isStructural(e));
 
   // Weakening / competing relationships (graph evidence only).
   for (const x of neigh) {
@@ -265,7 +285,7 @@ export function evaluateEvidenceForNode(nodeIdOrLabel: string): NodeEvidence {
   const node = G.getNode(nodeIdOrLabel);
   if (!node) return emptyNodeEvidence(null);
 
-  const items = G.getNeighbors(node.id).map(toEvidenceItem);
+  const items = G.getNeighbors(node.id).filter(x => !isStructural(x.edge)).map(toEvidenceItem);
   if (items.length === 0) return emptyNodeEvidence(node);
 
   const supporting = items.filter(i => i.polarity === 1);
