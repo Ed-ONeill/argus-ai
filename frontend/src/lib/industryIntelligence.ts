@@ -6,6 +6,7 @@
 
 import type { StoryCluster, IndustrySignal, SectorIntelligence, ThemeIntelligence } from "./types";
 import type { IndustryConfig } from "./industryConfig";
+import { isSectorEntityLabel } from "./intelligenceGraphAdapters";
 
 // ── 1. Influential Entity Intelligence ───────────────────────────────────────
 
@@ -191,7 +192,13 @@ export function getIndustryAcquirers(deals: SectorDealItem[]): IndustryAcquirer[
   const map       = new Map<string, { sectors: Set<string>; dealTypes: Set<string> }>();
 
   for (const d of strategic) {
-    for (const entity of d.entities.slice(0, 2)) {
+    // RC2-G5.1: `entities` is FeedItem.affected_entities - since RC2-A that is
+    // "resolved company tickers, then at most one curated SECTOR LABEL". Treating
+    // every value as an acquirer NAME admitted the sector label as a party, which
+    // rendered "Healthcare -> Healthcare" (the label as acquirer, its own sector as
+    // the target). A sector is never a party to a deal. Same authority the graph
+    // adapters use; entity-resolution semantics are unchanged.
+    for (const entity of d.entities.filter(e => !isSectorEntityLabel(e)).slice(0, 2)) {
       if (!entity || entity.trim().length === 0) continue;
       if (!map.has(entity)) map.set(entity, { sectors: new Set(), dealTypes: new Set() });
       map.get(entity)!.sectors.add(d.sector);
@@ -202,7 +209,7 @@ export function getIndustryAcquirers(deals: SectorDealItem[]): IndustryAcquirer[
   return Array.from(map.entries())
     .map(([name, { sectors, dealTypes }]) => ({
       name,
-      dealCount: strategic.filter(d => d.entities.includes(name)).length,
+      dealCount: strategic.filter(d => d.entities.filter(e => !isSectorEntityLabel(e)).includes(name)).length,
       sectors:   Array.from(sectors),
       dealTypes: Array.from(dealTypes),
     }))

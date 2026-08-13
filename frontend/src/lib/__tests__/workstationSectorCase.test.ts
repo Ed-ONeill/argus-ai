@@ -64,7 +64,9 @@ describe("Workstation transmission for a Sector", () => {
     const d = t.data as { primaryChain: string[]; viaIndustry: string | null; reading: string };
     expect(["Semiconductors", "Software"]).toContain(d.viaIndustry);
     expect(d.primaryChain[d.primaryChain.length - 1]).toBe(d.viaIndustry);
-    expect(d.reading).toContain("carried by");
+    // RC2-G5.1: the carrier is the last visible element, so the clause is suppressed
+    // as redundant. Provenance lives in viaIndustry, asserted above.
+    expect(d.reading).not.toContain("carried by");
   });
 
   it("the macro head is preserved, not collapsed to Theme -> Sector", () => {

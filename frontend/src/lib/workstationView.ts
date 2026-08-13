@@ -14,6 +14,7 @@
 import type { IntelligenceProfile } from "./intelligenceProfile";
 import type { SectorForwardView } from "./sectorForward";
 import type { ThemeIntelligence } from "./types";
+import { num } from "./intelligenceUtils";
 
 export type BeatId = "hypothesis" | "transmission" | "evidence" | "support" | "breaks" | "history" | "watch";
 export type BeatStatus = "present" | "insufficient";
@@ -122,32 +123,40 @@ export function buildHypothesis(
   p: IntelligenceProfile | null,
   ctx?: { forward?: SectorForwardView | null; chain?: string[] | null; viaIndustry?: string | null } | null,
 ): Hypothesis | null {
-  // 1. A recorded narrative or a resolvable forward view always wins.
-  if (p && p.thesis.status !== "unavailable" && p.thesis.data) {
-    const statement = p.thesis.data.headline ?? (p.identity.data ? p.identity.data.label : null);
-    if (statement) {
-      const basis = p.identity.status !== "unavailable" && p.identity.data?.description
-        ? firstSentence(p.identity.data.description) : null;
-      return { statement, basis };
-    }
+  const label = p && p.identity.status !== "unavailable" ? p.identity.data?.label ?? null : null;
+  const thesis = p && p.thesis.status !== "unavailable" ? p.thesis.data : null;
+  const headline = thesis?.headline ?? null;
+  const fwd = thesis?.forward ?? null;
+
+  // 1. A recorded narrative IS a stated hypothesis and always wins.
+  if (headline) {
+    const basis = p && p.identity.status !== "unavailable" && p.identity.data?.description
+      ? firstSentence(p.identity.data.description) : null;
+    return { statement: headline, basis };
   }
 
-  // 2. RC2-G5: a Sector has no forward view by construction (intelligenceProfile
-  //    supplies one only for company/etf/theme/driver), so this beat was
-  //    ALWAYS insufficient for a sector even when canonical intelligence
-  //    existed. Compose the open question from two recorded projections - the
-  //    canonical transmission chain and the RC2-G2 forward state. This is
-  //    composition of recorded fields only: no new inference, no scoring, and
-  //    no claim about direction beyond what the projection already states.
+  // RC2-G5.1: the bare-label fallback is GONE. `p.thesis.data.headline ?? identity.label`
+  // returned the subject's own name - "Energy" - as the hypothesis whenever a Sector had a
+  // recorded forward view but no injected narrative, and returned EARLY, pre-empting the
+  // composition below. A subject label by itself is never a hypothesis.
+  //
+  // The recorded forward is still real intelligence, so it is carried as a clause rather
+  // than discarded. confidence 0 is reported as NOT ESTABLISHED, never as conviction.
+  const fwdClause = fwd
+    ? `Recorded rotation: ${fwd.direction}${num(fwd.confidence) > 0
+        ? ` (confidence ${Math.round(num(fwd.confidence))})`
+        : " (confidence not established)"}.`
+    : null;
+
+  // 2. Compose from the two canonical projections: the recorded chain and the
+  //    RC2-G2 forward state. Recorded fields only - no inference, no scoring.
   const f = ctx?.forward ?? null;
   const chain = ctx?.chain ?? null;
   if (f && f.exposure.length > 0) {
     const lead = f.exposure[0];
     const via = ctx?.viaIndustry ?? lead.viaIndustry;
     const statement = `Testing whether ${lead.theme}, carried through ${via}, shows up in ${f.sector} leadership.`;
-    const support = lead.signalQuality
-      ? `${f.exposure.length} recorded theme${f.exposure.length === 1 ? "" : "s"}, lead support ${lead.signalQuality}`
-      : `${f.exposure.length} recorded theme${f.exposure.length === 1 ? "" : "s"}`;
+    const support = `${f.exposure.length} recorded theme${f.exposure.length === 1 ? "" : "s"}${lead.signalQuality ? `, lead support ${lead.signalQuality}` : ""}`;
     const price =
       f.reconciliation === "confirmed" ? "price confirms it"
       : f.reconciliation === "divergent" ? "price disagrees"
@@ -155,16 +164,23 @@ export function buildHypothesis(
       : f.price.direction === "unavailable" ? "no price confirmation available"
       : "no directional price evidence";
     const head = chain && chain.length >= 2 ? `${chain[0]} -> ${chain[chain.length - 1]}. ` : "";
-    return { statement, basis: `${head}${support}; ${price}.` };
+    return { statement, basis: `${head}${support}; ${price}.${fwdClause ? ` ${fwdClause}` : ""}` };
   }
 
-  // 3. Nothing recorded to test - stay honestly insufficient.
+  // 3. No canonical exposure, but a recorded forward direction exists: state THAT,
+  //    which is a recorded fact, rather than the subject's name.
+  if (fwd && label) {
+    return { statement: `Testing whether ${label} keeps ${fwd.direction}.`, basis: fwdClause };
+  }
+
+  // 4. Nothing recorded to test - stay honestly insufficient.
   return null;
 }
 
 export function buildTransmission(
   p: IntelligenceProfile | null,
   carrying?: { profile: IntelligenceProfile; industry: string } | null,
+  subjectLabel?: string | null,
 ): TransmissionExhibit | null {
   // RC2-G5: prefer the CARRYING INDUSTRY's recorded chain. Reading the Sector's
   // own path collapsed "Power Load Growth -> Grid Bottleneck Trade ->
@@ -177,8 +193,18 @@ export function buildTransmission(
   // Weak links stay the SUBJECT's own recorded risks, never the industry's.
   const weakLinks = p && p.risks.status !== "unavailable" && p.risks.data ? p.risks.data.weakening.map((w) => w.label) : [];
   const via = carrying?.industry ?? null;
+  // RC2-G5.1: the clause is only worth showing when it names something the sentence
+  // does not already contain. The chain TERMINATES at the carrying industry by
+  // design, so "leads through to Semiconductors, carried by Semiconductors" is
+  // always redundant, and Industry("Energy") vs Sector("Energy") made it read
+  // circular as well. Suppress the VISIBLE clause whenever the carrier is already
+  // on screen (either end of the rendered path) or is the subject itself.
+  // `viaIndustry` below is UNCHANGED, so typed provenance survives for every
+  // consumer - this is presentation only.
+  const shown = new Set([path[0], path[path.length - 1], subjectLabel ?? ""]);
+  const showVia = via !== null && !shown.has(via);
   const reading = path.length >= 2
-    ? `${path[0]} leads through to ${path[path.length - 1]}${via ? `, carried by ${via}` : ""}.`
+    ? `${path[0]} leads through to ${path[path.length - 1]}${showVia ? `, carried by ${via}` : ""}.`
     : "The mechanism is still forming.";
   return {
     reading,
@@ -283,7 +309,7 @@ export function buildWorkstationView(input: WorkstationInputs): WorkstationView 
     header: buildCaseHeader(input.subject),
     beats: [
       beat("hypothesis", buildHypothesis(p, { forward: input.forward ?? null, chain: carrying?.profile.transmission.data?.strongestPath ?? p?.transmission.data?.strongestPath ?? null, viaIndustry: carrying?.industry ?? null })),
-      beat("transmission", buildTransmission(p, carrying)),
+      beat("transmission", buildTransmission(p, carrying, input.subject.label)),
       beat("evidence", buildEvidence(p)),
       beat("support", buildSupport(p)),
       beat("breaks", buildBreakConditions(p)),
