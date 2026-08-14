@@ -201,11 +201,19 @@ export function buildTransmission(
   // on screen (either end of the rendered path) or is the subject itself.
   // `viaIndustry` below is UNCHANGED, so typed provenance survives for every
   // consumer - this is presentation only.
-  const shown = new Set([path[0], path[path.length - 1], subjectLabel ?? ""]);
-  const showVia = via !== null && !shown.has(via);
+  // The whole chain is rendered (TransmissionGraph draws every element), so the
+  // carrier clause is only worth showing when it names something NOT already on
+  // screen. Since RC2-G6 a chain can run past the carrier to a Company
+  // (Driver -> Theme -> Industry -> Company), so this checks the full path, not
+  // just its ends.
+  const showVia = via !== null && via !== subjectLabel && !path.includes(via);
+  // RC2-G6: an empty chain means NO RECORDED MECHANISM. "still forming" asserts a
+  // mechanism is on its way, which the graph does not say - after evidence is kept
+  // out of the path (see intelligenceProfile), a sector connected only to stories
+  // has nothing recorded, not something emerging. Presentation only.
   const reading = path.length >= 2
     ? `${path[0]} leads through to ${path[path.length - 1]}${showVia ? `, carried by ${via}` : ""}.`
-    : "The mechanism is still forming.";
+    : "No recorded transmission mechanism yet.";
   return {
     reading,
     primaryChain: path,

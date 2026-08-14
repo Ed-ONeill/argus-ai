@@ -291,12 +291,34 @@ export function buildIntelligenceProfile(entityKey: string, inputs: ProfileInput
     }
     const stages = [...byLayer.entries()].sort((a, b) => a[0] - b[0])
       .map(([layer, entities]) => ({ layer, caption: STAGE_CAPTION[layer] ?? String(layer), entities: entities.slice(0, 8) }));
+    // RC2-G6: THE TRANSMISSION INVARIANT. A transmission path is a causal
+    // mechanism - Driver -> Theme -> Industry/Sector -> Company. Evidence
+    // (Story / Deal / Podcast / MarketMetric) is what SUPPORTS a mechanism; it is
+    // never a hop in one. The path used to append a layer-4 evidence node, so a
+    // sector with no recorded upstream rendered as
+    // "Healthcare -> How investors killed AstraZeneca's $400bn megadeal" under
+    // "How it transmits". Evidence keeps its own section; it is not moved, only
+    // kept out of the chain.
+    //
+    // Enforced by KIND, not by slot index, so an evidence node can never enter
+    // through any slot.
     const bestAt = (pred: (l: number) => boolean): string | null => {
-      const link = [...upstreamLinks, ...downstreamLinks].find(l => pred(causalLayerOfType(l.nodeType)));
+      const link = [...upstreamLinks, ...downstreamLinks]
+        .find(l => profileKindOfType(l.nodeType) !== "evidence" && pred(causalLayerOfType(l.nodeType)));
       return link ? link.label : null;
     };
-    const path = [bestAt(l => l === 0), bestAt(l => l === 1), bestAt(l => l === 2), node.label, bestAt(l => l === 4)]
+    // The subject sits at ITS OWN causal layer, not at a fixed index, so the
+    // chain always reads in causal order: Driver -> Theme -> Industry/Sector ->
+    // Company. (It used to be pinned to index 3, which put a Theme subject after
+    // the sector it drives.) An evidence-kind subject has no causal slot at all.
+    const selfLayer2 = causalLayerOfType(String(node.type));
+    const selfIsEvidence = profileKindOfType(String(node.type)) === "evidence";
+    const causalPath = [0, 1, 2, 3]
+      .map(l => (!selfIsEvidence && l === selfLayer2 ? node.label : bestAt(x => x === l)))
       .filter((s): s is string => !!s);
+    // A single node is not a mechanism. Stripping evidence can legitimately leave
+    // nothing; that is an honest empty path, never a fabricated hop.
+    const path = causalPath.length >= 2 ? causalPath : [];
     transmission = section("live", {
       stages, strongestPath: path,
       upstreamCount: upstreamLinks.length, downstreamCount: downstreamLinks.length,

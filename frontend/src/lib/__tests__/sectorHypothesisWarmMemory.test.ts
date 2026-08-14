@@ -158,10 +158,10 @@ describe("same-label provenance is not shown as circular", () => {
   it("Technology also drops the redundant clause - the chain already ends there", () => {
     ingestThemes(TECH_WARM);
     const d = caseFor("Technology", TECH_WARM).beat("transmission").data as { reading: string; viaIndustry: string | null; primaryChain: string[] };
-    // the carrier IS the last visible element, so naming it again is redundant
-    expect(d.primaryChain[d.primaryChain.length - 1]).toBe(d.viaIndustry);
+    // RC2-G6: the carrier is inside the rendered chain (which may continue to a
+    // Company), so naming it again is redundant.
+    expect(d.primaryChain).toContain(d.viaIndustry);
     expect(d.reading).not.toContain("carried by");
-    expect(d.reading).toMatch(/leads through to (Semiconductors|Software)\./);
   });
 
   it("Technology PRESERVES the typed carrier in the VM regardless", () => {

@@ -63,9 +63,10 @@ describe("Workstation transmission for a Sector", () => {
     expect(t.status).toBe("present");
     const d = t.data as { primaryChain: string[]; viaIndustry: string | null; reading: string };
     expect(["Semiconductors", "Software"]).toContain(d.viaIndustry);
-    expect(d.primaryChain[d.primaryChain.length - 1]).toBe(d.viaIndustry);
-    // RC2-G5.1: the carrier is the last visible element, so the clause is suppressed
-    // as redundant. Provenance lives in viaIndustry, asserted above.
+    // RC2-G6: the chain may now run past the carrier to a Company, so the carrier
+    // is no longer necessarily last - but it IS in the rendered chain, so the
+    // clause stays suppressed as redundant. Provenance lives in viaIndustry.
+    expect(d.primaryChain).toContain(d.viaIndustry);
     expect(d.reading).not.toContain("carried by");
   });
 
