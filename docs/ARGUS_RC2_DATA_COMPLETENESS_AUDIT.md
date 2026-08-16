@@ -463,6 +463,100 @@ What these cycles do **not** prove:
 
 RC2-B1 is **closed**.
 
+### RC2-D1 — Listen source-registry health and observability (implemented)
+
+Addresses the first half of finding **D**. `api/podcast_feeds.py` only.
+
+**Diagnosed baseline** (live probe, production UA, `scripts/probe_podcast_registry.py`):
+
+```
+registry=27  healthy=12  stale=4  dead=11  episodes<=14d=116
+dead: Odd Lots · Masters in Business · Macro Voices · All-In · Business Breakdowns
+      Capital Allocators · The Compound and Friends · Animal Spirits · 20VC
+      My First Million · Bankless          (all HTTP 404)
+```
+
+**Root cause.** Podcast host/slug migration — Megaphone slugs retired, shows moved to
+Libsyn/Omny/Podbean/Flightcast. Nothing detected it: `_fetch_one` logged feed failures at
+`log.debug` while production runs at INFO, so 11 of 27 registered shows had been 404ing
+invisibly. A dead source was indistinguishable from a quiet one.
+
+**Method.** Every dead or stale entry was audited individually against the publisher-submitted
+`feedUrl` in the Apple Podcasts directory, then each candidate was fetched and its feed title,
+author, link and recent episode titles verified by hand. No entry was retired on age or on a
+single 404; retirement required positive evidence of discontinuation. No show was replaced with a
+lower-quality substitute to improve a coverage metric.
+
+**Repaired — 11 URLs, all confirmed authoritative and current:**
+
+| Show | New host | Verified |
+|---|---|---|
+| Odd Lots | Omny (new playlist id) | Bloomberg · 1257 eps · newest 2d |
+| Masters in Business | Omny | Bloomberg · 798 eps · newest 1d |
+| Macro Voices | Podbean | Erik Townsend · newest 2d (`#545`) |
+| All-In | Libsyn | All-In Podcast LLC · newest 1d |
+| Capital Allocators | Libsyn | Ted Seides · 815 eps · newest 6d |
+| The Compound and Friends | Megaphone `TCP4771071679` | Josh Brown · 597 eps · newest 2d |
+| Animal Spirits | Megaphone `TCP6464651487` | The Compound · 810 eps · newest 4d |
+| 20VC | Libsyn | Harry Stebbings · 1496 eps · newest 0d |
+| My First Million | Megaphone `HS2300184645` | Hubspot · 891 eps · newest 2d |
+| Bankless | Flightcast | banklesshq.com · 1359 eps · newest 2d |
+| Business Breakdowns | Megaphone `breakdowns` | Colossus · 261 eps · newest 20d |
+
+**Retired — 2 entries, on evidence of discontinuation:**
+
+- **Bloomberg Deal of the Week.** Last real episode is `Over and Out`, 2018-03-08; every later
+  item is a Bloomberg cross-promo trailer. Apple's canonical `feedUrl` is byte-identical to the
+  registry's, so this is a dead show, not a stale URL — and Bloomberg's other two shows are fresh.
+- **Axios Pro Rata.** The `pro-rata` slug now serves *Axios Re:Cap*, itself 4.6 years stale; the
+  next-newest Axios feed (`1 big thing`) is 1.9 years stale. Axios's podcast slate is
+  discontinued and the only live "Axios" search hits are unrelated third parties.
+
+**Retained despite sitting outside the 14d cap — each documented in-registry:**
+
+- **The Big View** (19d) — URL verified working, left unchanged. A publishing gap is not evidence
+  of a broken source.
+- **Business Breakdowns** (20d) — URL repaired; cadence measured 20/78/93d. Active but irregular.
+- **DealBook Summit** (250d) — all 35 episodes cluster 2025-12-04..12-08. An **annual event feed**
+  on the publisher's canonical URL; it contributes each December. Honest, not broken.
+
+**Observability.** `_fetch_one` now logs a source failure at **WARNING** — HTTP >= 400, an
+unparseable payload, an empty feed, or a raised exception. A healthy feed whose episodes are all
+older than the cap stays on the INFO line: contributing nothing on freshness grounds is an honest
+outcome, not a failure. Batch resilience is unchanged — every path still returns `[]` for that one
+source and never propagates.
+
+**Measured result** (same probe, same UA, before → after):
+
+```
+registry          27  ->  25
+healthy           12  ->  22
+stale              4  ->   3
+dead              11  ->   0
+episodes <=14d   116  -> 162     (+40%)
+```
+
+22 contributing shows, against a target of >=20, using authoritative publisher feeds only.
+
+**A gap this exposed — recorded, not fixed here.** Both retired shows were the registry's
+`M&A`-tagged entries, so `M&A` topic coverage is now **2 shows** (`The Big View`, `DealBook
+Summit`), neither of which is currently inside the freshness cap. This is not a regression: the
+two retired feeds had published nothing in 4.6 and 5.4 years, so the registry was previously
+*claiming* four M&A sources while two were long dead. D1 makes the real coverage visible.
+`Private Markets` goes 4 -> 3 (`Invest Like the Best`, `Capital Allocators`, `20VC`) and is in
+better shape than before, since two of those three were among the 404s. Adding M&A-focused audio
+coverage is a source-selection decision, deliberately out of D1's scope.
+
+**Validation.** 21 new offline tests in `tests/test_podcast_registry_integrity.py` (registry
+shape, duplicate `rss_url`/`show_name`, required metadata, known-dead slugs absent, failure
+visibility at WARNING, stale-but-working feeds *not* reported as failures, batch resilience). Feed
+liveness is deliberately kept out of CI — it is a property of the outside world — and measured by
+`scripts/probe_podcast_registry.py` instead. Full backend suite **1264 passed**.
+
+**Out of scope and unchanged:** `entities` remains `[]` (D2); no publisher/guest-affiliation
+filtering; no `conviction`/`delta` semantic change (D3); `_why_it_matters` untouched (D4, gated on
+IRE-2); no graph, frontend, freshness-cap, `_final_score`, `is_briefing`, or ranking changes.
+
 ---
 
 ## Per-surface index

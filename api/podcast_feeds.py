@@ -93,16 +93,6 @@ PODCAST_FEEDS: list[dict] = [
         "default_topics": ["Macro", "Markets"],
         "source_tier":    5,
     },
-    {
-        # Bloomberg Deal of the Week — M&A reporters dissect the week's biggest
-        # deals and highlight trends under scrutiny from Wall Street.
-        # Omny-hosted; M&A-focused weekly.
-        "rss_url":        "https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/01eed045-7ef2-49f0-916d-ae390045e4fe/0fb01315-6409-40ff-ae16-ae390045e508/podcast.rss",
-        "show_name":      "Bloomberg Deal of the Week",
-        "publisher":      "Bloomberg",
-        "default_topics": ["M&A"],
-        "source_tier":    5,
-    },
 
     # ── Tier 4: Mostly finance, occasional off-topic ───────────────────────────
 
@@ -135,19 +125,11 @@ PODCAST_FEEDS: list[dict] = [
         "source_tier":    4,
     },
     {
-        # Axios Pro Rata (rebranded Axios Re:Cap) — Dan Primack on VC, PE, and M&A.
-        # Deal-flow focused; strong private markets and deals coverage.
-        # Slug "pro-rata" retained after Re:Cap rebrand; Megaphone-hosted.
-        "rss_url":        "https://feeds.megaphone.fm/pro-rata",
-        "show_name":      "Axios Pro Rata",
-        "publisher":      "Axios",
-        "default_topics": ["Private Markets", "M&A"],
-        "source_tier":    4,
-    },
-    {
         # Reuters Breakingviews "The Big View" — weekly; BV columnists + senior
         # guests on the biggest deals and market questions of the moment.
         # Megaphone-hosted; repurposed from legacy "The Exchange" feed.
+        # RC2-D1: URL verified working and deliberately LEFT UNCHANGED. It measured
+        # 19d at audit time — a publishing gap, not evidence of a broken source.
         "rss_url":        "https://feeds.megaphone.fm/THRH1653885106",
         "show_name":      "The Big View",
         "publisher":      "Reuters Breakingviews",
@@ -159,7 +141,7 @@ PODCAST_FEEDS: list[dict] = [
         # Bloomberg Odd Lots — Joe Weisenthal + Tracy Alloway on markets, macro,
         # and the plumbing of finance.  One of the highest-signal macro/markets feeds.
         # Omny-hosted (same platform as Surveillance).
-        "rss_url":        "https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/14a43378-edb2-49be-8511-ae2800243e3f/d2e26165-30a7-4b68-8cc8-ae2800244174/podcast.rss",
+        "rss_url":        "https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/8a94442e-5a74-4fa2-8b8d-ae27003a8d6b/982f5071-765c-403d-969d-ae27003a8d83/podcast.rss",
         "show_name":      "Odd Lots",
         "publisher":      "Bloomberg",
         "default_topics": ["Markets", "Macro"],
@@ -181,7 +163,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # Masters in Business — Barry Ritholtz long-form interviews with
         # investors, economists, and market strategists.  Bloomberg Media.
-        "rss_url":        "https://feeds.megaphone.fm/masters-in-business",
+        "rss_url":        "https://www.omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/4e4cd910-40a1-4619-a5f3-ae2b0012ffff/5873a3cb-298f-40bc-b71f-ae2b0013000d/podcast.rss",
         "show_name":      "Masters in Business",
         "publisher":      "Bloomberg",
         "default_topics": ["Markets", "Company"],
@@ -190,7 +172,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # Macro Voices — Erik Townsend on global macro, rates, commodities, FX.
         # Weekly long-form; strong signal for Macro and Markets.
-        "rss_url":        "https://www.macrovoices.com/podcast-feed.rss",
+        "rss_url":        "https://feed.podbean.com/macrovoices/feed.xml",
         "show_name":      "Macro Voices",
         "publisher":      "Macro Voices",
         "default_topics": ["Macro", "Markets"],
@@ -203,7 +185,7 @@ PODCAST_FEEDS: list[dict] = [
         # All-In Podcast — Chamath, Jason, David Sacks, David Friedberg on tech,
         # markets, geopolitics, and venture.  High volume; content filter removes
         # pure tech/culture episodes.
-        "rss_url":        "https://feeds.megaphone.fm/all-in-with-chamath-jason-sacks-friedberg",
+        "rss_url":        "https://rss.libsyn.com/shows/254861/destinations/1928300.xml",
         "show_name":      "All-In Podcast",
         "publisher":      "All-In",
         "default_topics": ["Tech / AI", "Markets"],
@@ -231,6 +213,10 @@ PODCAST_FEEDS: list[dict] = [
         # DealBook Summit — NYT/Andrew Ross Sorkin conversations from the annual
         # DealBook Summit (typically held in November).  Annual frequency only;
         # episodes will naturally age out of tight caps between events.
+        # RC2-D1: RETAINED. This URL is the publisher's canonical feed and it
+        # resolves; all 35 episodes cluster 2025-12-04..12-08, confirming an annual
+        # event cadence rather than a dead source. It contributes each December and
+        # sits outside the 14d cap the rest of the year — honest, not broken.
         "rss_url":        "https://feeds.simplecast.com/HZtr0HV5",
         "show_name":      "DealBook Summit",
         "publisher":      "The New York Times",
@@ -244,8 +230,12 @@ PODCAST_FEEDS: list[dict] = [
         # Business Breakdowns — Colossus | detailed per-company deep dives
         # covering unit economics, competitive moats, and operating model.
         # Same publisher as Invest Like the Best; consistently high finance signal.
-        # NOTE: verify RSS URL before deploying if feed stops resolving.
-        "rss_url":        "https://feeds.megaphone.fm/businessbreakdowns",
+        # RC2-D1: slug repaired `businessbreakdowns` -> `breakdowns` (the old slug
+        # 404s). RETAINED DESPITE SITTING OUTSIDE THE 14d CAP at audit time
+        # (newest 20d; cadence measured 20/78/93d). The feed resolves and the show
+        # is active but irregular, so this is a publishing cadence, not URL rot.
+        # It contributes whenever it publishes inside the cap.
+        "rss_url":        "https://feeds.megaphone.fm/breakdowns",
         "show_name":      "Business Breakdowns",
         "publisher":      "Colossus",
         "default_topics": ["Company"],
@@ -254,7 +244,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # Capital Allocators — Ted Seides interviews LPs, endowment CIOs, and GPs.
         # Institutional private markets perspective; long-form, high-signal.
-        "rss_url":        "https://feeds.megaphone.fm/capitalallocators",
+        "rss_url":        "https://rss.libsyn.com/shows/94820/destinations/482814.xml",
         "show_name":      "Capital Allocators",
         "publisher":      "Capital Allocators",
         "default_topics": ["Private Markets", "Company"],
@@ -263,7 +253,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # The Compound and Friends — Josh Brown + Michael Batnick (Ritholtz Wealth).
         # Daily market commentary, earnings reactions, macro takes. High cadence.
-        "rss_url":        "https://feeds.megaphone.fm/thecompoundandfriends",
+        "rss_url":        "https://feeds.megaphone.fm/TCP4771071679",
         "show_name":      "The Compound and Friends",
         "publisher":      "Ritholtz Wealth Management",
         "default_topics": ["Markets", "Company"],
@@ -272,7 +262,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # Animal Spirits — Michael Batnick + Ben Carlson on markets, portfolio
         # construction, and investor psychology. Weekly, 45-60 min.
-        "rss_url":        "https://feeds.megaphone.fm/animalspirits",
+        "rss_url":        "https://feeds.megaphone.fm/TCP6464651487",
         "show_name":      "Animal Spirits",
         "publisher":      "Ritholtz Wealth Management",
         "default_topics": ["Markets", "Macro"],
@@ -285,7 +275,7 @@ PODCAST_FEEDS: list[dict] = [
         # 20VC — Harry Stebbings interviews premier venture investors and founders.
         # Covers fund dynamics, deal flow, company building. Strong VC signal.
         # NOTE: verify RSS URL — show migrated platforms in 2023.
-        "rss_url":        "https://feeds.megaphone.fm/twentyminutevc",
+        "rss_url":        "https://rss.libsyn.com/shows/61840/destinations/240976.xml",
         "show_name":      "20VC",
         "publisher":      "20VC",
         "default_topics": ["Venture", "Private Markets"],
@@ -303,7 +293,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # My First Million — Sam Parr + Shaan Puri on startup business models,
         # emerging opportunities, and founder intelligence. High episode volume.
-        "rss_url":        "https://feeds.megaphone.fm/mfm",
+        "rss_url":        "https://feeds.megaphone.fm/HS2300184645",
         "show_name":      "My First Million",
         "publisher":      "Hubspot Podcast Network",
         "default_topics": ["Venture", "Company"],
@@ -312,7 +302,7 @@ PODCAST_FEEDS: list[dict] = [
     {
         # Bankless — Ryan Sean Adams + David Hoffman on crypto markets, DeFi,
         # and digital asset strategy from an institutional adoption lens.
-        "rss_url":        "https://feeds.megaphone.fm/bankless",
+        "rss_url":        "https://feeds.flightcast.com/p83fuj0y0u58o82l41xei7zo.xml",
         "show_name":      "Bankless",
         "publisher":      "Bankless",
         "default_topics": ["Venture", "Tech / AI"],
@@ -1493,13 +1483,43 @@ def _normalize(entry: Any, parsed_feed: feedparser.FeedParserDict, cfg: dict) ->
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _fetch_one(cfg: dict) -> list[dict]:
-    """Fetch + parse one RSS feed.  Returns [] on any error so others still run."""
+    """Fetch + parse one RSS feed.  Returns [] on any error so others still run.
+
+    RC2-D1 observability: a source that FAILS is logged at WARNING so it is visible
+    in production (which runs at INFO). Previously a dead feed logged at DEBUG, or
+    fell through to the normal INFO line as `raw=0`, so 11 of 27 registered shows
+    had been 404ing invisibly.
+
+    A failure is a fetch/parse problem — HTTP error, malformed payload, or an empty
+    feed. It is NOT the same as a healthy feed whose episodes are all older than the
+    freshness cap; that stays on the INFO line, because contributing nothing on
+    freshness grounds is an honest outcome and not a broken source.
+
+    Batch resilience is unchanged: every path still returns [] for this source only,
+    and never propagates an exception to the batch.
+    """
     url       = cfg["rss_url"]
     show_name = cfg["show_name"]
     try:
         parsed = feedparser.parse(url)
+
+        status = getattr(parsed, "status", None)
+        if status is not None and status >= 400:
+            log.warning(
+                "podcast source FAILED  %-35s HTTP %s  %s", show_name, status, url,
+            )
+            return []
         if parsed.bozo and not parsed.entries:
-            log.debug("podcast feed %s bozo error: %s", url, parsed.bozo_exception)
+            log.warning(
+                "podcast source FAILED  %-35s unparseable (%s)  %s",
+                show_name, type(parsed.bozo_exception).__name__, url,
+            )
+            return []
+        if not parsed.entries:
+            log.warning(
+                "podcast source FAILED  %-35s feed carries 0 entries  %s",
+                show_name, url,
+            )
             return []
         raw_count = min(len(parsed.entries), _MAX_PER_FEED)
         results: list[dict] = []
@@ -1525,7 +1545,10 @@ def _fetch_one(cfg: dict) -> list[dict]:
         )
         return results
     except Exception as exc:
-        log.warning("podcast feed %s failed: %s", url, exc)
+        log.warning(
+            "podcast source FAILED  %-35s %s: %s  %s",
+            show_name, type(exc).__name__, exc, url,
+        )
         return []
 
 
