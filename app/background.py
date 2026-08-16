@@ -198,8 +198,11 @@ def run_pipeline(
     result = summarize_items(items, model_name=model)
     t_sum = time.perf_counter()
     log.info(
-        "[bg] summarize done in %.2fs  new=%d  cached=%d  skipped=%d",
-        t_sum - t_fetch, result.new, result.cached, result.skipped,
+        "[bg] summarize done in %.2fs  selected=%d  enriched=%d  cached=%d  skipped=%d  alloc=%s",
+        t_sum - t_fetch, result.new, result.enriched, result.cached, result.skipped,
+        # RC2-B1: per-category allocation of the new-call budget. `enriched` < `selected`
+        # means some calls did not satisfy the output contract and stay retryable.
+        result.by_category,
     )
 
     # ── 4. Cluster items ──────────────────────────────────────────────────────

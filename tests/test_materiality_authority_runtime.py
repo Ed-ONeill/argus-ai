@@ -348,6 +348,8 @@ def test_pipeline_byte_identical_a4_on_vs_off(fresh_identity, tmp_path, monkeypa
 
     class _SumRes:
         new = cached = skipped = 0
+        enriched = 0                 # RC2-B1: calls that produced a valid result
+        by_category: dict = {}       # RC2-B1: per-category allocation
 
     for target in (bg, theme_graph, feeds_mod, events_mod):
         monkeypatch.setattr(target, "datetime", _FixedDateTime)

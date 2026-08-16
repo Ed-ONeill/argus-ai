@@ -357,6 +357,75 @@ theme ontology and event composition, so it is a scoped change of its own — it
 along with an ingestion fix. `KIND_INSTRUMENT` already exists in `app/companies.py` and types
 `TNX`/`TLT`/`VIX`/`DXY` correctly, so the vocabulary is in place.
 
+### RC2-B1 — AI enrichment allocation and budget efficiency (implemented)
+
+Addresses finding **B**. `app/summarizer.py`, `app/background.py`.
+
+**Diagnosed baseline.** `summarize_items()` took `items[:15]` — the first 15 *positions* in feed
+order. Across cycles M&A oscillated around 0–1 enriched items despite eligible high-scoring deals
+sitting in the pool.
+
+**Root cause.** Not global signal rank, as finding B states above: the feed's leading sort term is
+the **publication-hour bucket**. Publication time, not quality, determined access to the global AI
+budget, so slower-cadence desks were starved by construction. On the measured pool 8 of 13 M&A
+items outscored the weakest item the positional window actually selected.
+
+**Changed.**
+
+- `MAX_AI_ITEMS = 15` (value unchanged) now means **15 uncached items eligible for new enrichment
+  calls per cycle**, not 15 feed positions. Cache lookup precedes slot consumption; the selector
+  continues through the pool until 15 uncached items are found or candidates are exhausted.
+- **Cache restoration now covers the full candidate pool.** Previously it ran only over the first
+  15 positions, so an item silently *lost* its enrichment once it slid past position 15 — a second
+  defect not identified at diagnosis time.
+- **Category floors**, centralized in `CATEGORY_FLOORS`: M&A 4 · Company 3 · Markets 4 ·
+  Geopolitical 2, remainder via globally ranked overflow. A floor is a maximum reserved
+  opportunity, never a quota: a category with fewer candidates than its floor claims fewer and the
+  unused capacity returns to overflow in the same pass. No content is weakened or fabricated to
+  fill a floor.
+- **Floor and overflow authority is the existing composite**
+  `institutional_score * 0.45 + signal_score * 0.55` — the same expression `app/feeds.py` already
+  uses as the quality term of its sort. No second scoring model and no new editorial classifier
+  were introduced. Ties break on `url` then `title`, so selection is deterministic.
+- **Feed ordering itself is unchanged.** Only enrichment selection stops reading the hour bucket.
+- **Failed or malformed enrichments are no longer cached as successful emptiness.** Transport
+  failure, timeout, unparseable payload and missing `ITEM` block all leave the item uncached and
+  retryable. An item is cached only when it satisfies the output contract (non-empty `summary`
+  **and** non-empty `why_it_matters`). The display fallback `summary = snippet` never counts as
+  enrichment, and no fallback `why_it_matters` is ever generated.
+- **Partial batch success preserves valid sibling results** — one malformed item no longer costs
+  its batch-mates their enrichment.
+- Items sharing a cache key now collapse to one unit of work. Measured occurrence on the live
+  pool: **0 of 73** — upstream dedup already removes them, so this is a safety net, not a saving.
+- `_BATCH_SIZE` **remains 3**. Parser correctness at 8 is proven by test (out-of-order blocks,
+  truncation) and output fits `llm_max_tokens = 2048`, but model-side block fidelity at 8 cannot be
+  established without a live run, and the undetectable failure mode is misnumbering — one item's
+  analysis attributed to another. Held pending real model-fidelity measurement; the saving is
+  ~1,500 input tokens per full cycle.
+
+**Live-shaped before → after** (190 raw → 73 after the Markets soft cap; selection computed on real
+fetched items and scores, no LLM calls):
+
+```
+                selected / eligible
+M&A             0/13  (0%)   →  4/13  (31%)
+Company         1/11  (9%)   →  3/11  (27%)
+Geopolitical    1/20  (5%)   →  2/20  (10%)
+Markets        13/29 (45%)   →  6/29  (21%)
+
+mean selected composite   84.3 → 90.1
+weakest selected          76.4 → 84.1
+unselected items outscoring the weakest pick   21 → 3
+```
+
+Selection quality rose rather than falling: the positional window was spending slots on the weaker
+half of one category while stronger items in three others went unenriched.
+
+**Validation.** 43 new tests in `tests/test_enrichment_allocation.py`; 30 of them fail against
+pre-fix code. Full backend suite **1243 passed**. Six `SummarizeResult` test doubles in the
+materiality suites gained the two new fields (`enriched`, `by_category`); no materiality behaviour
+was touched.
+
 ---
 
 ## Per-surface index

@@ -37,7 +37,28 @@ log = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-MAX_AI_ITEMS = 15   # only the N newest items receive AI summaries per refresh
+# RC2-B1: MAX_AI_ITEMS is the maximum number of UNCACHED items that may consume a
+# NEW enrichment call in one cycle. It is NOT "the first 15 positions in the feed".
+# Cache restoration happens for EVERY item and costs no capacity, so a pool whose
+# top-ranked items are already enriched still reaches 15 genuinely new items
+# further down the candidate list.
+MAX_AI_ITEMS = 15   # max NEW (uncached) enrichment calls per refresh
+
+# Category-protected allocation. A floor is a maximum RESERVED OPPORTUNITY, never a
+# quota: a category with fewer eligible uncached candidates than its floor
+# immediately returns the unused capacity to the global overflow. Floors exist
+# because the feed's display order buckets by publication hour, which structurally
+# starves slower-cadence desks (M&A sources publish far less often than the wires),
+# not because those desks score lower - the RC2-B audit measured 9 of 11 M&A items
+# scoring ABOVE the weakest item the old positional cap selected.
+#
+# Centralized here: selection logic reads this table and nothing else.
+CATEGORY_FLOORS: dict[str, int] = {
+    "M&A":          4,
+    "Company":      3,
+    "Markets":      4,
+    "Geopolitical": 2,
+}
 _BATCH_SIZE  = 3    # items per LLM call (3 gives reliable structured output)
 _TEMPERATURE = 0.2  # low = factual and deterministic
 
@@ -145,9 +166,83 @@ Hard rules:
 
 class SummarizeResult(NamedTuple):
     total:   int   # items passed in
-    new:     int   # items that needed a fresh LLM call
-    cached:  int   # items served from cache
-    skipped: int   # items beyond MAX_AI_ITEMS cap
+    new:     int   # items selected for a fresh LLM call
+    cached:  int   # items restored from cache (cost no capacity)
+    skipped: int   # uncached items that did not fit the new-call budget
+    enriched: int = 0                              # calls that produced a VALID result
+    by_category: dict[str, int] | None = None      # new-call selections per category
+
+
+def enrichment_rank_key(item: FeedItem) -> tuple:
+    """The ranking authority for enrichment selection.
+
+    RC2-B1 deliberately reuses the feed's OWN quality composite -
+    ``institutional_score * 0.45 + signal_score * 0.55`` - the exact expression
+    app/feeds.py already uses as the quality term of its sort. No second scoring
+    system is introduced here.
+
+    What is NOT reused is the feed's leading sort term, the publication-hour
+    bucket. That term is a DISPLAY ordering decision, and applying it to
+    enrichment selection is precisely what starved slower-cadence categories.
+    Feed ordering itself is untouched by this module.
+
+    `url` is the final tiebreaker so identical inputs always select identically.
+    """
+    composite = item.institutional_score * 0.45 + item.signal_score * 0.55
+    return (-composite, item.url or "", item.title or "")
+
+
+def select_for_enrichment(
+    candidates: list[FeedItem],
+    max_new:    int = MAX_AI_ITEMS,
+    floors:     dict[str, int] | None = None,
+) -> list[FeedItem]:
+    """Choose which UNCACHED items get a new enrichment call.
+
+    Two passes, both over the same ranking authority:
+
+      1. FLOORS - each configured category may claim up to its floor, taking its
+         own strongest candidates first. A category with fewer candidates than its
+         floor simply claims fewer; the remainder is not held in reserve.
+      2. OVERFLOW - every remaining slot goes to the best remaining candidate
+         regardless of category, so unused floor capacity is recovered
+         automatically and no slot is ever left idle while work exists.
+
+    Deterministic for identical inputs. Never selects more than `max_new`.
+    """
+    if max_new <= 0 or not candidates:
+        return []
+    table = CATEGORY_FLOORS if floors is None else floors
+    ranked = sorted(candidates, key=enrichment_rank_key)
+
+    chosen: list[FeedItem] = []
+    taken: set[int] = set()
+
+    # 1. floors, in a fixed category order so the outcome is reproducible
+    for category in sorted(table):
+        floor = table.get(category, 0)
+        if floor <= 0:
+            continue
+        claimed = 0
+        for item in ranked:
+            if claimed >= floor or len(chosen) >= max_new:
+                break
+            if id(item) in taken or item.category != category:
+                continue
+            chosen.append(item)
+            taken.add(id(item))
+            claimed += 1
+
+    # 2. global ranked overflow - reclaims every unfilled floor slot
+    for item in ranked:
+        if len(chosen) >= max_new:
+            break
+        if id(item) in taken:
+            continue
+        chosen.append(item)
+        taken.add(id(item))
+
+    return chosen
 
 
 def summarize_items(
@@ -156,55 +251,104 @@ def summarize_items(
     max_items: int = MAX_AI_ITEMS,
     batch_size: int = _BATCH_SIZE,
     temperature: float = _TEMPERATURE,
+    floors: dict[str, int] | None = None,
 ) -> SummarizeResult:
     """
     Enrich FeedItems in-place with summary, why_it_matters, and impact.
 
-    Items beyond max_items are left unsummarized (cards show raw snippet).
-    Already-cached items are populated instantly without calling the LLM.
+    RC2-B1 order of operations:
+      1. restore the cache for EVERY item - free, and consumes no capacity, so an
+         item enriched in an earlier cycle keeps its enrichment even after it has
+         slid down the feed (the old code only restored the first 15 positions,
+         so enrichment was silently lost as items aged);
+      2. allocate the new-call budget across the UNCACHED remainder using category
+         floors plus globally ranked overflow;
+      3. cache ONLY results that satisfy the output contract, so a failure or a
+         malformed response stays retryable instead of being frozen as an empty
+         enrichment.
+
+    Items outside the budget keep honest empty fields. Nothing is fabricated.
     """
     if not items:
-        return SummarizeResult(0, 0, 0, 0)
+        return SummarizeResult(0, 0, 0, 0, 0, {})
 
     # model_name is informational only when LLM_BACKEND=openai; get_client() uses
     # settings.active_model (openai_model) regardless of what's passed here.
     _ = model_name  # accepted for API compat; backend determines actual model
 
-    to_summarize = items[:max_items]
-    skipped      = max(0, len(items) - max_items)
-
-    n_cached  = 0
-    needs_llm: list[FeedItem] = []
-
-    for item in to_summarize:
+    # 1. cache restoration for the WHOLE pool - costs nothing, reserves nothing.
+    #    Items sharing a cache key (byte-identical title+url republished by two
+    #    sources) are collapsed to ONE unit of work: the first is enriched and its
+    #    twins receive the same result, instead of each burning a separate slot.
+    n_cached = 0
+    uncached: list[FeedItem] = []
+    twins: dict[str, list[FeedItem]] = {}
+    for item in items:
         key = _item_cache_key(item)
-        if key in _SUMMARY_CACHE:
-            item.summary, item.why_it_matters, item.impact = _SUMMARY_CACHE[key]
+        hit = _SUMMARY_CACHE.get(key)
+        if hit is not None:
+            item.summary, item.why_it_matters, item.impact = hit
             n_cached += 1
+        elif key in twins:
+            twins[key].append(item)
         else:
-            needs_llm.append(item)
+            twins[key] = []
+            uncached.append(item)
 
-    if not needs_llm:
+    if not uncached:
         log.debug("All %d items served from summary cache", n_cached)
-        return SummarizeResult(len(items), 0, n_cached, skipped)
+        return SummarizeResult(len(items), 0, n_cached, 0, 0, {})
 
+    # 2. allocate the new-call budget.
+    selected = select_for_enrichment(uncached, max_items, floors)
+    skipped  = len(uncached) - len(selected)
+    by_category: dict[str, int] = {}
+    for item in selected:
+        by_category[item.category] = by_category.get(item.category, 0) + 1
+
+    # 3. enrich, caching only what actually succeeded.
     client = get_client()
-    for i in range(0, len(needs_llm), batch_size):
-        batch = needs_llm[i : i + batch_size]
-        _summarize_batch(batch, client, temperature)
-        for item in batch:
-            _SUMMARY_CACHE[_item_cache_key(item)] = (
-                item.summary, item.why_it_matters, item.impact,
-            )
+    n_enriched = 0
+    for i in range(0, len(selected), batch_size):
+        batch = selected[i : i + batch_size]
+        valid = _summarize_batch(batch, client, temperature)
+        for item in valid:
+            key = _item_cache_key(item)
+            payload = (item.summary, item.why_it_matters, item.impact)
+            _SUMMARY_CACHE[key] = payload
+            n_enriched += 1
+            for twin in twins.get(key, ()):          # same story, same enrichment
+                twin.summary, twin.why_it_matters, twin.impact = payload
 
-    n_new = len(needs_llm)
-    log.info("Summarization: %d new, %d cached, %d skipped", n_new, n_cached, skipped)
-    return SummarizeResult(len(items), n_new, n_cached, skipped)
+    log.info(
+        "Summarization: %d selected, %d enriched, %d cached, %d skipped  alloc=%s",
+        len(selected), n_enriched, n_cached, skipped, by_category,
+    )
+    return SummarizeResult(len(items), len(selected), n_cached, skipped, n_enriched, by_category)
 
 
 # ── Internals ────────────────────────────────────────────────────────────────
 
-def _summarize_batch(batch: list[FeedItem], client, temperature: float) -> None:
+def _is_valid_enrichment(item: FeedItem) -> bool:
+    """The output contract an item must satisfy to be cacheable.
+
+    `summary` alone is not enough: `_parse_response` back-fills `summary` from the
+    item's own snippet/title when a block is missing, which is a DISPLAY fallback,
+    not enrichment. `why_it_matters` is the field only the model can produce, so a
+    result counts only when both are present.
+    """
+    return bool((item.summary or "").strip()) and bool((item.why_it_matters or "").strip())
+
+
+def _summarize_batch(batch: list[FeedItem], client, temperature: float) -> list[FeedItem]:
+    """Enrich one batch in place; return ONLY the items that produced a valid result.
+
+    RC2-B1: the caller caches exactly what this returns. A transport failure, a
+    timeout, a malformed response or a missing ITEM block therefore leaves the item
+    UNCACHED and retryable on the next refresh, instead of freezing an empty
+    enrichment forever. One bad item in a batch cannot invalidate its siblings, and
+    nothing here ever invents a `why_it_matters`.
+    """
     lines: list[str] = []
     for idx, item in enumerate(batch, 1):
         lines.append(f"ITEM {idx}")
@@ -220,15 +364,32 @@ def _summarize_batch(batch: list[FeedItem], client, temperature: float) -> None:
 
     try:
         response = "".join(client.chat(messages, stream=True, temperature=temperature))
-        _parse_response(response, batch)
-        log.debug("Summarized batch of %d", len(batch))
     except Exception as exc:
-        log.warning("Summarization batch failed: %s", exc)
+        # Transport/timeout: nothing was produced. Fall back to the item's own text
+        # for display only, cache nothing, and leave every item retryable.
+        log.warning("Summarization batch failed (%d items retryable): %s", len(batch), exc)
         for item in batch:
             if not item.summary:
                 item.summary = item.snippet or item.title
-            item.why_it_matters = ""
-            item.impact         = ""
+        return []
+
+    try:
+        _parse_response(response, batch)
+    except Exception as exc:
+        # A malformed payload is a parse failure, not an empty enrichment.
+        log.warning("Summarization parse failed (%d items retryable): %s", len(batch), exc)
+        for item in batch:
+            if not item.summary:
+                item.summary = item.snippet or item.title
+        return []
+
+    valid = [item for item in batch if _is_valid_enrichment(item)]
+    if len(valid) < len(batch):
+        log.info(
+            "Batch of %d produced %d valid enrichments; %d stay retryable",
+            len(batch), len(valid), len(batch) - len(valid),
+        )
+    return valid
 
 
 def _parse_response(text: str, batch: list[FeedItem]) -> None:

@@ -1063,6 +1063,8 @@ def test_real_run_pipeline_shadow_lifecycle(fresh_identity, monkeypatch, caplog)
 
     class _SumRes:
         new = cached = skipped = 0
+        enriched = 0                 # RC2-B1: calls that produced a valid result
+        by_category: dict = {}       # RC2-B1: per-category allocation
     monkeypatch.setattr(summ, "summarize_items", lambda *a, **k: _SumRes())
     monkeypatch.setattr(summ, "generate_market_take", lambda *a, **k: "")
     monkeypatch.setattr(summ, "generate_market_brief", lambda *a, **k: None)
@@ -1153,6 +1155,8 @@ def test_run_pipeline_output_identical_when_evaluation_disabled_or_failing(
 
     class _SumRes:
         new = cached = skipped = 0
+        enriched = 0                 # RC2-B1: calls that produced a valid result
+        by_category: dict = {}       # RC2-B1: per-category allocation
 
     def _summarize(*args, **kwargs):
         calls["summarize"] += 1
@@ -1319,6 +1323,8 @@ def test_real_below_floor_figure_appears_only_in_pre_admission(fresh_identity, m
 
     class _SumRes:
         new = cached = skipped = 0
+        enriched = 0                 # RC2-B1: calls that produced a valid result
+        by_category: dict = {}       # RC2-B1: per-category allocation
     monkeypatch.setattr(summ, "summarize_items", lambda *a, **k: _SumRes())
     monkeypatch.setattr(summ, "generate_market_take", lambda *a, **k: "")
     monkeypatch.setattr(summ, "generate_market_brief", lambda *a, **k: None)
