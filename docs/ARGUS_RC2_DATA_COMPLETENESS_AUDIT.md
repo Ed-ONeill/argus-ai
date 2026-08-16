@@ -426,6 +426,43 @@ pre-fix code. Full backend suite **1243 passed**. Six `SummarizeResult` test dou
 materiality suites gained the two new fields (`enriched`, `by_category`); no materiality behaviour
 was touched.
 
+**Production validation.** Deployed as `60e2cad`; both Railway services reported a successful
+deploy and returned steady-state healthy responses across the rollout window. Observed from
+production logs:
+
+```
+cycle 1 (cold cache)  selected=15  enriched=15  cached=0   skipped=47
+                      alloc={'Company': 3, 'Geopolitical': 3, 'M&A': 4, 'Markets': 5}
+later cycles          selected=15  enriched=15  cached=12
+                      selected=15  enriched=15  cached=30
+                      selected=10  enriched=10  cached=35
+                      selected=10  enriched=10  cached=55
+                      selected=0   enriched=0   cached=47
+```
+
+What these cycles prove:
+
+- **M&A received its 4 floor slots on the first full cycle**, against a diagnosed baseline of 0–1.
+  The remaining two slots after the 13 floor claims went to overflow (Geopolitical and Markets each
+  +1), which is the documented floor-plus-ranked-overflow behaviour.
+- **Cached items were restored without consuming new-call capacity.** The terminal
+  `selected=0 / enriched=0 / cached=47` cycle is direct evidence: a fully-cached pool of 47 items
+  issued zero enrichment calls rather than spending the budget on cache hits.
+- **Allocation shifted across later cycles as categories exhausted their uncached eligible
+  candidates**, and `selected` fell to 10 and then 0 as the pool warmed — expected under floor +
+  overflow semantics, where a floor is an opportunity and not a quota.
+
+What these cycles do **not** prove:
+
+- **`selected > enriched` never occurred**, so no enrichment failure was exercised in production.
+  The failure and retry semantics — failed/malformed results not cached as successful emptiness,
+  partial batch success preserving valid siblings — remain **regression-tested only**; they were
+  not observed live. That path stays unverified in production until a real failure occurs.
+- `_BATCH_SIZE` remains 3. These cycles say nothing about model block fidelity at 8, and no
+  constant, floor, ranking rule or cache behaviour was tuned on the basis of this sample.
+
+RC2-B1 is **closed**.
+
 ---
 
 ## Per-surface index
