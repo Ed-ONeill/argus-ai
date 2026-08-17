@@ -1,7 +1,14 @@
 // Capital Flow Transmission, 8-layer chain modeling how monetary policy
 // propagates through public markets, credit, M&A, PE, VC, and the IPO window.
 
-export type FlowStatus = "accelerating" | "expanding" | "neutral" | "tightening" | "contracting" | "blocked";
+import type { CreditSpreadState } from "./creditSpread";
+import { CREDIT_SERIES_LABEL, DIRECTION_THRESHOLD_BP } from "./creditSpread";
+
+export type FlowStatus =
+  | "accelerating" | "expanding" | "neutral" | "tightening" | "contracting" | "blocked"
+  // RC2-C1: a layer with no real measurement. Distinct from "neutral", which is a
+  // measured reading of no direction. Unmeasured means we do not know.
+  | "unmeasured";
 
 export interface CapitalFlowLayer {
   id:        string;
@@ -27,6 +34,7 @@ export const FLOW_STATUS_COLOR: Record<FlowStatus, string> = {
   tightening:   "#fbbf24",
   contracting:  "#f97316",
   blocked:      "#ef4444",
+  unmeasured:   "#64748b",
 };
 
 export const FLOW_STATUS_LABEL: Record<FlowStatus, string> = {
@@ -36,6 +44,7 @@ export const FLOW_STATUS_LABEL: Record<FlowStatus, string> = {
   tightening:   "Tightening",
   contracting:  "Contracting",
   blocked:      "Blocked",
+  unmeasured:   "Not measured",
 };
 
 export interface FlowOptions {
@@ -46,6 +55,12 @@ export interface FlowOptions {
   maDealCount:   number;
   vcDealCount:   number;
   ipoFilerCount: number;
+  /**
+   * RC2-C1: the measured US HY OAS (FRED BAMLH0A0HYM2). This is the SOLE input to
+   * the Credit & Leverage layer. Omitted or unavailable -> the layer reports
+   * `unmeasured`; it never falls back to riskRegime, equities, or tnxRate.
+   */
+  credit?:       CreditSpreadState | null;
 }
 
 function monetaryPolicyLayer(o: FlowOptions): CapitalFlowLayer {
@@ -95,29 +110,74 @@ function publicEquitiesLayer(o: FlowOptions): CapitalFlowLayer {
   };
 }
 
+/**
+ * RC2-C1 — Credit & Leverage, derived SOLELY from the measured US HY OAS.
+ *
+ * What this replaced: the layer used to read `o.regime.includes("hawkish")`,
+ * `o.tnxRate > 4.5`, and `o.riskRegime` — the last of which is
+ * `norm(avgEq, -3, 3)`, the average percent change of SPY/QQQ/IWM. It then
+ * asserted "Spreads Widening" / "Tight Spreads" and the prose "Compressed credit
+ * spreads enable leveraged financing at competitive rates". A rally in equities
+ * produced a claim about high-yield credit. No spread data was involved.
+ *
+ * There is deliberately no `riskRegime`, `tnxRate`, `regime` or proxy branch left
+ * in this function. Absent a real reading, the honest answer is `unmeasured`.
+ */
 function creditLeverageLayer(o: FlowOptions): CapitalFlowLayer {
-  const hawkish  = o.regime?.toLowerCase().includes("hawkish") ?? false;
-  const rateHigh = o.tnxRate !== null && o.tnxRate > 4.5;
+  const base = {
+    id: "credit-leverage",
+    label: "Credit & Leverage",
+    sublabel: "US HY OAS",
+  };
 
-  if (hawkish && rateHigh) return {
-    id: "credit-leverage", label: "Credit & Leverage", sublabel: "HY / Leveraged Loans",
-    status: "tightening", indicator: "Spreads Widening", signal: "Constrained",
-    detail: "Rising rates expand spread requirements for leveraged buyouts, compressing deal economics across sponsor activity.",
+  const credit = o.credit;
+
+  if (!credit || !credit.measured) {
+    const why =
+      !credit                       ? "not retrieved"
+      : credit.reason === "stale"   ? `last print ${credit.asOf ?? "unknown"}`
+      : credit.reason === "unparseable" ? "series unreadable"
+      : "series unavailable";
+    return {
+      ...base,
+      status: "unmeasured",
+      indicator: "Not measured",
+      signal: "Unavailable",
+      // States the absence and its cause, and stops. Any characterisation of
+      // credit conditions here — even a hedged one — would be the fabrication
+      // this layer was rewritten to remove.
+      detail: `No ${CREDIT_SERIES_LABEL} reading available (${why}). Credit conditions are not measured right now.`,
+    };
+  }
+
+  // Measured. The level is the quantity; direction is the +/-3bp rule.
+  const lvl  = `${credit.level}bp`;
+  const sign = credit.changeBp > 0 ? "+" : "";
+  const move = `${sign}${credit.changeBp}bp vs ${credit.priorAsOf}`;
+  const asOf = `as of ${credit.asOf}`;
+
+  if (credit.direction === "widening") return {
+    ...base,
+    status: "tightening",
+    indicator: `${lvl} widening · ${credit.asOf}`,
+    signal: "Constrained",
+    detail: `US high-yield option-adjusted spread ${lvl} (${move}), ${asOf}. Wider spreads raise the cost of leveraged financing, compressing sponsor deal economics.`,
   };
-  if (o.riskRegime === "risk-off") return {
-    id: "credit-leverage", label: "Credit & Leverage", sublabel: "HY / Leveraged Loans",
-    status: "contracting", indicator: "Risk Premium Elevated", signal: "Tightening",
-    detail: "Credit markets pricing risk premium, leveraged loan demand falls, constraining PE deal financing.",
+
+  if (credit.direction === "tightening") return {
+    ...base,
+    status: "expanding",
+    indicator: `${lvl} tightening · ${credit.asOf}`,
+    signal: "Accessible",
+    detail: `US high-yield option-adjusted spread ${lvl} (${move}), ${asOf}. Tighter spreads lower the cost of leveraged financing, supporting deal flow.`,
   };
-  if (o.riskRegime === "risk-on") return {
-    id: "credit-leverage", label: "Credit & Leverage", sublabel: "HY / Leveraged Loans",
-    status: "expanding", indicator: "Tight Spreads", signal: "Accessible",
-    detail: "Compressed credit spreads enable leveraged financing at competitive rates, supporting deal flow.",
-  };
+
   return {
-    id: "credit-leverage", label: "Credit & Leverage", sublabel: "HY / Leveraged Loans",
-    status: "neutral", indicator: "Stable", signal: "Neutral",
-    detail: "Credit conditions allow selective deal financing, quality differentiation determines access.",
+    ...base,
+    status: "neutral",
+    indicator: `${lvl} stable · ${credit.asOf}`,
+    signal: "Neutral",
+    detail: `US high-yield option-adjusted spread ${lvl} (${move}), ${asOf}. Change is inside the ${DIRECTION_THRESHOLD_BP}bp day-to-day band, so credit conditions are steady rather than directional.`,
   };
 }
 

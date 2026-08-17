@@ -161,12 +161,14 @@ function deriveSignals(
       value: vix ? vix.price.toFixed(1) : (vHi ? "Elevated" : vLo ? "Calm" : "Moderate"),
       color: vHi ? "#b05858" : vLo ? "#52b0c8" : "#8898b8",
     },
-    {
-      label: "Spreads",
-      arrow: rOff ? "↑" : rOn ? "↓" : "→",
-      value: rOff ? "Widening" : rOn ? "Tightening" : "Stable",
-      color: rOff ? "#b05858" : rOn ? "#52b0c8" : "#8898b8",
-    },
+    // RC2-C1: the "Spreads" row was REMOVED. It rendered Widening/Tightening/Stable
+    // from `rOff`/`rOn`, i.e. from riskScore = norm(avgEq, -3, 3) — the average
+    // percent change of SPY/QQQ/IWM. It was a credit-market claim computed from
+    // equities, sitting beside genuinely measured rows (Gold, Oil, VIX prices).
+    //
+    // No consumer rendered it, but leaving it here armed the next one. Credit now
+    // has a single real authority: the measured US HY OAS in lib/creditSpread.ts.
+    // Do not reintroduce a credit row here — this hook has no credit input.
   ];
 }
 

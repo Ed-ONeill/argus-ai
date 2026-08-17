@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Layers, ArrowDown, ExternalLink, Building2, FileText, RefreshCw, AlertCircle, ChevronRight } from "lucide-react";
 import { useMarketState } from "@/hooks/useMarketState";
+import { useCreditSpread } from "@/hooks/useCreditSpread";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import { useIPOPipeline, type IPOFiler } from "@/hooks/useIPOPipeline";
@@ -326,6 +327,7 @@ function SharedFlowsPanel({ thesisLine, flows, note }: { thesisLine: string | nu
 
 export default function PrivateMarketsPage() {
   const { riskRegime, volRegime } = useMarketState();
+  const credit = useCreditSpread();   // RC2-C1: the only credit authority
   const { data: marketData }      = useMarketData();
   const { data: feedData }        = useFeed();
   const { deals, totalDealCount, isLoading: maLoading } = useMAIntelligence();
@@ -361,7 +363,8 @@ export default function PrivateMarketsPage() {
     maDealCount:   totalDealCount,
     vcDealCount,
     ipoFilerCount: filers.length,
-  }), [riskRegime, volRegime, regime, tnxRate, totalDealCount, vcDealCount, filers.length]);
+    credit,
+  }), [riskRegime, volRegime, regime, tnxRate, totalDealCount, vcDealCount, filers.length, credit]);
 
   const openLayers   = capitalFlow.layers.filter(l => l.status === "accelerating" || l.status === "expanding").length;
   const closedLayers = capitalFlow.layers.filter(l => l.status === "contracting"  || l.status === "blocked").length;

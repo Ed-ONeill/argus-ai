@@ -557,6 +557,117 @@ liveness is deliberately kept out of CI — it is a property of the outside worl
 filtering; no `conviction`/`delta` semantic change (D3); `_why_it_matters` untouched (D4, gated on
 IRE-2); no graph, frontend, freshness-cap, `_final_score`, `is_briefing`, or ranking changes.
 
+### RC2-C1 — a real credit authority for Credit & Leverage (implemented)
+
+Addresses the credit half of finding **C**. Also corrects this document's framing of that finding.
+
+**Two corrections to the audit arising from the trace.**
+
+1. The audit says the fabricated `Spreads` signal appears *"on the Live status row"*. It does not.
+   `ms.signals` is consumed only by `MarketPressureMap`, `MorningBriefing` and `IntelligenceStrip`,
+   and all three have **zero references outside their own files** (no barrel, no `dynamic()`
+   import). `app/page.tsx` calls `useMarketState()` but reads only `riskRegime`/`volRegime`/
+   `ratesRegime`. **The Spreads row rendered nowhere and misled nobody.**
+2. The live instance of that same fabrication is the **Capital Flow Credit & Leverage layer**, which
+   *is* rendered — on `/ma` and `/private-markets` — and which propagates further than the audit
+   recorded. So C's "credit" defect and the "Spreads" defect are one defect, and the real one is
+   the layer, not the row.
+
+**Diagnosed baseline.** `creditLeverageLayer` read three inputs, none of them credit:
+
+```
+o.regime?.includes("hawkish")      regime string
+o.tnxRate > 4.5                    Treasury yield, not a spread
+o.riskRegime === "risk-off"/"on"   <- norm(avgEq, -3, 3) = mean %chg of SPY/QQQ/IWM
+```
+
+It was branded `sublabel: "HY / Leveraged Loans"` and emitted `indicator: "Spreads Widening"` /
+`"Tight Spreads"`. A rally in equities produced a claim about high-yield credit. Downstream:
+
+- `ma/page.tsx:1002` fed `{status, signal, detail}` into `explainMAActivity()`, so the reasoning
+  layer consumed the fabrication;
+- `themeIntelligence.ts:401` published the sentence **"Compressed credit spreads are enabling
+  leveraged financing at competitive rates."** to users on `/ma`;
+- `ma/page.tsx:1048` derived `DealContext.creditOpen`, which rides every per-deal read in
+  `lib/maIntel`;
+- the same fabricated sentence also existed as the layer's own `detail` in `capitalFlow.ts:114`,
+  so fixing one site would have left the claim in production.
+
+**New data path.** `frontend/src/lib/creditSpread.ts` is the sole credit authority, reading FRED
+`BAMLH0A0HYM2` — the ICE BofA US High Yield **Option-Adjusted Spread**. Because the source *is* an
+option-adjusted spread, the product may honestly use the word "spread"; that permission does not
+extend to any proxy. `/api/credit-spread` is a **separate route** from `/api/market-data` on
+purpose: that one is the intraday plane, this series is daily/T+1, and keeping them apart is what
+prevents a T+1 spread from being rendered beside live quotes as if it were live. The endpoint is
+keyless, so none of the dormant provider-adapter machinery is activated.
+
+*Rejected alternatives, on measurement not intuition.* HYG/LQD and HYG/IEF were retrieved and
+evaluated. Both measure relative **total return** of two ETFs, not spread: they are badly
+duration-confounded (LQD is far longer duration than HYG), carry flow and premium/discount noise,
+and yield no basis-point quantity. Their only advantage is intraday availability. Since the real
+OAS series is reachable for the same effort, using a proxy *and* keeping the "spread" label would
+have replaced one fabrication with a better-dressed one.
+
+**Locked parameters, both derived from the series itself:**
+
+- **Stale tolerance: 5 business days.** Counted in business days, never calendar days — that is
+  what makes weekends and holidays structurally incapable of producing a false failure (a Friday
+  print read on Monday is 3 calendar days but 1 business day, the normal T+1 lag). Measured gap
+  structure over 793 observations: 1d x623, 2d x16, 3d x143 (weekends), 4d x2 (stacked holidays).
+- **Direction threshold: +/-3bp vs the prior valid observation.** Measured |daily change| over 784
+  transitions: median 3.0bp, p75 6bp, p90 10bp, max 59bp. A move smaller than the series' own
+  median daily move is not directional. 5bp would call 70% of days stable and mask real moves;
+  1-2bp would flip direction on noise. One threshold, one measured statistic — not a scoring model
+  and not an opaque "credit score".
+- Holiday rows print as `.` and are **skipped as missing observations**. Parsing one as `0` would
+  invent a 267bp single-day collapse, so the guard is explicit and tested.
+- Percent-to-basis-point conversion happens in exactly one function, `ppToBp`.
+
+**Credit & Leverage output, before -> after** (live probe, 2026-08-17):
+
+```
+BEFORE  riskRegime "risk-on"  -> status expanding, "Tight Spreads",
+                                 "Compressed credit spreads enable leveraged financing..."
+        riskRegime "risk-off" -> status contracting, "Risk Premium Elevated"
+        (no credit data involved in either)
+
+AFTER   measured 267bp as of 2026-08-14, prior 271bp (2026-08-13), -4bp
+        -> status expanding, indicator "267bp tightening",
+           "US high-yield option-adjusted spread 267bp (-4bp vs 2026-08-13), as of 2026-08-14."
+        equity regime flipped risk-on <-> risk-off: output IDENTICAL (pinned by test)
+```
+
+**Failure semantics.** Unavailable, unparseable, or stale beyond tolerance -> the layer reports the
+new `unmeasured` status, indicator `"Not measured"`, and a detail that states the absence and stops.
+`creditOpen` becomes `undefined` (not `false` — "closed" would itself be a claim), so per-deal reads
+treat the financing window as unknown. `explainMAActivity` emits **no** credit sentence at all, and
+its fallback summary drops the credit clause rather than rendering "unavailable credit conditions".
+No real spread input -> no spread claim, anywhere. There is no equity, rate, regime or proxy branch
+left in the credit path.
+
+**Dead code — recorded, not wired in.** `MarketPressureMap`, `MorningBriefing` and
+`IntelligenceStrip` remain orphaned (0 external references) and are **left in place**; deleting
+three whole unshipped components is outside this slice. What *was* removed is the fabricated
+`Spreads` row itself, from both `useMarketState.deriveSignals` (a live hook, where it was a landmine
+for the next consumer) and `MarketPressureMap.deriveCrossAsset` (which derived a credit claim from
+substring matches on a regime string, precisely when market data was unavailable). The other rows —
+Yields, Dollar, Gold, Oil, VIX — are real and untouched.
+
+**Validation.** 47 new tests in `frontend/src/lib/__tests__/creditSpread.test.ts`: parser (holiday
+`.` rows, empty/NA, truncated payload, HTML error page, out-of-range, ordering), pp->bp conversion,
+business-day staleness including the weekend and holiday-weekend cases, the direction rule at its
+exact boundaries, prior-valid-observation selection across a holiday, every unmeasured reason, the
+no-equity-fallback invariant (equity regime flipped both with and without measured credit — output
+identical), no proxy language anywhere in the layer, and downstream prose gating. Frontend suite
+**728 passed / 60 files**, typecheck clean, production build clean with `/api/credit-spread`
+emitted. Backend suite **1264 passed** (untouched by this slice). Live probe
+`scripts/probe_credit_spread.py` — network liveness stays out of CI, same policy as the D1 registry
+probe.
+
+**Out of scope and unchanged:** PE, Late VC and Early VC layers still lack real data and remain
+fabricated — they are C2 and were deliberately not filled heuristically. `riskScore`/regime logic,
+other cross-asset rows, the IPO layer, D2, and F are untouched.
+
 ---
 
 ## Per-surface index

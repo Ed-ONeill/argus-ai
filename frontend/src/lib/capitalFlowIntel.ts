@@ -13,6 +13,12 @@ import type { CapitalFlowLayer, FlowStatus } from "./capitalFlow";
 
 const STATUS_VALUE: Record<FlowStatus, number> = {
   accelerating: 3, expanding: 2, neutral: 0, tightening: -1, contracting: -2, blocked: -3,
+  // RC2-C1: an unmeasured layer contributes nothing. Numerically this matches
+  // `neutral`, but the meaning differs: neutral is a measured reading of no
+  // direction, unmeasured is an absence. It must not push the pressure score in
+  // either direction, and it is correctly excluded from the open/closed counts
+  // below, which test for a positive/negative value rather than for `!== neutral`.
+  unmeasured: 0,
 };
 
 
@@ -30,10 +36,18 @@ export interface FlowPressure {
   trend: "improving" | "deteriorating" | "stable"; trendLabel: string; liquidity: string;
 }
 export function flowPressure(layers: CapitalFlowLayer[]): FlowPressure {
-  const sum    = layers.reduce((s, l) => s + STATUS_VALUE[l.status], 0); // −24..+24
-  const score  = Math.round(((sum + 24) / 48) * 100);
-  const open   = layers.filter(l => STATUS_VALUE[l.status] > 0).length;
-  const closed = layers.filter(l => STATUS_VALUE[l.status] < 0).length;
+  // RC2-C1: unmeasured layers are EXCLUDED from the score, numerator and
+  // denominator alike. Counting one as 0 would have been arithmetically identical
+  // to counting it as measured-neutral, which would launder an absence into
+  // "MIXED" / "Liquidity Stable" — a market-state assertion built partly on data
+  // we do not have. Scoring only the measured layers keeps the meter a statement
+  // about what was actually measured.
+  const scored = layers.filter(l => l.status !== "unmeasured");
+  const span   = scored.length * 3;                        // ±3 per scored layer
+  const sum    = scored.reduce((s, l) => s + STATUS_VALUE[l.status], 0);
+  const score  = span > 0 ? Math.round(((sum + span) / (span * 2)) * 100) : 50;
+  const open   = scored.filter(l => STATUS_VALUE[l.status] > 0).length;
+  const closed = scored.filter(l => STATUS_VALUE[l.status] < 0).length;
   const label  = score >= 60 ? "FLOWING" : score <= 40 ? "CONSTRAINED" : "MIXED";
   const color  = score >= 60 ? "#22c55e" : score <= 40 ? "#ef4444" : "#fbbf24";
   const trend  = open > closed ? "improving" : closed > open ? "deteriorating" : "stable";

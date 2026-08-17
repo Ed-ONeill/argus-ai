@@ -53,12 +53,13 @@ function deriveCrossAsset(regime: string): MarketSignal[] {
       value: isOff ? "Elevated"   : isOn ? "Compressed" : "Moderate",
       color: isOff ? "#b05858"    : isOn ? "#52b0c8"    : "#8898b8",
     },
-    {
-      label: "Spreads",
-      arrow: isOff ? "↑" : isOn ? "↓" : "→",
-      value: isOff ? "Widening"   : isOn ? "Tightening" : "Stable",
-      color: isOff ? "#b05858"    : isOn ? "#52b0c8"    : "#8898b8",
-    },
+    // RC2-C1: the "Spreads" row was REMOVED here too. This fallback derived a
+    // credit claim from SUBSTRING MATCHES on a regime string, and did so exactly
+    // when live market data was unavailable. Credit is measured (lib/creditSpread)
+    // or it is not shown.
+    //
+    // NOTE: this whole component is dead code — zero external references. It is
+    // left in place rather than deleted, and recorded as dead in the RC2 audit.
   ];
 }
 

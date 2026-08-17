@@ -392,16 +392,22 @@ export function explainMAActivity(
   const topTheme = [...maThemes].sort((a, b) => (b.persistence_score ?? 0) - (a.persistence_score ?? 0))
     .find(t => t.causal_narrative && t.causal_narrative.length > 20);
 
-  const creditOpen   = creditLayer.status === "accelerating" || creditLayer.status === "expanding";
-  const creditTight  = creditLayer.status === "tightening"   || creditLayer.status === "contracting";
+  // RC2-C1: these sentences make a CREDIT-MARKET claim, so they may only be
+  // emitted when the credit layer carries a real measured spread. The layer
+  // reports `unmeasured` whenever the US HY OAS series is absent, unparseable or
+  // stale, and in that case the M&A read simply says nothing about credit rather
+  // than inferring it from equities. No real spread input -> no spread claim.
+  const creditMeasured = creditLayer.status !== "unmeasured";
+  const creditOpen   = creditMeasured && (creditLayer.status === "accelerating" || creditLayer.status === "expanding");
+  const creditTight  = creditMeasured && (creditLayer.status === "tightening"   || creditLayer.status === "contracting");
 
   const parts: string[] = [];
 
-  // Lead with macro credit context
+  // Lead with macro credit context — only when credit is actually measured.
   if (creditOpen) {
-    parts.push(`Compressed credit spreads are enabling leveraged financing at competitive rates.`);
+    parts.push(`Tightening high-yield spreads are lowering the cost of leveraged financing.`);
   } else if (creditTight) {
-    parts.push(`Deal activity is persisting despite tightened credit conditions. Buyers are prioritizing all-equity or lower-leverage structures.`);
+    parts.push(`Deal activity is persisting despite widening high-yield spreads. Buyers are prioritizing all-equity or lower-leverage structures.`);
   }
 
   // Characterise buyer mix
@@ -429,9 +435,13 @@ export function explainMAActivity(
     parts.push(`${mergerCount} merger-of-equals structure${mergerCount > 1 ? "s" : ""} suggest${mergerCount === 1 ? "s" : ""} sector consolidation themes rather than pure control premiums.`);
   }
 
-  return parts.length > 0
-    ? parts.join(" ")
-    : `${deals.length} deals active, ${maLayer.signal.toLowerCase()} environment with ${creditLayer.signal.toLowerCase()} credit conditions.`;
+  // RC2-C1: the fallback line also characterised credit ("... with accessible
+  // credit conditions"). Unmeasured credit must not be described at all, so the
+  // clause is dropped rather than rendered as "unavailable credit conditions".
+  if (parts.length > 0) return parts.join(" ");
+  return creditMeasured
+    ? `${deals.length} deals active, ${maLayer.signal.toLowerCase()} environment with ${creditLayer.signal.toLowerCase()} credit conditions.`
+    : `${deals.length} deals active, ${maLayer.signal.toLowerCase()} environment.`;
 }
 
 // ── 5. Market Breadth Snapshot ────────────────────────────────────────────────

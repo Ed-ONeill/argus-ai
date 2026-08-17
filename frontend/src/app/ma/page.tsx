@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GitMerge, Building2, TrendingUp, AlertCircle, ExternalLink, Clock, ChevronRight, Network, Lightbulb, Target, Landmark, Layers, ShieldCheck, History, Flame, Maximize2, X } from "lucide-react";
 import { useMAIntelligence, type MADeal, type DealType } from "@/hooks/useMAIntelligence";
 import { useMarketState } from "@/hooks/useMarketState";
+import { useCreditSpread } from "@/hooks/useCreditSpread";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useFeed } from "@/hooks/useFeed";
 import { computeThemeEvolutionState, filterMAThemes } from "@/lib/themeEvolution";
@@ -975,6 +976,7 @@ export default function MAPage() {
 
   const { deals, breakdown, totalDealCount, isLoading, isError } = useMAIntelligence();
   const { riskRegime, volRegime } = useMarketState();
+  const credit = useCreditSpread();   // RC2-C1: the only credit authority
   const { data: feedData }  = useFeed();
   const { data: marketData } = useMarketData();
   const { isWatched, toggle: toggleThemeWatch } = useThemeWatchlist();
@@ -995,8 +997,9 @@ export default function MAPage() {
       maDealCount:   deals.length,
       vcDealCount:   0,
       ipoFilerCount: 0,
+      credit,
     });
-  }, [riskRegime, volRegime, feedData, marketData, deals.length]);
+  }, [riskRegime, volRegime, feedData, marketData, deals.length, credit]);
 
   const maRationale = useMemo(() => {
     const creditLayer = capitalFlow.layers[2]; // Credit/Leverage
@@ -1045,7 +1048,11 @@ export default function MAPage() {
   const dealCtx: DealContext = useMemo(() => {
     const creditLayer = capitalFlow.layers[2];
     return {
-      creditOpen: creditLayer ? (creditLayer.status === "accelerating" || creditLayer.status === "expanding") : undefined,
+      // RC2-C1: undefined when credit is unmeasured, so per-deal reads treat the
+      // financing window as UNKNOWN rather than closed. `false` would be a claim.
+      creditOpen: !creditLayer || creditLayer.status === "unmeasured"
+        ? undefined
+        : (creditLayer.status === "accelerating" || creditLayer.status === "expanding"),
       regime: feedData?.sector_data?.derived_regime ?? undefined,
       riskRegime,
       shared: sharedByDeal,
