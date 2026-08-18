@@ -10,6 +10,7 @@ import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import { useIPOPipeline, type IPOFiler } from "@/hooks/useIPOPipeline";
 import {
   computeCapitalFlow,
+  measuredCoverage,
   FLOW_STATUS_COLOR,
   FLOW_STATUS_LABEL,
   type CapitalFlowLayer,
@@ -259,14 +260,21 @@ function CapitalPressureBar({ layers }: { layers: CapitalFlowLayer[] }) {
     <div className="flex items-center gap-4 sm:gap-6 mt-6 px-4 py-3 rounded-xl border flex-wrap"
       style={{ borderColor: "rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
       <span className="text-[10px] font-bold uppercase tracking-[0.16em] shrink-0" style={{ color: "rgba(255,255,255,0.5)" }}>Private Capital Flow</span>
+      {/* RC2-C2a: below majority coverage the meter shows NO directional verdict -
+          no bar fill, no score, no trend arrow. The score is still computed and
+          available on `p.score`, but rendering it here would read as a verdict. */}
       <div className="flex-1 min-w-[140px] h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-        <motion.div className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${p.color}88, ${p.color})` }}
-          initial={{ width: 0 }} animate={{ width: `${p.score}%` }} transition={{ duration: 1.4, ease: [0.22, 0, 0.36, 1] }} />
+        {p.sufficient && (
+          <motion.div className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${p.color}88, ${p.color})` }}
+            initial={{ width: 0 }} animate={{ width: `${p.score}%` }} transition={{ duration: 1.4, ease: [0.22, 0, 0.36, 1] }} />
+        )}
       </div>
-      <span className="text-[22px] font-black tabular-nums leading-none shrink-0" style={{ color: p.color }}>{p.score}</span>
+      {p.sufficient && (
+        <span className="text-[22px] font-black tabular-nums leading-none shrink-0" style={{ color: p.color }}>{p.score}</span>
+      )}
       <span className="text-[10px] font-bold uppercase tracking-[0.14em] shrink-0" style={{ color: p.color }}>{p.label}</span>
-      <span className="flex items-center gap-1 text-[10px] font-semibold shrink-0" style={{ color: p.trend === "improving" ? "#22c55e" : p.trend === "deteriorating" ? "#ef4444" : "rgba(255,255,255,0.5)" }}>
-        {p.trend === "improving" ? "▲" : p.trend === "deteriorating" ? "▼" : "▪"} {p.trendLabel}
+      <span className="flex items-center gap-1 text-[10px] font-semibold shrink-0" style={{ color: p.sufficient ? (p.trend === "improving" ? "#22c55e" : p.trend === "deteriorating" ? "#ef4444" : "rgba(255,255,255,0.5)") : "rgba(255,255,255,0.45)" }}>
+        {p.sufficient ? (p.trend === "improving" ? "▲" : p.trend === "deteriorating" ? "▼" : "▪") : ""} {p.trendLabel}
       </span>
       <span className="text-[10px] hidden sm:inline shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>{p.liquidity}</span>
     </div>
@@ -345,11 +353,6 @@ export default function PrivateMarketsPage() {
     [deals],
   );
 
-  const vcDealCount = useMemo(() =>
-    deals.filter(d => d.dealType === "sponsor").length,
-    [deals],
-  );
-
   const capitalThemes = useMemo(() => {
     const all = feedData?.theme_intelligence ?? [];
     return filterCapitalFlowThemes(all).slice(0, 4);
@@ -361,13 +364,28 @@ export default function PrivateMarketsPage() {
     regime,
     tnxRate,
     maDealCount:   totalDealCount,
-    vcDealCount,
     ipoFilerCount: filers.length,
     credit,
-  }), [riskRegime, volRegime, regime, tnxRate, totalDealCount, vcDealCount, filers.length, credit]);
+  }), [riskRegime, volRegime, regime, tnxRate, totalDealCount, filers.length, credit]);
 
+  // RC2-C2a: the regime chip is a THIRD aggregate over the same layers, and it
+  // must obey the same measurement-sufficiency contract as buildSummary and
+  // flowPressure. Its thresholds were absolute (>= 4 of 8) and its caption said
+  // "of 8", both of which assumed every layer was measurable.
+  const coverage     = measuredCoverage(capitalFlow.layers);
   const openLayers   = capitalFlow.layers.filter(l => l.status === "accelerating" || l.status === "expanding").length;
   const closedLayers = capitalFlow.layers.filter(l => l.status === "contracting"  || l.status === "blocked").length;
+  // Same proportional rule the summary uses: ceil(measured / 2). At 8 measured
+  // this is 4, identical to the previous hardcoded threshold.
+  const chipMajority = Math.ceil(coverage.measured / 2);
+  const chipVerdict  = !coverage.sufficient ? "Not measured"
+    : openLayers   >= chipMajority ? "Capital Flowing"
+    : closedLayers >= chipMajority ? "Capital Constrained"
+    : "Mixed Transmission";
+  const chipColor    = !coverage.sufficient ? "#64748b"
+    : openLayers   >= chipMajority ? "#22c55e"
+    : closedLayers >= chipMajority ? "#ef4444"
+    : "#fbbf24";
 
   // ── Institutional intelligence — all derived from the live flow + themes ────
   const layers    = capitalFlow.layers;
@@ -415,14 +433,16 @@ export default function PrivateMarketsPage() {
           <div className="flex items-center gap-2 mt-5 flex-wrap">
             <span className="text-[10px] px-2.5 py-1 rounded-full border font-medium"
               style={{
-                borderColor: openLayers >= 4 ? "#22c55e33" : closedLayers >= 4 ? "#ef444433" : "#fbbf2433",
-                color:       openLayers >= 4 ? "#22c55e"   : closedLayers >= 4 ? "#ef4444"   : "#fbbf24",
-                background:  openLayers >= 4 ? "#22c55e0f" : closedLayers >= 4 ? "#ef44440f" : "#fbbf240f",
+                borderColor: `${chipColor}33`,
+                color:       chipColor,
+                background:  `${chipColor}0f`,
               }}>
-              {openLayers >= 4 ? "Capital Flowing" : closedLayers >= 4 ? "Capital Constrained" : "Mixed Transmission"}
+              {chipVerdict}
             </span>
             <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.36)" }}>
-              {openLayers} of 8 layers open
+              {coverage.sufficient
+                ? `${openLayers} of ${coverage.measured} measured layers open`
+                : `${coverage.measured} of ${coverage.total} layers measured`}
             </span>
             {regime && (
               <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.36)" }}>

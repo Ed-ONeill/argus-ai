@@ -668,6 +668,143 @@ probe.
 fabricated — they are C2 and were deliberately not filled heuristically. `riskScore`/regime logic,
 other cross-asset rows, the IPO layer, D2, and F are untouched.
 
+### RC2-C2a — demote the three unsupported Capital Flow layers (implemented)
+
+Second slice of finding **C**. `lib/capitalFlow.ts` plus the two call sites.
+
+**What was rendered to users on `/private-markets` before this slice** (all eight layers render
+there with status badge, indicator and detail; `/ma` renders none of them but consumes two):
+
+| Layer | Claim | Actual input |
+|---|---|---|
+| PE / Buyout | "LP Capital Pause" / "Pipeline Active" / "LBO Math Stressed" | `tnxRate > 4.5`, `regime.includes("hawkish")`, total M&A headline count, `riskRegime` |
+| Late-Stage VC | **"3 Recent Rounds"** (Series C-E) | `deals.filter(d => d.dealType === "sponsor").length` — PE buyout HEADLINES rendered as venture rounds |
+| Early-Stage VC | "Seed markets frozen, generalist LPs have paused commitments" | `riskRegime` + `volRegime` + regime string |
+
+Two details worth recording. The PE and Early-VC copy asserted **limited-partner behaviour** —
+"reduces LP willingness to fund new commitments", "generalist LPs have paused commitments" — from
+equity direction; Argus has no LP or fundraising data of any kind. And on `/ma` the VC input was
+hardcoded `0`, so Late-Stage VC read **"Frozen — late-stage funding effectively closed"** from a
+literal that was never a measurement, feeding the summary and pressure score from that page.
+
+**Change.** All three layers are now `unmeasured`, unconditionally, using the same absence model as
+Credit & Leverage (RC2-C1): `status: "unmeasured"`, `indicator: "Not measured"`, `signal:
+"Unavailable"`, and copy that names the missing source and stops
+(`"No venture financing-round data source. This layer is not currently measured."`). They keep
+their position in the chain so the coverage gap stays visible rather than being hidden.
+
+`vcDealCount` is **removed** from `FlowOptions` and both call sites: it existed solely to feed the
+fabricated layer and carried the wrong quantity, so it is gone rather than left dangling for a
+future consumer to mistake for real data. The sponsor/strategic deal data it derived from is
+untouched and still used elsewhere on `/private-markets`.
+
+**Aggregate correctness.** `flowPressure` already excluded unmeasured layers from numerator and
+denominator (RC2-C1). `buildSummary` did not, and now
+does: it counts only measured layers, and its thresholds are the ORIGINAL constants expressed as
+proportions of the measured set — `ceil(m/2)` for closed and tight, `ceil(m*5/8)` and `ceil(m*3/8)`
+for open. At eight measured layers this is byte-identical to the previous behaviour
+(`ceil(8/2)=4`, `ceil(8*5/8)=5`, `ceil(8*3/8)=3`). No new scoring model.
+
+Below a **majority of the chain**, `buildSummary` refuses to characterise the stack at all and
+returns an explicit coverage statement. A sentence beginning "Capital flowing freely across the
+funding stack" is not defensible when most of that stack is unmeasured. One copy fix came with
+this: the "flowing freely" branch previously ended *"...from M&A through early-stage VC"*, naming a
+layer that is now unmeasured.
+
+**Measured before → after** (identical inputs; `riskRegime: risk-on`, `maDealCount: 7`,
+`ipoFilerCount: 10`, credit measured at 267bp):
+
+```
+/private-markets                     BEFORE                          AFTER
+  PE / Buyout          expanding   "Pipeline Active"        unmeasured  "Not measured"
+  Late-Stage VC        neutral     "3 Recent Rounds"        unmeasured  "Not measured"
+  Early-Stage VC       expanding   "Risk-On"                unmeasured  "Not measured"
+  measured layers      8/8                                  5/8
+  summary              "Capital flowing freely across       "Capital flowing freely across the
+                        the funding stack ... from M&A       measured layers of the funding
+                        through early-stage VC."             stack, neutral conditions
+                                                             enabling deal activity."
+  flowPressure         79 FLOWING                           83 FLOWING
+                       (8 layers, 4 fabricated)             (5 measured layers only)
+
+/ma (vc/ipo inputs were hardcoded 0)
+  Late-Stage VC        contracting "Frozen"                 unmeasured  "Not measured"
+  flowPressure         67 FLOWING                           70 FLOWING
+```
+
+The pressure score moves because the fabricated layers no longer contribute, not because the rule
+changed — it is now an average over five real readings instead of eight, four of which were
+invented. `/ma`'s M&A reasoning is unaffected: `explainMAActivity` and `DealContext.creditOpen`
+read only `layers[2]` (Credit) and `layers[3]` (M&A Activity), neither of which this slice touches.
+
+**Aggregate consistency — the sufficiency contract is now shared.** Review caught that the two
+aggregates could disagree: when credit is *also* unmeasured (4 of 8, e.g. a FRED outage),
+`buildSummary` returned the insufficient-coverage statement while `flowPressure` beside it still
+rendered **"83 · FLOWING · Liquidity Expanding"**. `flowPressure` was not laundering an absence —
+its score genuinely derived from the four measured layers only — but a meter asserting a verdict
+directly beneath a sentence declining to make one is its own integrity defect.
+
+The rule is therefore defined **once**, as `measuredCoverage(layers)` exported from
+`capitalFlow.ts`, and consumed by both aggregates so they cannot drift apart again. Below a
+majority, `flowPressure` returns `sufficient: false` with `label: "NOT MEASURED"`,
+`trendLabel: "Coverage insufficient"` and `liquidity: "N of M layers measured"` — no
+FLOWING/CONSTRAINED, no liquidity direction, no improving/deteriorating arrow. The measured-layer
+score is still computed and preserved on `p.score` (it is a true reading of what was measured), but
+`CapitalPressureBar` suppresses the bar fill, the numeric score and the trend arrow when
+`sufficient` is false, because rendering them would read as a verdict. **The score formula is
+unchanged for sufficiently covered cases.**
+
+The pre-commit scope check then found a **third** aggregate over the same layers that no one had
+audited: the regime chip on `/private-markets` rendered **"Capital Flowing" / "Capital Constrained"
+/ "Mixed Transmission"** from absolute thresholds (`openLayers >= 4`) with the caption
+`"{openLayers} of 8 layers open"`. Both assumed all eight layers were measurable, so at 4-of-8
+coverage it could still have announced "Capital Flowing" beside two aggregates declining to
+characterise anything. It now reads the same `measuredCoverage` contract, uses the same
+proportional majority (`ceil(measured / 2)` — which is 4 at eight measured layers, identical to the
+old hardcoded threshold), renders **"Not measured"** below majority coverage, and reports
+`"N of M measured layers open"` instead of a hardcoded "of 8".
+
+One nuance worth recording: `measuredCoverage` judges the layer set it is *given*. Production
+callers pass the whole chain; a pre-filtered set asks a different question and correctly gets a
+different coverage answer. The scoring is identical either way.
+
+Measured at each coverage tier:
+
+```
+8/8 measured   score 79  FLOWING            Improving  · Liquidity Expanding   (formula unchanged)
+5/8 measured   score 83  FLOWING            Improving  · Liquidity Expanding   (measured-only)
+4/8 measured   score 83  NOT MEASURED       Coverage insufficient · 4 of 8 layers measured
+0/8 measured   score 50  NOT MEASURED       Coverage insufficient · 0 of 8 layers measured
+```
+
+**Validation.** 39 new tests in `frontend/src/lib/__tests__/capitalFlowUnmeasured.test.ts`: each
+layer unmeasured across every proxy permutation (regime, rates, vol, deal count, credit state),
+byte-identical output under opposite proxy inputs, no banned phrase emitted anywhere
+("LP Capital Pause", "Recent Rounds", "Seed ... frozen", "Pipeline Active", "LBO Math", "Frozen",
+"dry powder", …), chain order preserved, `flowPressure` identical with and without the unmeasured
+layers present, no divide-by-zero when nothing is measured, summary never naming an unmeasured
+layer, the insufficient state making no directional claim, and the untouched neighbours (C1 credit,
+M&A Activity, IPO Window, Monetary Policy, Public Equities) pinned unchanged.
+
+A further 30 tests pin the aggregate-consistency contract: 8/8 reproducing the pre-C2a score
+exactly, 5/8 deterministic and measured-only, 4/8 emitting no directional label, 0 measured and an
+empty chain both explicit and crash-free, padding a chain with unmeasured layers leaving the score
+untouched, and summary/pressure agreeing at both 5/8 and 4/8 — including the specific production
+pair that previously contradicted itself.
+
+The **sufficiency boundary is pinned explicitly**: exactly half is INSUFFICIENT (4/8, 2/4, 1/2,
+3/6, 5/10) and a strict majority is sufficient (5/8, 3/4, 2/3, 4/6, 6/10), with odd totals checked
+on both sides (3/7 false, 4/7 true). The regime chip has its own tests covering the 8-measured
+threshold equivalence, the no-verdict-below-majority rule, and the 4-open-of-4-measured case that
+must not read "Capital Flowing".
+
+C1's 53 tests pass unmodified. Frontend suite **803 passed / 61 files**, tsc clean, lint clean in
+changed files, production build clean. Backend **1264 passed** (no backend file changed).
+
+**Out of scope and unchanged:** IPO Window and M&A Activity both contain real underlying
+observations but overstate what those observations mean — they are **C2b**. No LP/fundraising
+ingestion, no new provider, no synthesized private-market data, no new scoring model, no redesign.
+
 ---
 
 ## Per-surface index

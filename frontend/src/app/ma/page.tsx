@@ -995,7 +995,6 @@ export default function MAPage() {
       regime: feedData?.sector_data?.derived_regime ?? null,
       tnxRate,
       maDealCount:   deals.length,
-      vcDealCount:   0,
       ipoFilerCount: 0,
       credit,
     });

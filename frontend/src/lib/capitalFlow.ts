@@ -53,7 +53,11 @@ export interface FlowOptions {
   regime:        string | null;
   tnxRate:       number | null;
   maDealCount:   number;
-  vcDealCount:   number;
+  // RC2-C2a: `vcDealCount` REMOVED. It existed solely to feed the fabricated
+  // Late-Stage VC layer, and it carried PE sponsor headlines from the news feed,
+  // not venture rounds. There is no venture-financing source to replace it with,
+  // so the input is gone rather than left dangling for a future consumer to
+  // mistake for real data.
   ipoFilerCount: number;
   /**
    * RC2-C1: the measured US HY OAS (FRED BAMLH0A0HYM2). This is the SOLE input to
@@ -206,80 +210,70 @@ function maActivityLayer(o: FlowOptions): CapitalFlowLayer {
   };
 }
 
-function peBuyoutLayer(o: FlowOptions): CapitalFlowLayer {
-  const hawkish  = o.regime?.toLowerCase().includes("hawkish") ?? false;
-  const rateHigh = o.tnxRate !== null && o.tnxRate > 4.5;
-
-  if (rateHigh || hawkish) return {
-    id: "pe-buyout", label: "PE / Buyout", sublabel: "Sponsor Acquisitions",
-    status: "tightening", indicator: "LBO Math Stressed", signal: "Selective",
-    detail: "Higher debt service compresses buyout IRRs, sponsors prioritize high-conviction, lower-leverage structures.",
-  };
-  if (o.maDealCount >= 6) return {
-    id: "pe-buyout", label: "PE / Buyout", sublabel: "Sponsor Acquisitions",
-    status: "expanding", indicator: "Pipeline Active", signal: "Deploying",
-    detail: "PE sponsors deploying capital opportunistically as vintage diversification pressures increase.",
-  };
-  if (o.riskRegime === "risk-off") return {
-    id: "pe-buyout", label: "PE / Buyout", sublabel: "Sponsor Acquisitions",
-    status: "contracting", indicator: "LP Capital Pause", signal: "Paused",
-    detail: "Risk-off environment reduces LP willingness to fund new commitments, sponsor pipeline stalls.",
-  };
+/**
+ * RC2-C2a — the three private-market layers have NO data authority and are
+ * therefore explicitly unmeasured.
+ *
+ * What each of them used to assert, and from what:
+ *
+ *   PE / Buyout      "LBO Math Stressed" / "Pipeline Active" / "LP Capital Pause"
+ *                    <- tnxRate > 4.5, regime.includes("hawkish"), maDealCount,
+ *                       riskRegime. No private-equity data of any kind. The
+ *                       "LP Capital Pause" reading was an assertion about
+ *                       limited-partner behaviour derived from equity direction.
+ *
+ *   Late-Stage VC    "N Recent Rounds" (Series C-E)
+ *                    <- deals.filter(d => d.dealType === "sponsor").length, i.e.
+ *                       PE BUYOUT HEADLINES from the news feed rendered as venture
+ *                       financing rounds. A category error, not a rounding error.
+ *                       On /ma the input was hardcoded 0, so the layer read
+ *                       "Frozen - late-stage funding effectively closed" from a
+ *                       literal that was never a measurement.
+ *
+ *   Early-Stage VC   "Seed markets frozen, generalist LPs have paused commitments"
+ *                    <- riskRegime + volRegime + regime string. Zero venture data,
+ *                       zero LP data.
+ *
+ * Argus has no venture-financing, buyout, or LP/fundraising source. Until it does,
+ * the honest reading is that these layers are not measured. They keep their place
+ * in the chain so the gap in coverage stays visible rather than being hidden.
+ *
+ * Uses the same absence model as Credit & Leverage (RC2-C1): status `unmeasured`,
+ * indicator "Not measured", and copy that states the absence and stops.
+ */
+function unmeasuredLayer(
+  id: string, label: string, sublabel: string, subject: string,
+): CapitalFlowLayer {
   return {
-    id: "pe-buyout", label: "PE / Buyout", sublabel: "Sponsor Acquisitions",
-    status: "neutral", indicator: "Neutral", signal: "Cautious",
-    detail: "Buyout activity measured, deal selectivity high and hold periods extending as exit markets remain challenged.",
+    id, label, sublabel,
+    status: "unmeasured",
+    indicator: "Not measured",
+    signal: "Unavailable",
+    // States the absence and nothing else. Any characterisation of conditions
+    // here - even hedged - would be the fabrication this demotion removes.
+    detail: `No ${subject} data source. This layer is not currently measured.`,
   };
 }
 
-function lateVCLayer(o: FlowOptions): CapitalFlowLayer {
-  const n = o.vcDealCount;
-  if (o.riskRegime === "risk-on" && n >= 4) return {
-    id: "late-vc", label: "Late-Stage VC", sublabel: "Series C-E / Growth",
-    status: "expanding", indicator: `${n} Recent Rounds`, signal: "Open",
-    detail: "Growth capital accessible for proven companies, large rounds clearing at competitive valuations.",
-  };
-  if (o.riskRegime === "risk-off" || n === 0) return {
-    id: "late-vc", label: "Late-Stage VC", sublabel: "Series C-E / Growth",
-    status: "contracting", indicator: n === 0 ? "Frozen" : `${n} Deal`,
-    signal: "Closed",
-    detail: "Late-stage funding effectively closed, extensions and bridge rounds dominate over new capital.",
-  };
-  if (n >= 2) return {
-    id: "late-vc", label: "Late-Stage VC", sublabel: "Series C-E / Growth",
-    status: "neutral", indicator: `${n} Recent Rounds`, signal: "Selective",
-    detail: "Growth equity investors active but highly selective, AI-native and defensible moats attract disproportionate capital.",
-  };
-  return {
-    id: "late-vc", label: "Late-Stage VC", sublabel: "Series C-E / Growth",
-    status: "tightening", indicator: "Slow Flow", signal: "Subdued",
-    detail: "Late-stage capital available but terms shifted, flat rounds replacing 2021-era step-ups.",
-  };
+function peBuyoutLayer(_o: FlowOptions): CapitalFlowLayer {
+  return unmeasuredLayer(
+    "pe-buyout", "PE / Buyout", "Sponsor Acquisitions",
+    "buyout or limited-partner",
+  );
 }
 
-function earlyVCLayer(o: FlowOptions): CapitalFlowLayer {
-  const hawkish = o.regime?.toLowerCase().includes("hawkish") ?? false;
+function lateVCLayer(_o: FlowOptions): CapitalFlowLayer {
+  return unmeasuredLayer(
+    "late-vc", "Late-Stage VC", "Series C-E / Growth",
+    "venture financing-round",
+  );
+}
 
-  if (o.riskRegime === "risk-off" && o.volRegime === "high") return {
-    id: "early-vc", label: "Early-Stage VC", sublabel: "Seed / Series A-B",
-    status: "contracting", indicator: "Risk-Off / High Vol", signal: "Frozen",
-    detail: "Seed and early-stage markets frozen, generalist LPs have paused commitments to new venture managers.",
-  };
-  if (hawkish) return {
-    id: "early-vc", label: "Early-Stage VC", sublabel: "Seed / Series A-B",
-    status: "tightening", indicator: "Rate Pressure", signal: "Constrained",
-    detail: "Higher discount rates hurt early-stage valuations, AI-native deals remain funded but non-consensus bets face pressure.",
-  };
-  if (o.riskRegime === "risk-on") return {
-    id: "early-vc", label: "Early-Stage VC", sublabel: "Seed / Series A-B",
-    status: "expanding", indicator: "Risk-On", signal: "Active",
-    detail: "Early-stage capital flowing, seed and Series A valuations have reset from 2021 highs to sustainable levels.",
-  };
-  return {
-    id: "early-vc", label: "Early-Stage VC", sublabel: "Seed / Series A-B",
-    status: "neutral", indicator: "Neutral", signal: "Selective",
-    detail: "Early-stage active for AI, defense tech, and infrastructure, consumer and enterprise software face higher bars.",
-  };
+function earlyVCLayer(_o: FlowOptions): CapitalFlowLayer {
+  return unmeasuredLayer(
+    "early-vc", "Early-Stage VC", "Seed / Series A-B",
+    "seed and early-stage financing",
+  );
 }
 
 function ipoWindowLayer(o: FlowOptions): CapitalFlowLayer {
@@ -319,17 +313,72 @@ function ipoWindowLayer(o: FlowOptions): CapitalFlowLayer {
   };
 }
 
+/**
+ * RC2-C2a — the measurement-sufficiency contract, shared by every Capital Flow
+ * aggregate (`buildSummary` here, `flowPressure` in capitalFlowIntel).
+ *
+ * An aggregate that says something "across the funding stack" needs most of that
+ * stack to be measured. Below a majority, no directional verdict is defensible and
+ * the aggregate must report insufficient coverage instead.
+ *
+ * Defined once and exported so the two aggregates cannot drift apart and render
+ * contradictory states side by side — which is exactly what happened when only
+ * `buildSummary` had the rule.
+ *
+ * Note it judges the layer set it is GIVEN. Production callers pass the whole
+ * chain; passing a pre-filtered set asks a different question and gets a
+ * correspondingly different answer.
+ */
+export function measuredCoverage(layers: CapitalFlowLayer[]): {
+  measured: number; total: number; sufficient: boolean;
+} {
+  const measured = layers.filter(l => l.status !== "unmeasured").length;
+  const total = layers.length;
+  return { measured, total, sufficient: total > 0 && measured * 2 > total };
+}
+
+/**
+ * RC2-C2a — the aggregate speaks only for the layers that were actually measured.
+ *
+ * Previously this counted statuses across all eight layers, four of which were
+ * fabricated, and turned them into one confident sentence. An unmeasured layer now
+ * enters neither the numerator nor the denominator: it is not "neutral", it is not
+ * zero, it simply is not counted.
+ *
+ * The thresholds are the ORIGINAL ones expressed as proportions of the measured
+ * set, so behaviour at eight measured layers is byte-identical to before
+ * (ceil(8/2)=4, ceil(8*5/8)=5, ceil(8*3/8)=3). No new scoring model.
+ *
+ * Below a majority of the chain the function refuses to characterise the stack at
+ * all. A sentence beginning "Capital flowing freely across the funding stack" is
+ * not defensible when most of that stack is unmeasured.
+ */
 function buildSummary(layers: CapitalFlowLayer[], regime: string): string {
-  const ss     = layers.map(l => l.status);
+  const measured = layers.filter(l => l.status !== "unmeasured");
+  const { measured: m, total, sufficient } = measuredCoverage(layers);
+
+  // A statement "across the funding stack" requires most of the funding stack.
+  if (!sufficient) {
+    return `Capital flow is measured for ${m} of ${total} layers of the funding stack — not enough coverage to characterise conditions. Unmeasured layers are shown individually below.`;
+  }
+
+  const ss     = measured.map(l => l.status);
   const open   = ss.filter(s => s === "accelerating" || s === "expanding").length;
   const closed = ss.filter(s => s === "contracting"  || s === "blocked").length;
   const tight  = ss.filter(s => s === "tightening").length;
 
-  if (closed >= 4) return `Capital transmission severely impaired, ${regime} conditions restricting flow across most layers of the funding stack.`;
-  if (tight  >= 4) return `Monetary tightening propagating through the capital stack, each downstream layer faces incrementally higher cost of capital.`;
-  if (open   >= 5) return `Capital flowing freely across the funding stack, ${regime} conditions enabling deal activity from M&A through early-stage VC.`;
-  if (open   >= 3) return `Capital flow positive across upper layers with selective activity downstream, quality assets continue to attract capital despite mixed conditions.`;
-  return `Capital flow mixed across the funding stack, sector and quality differentiation are the primary return drivers in ${regime} conditions.`;
+  const half     = Math.ceil(m / 2);
+  const mostOpen = Math.ceil((m * 5) / 8);
+  const someOpen = Math.ceil((m * 3) / 8);
+
+  if (closed >= half)     return `Capital transmission severely impaired, ${regime} conditions restricting flow across most measured layers of the funding stack.`;
+  if (tight  >= half)     return `Monetary tightening propagating through the capital stack, each downstream measured layer faces incrementally higher cost of capital.`;
+  // The old copy for this branch named early-stage VC explicitly ("from M&A
+  // through early-stage VC"). That layer is unmeasured, so the claim now stops at
+  // what the measured layers support.
+  if (open   >= mostOpen) return `Capital flowing freely across the measured layers of the funding stack, ${regime} conditions enabling deal activity.`;
+  if (open   >= someOpen) return `Capital flow positive across upper layers with selective activity downstream, quality assets continue to attract capital despite mixed conditions.`;
+  return `Capital flow mixed across the measured layers of the funding stack, sector and quality differentiation are the primary return drivers in ${regime} conditions.`;
 }
 
 export function computeCapitalFlow(opts: FlowOptions): CapitalFlowState {

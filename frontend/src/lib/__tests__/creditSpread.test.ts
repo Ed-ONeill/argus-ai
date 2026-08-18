@@ -232,7 +232,7 @@ describe("absent / stale / unreadable all yield unmeasured", () => {
 
 const baseOpts = (over: Partial<FlowOptions> = {}): FlowOptions => ({
   riskRegime: "neutral", volRegime: "moderate", regime: null, tnxRate: 4.2,
-  maDealCount: 5, vcDealCount: 0, ipoFilerCount: 0, ...over,
+  maDealCount: 5, ipoFilerCount: 0, ...over,
 });
 
 const creditLayer = (o: FlowOptions) =>
