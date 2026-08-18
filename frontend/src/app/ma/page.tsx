@@ -995,7 +995,10 @@ export default function MAPage() {
       regime: feedData?.sector_data?.derived_regime ?? null,
       tnxRate,
       maDealCount:   deals.length,
-      ipoFilerCount: 0,
+      // RC2-C2b: /ma does not retrieve S-1 data. Previously it passed a hardcoded
+      // 0, which the old layer rendered as "No Recent S-1s / Frozen" - a claim
+      // manufactured from a literal. Absent data now renders as unmeasured.
+      ipoFilings:    null,
       credit,
     });
   }, [riskRegime, volRegime, feedData, marketData, deals.length, credit]);
@@ -1009,7 +1012,6 @@ export default function MAPage() {
       maThemes,
       feedData?.sector_data?.derived_regime ?? null,
       { status: creditLayer.status, signal: creditLayer.signal, detail: creditLayer.detail },
-      { status: maLayer.status,     signal: maLayer.signal },
     );
   }, [deals, maThemes, feedData, capitalFlow]);
 

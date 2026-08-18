@@ -232,7 +232,7 @@ describe("absent / stale / unreadable all yield unmeasured", () => {
 
 const baseOpts = (over: Partial<FlowOptions> = {}): FlowOptions => ({
   riskRegime: "neutral", volRegime: "moderate", regime: null, tnxRate: 4.2,
-  maDealCount: 5, ipoFilerCount: 0, ...over,
+  maDealCount: 5, ipoFilings: null, ...over,
 });
 
 const creditLayer = (o: FlowOptions) =>
@@ -316,14 +316,12 @@ const deals = [
   { dealType: "sponsor", sector: "Tech", peFirm: "KKR" },
   { dealType: "strategic", sector: "Health", peFirm: null },
 ];
-const maLayer = { status: "expanding", signal: "Active" };
 
 describe("credit prose appears only when credit is measured", () => {
   it("emits NO spread claim when the layer is unmeasured", () => {
     const text = explainMAActivity(
       deals as never, [], "risk-on",
       { status: "unmeasured", signal: "Unavailable", detail: "not retrieved" },
-      maLayer as never,
     );
     expect(text).not.toMatch(/spread/i);
     expect(text).not.toMatch(/compressed|credit conditions/i);
@@ -333,7 +331,6 @@ describe("credit prose appears only when credit is measured", () => {
     const text = explainMAActivity(
       deals as never, [], "risk-on",
       { status: "unmeasured", signal: "Unavailable", detail: "" },
-      maLayer as never,
     );
     expect(text.length).toBeGreaterThan(20);
     expect(text).toMatch(/strategic|sponsor|deal/i);
@@ -343,7 +340,6 @@ describe("credit prose appears only when credit is measured", () => {
     const text = explainMAActivity(
       deals as never, [], "risk-on",
       { status: "expanding", signal: "Accessible", detail: "267bp" },
-      maLayer as never,
     );
     expect(text).toMatch(/spread/i);
   });
@@ -352,7 +348,6 @@ describe("credit prose appears only when credit is measured", () => {
     const text = explainMAActivity(
       [{ dealType: "other", sector: "X", peFirm: null }] as never, [], null,
       { status: "unmeasured", signal: "Unavailable", detail: "" },
-      { status: "neutral", signal: "Steady" } as never,
     );
     expect(text).not.toMatch(/credit conditions/i);
     expect(text).not.toMatch(/unavailable credit/i);
@@ -364,7 +359,6 @@ describe("credit prose appears only when credit is measured", () => {
       const text = explainMAActivity(
         deals as never, [], regime,
         { status: "unmeasured", signal: "Unavailable", detail: "" },
-        maLayer as never,
       );
       expect(text).not.toMatch(/spread/i);
     }

@@ -8,7 +8,17 @@ export type FlowStatus =
   | "accelerating" | "expanding" | "neutral" | "tightening" | "contracting" | "blocked"
   // RC2-C1: a layer with no real measurement. Distinct from "neutral", which is a
   // measured reading of no direction. Unmeasured means we do not know.
-  | "unmeasured";
+  | "unmeasured"
+  // RC2-C2b: a layer that measures something real but whose observation cannot
+  // support a DIRECTIONAL claim. Three distinct things now exist:
+  //   neutral       - measured, directional authority, currently reading no direction
+  //   observational - measured, NO directional authority, ever
+  //   unmeasured    - no data at all
+  // An observational layer counts toward measured COVERAGE (we did observe
+  // something) but is excluded from every directional aggregate, including their
+  // denominators. Leaving it in the denominator would let a coverage count dampen
+  // the verdict - a quieter version of the same defect.
+  | "observational";
 
 export interface CapitalFlowLayer {
   id:        string;
@@ -35,6 +45,7 @@ export const FLOW_STATUS_COLOR: Record<FlowStatus, string> = {
   contracting:  "#f97316",
   blocked:      "#ef4444",
   unmeasured:   "#64748b",
+  observational:"#94a3b8",
 };
 
 export const FLOW_STATUS_LABEL: Record<FlowStatus, string> = {
@@ -45,7 +56,24 @@ export const FLOW_STATUS_LABEL: Record<FlowStatus, string> = {
   contracting:  "Contracting",
   blocked:      "Blocked",
   unmeasured:   "Not measured",
+  observational:"Observed",
 };
+
+/**
+ * RC2-C2b — new S-1 registrations, deduped by filer, over the period EDGAR
+ * actually returned. Deliberately carries its own window rather than implying a
+ * generic "current" market period.
+ */
+export interface IpoFilingObservation {
+  /** Distinct CIKs filing a NEW S-1 (form "S-1", amendments excluded). */
+  newRegistrations: number;
+  /** Total entries EDGAR returned, amendments included. Diagnostics only. */
+  rawEntries:       number;
+  /** Earliest filing date in the returned set (YYYY-MM-DD), or null. */
+  windowStart:      string | null;
+  /** Latest filing date in the returned set (YYYY-MM-DD), or null. */
+  windowEnd:        string | null;
+}
 
 export interface FlowOptions {
   riskRegime:    "risk-on" | "neutral" | "risk-off";
@@ -58,7 +86,14 @@ export interface FlowOptions {
   // not venture rounds. There is no venture-financing source to replace it with,
   // so the input is gone rather than left dangling for a future consumer to
   // mistake for real data.
-  ipoFilerCount: number;
+  /**
+   * RC2-C2b: the S-1 observation, narrowed to what EDGAR can actually support.
+   * `ipoFilerCount` (a raw entry count including S-1/A amendments) is REPLACED —
+   * measured 2026-08-18, 10 of 13 entries were amendments, so the raw count
+   * overstated new registrations by 4.3x and drove the old `n >= 8` branch.
+   * Absent/null renders the layer as an explicit absence, never as "closed".
+   */
+  ipoFilings?:   IpoFilingObservation | null;
   /**
    * RC2-C1: the measured US HY OAS (FRED BAMLH0A0HYM2). This is the SOLE input to
    * the Credit & Leverage layer. Omitted or unavailable -> the layer reports
@@ -185,28 +220,40 @@ function creditLeverageLayer(o: FlowOptions): CapitalFlowLayer {
   };
 }
 
+/**
+ * RC2-C2b — M&A Activity is an OBSERVATION of Argus's own feed coverage.
+ *
+ * `maDealCount` is `items.filter(i => i.category === "M&A").length`. Three
+ * measured facts about that number:
+ *
+ *   1. It counts ARTICLES admitted by a keyword regex over title OR snippet, not
+ *      transactions. On the 2026-08-18 sample of 8, at most 1-2 were announced
+ *      transactions; the rest were an interview, a feature, market commentary, a
+ *      13F stake purchase, litigation news about an existing deal, and an 8-K
+ *      whose "definitive agreement" could be any material contract.
+ *   2. It has NO time window. Both warm targets run fresh_only=False, so no age
+ *      cutoff applies; that sample spanned 11.3h to 101.4h. The bound is RSS
+ *      retention, not a period.
+ *   3. It scales with our source list. Adding a feed raises it; a source outage
+ *      lowers it. Neither is a market event.
+ *
+ * The old thresholds (>=8 accelerating "deal flow elevated", >=4 expanding,
+ * >=2 neutral) therefore had no empirical authority - today's count of 8 sat
+ * exactly on the "elevated" boundary, crossable by one more feature article.
+ *
+ * The count is still worth showing: it is a true statement about what Argus is
+ * tracking. It is shown as exactly that and contributes no direction.
+ */
 function maActivityLayer(o: FlowOptions): CapitalFlowLayer {
   const n = o.maDealCount;
-  if (n >= 8) return {
-    id: "ma-activity", label: "M&A Activity", sublabel: "Strategic / Sponsor",
-    status: "accelerating", indicator: `${n} Recent Deals`, signal: "Active",
-    detail: "Deal flow elevated, strategic and sponsor acquirers transacting at pace with narrow bid-ask spread.",
-  };
-  if (n >= 4) return {
-    id: "ma-activity", label: "M&A Activity", sublabel: "Strategic / Sponsor",
-    status: "expanding", indicator: `${n} Recent Deals`, signal: "Building",
-    detail: "M&A pipeline building as financing conditions stabilize and strategic rationale becomes compelling.",
-  };
-  if (n >= 2) return {
-    id: "ma-activity", label: "M&A Activity", sublabel: "Strategic / Sponsor",
-    status: "neutral", indicator: `${n} Recent Deals`, signal: "Selective",
-    detail: "Selective deal activity with buyers focused on valuation discipline and clear strategic fit.",
-  };
   return {
-    id: "ma-activity", label: "M&A Activity", sublabel: "Strategic / Sponsor",
-    status: "tightening", indicator: n === 0 ? "No Recent Deals" : `${n} Deal`,
-    signal: "Subdued",
-    detail: "M&A activity constrained, buyers cautious amid valuation uncertainty and financing friction.",
+    id: "ma-activity", label: "M&A Activity", sublabel: "Feed coverage",
+    status: "observational",
+    indicator: `${n} M&A-related item${n === 1 ? "" : "s"} tracked`,
+    signal: "Observed",
+    detail: n === 0
+      ? "No M&A-related items in Argus's current feed coverage. This counts items tracked, not market transaction volume."
+      : `${n} M&A-related item${n === 1 ? "" : "s"} in Argus's current feed coverage, which can include transaction reporting, rumours and commentary. This is a count of what Argus is tracking, not market transaction volume, and it has no fixed observation period.`,
   };
 }
 
@@ -276,52 +323,16 @@ function earlyVCLayer(_o: FlowOptions): CapitalFlowLayer {
   );
 }
 
-function ipoWindowLayer(o: FlowOptions): CapitalFlowLayer {
-  const n      = o.ipoFilerCount;
-  const highVol = o.volRegime === "high" || o.volRegime === "elevated";
-
-  if (o.riskRegime === "risk-off" || o.volRegime === "high") return {
-    id: "ipo-window", label: "IPO Window", sublabel: "S-1 / Public Listings",
-    status: "blocked", indicator: "Window Closed", signal: "Shut",
-    detail: "IPO window shut, companies filing S-1s are pausing or withdrawing amid market turbulence.",
-  };
-  if (highVol) return {
-    id: "ipo-window", label: "IPO Window", sublabel: "S-1 / Public Listings",
-    status: "tightening", indicator: n > 0 ? `${n} S-1s Filed` : "Vol Elevated",
-    signal: "Constrained",
-    detail: "Elevated volatility constrains IPO timing, only high-quality, must-own names completing transactions.",
-  };
-  if (n >= 8) return {
-    id: "ipo-window", label: "IPO Window", sublabel: "S-1 / Public Listings",
-    status: "accelerating", indicator: `${n} Recent S-1s`, signal: "Open",
-    detail: "IPO window open and busy, backlog of high-quality filers transacting with institutional book coverage.",
-  };
-  if (n >= 4) return {
-    id: "ipo-window", label: "IPO Window", sublabel: "S-1 / Public Listings",
-    status: "expanding", indicator: `${n} Recent S-1s`, signal: "Opening",
-    detail: "IPO activity picking up, select companies with strong fundamentals successfully accessing the window.",
-  };
-  if (n >= 1) return {
-    id: "ipo-window", label: "IPO Window", sublabel: "S-1 / Public Listings",
-    status: "neutral", indicator: `${n} S-1 Filing${n > 1 ? "s" : ""}`, signal: "Cautious",
-    detail: "Limited IPO activity, companies watching for a sustained market window before pricing.",
-  };
-  return {
-    id: "ipo-window", label: "IPO Window", sublabel: "S-1 / Public Listings",
-    status: "tightening", indicator: "No Recent S-1s", signal: "Frozen",
-    detail: "No new S-1 filings in pipeline, companies staying private longer or pursuing alternative exit strategies.",
-  };
-}
-
 /**
  * RC2-C2a — the measurement-sufficiency contract, shared by every Capital Flow
- * aggregate (`buildSummary` here, `flowPressure` in capitalFlowIntel).
+ * aggregate (`buildSummary` here, `flowPressure` in capitalFlowIntel, and the
+ * regime chip on /private-markets).
  *
  * An aggregate that says something "across the funding stack" needs most of that
  * stack to be measured. Below a majority, no directional verdict is defensible and
  * the aggregate must report insufficient coverage instead.
  *
- * Defined once and exported so the two aggregates cannot drift apart and render
+ * Defined once and exported so the aggregates cannot drift apart and render
  * contradictory states side by side — which is exactly what happened when only
  * `buildSummary` had the rule.
  *
@@ -332,29 +343,79 @@ function ipoWindowLayer(o: FlowOptions): CapitalFlowLayer {
 export function measuredCoverage(layers: CapitalFlowLayer[]): {
   measured: number; total: number; sufficient: boolean;
 } {
+  // Observational layers ARE measured - we observed something real - so they count
+  // toward coverage. They are excluded from direction by `directionalLayers`.
   const measured = layers.filter(l => l.status !== "unmeasured").length;
   const total = layers.length;
   return { measured, total, sufficient: total > 0 && measured * 2 > total };
 }
 
 /**
- * RC2-C2a — the aggregate speaks only for the layers that were actually measured.
+ * RC2-C2b — the layers that may influence a directional verdict.
  *
- * Previously this counted statuses across all eight layers, four of which were
- * fabricated, and turned them into one confident sentence. An unmeasured layer now
- * enters neither the numerator nor the denominator: it is not "neutral", it is not
- * zero, it simply is not counted.
- *
- * The thresholds are the ORIGINAL ones expressed as proportions of the measured
- * set, so behaviour at eight measured layers is byte-identical to before
- * (ceil(8/2)=4, ceil(8*5/8)=5, ceil(8*3/8)=3). No new scoring model.
- *
- * Below a majority of the chain the function refuses to characterise the stack at
- * all. A sentence beginning "Capital flowing freely across the funding stack" is
- * not defensible when most of that stack is unmeasured.
+ * Every directional aggregate (pressure score, summary thresholds, regime chip)
+ * must be computed over THIS set, numerator and denominator alike. An
+ * observational layer contributing 0 to the numerator while still sitting in the
+ * denominator would drag every verdict toward the middle: with 5 measured layers
+ * of which 2 are observational, `open >= ceil(5*5/8) = 4` is unreachable because
+ * only 3 layers can ever be open. That is a feed-coverage count quietly changing
+ * the verdict, which is the defect C2b exists to remove.
  */
+export function directionalLayers(layers: CapitalFlowLayer[]): CapitalFlowLayer[] {
+  return layers.filter(l => l.status !== "unmeasured" && l.status !== "observational");
+}
+
+/**
+ * RC2-C2b — IPO FILING ACTIVITY. Renamed from "IPO Window", and observational.
+ *
+ * What was removed, and why:
+ *
+ *   - The two leading branches keyed on `riskRegime === "risk-off"` and
+ *     `volRegime === "high"/"elevated"` and TOOK PRECEDENCE over the filing
+ *     count. Argus could declare the window "shut - companies filing S-1s are
+ *     pausing or withdrawing" purely from VIX, while S-1s were actively being
+ *     filed. That is the same equity-proxy fabrication removed in C1 and C2a.
+ *   - The count itself was raw EDGAR entries INCLUDING S-1/A amendments.
+ *     Measured 2026-08-18: 13 entries, 10 amendments, 3 new registrations. The
+ *     `n >= 8` "window open and busy" branch was firing on amendment traffic.
+ *   - "Open" / "closed" / "busy" / "book coverage" / "transacting" describe an
+ *     IPO MARKET. That needs pricing, withdrawals, deal size and issuance
+ *     outcomes. EDGAR registration filings are none of those.
+ *
+ * What survives is the narrow truth: how many distinct issuers filed a new S-1,
+ * over the period EDGAR actually returned. No directional threshold is applied,
+ * because none can be justified - a daily new-S-1 history would be needed first
+ * and no such series exists in the product.
+ */
+function ipoFilingActivityLayer(o: FlowOptions): CapitalFlowLayer {
+  const base = { id: "ipo-window", label: "IPO Filing Activity", sublabel: "New S-1 registrations" };
+  const f = o.ipoFilings;
+
+  if (!f) return {
+    ...base,
+    status: "unmeasured",
+    indicator: "Not measured",
+    signal: "Unavailable",
+    detail: "No S-1 registration data retrieved. Filing activity is not currently measured.",
+  };
+
+  const period = f.windowStart && f.windowEnd
+    ? (f.windowStart === f.windowEnd ? f.windowStart : `${f.windowStart} to ${f.windowEnd}`)
+    : "period unavailable";
+  const n = f.newRegistrations;
+
+  return {
+    ...base,
+    status: "observational",
+    indicator: `${n} new S-1${n === 1 ? "" : "s"}`,
+    signal: "Observed",
+    detail: n === 0
+      ? `No new S-1 registrations in the filings EDGAR returned (${period}; ${f.rawEntries} total entries, amendments excluded). This counts registration filings only and says nothing about IPO pricing or completion.`
+      : `${n} distinct issuer${n === 1 ? "" : "s"} filed a new S-1 over ${period} (${f.rawEntries} total EDGAR entries; S-1/A amendments excluded). This counts registration filings only and says nothing about IPO pricing, withdrawals or completion.`,
+  };
+}
+
 function buildSummary(layers: CapitalFlowLayer[], regime: string): string {
-  const measured = layers.filter(l => l.status !== "unmeasured");
   const { measured: m, total, sufficient } = measuredCoverage(layers);
 
   // A statement "across the funding stack" requires most of the funding stack.
@@ -362,14 +423,22 @@ function buildSummary(layers: CapitalFlowLayer[], regime: string): string {
     return `Capital flow is measured for ${m} of ${total} layers of the funding stack — not enough coverage to characterise conditions. Unmeasured layers are shown individually below.`;
   }
 
-  const ss     = measured.map(l => l.status);
+  // RC2-C2b: direction is judged ONLY over layers with directional authority.
+  // Observational layers (M&A Activity, IPO Filing Activity) are real
+  // measurements but cannot move a verdict, so they enter neither side of this.
+  const directional = directionalLayers(layers);
+  if (directional.length === 0) {
+    return `Capital flow has ${m} of ${total} layers measured, but none of them carry a directional reading — conditions are observed, not characterised.`;
+  }
+  const ss     = directional.map(l => l.status);
   const open   = ss.filter(s => s === "accelerating" || s === "expanding").length;
   const closed = ss.filter(s => s === "contracting"  || s === "blocked").length;
   const tight  = ss.filter(s => s === "tightening").length;
 
-  const half     = Math.ceil(m / 2);
-  const mostOpen = Math.ceil((m * 5) / 8);
-  const someOpen = Math.ceil((m * 3) / 8);
+  const d        = directional.length;
+  const half     = Math.ceil(d / 2);
+  const mostOpen = Math.ceil((d * 5) / 8);
+  const someOpen = Math.ceil((d * 3) / 8);
 
   if (closed >= half)     return `Capital transmission severely impaired, ${regime} conditions restricting flow across most measured layers of the funding stack.`;
   if (tight  >= half)     return `Monetary tightening propagating through the capital stack, each downstream measured layer faces incrementally higher cost of capital.`;
@@ -390,7 +459,7 @@ export function computeCapitalFlow(opts: FlowOptions): CapitalFlowState {
     peBuyoutLayer(opts),
     lateVCLayer(opts),
     earlyVCLayer(opts),
-    ipoWindowLayer(opts),
+    ipoFilingActivityLayer(opts),
   ];
   const regime  = opts.regime ?? (
     opts.riskRegime === "risk-on"  ? "Risk-On"  :

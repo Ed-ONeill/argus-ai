@@ -9,6 +9,12 @@ export interface IPOFiler {
   sicDescription:    string | null;
   stateOfIncorp:     string | null;
   sector:            string | null;
+  /**
+   * RC2-C2b: "S-1" (new registration) or "S-1/A" (amendment). EDGAR's getcurrent
+   * feed is dominated by amendments - measured 2026-08-18: 10 of 13 entries were
+   * S-1/A - so a raw entry count is not a count of new registrations.
+   */
+  formType:          string;
 }
 
 // ── Module-level 1-hour cache ─────────────────────────────────────────────────
@@ -59,6 +65,8 @@ interface ParsedEntry {
   cik:             string;
   filingDate:      string;
   accessionNumber: string;
+  /** RC2-C2b: "S-1" (new registration) or "S-1/A" (amendment). */
+  formType:        string;
 }
 
 function parseAtomFeed(xml: string): ParsedEntry[] {
@@ -71,11 +79,14 @@ function parseAtomFeed(xml: string): ParsedEntry[] {
 
     // Title format: "S-1 - Company Name (0001234567) (0001234567) - 2024-01-15"
     // or: "S-1/A - Company Name (0001234567)"
-    const titleMatch = rawTitle.match(/S-1(?:\/A)?\s+-\s+(.+?)\s+\((\d{10})\)/i);
+    const titleMatch = rawTitle.match(/(S-1(?:\/A)?)\s+-\s+(.+?)\s+\((\d{10})\)/i);
     if (!titleMatch) continue;
 
-    const companyName = titleMatch[1].trim();
-    const cik         = titleMatch[2];
+    // Amendments are retained in the returned list (the pipeline table shows real
+    // filings) but are distinguishable so consumers can count NEW registrations.
+    const formType    = titleMatch[1].toUpperCase();
+    const companyName = titleMatch[2].trim();
+    const cik         = titleMatch[3];
 
     // Filing date from <updated> or <summary>
     const updatedTags = extractTags(entry, "updated");
@@ -87,7 +98,7 @@ function parseAtomFeed(xml: string): ParsedEntry[] {
     const accMatch = idText.match(/(\d{10}-\d{2}-\d{6})/);
     const accessionNumber = accMatch ? accMatch[1] : "";
 
-    results.push({ companyName, cik, filingDate, accessionNumber });
+    results.push({ companyName, cik, filingDate, accessionNumber, formType });
   }
 
   return results;
@@ -165,6 +176,11 @@ export async function GET() {
   const filers: IPOFiler[] = [...enriched, ...rest];
   _cache = { data: filers, fetchedAt: Date.now() };
 
-  console.log(`[ipo-pipeline] returning ${filers.length} filers, ${enriched.length} enriched`);
+  const newRegs = new Set(filers.filter(f => f.formType === "S-1").map(f => f.cik));
+  console.log(
+    `[ipo-pipeline] returning ${filers.length} filers (${enriched.length} enriched); ` +
+    `new S-1 registrations after CIK dedup = ${newRegs.size}, ` +
+    `amendments = ${filers.filter(f => f.formType !== "S-1").length}`,
+  );
   return NextResponse.json(filers);
 }

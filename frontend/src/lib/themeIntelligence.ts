@@ -367,20 +367,22 @@ interface CreditSummary {
   detail: string;
 }
 
-interface MASummary {
-  status: string;
-  signal: string;
-}
-
 export function explainMAActivity(
   deals:        DealSummary[],
   maThemes:     ThemeIntelligence[],
   regime:       string | null,
   creditLayer:  CreditSummary,
-  maLayer:      MASummary,
 ): string {
+  // RC2-C2b: `deals` is Argus's FEED COVERAGE of M&A-related items - articles
+  // admitted by a keyword regex over title or snippet, with no fixed time window.
+  // Measured 2026-08-18: of 8 such items, at most 1-2 were announced
+  // transactions; the rest were commentary, an interview, a 13F stake purchase
+  // and litigation news. The composition of what we track is a fact and may be
+  // stated. What it CANNOT establish is buyer appetite, dry-powder deployment,
+  // balance-sheet funding behaviour, bid-ask spreads, future announcement flow,
+  // or consolidation urgency. Those inferences are removed below.
   if (deals.length === 0) {
-    return "No active deal flow detected in the current feed window. Low M&A activity typically reflects financing friction or macro uncertainty suppressing buyer conviction.";
+    return "No M&A-related items in Argus's current feed coverage.";
   }
 
   const sponsorCount   = deals.filter(d => d.dealType === "sponsor").length;
@@ -403,45 +405,51 @@ export function explainMAActivity(
 
   const parts: string[] = [];
 
-  // Lead with macro credit context — only when credit is actually measured.
+  // Lead with macro credit context — only when credit is actually measured. These
+  // two sentences rest on the measured OAS (C1), not on the item count, so they
+  // survive C2b. The second no longer asserts that "deal activity is persisting",
+  // which was a claim about the market drawn from our coverage count.
   if (creditOpen) {
     parts.push(`Tightening high-yield spreads are lowering the cost of leveraged financing.`);
   } else if (creditTight) {
-    parts.push(`Deal activity is persisting despite widening high-yield spreads. Buyers are prioritizing all-equity or lower-leverage structures.`);
+    parts.push(`Widening high-yield spreads raise the cost of leveraged financing, favouring all-equity or lower-leverage structures.`);
   }
 
-  // Characterise buyer mix
-  if (sponsorCount > 0 && strategicCount > 0) {
-    parts.push(`Both strategic acquirers (${strategicCount}) and PE sponsors (${sponsorCount}) are active. Broad-based deal appetite rather than opportunistic buying.`);
-  } else if (sponsorCount > strategicCount) {
-    parts.push(`Sponsor-led activity is dominant (${sponsorCount} PE-backed deals). Private equity is deploying dry powder into motivated sellers.`);
-  } else if (strategicCount > 0) {
-    parts.push(`Strategic acquirers are leading (${strategicCount} deals). Corporate balance sheets funding transactions without leverage dependency.`);
+  // RC2-C2b: state the COMPOSITION of what Argus is tracking - a fact - without
+  // the market inference that used to follow each clause ("broad-based deal
+  // appetite", "deploying dry powder into motivated sellers", "corporate balance
+  // sheets funding transactions without leverage dependency"). None of those are
+  // observable from a count of articles.
+  const mix: string[] = [];
+  if (strategicCount > 0) mix.push(`${strategicCount} strategic`);
+  if (sponsorCount   > 0) mix.push(`${sponsorCount} sponsor-related`);
+  if (rumoredCount   > 0) mix.push(`${rumoredCount} reported as rumoured or in talks`);
+  if (mix.length) {
+    parts.push(`Of the ${deals.length} M&A-related item${deals.length === 1 ? "" : "s"} tracked: ${mix.join(", ")}.`);
   }
 
-  // Rumor signal
-  if (rumoredCount > 2) {
-    parts.push(`Elevated rumor activity (${rumoredCount} reported deals) indicates buyer interest ahead of formal processes. Expect announcement flow to follow.`);
-  }
-
-  // Causal narrative from themes (the "why" layer)
+  // Causal narrative from themes — a separate authority (theme intelligence), so
+  // it survives. The `regime` fallback did NOT: it asserted consolidation urgency
+  // ("motivating acquirers to consolidate before the valuation window narrows")
+  // from a regime label plus our item count, which supports neither half.
   if (topTheme?.causal_narrative) {
     parts.push(topTheme.causal_narrative);
-  } else if (regime) {
-    parts.push(`${regime} conditions are motivating acquirers to consolidate before the valuation window narrows.`);
   }
 
   if (mergerCount > 0) {
-    parts.push(`${mergerCount} merger-of-equals structure${mergerCount > 1 ? "s" : ""} suggest${mergerCount === 1 ? "s" : ""} sector consolidation themes rather than pure control premiums.`);
+    parts.push(`${mergerCount} item${mergerCount === 1 ? "" : "s"} describe${mergerCount === 1 ? "s" : ""} a merger or combination structure.`);
   }
 
   // RC2-C1: the fallback line also characterised credit ("... with accessible
   // credit conditions"). Unmeasured credit must not be described at all, so the
   // clause is dropped rather than rendered as "unavailable credit conditions".
+  // RC2-C2b: the fallback said "{N} deals active, {signal} environment" - both a
+  // transaction claim and a market-state claim from a coverage count. It now
+  // states only what was counted. The `maLayer` parameter was removed entirely:
+  // once the layer is observational its `signal` carries no characterisation, so
+  // keeping it would have been a dead input inviting future misuse.
   if (parts.length > 0) return parts.join(" ");
-  return creditMeasured
-    ? `${deals.length} deals active, ${maLayer.signal.toLowerCase()} environment with ${creditLayer.signal.toLowerCase()} credit conditions.`
-    : `${deals.length} deals active, ${maLayer.signal.toLowerCase()} environment.`;
+  return `${deals.length} M&A-related item${deals.length === 1 ? "" : "s"} in Argus's current feed coverage.`;
 }
 
 // ── 5. Market Breadth Snapshot ────────────────────────────────────────────────

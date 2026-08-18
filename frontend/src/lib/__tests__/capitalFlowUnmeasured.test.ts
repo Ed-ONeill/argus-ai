@@ -33,9 +33,12 @@ const credit = (pp = 2.67, prior = 2.71) =>
     [{ date: "2026-08-14", valuePp: prior }, { date: "2026-08-17", valuePp: pp }], NOW,
   );
 
+/** RC2-C2b: a representative S-1 observation (the measured 2026-08-18 shape). */
+const IPO = { newRegistrations: 3, rawEntries: 13, windowStart: "2026-08-14", windowEnd: "2026-08-18" };
+
 const opts = (over: Partial<FlowOptions> = {}): FlowOptions => ({
   riskRegime: "neutral", volRegime: "moderate", regime: null, tnxRate: 4.2,
-  maDealCount: 5, ipoFilerCount: 5, credit: credit(), ...over,
+  maDealCount: 5, ipoFilings: IPO, credit: credit(), ...over,
 });
 
 const layer = (id: string, o: FlowOptions = opts()) =>
@@ -265,16 +268,16 @@ describe("C1 and the out-of-scope layers are unchanged", () => {
     expect(layer("credit-leverage", opts({ credit: null })).status).toBe("unmeasured");
   });
 
-  it("M&A Activity is untouched by this slice", () => {
+  it("M&A Activity is observational after C2b (was accelerating)", () => {
     const l = layer("ma-activity", opts({ maDealCount: 9 }));
-    expect(l.status).toBe("accelerating");
-    expect(l.indicator).toBe("9 Recent Deals");
+    expect(l.status).toBe("observational");
+    expect(l.indicator).toBe("9 M&A-related items tracked");
   });
 
-  it("IPO Window is untouched by this slice", () => {
-    const l = layer("ipo-window", opts({ ipoFilerCount: 10, riskRegime: "neutral", volRegime: "moderate" }));
-    expect(l.status).toBe("accelerating");
-    expect(l.indicator).toContain("10");
+  it("IPO Filing Activity is observational after C2b (was accelerating)", () => {
+    const l = layer("ipo-window", opts({ riskRegime: "neutral", volRegime: "moderate" }));
+    expect(l.status).toBe("observational");
+    expect(l.indicator).toContain("3 new S-1");
   });
 
   it("Monetary Policy and Public Equities still read their real inputs", () => {

@@ -11,6 +11,7 @@ import { useIPOPipeline, type IPOFiler } from "@/hooks/useIPOPipeline";
 import {
   computeCapitalFlow,
   measuredCoverage,
+  directionalLayers,
   FLOW_STATUS_COLOR,
   FLOW_STATUS_LABEL,
   type CapitalFlowLayer,
@@ -358,26 +359,45 @@ export default function PrivateMarketsPage() {
     return filterCapitalFlowThemes(all).slice(0, 4);
   }, [feedData]);
 
+  // RC2-C2b: narrow the raw EDGAR list to what it can actually support - distinct
+  // issuers filing a NEW S-1, with the period the data itself covers. The full
+  // list (amendments included) is still rendered in the pipeline table below;
+  // only the Capital Flow observation is narrowed.
+  const ipoObservation = useMemo(() => {
+    if (!filers.length) return null;
+    const dates = filers.map(f => f.filingDate).filter(Boolean).sort();
+    return {
+      newRegistrations: new Set(
+        filers.filter(f => f.formType === "S-1").map(f => f.cik),
+      ).size,
+      rawEntries:  filers.length,
+      windowStart: dates[0] ?? null,
+      windowEnd:   dates[dates.length - 1] ?? null,
+    };
+  }, [filers]);
+
   const capitalFlow = useMemo(() => computeCapitalFlow({
     riskRegime,
     volRegime,
     regime,
     tnxRate,
     maDealCount:   totalDealCount,
-    ipoFilerCount: filers.length,
+    ipoFilings:    ipoObservation,
     credit,
-  }), [riskRegime, volRegime, regime, tnxRate, totalDealCount, filers.length, credit]);
+  }), [riskRegime, volRegime, regime, tnxRate, totalDealCount, ipoObservation, credit]);
 
   // RC2-C2a: the regime chip is a THIRD aggregate over the same layers, and it
   // must obey the same measurement-sufficiency contract as buildSummary and
   // flowPressure. Its thresholds were absolute (>= 4 of 8) and its caption said
   // "of 8", both of which assumed every layer was measurable.
   const coverage     = measuredCoverage(capitalFlow.layers);
-  const openLayers   = capitalFlow.layers.filter(l => l.status === "accelerating" || l.status === "expanding").length;
-  const closedLayers = capitalFlow.layers.filter(l => l.status === "contracting"  || l.status === "blocked").length;
-  // Same proportional rule the summary uses: ceil(measured / 2). At 8 measured
-  // this is 4, identical to the previous hardcoded threshold.
-  const chipMajority = Math.ceil(coverage.measured / 2);
+  // RC2-C2b: direction is judged over layers with directional authority only.
+  // Observational layers count toward coverage but never toward a verdict.
+  const directional  = directionalLayers(capitalFlow.layers);
+  const openLayers   = directional.filter(l => l.status === "accelerating" || l.status === "expanding").length;
+  const closedLayers = directional.filter(l => l.status === "contracting"  || l.status === "blocked").length;
+  // Same proportional rule the summary uses, over the directional set.
+  const chipMajority = Math.ceil(directional.length / 2);
   const chipVerdict  = !coverage.sufficient ? "Not measured"
     : openLayers   >= chipMajority ? "Capital Flowing"
     : closedLayers >= chipMajority ? "Capital Constrained"
@@ -441,7 +461,7 @@ export default function PrivateMarketsPage() {
             </span>
             <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.36)" }}>
               {coverage.sufficient
-                ? `${openLayers} of ${coverage.measured} measured layers open`
+                ? `${openLayers} of ${directional.length} directional layers open`
                 : `${coverage.measured} of ${coverage.total} layers measured`}
             </span>
             {regime && (
@@ -480,12 +500,16 @@ export default function PrivateMarketsPage() {
                   Capital Flow Transmission
                 </h2>
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
-                  Monetary Policy → IPO Window
+                  Monetary Policy → IPO Filing Activity
                 </span>
               </div>
               <CapitalFlowChain layers={layers} />
               <p className="mt-4 text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.22)" }}>
-                Capital flow status derived from live market regime, 10Y yield, M&A deal activity, and SEC EDGAR S-1 pipeline. Updated in real time as conditions change.
+                {/* RC2-C2b: the old caption claimed "M&A deal activity" and "updated in
+                    real time". Neither held: the M&A figure is Argus feed coverage, the
+                    credit series is daily/T+1 and the S-1 data covers the few business
+                    days EDGAR returns. */}
+                Directional layers derive from live market regime, the 10Y yield and the measured US high-yield OAS (daily, T+1). M&amp;A and IPO layers are observational counts — Argus feed coverage and SEC EDGAR S-1 registrations — and do not set direction.
               </p>
             </div>
 

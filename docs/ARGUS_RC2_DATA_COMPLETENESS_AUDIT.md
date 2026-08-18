@@ -805,6 +805,109 @@ changed files, production build clean. Backend **1264 passed** (no backend file 
 observations but overstate what those observations mean — they are **C2b**. No LP/fundraising
 ingestion, no new provider, no synthesized private-market data, no new scoring model, no redesign.
 
+### RC2-C2b — M&A Activity and IPO Filing Activity become observational (implemented)
+
+Final slice of finding **C**. Both layers counted something real and then asserted something they
+could not observe.
+
+**Correction to this document.** Finding C states EDGAR `getcurrent` "carries ~20–40 entries at all
+times regardless of market conditions" and that the IPO layer "measures EDGAR's page size". **That
+is wrong and is retracted.** Measured across three fetches: 10, then 13 entries, over a genuinely
+rolling window. It is a real, varying quantity. The actual defect is different — see below.
+
+**Measured baselines, 2026-08-18.**
+
+*M&A:* 8 items classified `M&A` out of 59 post-cap feed items. **Zero duplicate transactions** in
+that sample — upstream `_dedup_items` (title-Jaccard ≥ 0.50, source-tier survivor) already folds
+repeated reporting, so the earlier presumption that duplicates inflate the count is **also
+retracted**. The dominant defect is **category admission**: `_CAT_MA_RE` matches title *or snippet*,
+so of the 8, at most 1–2 were announced transactions. The rest: an interview ("Alternative Views
+with Schroders's Ethan Vogelhut", admitted on the word *buyout* in its snippet), a feature ("The CEO
+trying to outsmart buyout firms"), market commentary, a 13F stake purchase, litigation news about an
+existing deal, and an 8-K whose "definitive agreement" could be any material contract. The count
+also has **no time window** — both warm targets run `fresh_only=False`, and that sample spanned
+11.3h to 101.4h.
+
+*IPO:* 13 raw entries — **10 S-1/A amendments, 3 new S-1 registrations**, 13 distinct CIKs, spanning
+three business days (2026-08-14, 08-17, 08-18). The parser regex `S-1(?:\/A)?` admitted amendments
+and there was no CIK dedup, so the raw count overstated new registrations by **4.3×** and it was
+amendment traffic that fired the `n >= 8` "IPO window open and busy" branch.
+
+**The thresholds had no empirical authority.** M&A `>= 8 / >= 4 / >= 2` are counts of Argus's own
+coverage — adding an RSS source raises "market activity", an outage lowers it. On the measured day
+the count sat exactly on the `>= 8` "deal flow elevated" boundary, crossable by one more feature
+article. No directional threshold was substituted for either layer: a daily new-S-1 history would be
+needed first, and no such series exists in the product (EDGAR full-index returned 403 from the test
+environment under two SEC-compliant User-Agents; `browse-edgar` works, the bulk archive does not).
+
+**A third status was required.** Setting these layers to `neutral` would have been wrong: with 5
+measured layers of which 2 are observational, `open >= ceil(5*5/8) = 4` is unreachable because only
+3 layers can ever be open — a feed-coverage count quietly dampening every verdict. `FlowStatus` now
+distinguishes three things:
+
+```
+neutral        measured, HAS directional authority, currently reading no direction
+observational  measured, NO directional authority, ever
+unmeasured     no data at all
+```
+
+`measuredCoverage` counts observational layers (we did observe something). The new
+`directionalLayers()` excludes them from every directional aggregate — `flowPressure`'s score,
+`buildSummary`'s thresholds, and the regime chip's majority — **numerator and denominator alike**.
+
+**Layer changes.**
+
+- **M&A Activity** → `observational`, sublabel "Feed coverage", indicator
+  `"8 M&A-related items tracked"`. The detail discloses that this is Argus feed coverage, can
+  include rumours and commentary, is not market transaction volume, and has no fixed observation
+  period. All three thresholds removed.
+- **IPO Window → IPO Filing Activity** → `observational`, sublabel "New S-1 registrations",
+  indicator `"3 new S-1s"`. The detail carries the raw entry count for diagnostics, states
+  amendments are excluded, names the period the data actually covers, and says explicitly that it
+  says nothing about IPO pricing, withdrawals or completion. **Both equity/VIX override branches are
+  deleted** — Argus could previously declare the window "shut … companies filing S-1s are pausing or
+  withdrawing" purely from VIX while S-1s were being filed.
+- The route now captures `formType`; the page derives distinct-CIK new-S-1 registrations and the
+  observed period. The full filer list (amendments included) is unchanged in the pipeline table.
+- `/ma` previously passed a hardcoded `ipoFilerCount: 0`, which rendered as "No Recent S-1s /
+  Frozen" — a claim manufactured from a literal. It now passes `null` and the layer reads
+  `unmeasured`.
+
+**Downstream reasoning.** Six claim sites in `explainMAActivity` were rewritten or removed: broad-
+based deal appetite, dry-powder deployment into motivated sellers, corporate balance sheets funding
+transactions, expected announcement flow, consolidation urgency from a regime label, and the
+`"{N} deals active, {signal} environment"` fallback. What survives is the factual composition of
+what Argus tracks (`"Of the 8 M&A-related items tracked: 3 strategic, 2 sponsor-related…"`), the C1
+credit sentences (measured OAS, a different authority), and theme causal narratives. The now-dead
+`maLayer` parameter was removed rather than silenced.
+
+**Measured before → after** (live shape: 8 M&A items, 13 EDGAR entries / 3 new S-1, risk-on):
+
+```
+                     BEFORE                              AFTER
+M&A Activity     accelerating "8 Recent Deals"    observational "8 M&A-related items tracked"
+IPO Window       accelerating "13 Recent S-1s"    observational "3 new S-1s"   [IPO Filing Activity]
+coverage         5/8                              5/8   (directional: 3)
+pressure         77 FLOWING                       61 FLOWING
+chip             "Capital Flowing"                "Mixed Transmission"
+summary          "flowing freely…"                "mixed across the measured layers…"
+
+invariance: maDealCount and newRegistrations swept 0 / 8 / 40 -> every aggregate byte-identical
+```
+
+**Validation.** 44 new tests in `capitalFlowObservational.test.ts`, including the 0↔40 sweep on both
+counts, IPO output identical across every `riskRegime`/`volRegime`/`regime`, amendment exclusion and
+CIK dedup, raw-vs-deduped pinning, banned-claim sweeps on both layers and on the M&A prose, and an
+explicit regression that an observational layer contributes to coverage but carries zero directional
+authority and does not sit in the directional denominator. C1 (53) and C2a (69) suites pass with only
+call-signature updates. Frontend **847 passed / 62 files**, tsc clean, **lint 0 errors**, production
+build clean. Backend **1264 passed** (no backend file changed).
+
+**Observed, not changed:** `flowPressure` reports `61 FLOWING` while the summary and chip read
+"mixed". Both are honest readings of the same three directional layers by different statistics — a
+score threshold (≥60) versus count majorities — and the divergence predates C2b. Recorded rather
+than tuned.
+
 ---
 
 ## Per-surface index

@@ -10,10 +10,13 @@
  */
 
 import type { CapitalFlowLayer, FlowStatus } from "./capitalFlow";
-import { measuredCoverage } from "./capitalFlow";
+import { directionalLayers, measuredCoverage } from "./capitalFlow";
 
 const STATUS_VALUE: Record<FlowStatus, number> = {
   accelerating: 3, expanding: 2, neutral: 0, tightening: -1, contracting: -2, blocked: -3,
+  // RC2-C2b: observational layers never reach the scorer (directionalLayers
+  // filters them out first). The 0 is a belt-and-braces value, not the mechanism.
+  observational: 0,
   // RC2-C1: an unmeasured layer contributes nothing. Numerically this matches
   // `neutral`, but the meaning differs: neutral is a measured reading of no
   // direction, unmeasured is an absence. It must not push the pressure score in
@@ -63,7 +66,10 @@ export function flowPressure(layers: CapitalFlowLayer[]): FlowPressure {
   // "MIXED" / "Liquidity Stable" — a market-state assertion built partly on data
   // we do not have. Scoring only the measured layers keeps the meter a statement
   // about what was actually measured.
-  const scored = layers.filter(l => l.status !== "unmeasured");
+  // RC2-C2b: score over layers with DIRECTIONAL authority only. Observational
+  // layers are measured (they count toward coverage below) but must not sit in
+  // this denominator, or a feed-coverage count would drag the score to the middle.
+  const scored = directionalLayers(layers);
   const span   = scored.length * 3;                        // ±3 per scored layer
   const sum    = scored.reduce((s, l) => s + STATUS_VALUE[l.status], 0);
   const score  = span > 0 ? Math.round(((sum + span) / (span * 2)) * 100) : 50;
