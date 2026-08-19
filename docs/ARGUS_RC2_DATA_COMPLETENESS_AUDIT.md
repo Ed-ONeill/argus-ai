@@ -908,6 +908,48 @@ build clean. Backend **1264 passed** (no backend file changed).
 score threshold (≥60) versus count majorities — and the divergence predates C2b. Recorded rather
 than tuned.
 
+**Production validation.** Deployed as `47aa173`; both Railway services reported success —
+frontend (`argus-ai`) at 2026-08-18T22:10:25Z, backend (`perceptive-achievement`) at 22:17:16Z,
+combined state success. No health failure occurred during this rollout. Verified directly against
+the live route (it sits outside the auth middleware):
+
+```
+GET /api/ipo-pipeline           HTTP 200, stable across 5 consecutive samples
+  entries returned      15
+  formType on every row  true      <- the C2b route change is live
+  S-1/A amendments      11
+  new S-1 registrations  4
+  deduped new-S-1 CIKs   4         <- what IPO Filing Activity renders
+  observed period       2026-08-14 to 2026-08-18
+```
+
+The production payload matches an independent EDGAR fetch from the development environment exactly
+(15 / 11 / 4 / 4, same period), so amendment exclusion and CIK dedup are confirmed against real
+data: the layer renders **"4 new S-1s"**, not 15. With the S-1 observation present, measured
+coverage is **5/8** and both observational layers are measured-but-non-directional as designed.
+`/api/credit-spread` still returns a measured OAS (270bp as of 2026-08-17, widening, 1 business day
+stale), so the C1 authority is unaffected.
+
+**Not directly verified:** `/private-markets` and `/ma` are auth-gated (307 → `/auth`), so the
+rendered Capital Flow chain — the two observational layers, C2a's three unmeasured layers, the
+coverage figure and the regime chip — was not observed. Count-invariance in production likewise
+rests on the test suite, not on a rendered check.
+
+**A transient failure worth recording, and a correction.** Immediately before the deploy the
+production IPO route returned **HTTP 502 with `[]`**. It recovered on its own and has been stable
+since. The initial inference — that main's non-canonical SEC User-Agent
+(`Argus Intelligence research@argusintel.com`) was causing SEC to block the request — is
+**not supported**: the same UA is now retrieving EDGAR successfully in production. The UA
+discrepancy is real (the standardisation commit `a3ed650` exists only on the unmerged
+`homepage-product-correction` branch) but it is not currently causing a failure, and the 502 is
+better explained as transient SEC throttling.
+
+The episode is still instructive, because it shows the C2b contract behaving correctly under a real
+outage. During that window `filers` was `[]`, so `ipoObservation` was `null` and the layer read
+"Not measured". Before C2b the same empty result rendered as **"No Recent S-1s · Frozen — No new
+S-1 filings in pipeline, companies staying private longer or pursuing alternative exit
+strategies"** — a confident market claim manufactured from a data outage.
+
 ---
 
 ## Per-surface index
