@@ -315,7 +315,10 @@ describe("flowPressure sufficiency contract", () => {
     const sum = 3 + 2 + 2 + 0 + 2 + 0 + 2 + 3;
     expect(p.score).toBe(Math.round(((sum + 24) / 48) * 100));
     expect(p.sufficient).toBe(true);
-    expect(p.label).toBe("FLOWING");
+    // RC2-C3: the SCORE formula is unchanged (asserted above); the displayed word
+    // now comes from the canonical verdict, which reads breadth. 6 of 8 layers open
+    // is a majority, so it still reads flowing - by a different, single authority.
+    expect(p.label).toBe("Capital Flowing");
     expect(p.liquidity).toBe("Liquidity Expanding");
     expect(p.trendLabel).toBe("Improving");
   });
@@ -328,7 +331,8 @@ describe("flowPressure sufficiency contract", () => {
     expect(p.total).toBe(8);
     expect(p.sufficient).toBe(true);
     expect(p.score).toBe(Math.round(((sum + span) / (span * 2)) * 100));
-    expect(p.label).toBe("FLOWING");
+    // RC2-C3: 4 of 5 directional layers open is a majority -> flowing.
+    expect(p.label).toBe("Capital Flowing");
   });
 
   it("5/8 is deterministic", () => {

@@ -351,6 +351,91 @@ export function measuredCoverage(layers: CapitalFlowLayer[]): {
 }
 
 /**
+ * RC2-C3 — THE canonical Capital Flow verdict. The only authority permitted to
+ * classify the overall condition directionally.
+ *
+ * Three systems used to answer this question independently and in the same
+ * vocabulary, in the same block of /private-markets:
+ *
+ *   flowPressure   mean of STATUS_VALUE magnitudes, thresholded 60/40
+ *   buildSummary   five prioritised count branches (>=d/2, >=5d/8, >=3d/8)
+ *   regime chip    a single count majority that IGNORED `tightening` entirely
+ *
+ * Measured across the 36 reachable states: they disagreed on direction in
+ * **18 of 36 (50%)**. Today's live state produced "61 FLOWING" beside "Mixed
+ * Transmission". A uniformly tightening stack read as "Mixed Transmission" on the
+ * chip, because tightening cast no vote there.
+ *
+ * The verdict is BREADTH, not magnitude. The STATUS_VALUE scale
+ * (+3/+2/0/-1/-2/-3) has no stated authority and is asymmetric - there is no +1,
+ * so `tightening` is structurally underweighted against its opposite. Counting how
+ * many directional layers point each way is the defensible question, and it is the
+ * question the surfaces' own language ("N of M layers open") already asks.
+ *
+ * Majority is expressed exactly as `measuredCoverage` expresses it - `n * 2 > d` -
+ * so one breadth principle is stated identically everywhere rather than two
+ * near-identical rules drifting apart.
+ *
+ * `neutral` is directional-CAPABLE but casts no vote: it is a measured reading of
+ * no direction, so it dilutes a majority without arguing for one.
+ */
+export type CapitalFlowDirection = "flowing" | "tightening" | "constrained" | "mixed";
+
+/** Why no directional verdict is available. */
+export type CapitalFlowInsufficiency =
+  | "coverage"    // too few layers MEASURED (the C2a rule)
+  | "breadth";    // measured, but too few DIRECTIONAL layers to read consensus
+
+export interface CapitalFlowVerdict {
+  /** null when no directional verdict is defensible. */
+  direction:    CapitalFlowDirection | null;
+  insufficient: CapitalFlowInsufficiency | null;
+  open:         number;   // accelerating + expanding
+  tightening:   number;   // tightening
+  closed:       number;   // contracting + blocked
+  neutral:      number;   // measured, directional-capable, no vote
+  directional:  number;   // layers eligible to vote
+  measured:     number;   // C2a coverage numerator
+  total:        number;
+}
+
+/** Canonical display phrase per direction. Surfaces render this verbatim. */
+export const VERDICT_LABEL: Record<CapitalFlowDirection, string> = {
+  flowing:     "Capital Flowing",
+  tightening:  "Tightening",
+  constrained: "Capital Constrained",
+  mixed:       "Mixed Transmission",
+};
+
+export function capitalFlowVerdict(layers: CapitalFlowLayer[]): CapitalFlowVerdict {
+  const { measured, total, sufficient } = measuredCoverage(layers);
+  const dir = directionalLayers(layers);
+
+  const open       = dir.filter(l => l.status === "accelerating" || l.status === "expanding").length;
+  const tightening = dir.filter(l => l.status === "tightening").length;
+  const closed     = dir.filter(l => l.status === "contracting"  || l.status === "blocked").length;
+  const neutral    = dir.filter(l => l.status === "neutral").length;
+  const base = { open, tightening, closed, neutral, directional: dir.length, measured, total };
+
+  // 1. C2a's coverage rule comes first and is unchanged.
+  if (!sufficient) return { ...base, direction: null, insufficient: "coverage" };
+
+  // 2. Breadth needs something to be broad ACROSS. With one directional layer
+  //    there is no consensus to read - the "majority" would just be that layer
+  //    restating itself as the condition of the whole funding stack. This is the
+  //    same breadth principle as above, applied to the voting set; it is not a new
+  //    calibration threshold.
+  if (dir.length < 2) return { ...base, direction: null, insufficient: "breadth" };
+
+  // 3. Majority breadth. Same `n * 2 > d` form as measuredCoverage.
+  const d = dir.length;
+  if (open       * 2 > d) return { ...base, direction: "flowing",     insufficient: null };
+  if (tightening * 2 > d) return { ...base, direction: "tightening",  insufficient: null };
+  if (closed     * 2 > d) return { ...base, direction: "constrained", insufficient: null };
+  return { ...base, direction: "mixed", insufficient: null };
+}
+
+/**
  * RC2-C2b — the layers that may influence a directional verdict.
  *
  * Every directional aggregate (pressure score, summary thresholds, regime chip)
@@ -415,39 +500,48 @@ function ipoFilingActivityLayer(o: FlowOptions): CapitalFlowLayer {
   };
 }
 
+
+/**
+ * RC2-C3 — prose PROJECTED from the canonical verdict. It no longer computes
+ * direction.
+ *
+ * The old body ran five prioritised count branches of its own. Two of them were
+ * unreachable at the current three directional layers: `mostOpen = ceil(3*5/8)`
+ * and `someOpen = ceil(3*3/8)` are both 2, so the "positive across upper layers"
+ * branch could never fire; and no layer emits `blocked` while only Public Equities
+ * emits `contracting`, so `closed >= ceil(d/2)` ("severely impaired") could never
+ * fire either. Both are removed rather than left as dead thresholds.
+ *
+ * What it may still state is FACT drawn from the layers: how many were measured,
+ * how many carry a direction, and how those directions split. It adds no market
+ * claim beyond the verdict itself.
+ */
 function buildSummary(layers: CapitalFlowLayer[], regime: string): string {
-  const { measured: m, total, sufficient } = measuredCoverage(layers);
+  const v = capitalFlowVerdict(layers);
 
-  // A statement "across the funding stack" requires most of the funding stack.
-  if (!sufficient) {
-    return `Capital flow is measured for ${m} of ${total} layers of the funding stack — not enough coverage to characterise conditions. Unmeasured layers are shown individually below.`;
+  if (v.insufficient === "coverage") {
+    return `Capital flow is measured for ${v.measured} of ${v.total} layers of the funding stack — not enough coverage to characterise conditions. Unmeasured layers are shown individually below.`;
+  }
+  if (v.insufficient === "breadth") {
+    return v.directional === 0
+      ? `Capital flow has ${v.measured} of ${v.total} layers measured, but none of them carry a directional reading — conditions are observed, not characterised.`
+      : `Capital flow has only ${v.directional} directional layer of ${v.measured} measured — not enough breadth to characterise the funding stack.`;
   }
 
-  // RC2-C2b: direction is judged ONLY over layers with directional authority.
-  // Observational layers (M&A Activity, IPO Filing Activity) are real
-  // measurements but cannot move a verdict, so they enter neither side of this.
-  const directional = directionalLayers(layers);
-  if (directional.length === 0) {
-    return `Capital flow has ${m} of ${total} layers measured, but none of them carry a directional reading — conditions are observed, not characterised.`;
+  const split = `${v.open} open, ${v.tightening} tightening, ${v.closed} closed` +
+    (v.neutral ? `, ${v.neutral} neutral` : "");
+  const across = `${v.directional} directional layer${v.directional === 1 ? "" : "s"} (${split})`;
+
+  switch (v.direction) {
+    case "flowing":
+      return `Capital flow leans open across the measured layers of the funding stack: ${across}, in ${regime} conditions.`;
+    case "tightening":
+      return `Measured layers are predominantly tightening: ${across}. Each downstream layer faces incrementally higher cost of capital.`;
+    case "constrained":
+      return `Measured layers are predominantly closed: ${across}, restricting transmission through the funding stack in ${regime} conditions.`;
+    default:
+      return `Directional readings disagree across the measured layers of the funding stack: ${across}, in ${regime} conditions.`;
   }
-  const ss     = directional.map(l => l.status);
-  const open   = ss.filter(s => s === "accelerating" || s === "expanding").length;
-  const closed = ss.filter(s => s === "contracting"  || s === "blocked").length;
-  const tight  = ss.filter(s => s === "tightening").length;
-
-  const d        = directional.length;
-  const half     = Math.ceil(d / 2);
-  const mostOpen = Math.ceil((d * 5) / 8);
-  const someOpen = Math.ceil((d * 3) / 8);
-
-  if (closed >= half)     return `Capital transmission severely impaired, ${regime} conditions restricting flow across most measured layers of the funding stack.`;
-  if (tight  >= half)     return `Monetary tightening propagating through the capital stack, each downstream measured layer faces incrementally higher cost of capital.`;
-  // The old copy for this branch named early-stage VC explicitly ("from M&A
-  // through early-stage VC"). That layer is unmeasured, so the claim now stops at
-  // what the measured layers support.
-  if (open   >= mostOpen) return `Capital flowing freely across the measured layers of the funding stack, ${regime} conditions enabling deal activity.`;
-  if (open   >= someOpen) return `Capital flow positive across upper layers with selective activity downstream, quality assets continue to attract capital despite mixed conditions.`;
-  return `Capital flow mixed across the measured layers of the funding stack, sector and quality differentiation are the primary return drivers in ${regime} conditions.`;
 }
 
 export function computeCapitalFlow(opts: FlowOptions): CapitalFlowState {

@@ -950,6 +950,97 @@ outage. During that window `filers` was `[]`, so `ipoObservation` was `null` and
 S-1 filings in pipeline, companies staying private longer or pursuing alternative exit
 strategies"** — a confident market claim manufactured from a data outage.
 
+### RC2-C3 — one canonical Capital Flow verdict (implemented)
+
+Closes the aggregate inconsistency recorded at the end of C2b. Ownership model **B**: Capital Flow
+has one directional authority and every surface projects from it.
+
+**Diagnosed.** Three systems answered "what is the Capital Flow condition?" independently, in the
+same vocabulary, inside the same block of `/private-markets` (lines 449 / 460 / 475):
+
+| | numerator / denominator | `tightening` | rule |
+|---|---|---|---|
+| `flowPressure` | Σ `STATUS_VALUE` / `d × 3` | **−1** | mean magnitude, `≥60` FLOWING, `≤40` CONSTRAINED |
+| `buildSummary` | counts / `d` | its own category | 5 prioritised branches (`≥d/2`, `≥5d/8`, `≥3d/8`) |
+| regime chip | counts / `d` | **ignored entirely** | one majority (`≥⌈d/2⌉`) |
+
+Enumerating the full reachable space — Monetary 3 × Equities 4 × Credit 3 = **36 states** — they
+disagreed on direction in **18 of 36 (50%)**. Pairwise: pressure vs summary 13, pressure vs chip 15,
+summary vs chip 8. The live `61 FLOWING` above `Mixed Transmission` was not a boundary case; it was
+one of eighteen. Worst case: an all-tightening stack read **"Mixed Transmission"** on the chip,
+because tightening cast no vote there.
+
+**Two dead branches**, both created by C2a/C2b correctly shrinking the directional set from 8 to 3
+while proportional thresholds survived:
+
+- `buildSummary`'s "positive across upper layers" is unreachable at `d=3`, where
+  `mostOpen = ⌈15/8⌉` and `someOpen = ⌈9/8⌉` are both 2.
+- "Capital Constrained" / "severely impaired" are unreachable: only `publicEquitiesLayer` emits
+  `contracting` and **no layer emits `blocked`** any more (the IPO layer did, until C2b), so
+  `closed ≤ 1 < ⌈3/2⌉`. Argus could not say capital was constrained regardless of the market.
+
+**Change.** `capitalFlowVerdict(layers)` in `capitalFlow.ts` is the sole directional authority.
+The verdict is **breadth, not magnitude**: the `STATUS_VALUE` scale (+3/+2/0/−1/−2/−3) has no stated
+authority and is asymmetric — there is no +1, so `tightening` is structurally underweighted against
+its opposite. Majority is expressed as `n * 2 > d`, the identical form `measuredCoverage` uses, so
+one breadth principle is stated the same way in both places rather than two near-identical rules
+drifting apart.
+
+Order of resolution: C2a coverage first → then breadth → then majority.
+
+```
+0 directional layers   -> insufficient (breadth)
+1 directional layer    -> insufficient (breadth)   see note
+>= 2 directional       -> majority open / tightening / closed, else mixed
+```
+
+The one-layer rule is the same breadth principle applied to the voting set, not a new calibration
+threshold: with a single layer there is no consensus to read, and the "majority" would be that layer
+restating itself as the condition of the whole funding stack. It is pinned explicitly in tests.
+`neutral` is directional-capable but casts no vote — a measured reading of no direction dilutes a
+majority without arguing for one. `observational` and `unmeasured` do not vote (C2b, unchanged).
+
+**Consumers migrated.** `buildSummary` generates prose from the verdict plus measured facts and no
+longer recomputes direction; both dead branches are gone. `flowPressure` keeps its numeric score as
+a **magnitude readout only** — `STATUS_VALUE` and the score formula are untouched — and takes its
+label, colour, liquidity wording and trend from the verdict. The regime chip is a direct projection.
+No second FLOWING/MIXED/CONSTRAINED decision exists anywhere.
+
+**Measured before → after**, live state `[monetary neutral, equities accelerating, credit tightening]`:
+
+```
+BEFORE   pressure  61 FLOWING · Liquidity Expanding
+         chip      Mixed Transmission
+         summary   "mixed across the measured layers…"
+         -> three outputs, two verdicts, side by side
+
+AFTER    verdict   mixed   (open 1, tightening 1, closed 0, neutral 1 of 3 directional)
+         pressure  61 Mixed Transmission · Liquidity Mixed · Holding
+         chip      Mixed Transmission
+         summary   "Directional readings disagree across the measured layers…"
+         -> the score is retained as magnitude; it no longer labels itself
+
+all-tightening stack   BEFORE  chip "Mixed Transmission"
+                       AFTER   verdict tightening · chip "Tightening" · pressure "Tightening" (33)
+
+disagreements across the 36 reachable states:   18  ->  0
+```
+
+**Validation.** 68 new tests in `capitalFlowVerdict.test.ts`, including the exhaustive 36-state
+enumeration reused from the diagnosis with a zero-disagreement acceptance test, the two named
+regressions, every voting rule (majority open/tightening/closed, no-majority, neutral casting no
+vote, observational and unmeasured not voting, strict `n*2 > d` majority), the sufficiency ladder
+(coverage before breadth, 0 and 1 directional layers, 2 sufficient), end-to-end prose projection
+through `computeCapitalFlow`, and pins that `STATUS_VALUE` and the score formula are unchanged. Two
+C2a assertions that expected the old score-derived `"FLOWING"` were migrated to the canonical label;
+no other prior test changed. Frontend **915 passed / 63 files**, tsc clean, **lint 0 errors**,
+production build clean. Backend **1264 passed** (no backend file touched).
+
+**Not changed by C3:** `STATUS_VALUE`, the score formula, the C1 ±3bp credit threshold and staleness
+tolerance, the C2a coverage rule, C2b observational semantics. C3 is authority consolidation, not
+calibration. `blocked` remains unreachable from production layers — whether any layer *should* be
+able to signal a blocked market is a data question, deliberately left open.
+
 ---
 
 ## Per-surface index

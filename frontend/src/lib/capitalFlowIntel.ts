@@ -10,7 +10,7 @@
  */
 
 import type { CapitalFlowLayer, FlowStatus } from "./capitalFlow";
-import { directionalLayers, measuredCoverage } from "./capitalFlow";
+import { VERDICT_LABEL, capitalFlowVerdict, directionalLayers } from "./capitalFlow";
 
 const STATUS_VALUE: Record<FlowStatus, number> = {
   accelerating: 3, expanding: 2, neutral: 0, tightening: -1, contracting: -2, blocked: -3,
@@ -60,45 +60,56 @@ export interface FlowPressure {
  * The score formula is UNCHANGED for sufficiently covered cases.
  */
 export function flowPressure(layers: CapitalFlowLayer[]): FlowPressure {
-  // RC2-C1: unmeasured layers are EXCLUDED from the score, numerator and
-  // denominator alike. Counting one as 0 would have been arithmetically identical
-  // to counting it as measured-neutral, which would launder an absence into
-  // "MIXED" / "Liquidity Stable" — a market-state assertion built partly on data
-  // we do not have. Scoring only the measured layers keeps the meter a statement
-  // about what was actually measured.
-  // RC2-C2b: score over layers with DIRECTIONAL authority only. Observational
-  // layers are measured (they count toward coverage below) but must not sit in
-  // this denominator, or a feed-coverage count would drag the score to the middle.
+  // RC2-C1/C2b: score over layers with DIRECTIONAL authority only. Observational
+  // and unmeasured layers sit in neither numerator nor denominator.
   const scored = directionalLayers(layers);
   const span   = scored.length * 3;                        // ±3 per scored layer
   const sum    = scored.reduce((s, l) => s + STATUS_VALUE[l.status], 0);
   const score  = span > 0 ? Math.round(((sum + span) / (span * 2)) * 100) : 50;
-  const open   = scored.filter(l => STATUS_VALUE[l.status] > 0).length;
-  const closed = scored.filter(l => STATUS_VALUE[l.status] < 0).length;
-  const label  = score >= 60 ? "FLOWING" : score <= 40 ? "CONSTRAINED" : "MIXED";
-  const color  = score >= 60 ? "#22c55e" : score <= 40 ? "#ef4444" : "#fbbf24";
-  const trend  = open > closed ? "improving" : closed > open ? "deteriorating" : "stable";
 
-  const { measured, total, sufficient } = measuredCoverage(layers);
-  if (!sufficient) {
-    // Score is preserved (it is a true reading of the measured layers) but every
-    // user-facing field states the absence. No FLOWING/CONSTRAINED, no liquidity
-    // direction, no improving/deteriorating arrow.
+  // RC2-C3: the score is a MAGNITUDE and nothing more. It no longer decides a
+  // direction. Previously `score >= 60` independently declared FLOWING, which is
+  // how "61 FLOWING" came to sit beside "Mixed Transmission" - one accelerating
+  // layer (+3) outweighing one tightening (-1) on the magnitude scale while only
+  // 1 of 3 layers was actually open. Every directional word below now comes from
+  // the canonical verdict. STATUS_VALUE and the score formula are unchanged.
+  const v = capitalFlowVerdict(layers);
+
+  if (!v.direction) {
     return {
-      score, measured, total, sufficient: false,
+      score, measured: v.measured, total: v.total, sufficient: false,
       label: "NOT MEASURED",
       color: "#64748b",
       trend: "stable",
-      trendLabel: "Coverage insufficient",
-      liquidity: `${measured} of ${total} layers measured`,
+      trendLabel: v.insufficient === "breadth" ? "Insufficient breadth" : "Coverage insufficient",
+      liquidity: v.insufficient === "breadth"
+        ? `${v.directional} of ${v.measured} measured layers directional`
+        : `${v.measured} of ${v.total} layers measured`,
     };
   }
 
+  // Trend derives from the SAME counts the verdict used, so it cannot disagree.
+  const trend: FlowPressure["trend"] =
+    v.open > (v.closed + v.tightening) ? "improving"
+    : (v.closed + v.tightening) > v.open ? "deteriorating"
+    : "stable";
+
+  const color =
+    v.direction === "flowing"     ? "#22c55e" :
+    v.direction === "constrained" ? "#ef4444" :
+    v.direction === "tightening"  ? "#f97316" : "#fbbf24";
+
+  const liquidity =
+    v.direction === "flowing"     ? "Liquidity Expanding"   :
+    v.direction === "constrained" ? "Liquidity Contracting" :
+    v.direction === "tightening"  ? "Liquidity Tightening"  : "Liquidity Mixed";
+
   return {
-    score, measured, total, sufficient: true,
-    label, color, trend,
+    score, measured: v.measured, total: v.total, sufficient: true,
+    label: VERDICT_LABEL[v.direction],
+    color, trend,
     trendLabel: trend === "improving" ? "Improving" : trend === "deteriorating" ? "Deteriorating" : "Holding",
-    liquidity:  score >= 60 ? "Liquidity Expanding" : score <= 40 ? "Liquidity Contracting" : "Liquidity Stable",
+    liquidity,
   };
 }
 

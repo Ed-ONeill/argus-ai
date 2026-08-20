@@ -10,8 +10,9 @@ import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import { useIPOPipeline, type IPOFiler } from "@/hooks/useIPOPipeline";
 import {
   computeCapitalFlow,
-  measuredCoverage,
+  capitalFlowVerdict,
   directionalLayers,
+  VERDICT_LABEL,
   FLOW_STATUS_COLOR,
   FLOW_STATUS_LABEL,
   type CapitalFlowLayer,
@@ -390,21 +391,18 @@ export default function PrivateMarketsPage() {
   // must obey the same measurement-sufficiency contract as buildSummary and
   // flowPressure. Its thresholds were absolute (>= 4 of 8) and its caption said
   // "of 8", both of which assumed every layer was measurable.
-  const coverage     = measuredCoverage(capitalFlow.layers);
-  // RC2-C2b: direction is judged over layers with directional authority only.
-  // Observational layers count toward coverage but never toward a verdict.
+  // RC2-C3: the chip is a direct PROJECTION of the canonical verdict. It used to
+  // run its own count majority that ignored `tightening` entirely, so a uniformly
+  // tightening stack rendered as "Mixed Transmission". No directional decision is
+  // made on this page any more.
+  const verdict      = capitalFlowVerdict(capitalFlow.layers);
   const directional  = directionalLayers(capitalFlow.layers);
-  const openLayers   = directional.filter(l => l.status === "accelerating" || l.status === "expanding").length;
-  const closedLayers = directional.filter(l => l.status === "contracting"  || l.status === "blocked").length;
-  // Same proportional rule the summary uses, over the directional set.
-  const chipMajority = Math.ceil(directional.length / 2);
-  const chipVerdict  = !coverage.sufficient ? "Not measured"
-    : openLayers   >= chipMajority ? "Capital Flowing"
-    : closedLayers >= chipMajority ? "Capital Constrained"
-    : "Mixed Transmission";
-  const chipColor    = !coverage.sufficient ? "#64748b"
-    : openLayers   >= chipMajority ? "#22c55e"
-    : closedLayers >= chipMajority ? "#ef4444"
+  const openLayers   = verdict.open;
+  const chipVerdict  = verdict.direction ? VERDICT_LABEL[verdict.direction] : "Not measured";
+  const chipColor    = !verdict.direction        ? "#64748b"
+    : verdict.direction === "flowing"            ? "#22c55e"
+    : verdict.direction === "constrained"        ? "#ef4444"
+    : verdict.direction === "tightening"         ? "#f97316"
     : "#fbbf24";
 
   // ── Institutional intelligence — all derived from the live flow + themes ────
@@ -460,9 +458,9 @@ export default function PrivateMarketsPage() {
               {chipVerdict}
             </span>
             <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.36)" }}>
-              {coverage.sufficient
+              {verdict.direction
                 ? `${openLayers} of ${directional.length} directional layers open`
-                : `${coverage.measured} of ${coverage.total} layers measured`}
+                : `${verdict.measured} of ${verdict.total} layers measured`}
             </span>
             {regime && (
               <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.36)" }}>
