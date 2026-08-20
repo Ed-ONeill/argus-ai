@@ -1041,6 +1041,39 @@ tolerance, the C2a coverage rule, C2b observational semantics. C3 is authority c
 calibration. `blocked` remains unreachable from production layers — whether any layer *should* be
 able to signal a blocked market is a data question, deliberately left open.
 
+**Production validation.** Deployed as `ecf7f82`; both Railway services reported success — frontend
+(`argus-ai`) 2026-08-20T15:08:43Z, backend (`perceptive-achievement`) 15:12:20Z, combined state
+success. **No transient failure occurred**: `/api/health`, `/api/credit-spread` and
+`/api/ipo-pipeline` returned 200 on every sample across the rollout and on six consecutive
+post-deploy samples. C3 touches no backend runtime file; the backend redeploy is incidental to the
+shared repository.
+
+The two upstream authorities were re-verified against live data:
+
+```
+C1  /api/credit-spread   measured=true  273bp  asOf 2026-08-19  prior 275bp
+                         change -2bp -> "stable"   (inside the ±3bp band)
+                         series BAMLH0A0HYM2, daily-t+1, 1 business day stale
+
+C2b /api/ipo-pipeline    10 entries, formType on every row
+                         8 amendments · 2 new S-1 · 2 deduped CIKs
+                         period 2026-08-18 to 2026-08-19
+                         -> renders "2 new S-1s", not 10
+```
+
+Both moved naturally since the C2b deployment (OAS 267 → 270 → 273; EDGAR 15/11/4/4 → 10/8/2/2),
+which confirms they track real series rather than static values. Nothing was tuned in response.
+
+Worth recording: the −2bp credit change reads `stable` rather than a direction, so the Credit &
+Leverage layer is `neutral` today. The live directional set therefore differs from the state
+captured during implementation — which is exactly what the canonical verdict is designed to absorb,
+since it reads whatever the layers say rather than a remembered value.
+
+**Not directly verified:** `/private-markets` and `/ma` remain auth-gated (307 → `/auth`). The
+rendered agreement between the regime chip, the summary prose and the pressure bar was **not
+observed in production**. It rests on the exhaustive 36-state test (0 disagreements), not on a
+production render. Stated rather than inferred from the healthy endpoints.
+
 ---
 
 ## Per-surface index
