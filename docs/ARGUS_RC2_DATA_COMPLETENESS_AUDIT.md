@@ -1076,6 +1076,80 @@ production render. Stated rather than inferred from the healthy endpoints.
 
 ---
 
+### RC2-F1 — Industry card fallback honesty (implemented)
+
+Addresses the **presentation half** of finding **F**. The coverage gap itself is untouched: no
+Healthcare, Crypto or Media & Telecom source was added, and no scoring, inference or taxonomy
+changed.
+
+**Diagnosed.** Re-measured end-to-end on the live pipeline: Healthcare, Crypto & Digital Assets and
+Media & Telecom score **0 with 0 stories** (Aerospace & Defense had recovered to 14/3, so the
+zero-coverage set fluctuates between 3 and 4 of 12). `IndustryCard.tsx` fell through to static
+`industryConfig` values in the slots a reader takes as measurement — and the leak was **wider than
+finding F recorded**. Four slots, not two:
+
+```
+narrative slot   industry.macroDrivers[0]   "FDA Calendar" / "BTC ETF Flows" / "Ad Spend"
+driver chips     industry.keyAssets[0..4]   JNJ · LLY · MRK · ABBV · UNH   (industry-coloured,
+                                            identical styling to derived drivers)
+footer           alignment ?? "neutral"     "→ Regime Neutral"      <- a synthesised CURRENT reading
+sentiment badge  sentiment ?? "neutral"     "Neutral"               <- likewise
+```
+
+The first two are configuration wearing the costume of intelligence. The last two are worse: a
+current regime and sentiment reading for an industry Argus has measured nothing about — rendered
+beside a score of `-` and a caption of `No data`, so the card contradicted itself.
+
+**Change.** `lib/industryCardView.ts` is the single place that decides derived-vs-static, following
+the same shape as the other per-surface view models. With no coverage: `score: null` (renders `-`),
+`sentiment: null` with an explicit **"Not measured"** state badge, `drivers: []`, an honest
+intelligence line
+(*"No current derived signal for this industry."*), footer *"Not measured"*, and the static config
+moved into an explicitly labelled **Reference** block in secondary treatment. With coverage, every
+existing behaviour is preserved byte-for-byte and no fallback label is added.
+
+Static config, ticker lists, taxonomy and scoring are all preserved — only the framing changed.
+
+**Measured before → after:**
+
+```
+Healthcare / Crypto & Digital Assets / Media & Telecom   (derived coverage: NONE)
+  intel slot   "FDA Calendar" / "BTC ETF Flows" / "Ad Spend"
+               -> "No current derived signal for this industry."
+  chips        JNJ·LLY·MRK·ABBV·UNH  (styled as derived drivers)
+               -> drivers: none;  [Reference] FDA Calendar | JNJ·LLY·MRK·ABBV·UNH
+  footer       "→ Regime Neutral"  -> "Not measured"
+  sentiment    "Neutral"           -> "Not measured" badge (dashed, muted)
+  score        "-"                 -> "-"        caption "No data" -> "No data"   (already honest)
+
+Aerospace & Defense  (positive control, derived coverage: sector)
+  intel slot   "Defense budgets are repricing primes."   unchanged
+  drivers      LMT · RTX · NOC                            unchanged
+  footer       "↑ Regime Tailwind"                        unchanged
+  sentiment    bullish                                    unchanged
+  score        14, caption "3 stories"                    unchanged
+  reference    none added
+```
+
+The badge states the absence rather than disappearing: a missing chip reads as an oversight,
+whereas "Not measured" is the finding. It is styled as an absence (dashed, muted) so it can never be
+mistaken for a neutral reading, and `stateBadge.measured` carries that distinction to the UI rather
+than leaving it to styling.
+
+**Validation.** 52 new tests in `industryCardView.test.ts`: all three zero-coverage industries
+exercised individually, the reference block labelled and never leaking into the intelligence slot,
+`score`/`sentiment` unavailable rather than zero/neutral, no momentum vocabulary without a
+measurement, a zero-score sector or theme record still reading as unmeasured, derived content
+winning from either authority, the recovered-industry positive control, and the view keeping an
+identical structural shape between states. Frontend **967 passed / 64 files**, tsc clean, **lint 0
+errors**, production build clean. No backend file changed.
+
+**Out of scope and unchanged:** industry source coverage itself, D2 Listen entities,
+`predictionEngine`/`inferenceEngine`, SEC User-Agent standardisation, blocked/constrained
+reachability, and the Industries page layout.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |

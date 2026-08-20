@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils";
 import { industryIcon } from "./industryIdentity";
 import type { IndustryConfig } from "@/lib/industryConfig";
 import type { SectorIntelligence, IndustrySignal } from "@/lib/types";
+import { buildIndustryCardView, type ThemeSignalFallback } from "@/lib/industryCardView";
+
+export type { ThemeSignalFallback };
 
 // ── Sentiment config ──────────────────────────────────────────────────────────
 
@@ -19,16 +22,6 @@ const SENTIMENT = {
 
 // ── IndustryCard ──────────────────────────────────────────────────────────────
 
-export interface ThemeSignalFallback {
-  score:         number;
-  sentiment:     "bullish" | "bearish" | "neutral";
-  storyCount:    number;
-  narrative:     string;
-  chips:         string[];
-  themeName:     string;
-  momentumLabel: string;
-}
-
 interface IndustryCardProps {
   industry:       IndustryConfig;
   sectorData:     SectorIntelligence | null;
@@ -39,39 +32,20 @@ interface IndustryCardProps {
 }
 
 export function IndustryCard({ industry, sectorData, industrySignal, topTheme, themeSignal, index }: IndustryCardProps) {
-  const score     = sectorData?.signal_score ?? 0;
-  const count     = sectorData?.signal_count ?? 0;
-  const alignment = industrySignal?.regime_alignment ?? sectorData?.regime_alignment ?? "neutral";
-  const hasData   = sectorData !== null && score > 0;
-  const hasTheme  = !hasData && themeSignal !== null && (themeSignal?.score ?? 0) > 0;
+  // RC2-F1: every honesty decision lives in the view model. The card renders it.
+  const v = buildIndustryCardView({ industry, sectorData, industrySignal, topTheme, themeSignal });
 
-  const sentiment = (
-    industrySignal?.momentum_direction ??
-    sectorData?.impact_sentiment       ??
-    (hasTheme ? themeSignal!.sentiment : null) ??
-    "neutral"
-  ) as keyof typeof SENTIMENT;
-
-  const effectiveScore = hasData ? score : (themeSignal?.score ?? 0);
-  const effectiveCount = count > 0 ? count : (themeSignal?.storyCount ?? 0);
-
-  const displayText   = industrySignal?.narrative || topTheme || themeSignal?.narrative || industry.macroDrivers[0];
-  const displayChips  = industrySignal?.primary_drivers?.length
-    ? industrySignal.primary_drivers.slice(0, 5)
-    : (hasTheme && themeSignal!.chips.length)
-    ? themeSignal!.chips.slice(0, 5)
-    : industry.keyAssets.slice(0, 5);
-
-  const sc    = SENTIMENT[sentiment] ?? SENTIMENT.neutral;
-  const SIcon = sc.Icon;
+  const sc    = v.sentiment ? SENTIMENT[v.sentiment] : null;
+  const SIcon = sc?.Icon ?? null;
   const IndIcon = industryIcon(industry.slug);
 
+  const shown = v.score ?? 0;
   const scoreColor =
-    effectiveScore >= 70 ? "#10b981" :
-    effectiveScore >= 40 ? "#f59e0b" :
-    hasData && effectiveScore > 0 ? industry.color :
-    hasTheme ? "#8b5cf6" :
-    "#C2CBD8";
+    !v.hasIntelligence    ? "#C2CBD8" :
+    shown >= 70           ? "#10b981" :
+    shown >= 40           ? "#f59e0b" :
+    v.source === "sector" ? industry.color :
+    "#8b5cf6";
 
   return (
     <Link href={`/industries/${industry.slug}`} className="block group outline-none">
@@ -114,20 +88,27 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
 
           {/* Sentiment badge + score */}
           <div className="flex items-center justify-between gap-2 mb-2.5">
+            {/* RC2-F1: with no coverage this said "Neutral" (from
+                `sentiment ?? "neutral"`) — a current reading synthesised for an
+                industry Argus has measured nothing about. It now states the
+                absence explicitly; a missing badge would read as an oversight,
+                whereas "Not measured" is the finding. */}
             <span className={cn(
               "inline-flex items-center gap-[5px]",
               "text-[9px] font-bold uppercase tracking-widest",
               "px-2 py-[3px] rounded-full border",
-              sc.cls,
+              v.stateBadge.measured && sc
+                ? sc.cls
+                : "text-ink-muted/70 bg-raised border-edge/60 border-dashed",
             )}>
-              <SIcon size={8} strokeWidth={2.5} />
-              {sc.label}
+              {v.stateBadge.measured && SIcon && <SIcon size={8} strokeWidth={2.5} />}
+              {v.stateBadge.label}
             </span>
             <span
               className="text-[20px] font-black tabular-nums leading-none"
               style={{ color: scoreColor }}
             >
-              {(hasData || hasTheme) ? effectiveScore.toFixed(0) : "-"}
+              {v.score !== null ? v.score.toFixed(0) : "-"}
             </span>
           </div>
 
@@ -137,66 +118,92 @@ export function IndustryCard({ industry, sectorData, industrySignal, topTheme, t
               className="h-full rounded-full"
               style={{ background: scoreColor }}
               initial={{ width: 0 }}
-              animate={{ width: (hasData || hasTheme) ? `${Math.min(effectiveScore, 100)}%` : "0%" }}
+              animate={{ width: v.score !== null ? `${Math.min(v.score, 100)}%` : "0%" }}
               transition={{ duration: 0.7, ease: "easeOut", delay: index * 0.035 + 0.15 }}
             />
           </div>
 
           {/* Narrative / top theme + story count */}
           <div className="flex items-start justify-between gap-2 mb-3">
+            {/* RC2-F1: the intelligence slot carries DERIVED narrative only. With
+                no coverage it states the absence; the static macro driver has moved
+                to the labelled reference block below. */}
             <p
-              className="text-[10px] text-ink-secondary flex-1 leading-snug line-clamp-2"
-              title={displayText}
+              className={cn(
+                "text-[10px] flex-1 leading-snug line-clamp-2",
+                v.hasIntelligence ? "text-ink-secondary" : "text-ink-muted/70 italic",
+              )}
+              title={v.intelligenceText}
             >
-              {displayText}
+              {v.intelligenceText}
             </p>
             <span className="text-[9px] font-medium text-ink-muted tabular-nums shrink-0 mt-px">
-              {hasData
-                ? `${count} ${count === 1 ? "story" : "stories"}`
-                : hasTheme
-                ? `${effectiveCount} via theme`
-                : "No data"}
+              {v.storyLabel}
             </span>
           </div>
 
-          {/* Driver chips */}
-          <div className="flex flex-wrap gap-1 mb-3">
-            {displayChips.map(ticker => (
-              <span
-                key={ticker}
-                className="text-[8.5px] font-bold font-mono px-[5px] py-[2px] rounded leading-none"
-                style={{ color: industry.color, background: `${industry.color}14` }}
-              >
-                {ticker}
-              </span>
-            ))}
-          </div>
+          {/* Driver chips — DERIVED drivers only */}
+          {v.drivers.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {v.drivers.map(ticker => (
+                <span
+                  key={ticker}
+                  className="text-[8.5px] font-bold font-mono px-[5px] py-[2px] rounded leading-none"
+                  style={{ color: industry.color, background: `${industry.color}14` }}
+                >
+                  {ticker}
+                </span>
+              ))}
+            </div>
+          )}
 
-          {/* Regime alignment / theme momentum footer */}
+          {/* RC2-F1: static configuration, explicitly labelled as reference and
+              given a secondary treatment so it cannot read as a live driver set. */}
+          {v.reference && (
+            <div className="flex flex-wrap items-center gap-1 mb-3">
+              <span className="text-[8px] font-bold uppercase tracking-widest text-ink-muted/60 shrink-0">
+                {v.reference.label}
+              </span>
+              {v.reference.driver && (
+                <span className="text-[8.5px] text-ink-muted/70 shrink-0">
+                  {v.reference.driver}
+                </span>
+              )}
+              {v.reference.tickers.map(ticker => (
+                <span
+                  key={ticker}
+                  className="text-[8.5px] font-mono px-[5px] py-[2px] rounded leading-none text-ink-muted/60 bg-raised border border-edge/60"
+                >
+                  {ticker}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* RC2-F1: the footer used to render "→ Regime Neutral" from
+              `alignment ?? "neutral"` even with zero coverage — a current regime
+              reading for an industry Argus had measured nothing about. It now
+              states the absence instead. */}
           <div className="pt-2.5 border-t border-edge/60 flex items-center gap-2">
             <span className={cn(
               "text-[8.5px] font-bold uppercase tracking-widest flex-1 min-w-0 truncate",
-              alignment === "tailwind" ? "text-emerald-600" :
-              alignment === "headwind" ? "text-red-600"     :
-              (hasTheme && (themeSignal?.momentumLabel === "accelerating" || themeSignal?.momentumLabel === "strengthening"))
-                ? "text-emerald-600"
-              : (hasTheme && (themeSignal?.momentumLabel === "cooling" || themeSignal?.momentumLabel === "reversing"))
-                ? "text-red-600"
-              : "text-ink-muted/60",
+              !v.hasIntelligence                         ? "text-ink-muted/50" :
+              v.footer.startsWith("↑")                   ? "text-emerald-600" :
+              v.footer.startsWith("↓")                   ? "text-red-600"     :
+              (v.footer.includes("accelerating") || v.footer.includes("strengthening"))
+                ? "text-emerald-600" :
+              (v.footer.includes("cooling") || v.footer.includes("reversing"))
+                ? "text-red-600" :
+              "text-ink-muted/60",
             )}>
-              {hasData
-                ? (alignment === "tailwind" ? "↑ Regime Tailwind" :
-                   alignment === "headwind" ? "↓ Regime Headwind" : "→ Regime Neutral")
-                : hasTheme && themeSignal
-                ? `✦ ${themeSignal.momentumLabel}`
-                : "→ Regime Neutral"}
+              {v.footer}
             </span>
-            {hasTheme && themeSignal && (
-              <span className="text-[8px] text-ink-muted/50 shrink-0 truncate max-w-[80px]" title={themeSignal.themeName}>
-                {themeSignal.themeName}
+            {v.themeName && (
+              <span className="text-[8px] text-ink-muted/50 shrink-0 truncate max-w-[80px]" title={v.themeName}>
+                {v.themeName}
               </span>
             )}
-          </div>
+        </div>
         </div>
       </motion.div>
     </Link>
