@@ -1148,6 +1148,23 @@ errors**, production build clean. No backend file changed.
 `predictionEngine`/`inferenceEngine`, SEC User-Agent standardisation, blocked/constrained
 reachability, and the Industries page layout.
 
+**Production validation.** Deployed as `0f06182`; both Railway services reported success — frontend
+(`argus-ai`) 2026-08-20T19:15:59Z, backend (`perceptive-achievement`) 19:21:56Z, combined state
+success. F1 touches no backend runtime file. `/api/health` and `/api/credit-spread` returned 200
+throughout.
+
+One **transient** failure: `/api/ipo-pipeline` returned a single 502 at ~19:17Z and recovered on its
+own — eight consecutive samples immediately after, and four more alongside the other endpoints,
+all 200. EDGAR answers this environment normally. Same signature as the transient observed during
+the C2b rollout, and unrelated to F1, which changes no data path. Recorded, not acted on.
+
+**Not directly verified — the rendered result.** `/industries` is auth-gated (307 → `/auth`), like
+`/private-markets` and `/ma`. The three zero-coverage cards were **not observed in production**, so
+the claim that they no longer present "FDA Calendar" / "BTC ETF Flows" / "Ad Spend", the static
+ticker sets, "Regime Neutral" or "Neutral" as current intelligence rests on the 52 view-model tests
+and the before/after table computed from the real `industryConfig` values — not on a production
+render. Stated rather than inferred from a healthy deploy.
+
 ---
 
 ## Per-surface index
