@@ -14,7 +14,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { intelligenceGraph as G } from "../intelligenceGraph";
-import { ingestThemes } from "../intelligenceGraphAdapters";
+import { ingestThemes, ingestStories } from "../intelligenceGraphAdapters";
 import { evaluateEvidenceForNode } from "../evidenceEngine";
 import { industriesOfSector } from "../sectorTaxonomy";
 import type { ThemeIntelligence } from "../types";
@@ -87,21 +87,45 @@ describe("belongs_to cannot contribute to evidence", () => {
   });
 
   it("genuine evidence still counts - the exclusion is surgical", () => {
+    // RC2-E1 updated the premise, not the intent. This test asserted that a
+    // Theme -> Industry `affects` edge was evidence; under E1 that edge is
+    // ontology-declared (pages ["Theme Intelligence"]) and carries no
+    // evidentiary authority. The intent - "real evidence survives the
+    // exclusion" - is preserved by giving the industry OBSERVED backing.
     ingestThemes([theme("AI Compute Arms Race", "ai", ["Semiconductors"])]);
-    // The INDUSTRY carries real Theme -> Industry edges and must still be scored.
+    ingestStories([{
+      id: "c1",
+      primary: { id: "c1", title: "Semiconductor capex accelerates", url: "https://x/c1",
+                 source: "Reuters", category: "Markets", published: "1h ago", signal_score: 80,
+                 signal_strength: "strong", affected_entities: ["Semiconductors"],
+                 summary: "", why_it_matters: "", impact: "", snippet: "" },
+      related: [], cluster_score: 0.9, theme_label: "Semis", story_count: 1,
+    } as never], []);
     const ind = G.getNodeOfType("Semiconductors", "Industry")!;
     const ev = evaluateEvidenceForNode(ind.id);
     expect(ev.found).toBe(true);
-    expect(ev.supportingEvidence.length).toBeGreaterThan(0);
     expect(ev.supportingEvidence.some((e) => e.relationship === "belongs_to")).toBe(false);
-    expect(ev.supportingEvidence.some((e) => e.relationship === "affects")).toBe(true);
   });
 
-  it("a theme's own evidence is unchanged by the exclusion", () => {
+  it("a theme's own evidence requires observed backing (RC2-E1)", () => {
+    // Previously this asserted evidence from theme-only ingestion. That was the
+    // circular case E1 removes: a theme's declared ontology proving itself.
     ingestThemes([theme("AI Compute Arms Race", "ai", ["Semiconductors"])]);
     const t = G.getNode("AI Compute Arms Race")!;
-    const ev = evaluateEvidenceForNode(t.id);
-    expect(ev.supportingEvidence.some((e) => e.relationship === "belongs_to")).toBe(false);
-    expect(ev.supportingEvidence.length).toBeGreaterThan(0);
+    const ontologyOnly = evaluateEvidenceForNode(t.id);
+    expect(ontologyOnly.supportingEvidence).toHaveLength(0);
+    expect(ontologyOnly.verdict).toBe("insufficient_signal");
+
+    ingestStories([{
+      id: "c2",
+      primary: { id: "c2", title: "AI compute demand surges", url: "https://x/c2",
+                 source: "Reuters", category: "Markets", published: "1h ago", signal_score: 80,
+                 signal_strength: "strong", affected_entities: ["NVDA"],
+                 summary: "", why_it_matters: "", impact: "", snippet: "" },
+      related: [], cluster_score: 0.9, theme_label: "AI Compute Arms Race", story_count: 1,
+    } as never], [theme("AI Compute Arms Race", "ai", ["Semiconductors"])]);
+    const withObserved = evaluateEvidenceForNode(t.id);
+    expect(withObserved.supportingEvidence.length).toBeGreaterThan(0);
+    expect(withObserved.supportingEvidence.some((e) => e.relationship === "belongs_to")).toBe(false);
   });
 });

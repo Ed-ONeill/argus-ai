@@ -1167,6 +1167,85 @@ render. Stated rather than inferred from a healthy deploy.
 
 ---
 
+### RC2-E1 — declared ontology is not evidence (implemented)
+
+`ingestThemes` writes a curated theme's own ontology into the graph — `related_assets` →
+`Theme --supports--> Company`, `related_industries` → `Theme --affects/correlates--> Industry`,
+`related_macro_factors` → `Macro --drives--> Theme`. `evidenceEngine` then read those edges back as
+support for the very thesis that declared them, and listed them in `sourceBreakdown` as independent
+sources with reliability scores. **The claim was its own evidence.**
+
+**Measured before.** A theme with zero stories: verdict `moderate`, trust **48**, three "supporting"
+items, three "sources" (Macro 70 · Company 40 · Industry 40). On the live payload (12 themes, 63
+clusters) it was worse for companies: **38 of 46 had no observed backing at all, yet 44 of 46
+carried a forward view** — forecasts for TNX, TLT, JPM, XOM and 34 others built on nothing but a
+theme listing them as a related asset.
+
+**The discriminator is provenance, not vocabulary.** Each adapter stamps `originatingPages`:
+`ingestThemes` → `"Theme Intelligence"`; `ingestStories` → `"Feed"`; `ingestListen` → `"Listen"`;
+`ingestMA` → `"M&A"`. The same verb is legitimate when observed —
+
+```
+t --supports--> nvda           pages ["Theme Intelligence"]   declared  -> inadmissible
+nvidia-beats --supports--> t   pages ["Feed"]                 observed  -> admissible
+```
+
+— so a relationship-verb blacklist would have destroyed both. An edge is inadmissible only when
+**every** page that asserted it is the theme-ontology adapter; one observed page anywhere restores
+it, because that means something was actually seen. `PAGE_THEMES` is now exported from the adapter
+that stamps it, so there is one definition rather than a duplicated string.
+
+Applied at the same single choke point as the G5 `belongs_to` exclusion (`admissibleAsEvidence`,
+three filter sites). **The edges are not removed from the graph** — they remain ontology/exposure
+structure for neighbours and transmission views and lose only evidentiary authority.
+
+One further gap was required to make it hold. `predictCompanyTrajectory` guarded on `ev.found`,
+which only means *the node exists in the graph* — it is true even when the verdict is
+`insufficient_signal` with zero items. The theme path (`themeCore`) already refused on the verdict;
+the company path did not, so company forecasts survived the evidence change. Company is now aligned
+with theme. **No weight or threshold was altered.**
+
+**Measured after, on the same live payload:**
+
+```
+themes      12 / 12 forecast   (unchanged — every live theme has 4-10 observed Feed edges)
+companies   44 -> 6 forecast   (-86%, intentional)
+survivors   APO, BAC, CEG, MSFT, NEE, NVDA   — exactly the observed-backed set
+TNX/TLT/JPM/XOM   verdict insufficient_signal, trust 0, items 0, sources 0, forecast NONE
+                  graph edges still present (ontology preserved)
+theme verdicts    strong -> moderate, trust 80 -> 62 (ontology no longer inflates them);
+                  4-5 real items and 3-5 real sources retained
+```
+
+The theme-side defect proved unreachable in production — `extract_themes` only emits themes with
+contributing clusters — so the entire live impact is on companies.
+
+**Consumer audit.** Forward views render at exactly two sites, both of which degrade honestly:
+`SectorIntelligenceCard` falls back to *"No resolvable forward view for {sector} yet"*, and
+`/ma:250` omits the line via `{e.forward && …}` while its sibling `conviction`/`verdict` fields are
+already null-guarded. `entityContext` and `industriesIntel` pass `forward` through as
+`?? null` with no secondary fallback. Drawer, Workstation and Industries consume the same profile.
+`theRead` and `narrativeDerivation` are theme-driven and therefore unaffected — consistent with
+themes showing no change.
+
+**Validation.** 18 new tests in `ontologyNotEvidence.test.ts`: the zero-story theme (insufficient,
+no items, no sourceBreakdown, zero trust, no forecast, profile refuses), the ontology-only company
+(insufficient, no forecast, no inherited conviction), the identical verb surviving with Feed / Deal
+/ Podcast provenance, a mixed-provenance edge staying admissible, and the graph remaining unmutated.
+Two RC2-G5 tests encoded the premise E1 removes — they asserted evidence from theme-only ingestion —
+and were migrated to test their original intent ("real evidence survives the exclusion") with
+observed backing; the `belongs_to` exclusion itself is unchanged and still pinned. Frontend
+**985 passed / 65 files**, tsc clean, **lint 0 errors**, production build clean. No backend file
+changed.
+
+**Kept separate, as instructed:** the confidence-0 sector passthrough is **not** fixed and remains
+independently reachable — `predictSectorRotation` returns `found: true, confidence: 0` with prose in
+`currentRotation`, and `intelligenceProfile` guards on a sentinel string that never matches.
+`probability` still renders nowhere; displayed `confidence` is still the heuristic trust score, not
+a calibrated probability. No rename, recalibration, weight or threshold change.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |

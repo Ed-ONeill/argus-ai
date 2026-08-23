@@ -184,7 +184,14 @@ const link = (
  * 1 - Themes
  * ------------------------------------------------------------------ */
 
-const PAGE_THEMES: SourcePage = "Theme Intelligence";
+/**
+ * RC2-E1: the provenance stamp for edges written from the CURATED THEME ONTOLOGY
+ * (`related_assets`, `related_industries`, `related_macro_factors`). Exported so
+ * `evidenceEngine` can identify ontology-declared edges by producer rather than by
+ * relationship verb — the same verb (`supports`) is legitimate observed evidence
+ * when it comes from a Story, Event, Deal or Podcast.
+ */
+export const PAGE_THEMES: SourcePage = "Theme Intelligence";
 
 /** Stable node id/label for a theme (name before a dash/colon QUALIFIER).
  *

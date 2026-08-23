@@ -18,6 +18,7 @@
  */
 
 import { intelligenceGraph as G } from "./intelligenceGraph";
+import { PAGE_THEMES } from "./intelligenceGraphAdapters";
 import type { IntelNode, IntelEdge, NodeType, SourcePage } from "./intelligenceGraph";
 import type { ReasoningStep, SourceType, ThemeInference, CompanyInference, SectorInference, MarketStateInference } from "./inferenceEngine";
 import { inferTheme, inferCompany, inferSector } from "./inferenceEngine";
@@ -95,6 +96,41 @@ const NEGATIVE_REL = new Set(["weakens", "reduces_supply_of", "competes_with"]);
  */
 const STRUCTURAL_REL = new Set(["belongs_to"]);
 const isStructural = (e: IntelEdge): boolean => STRUCTURAL_REL.has(e.relationshipType);
+
+/**
+ * RC2-E1: DECLARED ONTOLOGY is not evidence.
+ *
+ * `ingestThemes` writes a curated theme's own ontology into the graph:
+ *   related_assets        -> Theme --supports--> Company
+ *   related_industries    -> Theme --affects/correlates--> Industry
+ *   related_macro_factors -> Macro --drives--> Theme
+ *
+ * Those edges were then read back as support for the very thesis that declared
+ * them, and listed in `sourceBreakdown` as independent sources with reliability
+ * scores. Measured on a theme with zero stories: verdict `moderate`, trust 48,
+ * three "supporting" items and three "sources" — the claim was its own evidence.
+ * Measured on live data it was worse for companies: 38 of 46 had no observed
+ * backing at all, yet 44 of 46 carried a forward view.
+ *
+ * The discriminator is PROVENANCE, not vocabulary. The same verb is legitimate
+ * when observed:
+ *   t --supports--> nvda           pages ["Theme Intelligence"]  declared  -> inadmissible
+ *   nvidia-beats --supports--> t   pages ["Feed"]                observed  -> admissible
+ *
+ * A verb blacklist would destroy both. An edge is inadmissible only when EVERY
+ * page that asserted it is the theme-ontology adapter; one observed page anywhere
+ * in `originatingPages` restores it, because that means something was actually
+ * seen.
+ *
+ * The edges are NOT removed from the graph. They remain ontology/exposure
+ * structure for neighbours and transmission views — they simply carry no
+ * evidentiary authority. Same choke point as the G5 `belongs_to` exclusion.
+ */
+const isOntologyOnly = (e: IntelEdge): boolean =>
+  e.originatingPages.length > 0 && e.originatingPages.every(p => p === PAGE_THEMES);
+
+/** The single admissibility test for anything entering this engine as evidence. */
+const admissibleAsEvidence = (e: IntelEdge): boolean => !isStructural(e) && !isOntologyOnly(e);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
@@ -142,8 +178,8 @@ function contradictionsForNode(node: IntelNode): Contradiction[] {
   const findings: Contradiction[] = [];
   // RC2-G5: structural membership edges are excluded here too, so they cannot
   // move confidence or diversity findings either.
-  const neigh = G.getNeighbors(node.id).filter(x => !isStructural(x.edge));
-  const edges = G.getRelationships(node.id).filter(e => !isStructural(e));
+  const neigh = G.getNeighbors(node.id).filter(x => admissibleAsEvidence(x.edge));
+  const edges = G.getRelationships(node.id).filter(e => admissibleAsEvidence(e));
 
   // Weakening / competing relationships (graph evidence only).
   for (const x of neigh) {
@@ -285,7 +321,7 @@ export function evaluateEvidenceForNode(nodeIdOrLabel: string): NodeEvidence {
   const node = G.getNode(nodeIdOrLabel);
   if (!node) return emptyNodeEvidence(null);
 
-  const items = G.getNeighbors(node.id).filter(x => !isStructural(x.edge)).map(toEvidenceItem);
+  const items = G.getNeighbors(node.id).filter(x => admissibleAsEvidence(x.edge)).map(toEvidenceItem);
   if (items.length === 0) return emptyNodeEvidence(node);
 
   const supporting = items.filter(i => i.polarity === 1);

@@ -275,7 +275,15 @@ export function predictCompanyTrajectory(idOrLabel: string): CompanyTrajectoryPr
   const node = G.getNode(idOrLabel);
   const ci = node ? inferCompany(node.id) : null;
   const ev = node ? evaluateEvidenceForNode(node.id) : null;
-  if (!node || !ci || !ci.found || !ci.activeThemes.length || !ev || !ev.found) {
+  // RC2-E1: `ev.found` only means the node exists in the graph — it is true even
+  // when the verdict is `insufficient_signal` with zero evidence items. The theme
+  // path (themeCore) already refuses on the VERDICT; the company path did not, so
+  // a company whose sole backing was a theme's declared `related_assets` edge
+  // still received a forward view. Measured on live data: 38 of 46 companies had
+  // no observed backing yet 44 carried a forecast. This aligns company with theme
+  // and introduces no new weight or threshold.
+  if (!node || !ci || !ci.found || !ci.activeThemes.length
+      || !ev || !ev.found || ev.verdict === "insufficient_signal") {
     return {
       found: false, company: ref(node), exposedThemes: [], strongestTailwinds: [], strongestHeadwinds: [],
       expectedDirection: "insufficient_signal", probability: 0, confidence: 0, catalysts: [], risks: [],
