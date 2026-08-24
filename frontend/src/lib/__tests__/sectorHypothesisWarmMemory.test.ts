@@ -14,8 +14,9 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { intelligenceGraph as G } from "../intelligenceGraph";
-import { ingestThemes } from "../intelligenceGraphAdapters";
+import { ingestThemes, ingestStories } from "../intelligenceGraphAdapters";
 import { buildIntelligenceProfile, type IntelligenceProfile } from "../intelligenceProfile";
+import { predictSectorRotation } from "../predictionEngine";
 import { buildWorkstationView, buildHypothesis } from "../workstationView";
 import { buildSectorForwardView } from "../sectorForward";
 import { sectorExposure, industriesOfSector } from "../sectorTaxonomy";
@@ -57,15 +58,42 @@ const TECH_WARM = [
   theme("Silicon Sovereignty", "sil", ["Semiconductors"], 9),
 ];
 
+/** An observed Feed story — provenance the RC2-E1 rule admits as evidence. */
+const story = (id: string, title: string, entities: string[]) => ({
+  id, primary: { id, title, url: `https://x/${id}`, source: "Reuters", category: "Markets",
+    published: "1h ago", signal_score: 85, signal_strength: "strong",
+    affected_entities: entities, summary: "", why_it_matters: "", impact: "", snippet: "" },
+  related: [], cluster_score: 0.9, theme_label: title, story_count: 1,
+});
+
 beforeEach(() => G.clear());
 
 describe("warm memory: a Sector with a recorded forward and no headline", () => {
-  it("reproduces the production precondition", () => {
+  /**
+   * RC2-E2 SUPERSEDES the three confidence-0 assertions in this block.
+   *
+   * G5.1 mitigated zero-confidence forward views in COPY - it let the forward
+   * through and worded it carefully ("confidence not established", "Recorded
+   * rotation: rotating in"). E2 removes zero-confidence forward views at the
+   * canonical projection boundary, so that mitigation is unreachable: there is
+   * no forward object left to describe.
+   *
+   * A deliberate semantic supersession, not a weakened test. G5.1's purpose is
+   * preserved and still asserted here: a bare entity label is never a
+   * hypothesis, a substantive hypothesis is still composed from the canonical
+   * chain / sectorForward when those have real backing, and same-label
+   * provenance suppression is untouched. The positive control at the end of the
+   * file proves a sector with POSITIVE confidence still renders its rotation
+   * clause.
+   */
+  it("a zero-confidence forward is withheld entirely (RC2-E2)", () => {
     ingestThemes(WARM);
     const { profile } = caseFor("Energy", WARM);
-    expect(profile.thesis.status).toBe("partial");     // forward present
-    expect(profile.thesis.data?.headline).toBeNull();  // no injected narrative
-    expect(profile.thesis.data?.forward).toBeTruthy();
+    // WARM is ontology-only: after E1 the Sector node has no admissible evidence,
+    // so predictSectorRotation's confidence is 0 and E2 withholds the projection.
+    expect(profile.thesis.data?.forward ?? null).toBeNull();
+    expect(profile.thesis.status).toBe("unavailable");
+    expect(profile.thesis.data?.headline ?? null).toBeNull();
   });
 
   it("NEVER renders the bare subject label as the hypothesis", () => {
@@ -84,20 +112,23 @@ describe("warm memory: a Sector with a recorded forward and no headline", () => 
     expect(d.basis).toMatch(/Power Load Growth/);
   });
 
-  it("preserves the recorded forward direction as a clause", () => {
+  it("emits NO recorded-rotation clause when the only forward carries zero confidence", () => {
+    // G5.1 asserted this clause was PRESENT. E2 withholds the forward that
+    // produced it, so it must now be absent rather than carefully worded.
     ingestThemes(WARM);
     const d = caseFor("Energy", WARM).beat("hypothesis").data as { basis: string | null };
-    expect(d.basis).toMatch(/Recorded rotation: rotating (in|out)/);
+    expect(d.basis ?? "").not.toMatch(/Recorded rotation: rotating (in|out)/);
   });
 
-  it("does not present confidence 0 as conviction", () => {
+  it("needs no 'confidence not established' wording - the forecast itself is withheld", () => {
+    // The G5.1 mitigation is unreachable under E2: there is no zero-confidence
+    // forward left to caveat. What must never appear is a bare confidence-0 read.
     ingestThemes(WARM);
     const { profile } = caseFor("Energy", WARM);
     const d = caseFor("Energy", WARM).beat("hypothesis").data as { basis: string | null };
-    if (Math.round(profile.thesis.data?.forward?.confidence ?? 0) === 0) {
-      expect(d.basis).toMatch(/confidence not established/);
-      expect(d.basis).not.toMatch(/confidence 0\b/);
-    }
+    expect(profile.thesis.data?.forward ?? null).toBeNull();
+    expect(d.basis ?? "").not.toMatch(/confidence 0/);
+    expect(d.basis ?? "").not.toMatch(/confidence not established/);
   });
 
   it("cold memory still composes identically (no regression)", () => {
@@ -178,5 +209,53 @@ describe("same-label provenance is not shown as circular", () => {
       expect(d.reading).not.toContain(`carried by ${d.viaIndustry}`);
       expect(d.viaIndustry).toBeTruthy();
     }
+  });
+});
+
+// ── RC2-E2 positive control ─────────────────────────────────────────────────
+
+/**
+ * The counterpart to the supersession above: E2 withholds ZERO-confidence
+ * forwards, not all forwards. A sector with genuinely observed backing still
+ * produces a forward view AND still renders its recorded-rotation clause, so
+ * G5.1's warm-memory behaviour survives wherever the confidence is real.
+ */
+describe("a sector with POSITIVE confidence keeps its forward and rotation clause", () => {
+  /** Observed Feed stories on the sector label give the Sector node real evidence. */
+  const observedEnergy = () => {
+    ingestThemes(WARM);
+    ingestStories([
+      story("s1", "Energy grid strain deepens", ["Energy"]),
+      story("s2", "Utilities capex surges", ["Energy"]),
+      story("s3", "Power demand hits records", ["Energy"]),
+    ] as never, WARM);
+  };
+
+  it("the engine reports positive confidence", () => {
+    observedEnergy();
+    const p = predictSectorRotation("Energy");
+    expect(p.found).toBe(true);
+    expect(p.confidence).toBeGreaterThan(0);
+  });
+
+  it("the forward view is projected, not withheld", () => {
+    observedEnergy();
+    const f = buildIntelligenceProfile("Energy", { kindHint: "sector" }).thesis.data?.forward;
+    expect(f).toBeTruthy();
+    expect(f!.confidence).toBeGreaterThan(0);
+    expect(f!.direction).toMatch(/rotating (in|out)/);
+  });
+
+  it("the recorded-rotation clause is preserved (G5.1 behaviour intact)", () => {
+    observedEnergy();
+    const d = caseFor("Energy", WARM).beat("hypothesis").data as { basis: string | null };
+    expect(d.basis ?? "").toMatch(/Recorded rotation: rotating (in|out)/);
+  });
+
+  it("the hypothesis is still never a bare label (G5.1 purpose preserved)", () => {
+    observedEnergy();
+    const d = caseFor("Energy", WARM).beat("hypothesis").data as { statement: string };
+    expect(d.statement).not.toBe("Energy");
+    expect(d.statement.split(/\s+/).length).toBeGreaterThan(3);
   });
 });

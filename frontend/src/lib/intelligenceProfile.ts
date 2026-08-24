@@ -328,7 +328,30 @@ export function buildIntelligenceProfile(entityKey: string, inputs: ProfileInput
   }
 
   /* -- forward view / thesis -- */
-  const forward: ProfileForward | null = (() => {
+  /**
+   * RC2-E2: a forward view with ZERO evidentiary confidence is not a
+   * low-confidence-but-valid read — it is no usable conviction, and must not
+   * render as a substantive forecast.
+   *
+   * Measured: `predictSectorRotation` returns `confidence: ev?.overallTrust ??
+   * si.confidence`. After G3/G5 a Sector's only inbound edge is `belongs_to`
+   * (G5-excluded), and after E1 an Industry's `affects`/`correlates` edges are
+   * ontology-only (E1-excluded) — so `ev.overallTrust` is structurally 0 for
+   * those nodes. Nullish coalescing does not fall through on 0, so
+   * `si.confidence` is never reached and the sector forward always carried
+   * confidence 0. The theme and company paths refuse on the evidence VERDICT;
+   * `predictSectorRotation` guards only on theme linkage, so nothing stopped it.
+   *
+   * The guard lives here, at the canonical projection boundary, so every consumer
+   * (Sector card, /ma, entityContext, industriesIntel, Drawer, Workstation,
+   * Industries) inherits it from one place. The engines keep returning their full
+   * output for diagnostics; only the rendered projection is withheld. No weight,
+   * threshold, calibration or field name is changed.
+   */
+  const withConviction = (f: ProfileForward | null): ProfileForward | null =>
+    f && f.confidence > 0 ? f : null;
+
+  const forward: ProfileForward | null = withConviction((() => {
     if (kind === "company" || kind === "etf") {
       const p = predictCompanyTrajectory(node.id);
       if (!p.found || p.expectedDirection === "insufficient_signal") return null;
@@ -346,7 +369,7 @@ export function buildIntelligenceProfile(entityKey: string, inputs: ProfileInput
       return { direction: p.predictedDirection, probability: p.probability, confidence: p.confidence, timeframe: p.expectedTimeframe, reasons: p.why.slice(0, 3) };
     }
     return null;
-  })();
+  })());
   const headline = inputs.narrative?.headline ?? null;
   const thesis = headline || forward
     ? section<ProfileThesis>(headline && forward ? "live" : "partial", { headline, forward },

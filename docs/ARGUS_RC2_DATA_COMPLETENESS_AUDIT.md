@@ -1308,6 +1308,71 @@ a calibrated probability. No rename, recalibration, weight or threshold change.
 
 ---
 
+### RC2-E2 — zero evidentiary confidence is not a forecast (implemented)
+
+`predictSectorRotation` returned `confidence: ev?.overallTrust ?? si.confidence` and
+`intelligenceProfile` projected it, so `/sectors` and `/ma` could render
+**"rotating in · prediction engine, confidence 0"**.
+
+**Root cause — broader than the original "sector-only" framing.** After RC2-G3/G5 a Sector's only
+inbound edge is `belongs_to` (G5-excluded), and after RC2-E1 an Industry's `affects`/`correlates`
+edges are ontology-only (E1-excluded). Measured:
+
+```
+Sector "Technology"       edges: belongs_to                      trust 0, insufficient_signal
+Industry "Semiconductors" edges: belongs_to, affects, correlates trust 0, insufficient_signal
+```
+
+So `ev.overallTrust` is **structurally 0** for those node kinds. Nullish coalescing does not fall
+through on `0`, so `si.confidence` was never reached. The theme and company paths refuse on the
+evidence VERDICT; `predictSectorRotation` guards only on theme linkage, so nothing stopped it —
+confirmed on one graph where theme confidence was 50 and company 51 while sector was 0.
+
+**Change.** One `withConviction()` wrapper at the canonical projection boundary in
+`intelligenceProfile`, applied to all three branches, so every consumer (Sector card, `/ma`,
+`entityContext`, `industriesIntel`, Drawer, Workstation, Industries) inherits it from one place.
+The engines keep returning full output for diagnostics; only the projection is withheld. **No
+weight, threshold, calibration or field rename.**
+
+```
+sector  engine found=true confidence=0  ->  profile.forward = null
+theme   engine confidence=50            ->  profile.forward.confidence = 50
+company engine confidence=51            ->  profile.forward.confidence = 51
+```
+
+**Live-shaped impact: none today.** Sector 0/12 and Industry 0/9 forward views both before and
+after, because on the current payload the engine already refuses earlier at its theme-linkage guard
+(`found & confidence 0` count = 0). Theme 13/13 and Company 6/54 are unchanged from E1. **E2 fixes
+a latent defect; it does not change today's rendered output.**
+
+**Deliberate supersession of three RC2-G5.1 assertions.** G5.1 mitigated zero-confidence forward
+views in **copy** — it let the forward through and worded it carefully ("confidence not
+established", "Recorded rotation: rotating in"). E2 removes zero-confidence forward views at the
+**projection boundary**, making that mitigation unreachable: there is no forward object left to
+describe. The three assertions changed in `sectorHypothesisWarmMemory.test.ts`:
+
+| Was | Now |
+|---|---|
+| `thesis.status === "partial"`, forward truthy | forward `null`, status `unavailable` |
+| basis matches `/Recorded rotation: rotating (in\|out)/` | clause must be **absent** when the only forward carries zero confidence |
+| if confidence 0, basis says "confidence not established" | no such wording needed — the forecast itself is withheld |
+
+G5.1's actual purpose is preserved and still asserted: a bare entity label is never a hypothesis, a
+substantive hypothesis is still composed from the canonical chain / `sectorForward` when those have
+real backing, and same-label provenance suppression is untouched. **A positive control was added**:
+a sector given observed Feed evidence on its own label reaches trust 53 → confidence 53 → the
+forward view *is* projected and the recorded-rotation clause *is* rendered — proving E2 withholds
+zero-confidence forwards, not all forwards. No other frozen suite required changes.
+
+**Validation.** 14 new tests in `zeroConfidenceForward.test.ts` (the reproduced production
+precondition, engine diagnostics preserved, the exact 0-vs-positive boundary, insufficient sentinel
+still refused, E1 ontology-only still refused, observed-backed still working, probability/confidence
+semantics and determinism unchanged) plus 4 in the G5.1 positive control. Targeted E2/E1/G5/G5.1/
+transmission/acquirer suites **82 passed**. Frontend **1003 passed / 66 files**, tsc clean, **lint 0
+errors**, production build clean. No backend file changed.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
