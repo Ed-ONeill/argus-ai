@@ -1238,6 +1238,42 @@ observed backing; the `belongs_to` exclusion itself is unchanged and still pinne
 **985 passed / 65 files**, tsc clean, **lint 0 errors**, production build clean. No backend file
 changed.
 
+**Production validation.** Deployed as `39db7e9`; both Railway services reported success — frontend
+(`argus-ai`) 2026-08-22T21:06:50Z, backend (`perceptive-achievement`) 21:08:48Z, combined state
+success. E1 touches no backend runtime file. No transient failure during the rollout;
+`/api/health`, `/api/credit-spread` and `/api/ipo-pipeline` returned 200 throughout.
+
+Re-measured against a **fresh** live payload (13 themes, 68 clusters) using the deployed logic:
+
+```
+themes      13 / 13 forecast          (unchanged — all have observed Feed edges)
+companies    6 / 54 forecast          ontology-only: 42
+survivors   APO, BAC, CEG, MSFT, NEE, NVDA
+ontology edges still present in the graph: 60   (preserved, not deleted)
+
+TNX  (ontology-only)  verdict insufficient_signal · items 0 · sources 0 · trust 0 · edges 1
+BAC  (observed)       verdict moderate · items 1 · pages ["Feed"]
+```
+
+The reduction survives the deployed build on data that has moved since implementation (the pool
+grew from 46 to 54 companies and the survivor set is unchanged), confirming the rule tracks
+provenance rather than a fixed entity list.
+
+**A live C1 observation worth recording.** `/api/credit-spread` is currently returning
+`{"measured": false, "reason": "unavailable"}` — **sustained across six consecutive samples**, not
+transient — while the FRED series is perfectly reachable from the development environment (275bp as
+of 2026-08-20, +2bp, `stable`). Production cannot presently reach FRED. This is the C1 contract
+behaving exactly as designed: an unreachable source yields an explicit unmeasured state and no
+fabricated fallback. Its knock-on is that Credit & Leverage reads `unmeasured`, dropping Capital
+Flow coverage to 4 of 8, so `buildSummary`, `flowPressure` and the regime chip all report
+insufficient coverage — C2a/C3 behaving correctly under a real outage. The FRED reachability
+problem itself is **not** an E1 defect and was not touched.
+
+**Not directly verified.** `/ma`, the Sector Intelligence Card, Workstation, the Drawer and
+Industries are all auth-gated (307 → `/auth`). The removed forward views were **not observed on the
+rendered pages**. The figures above were recomputed from a live payload against the deployed logic,
+not read from a screen.
+
 **Kept separate, as instructed:** the confidence-0 sector passthrough is **not** fixed and remains
 independently reachable — `predictSectorRotation` returns `found: true, confidence: 0` with prose in
 `currentRotation`, and `intelligenceProfile` guards on a sentinel string that never matches.
