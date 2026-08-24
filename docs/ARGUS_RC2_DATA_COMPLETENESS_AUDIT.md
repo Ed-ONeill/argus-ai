@@ -1274,6 +1274,32 @@ Industries are all auth-gated (307 → `/auth`). The removed forward views were 
 rendered pages**. The figures above were recomputed from a live payload against the deployed logic,
 not read from a screen.
 
+**FRED unavailability — diagnosed, no code change.** During E1 verification `/api/credit-spread`
+returned `{"measured": false, "reason": "unavailable"}` across six consecutive samples. It
+**resolved on its own**, with no deploy and no code change — later sampling returned
+`measured 275bp` in 0.20–0.42s. The condition was a **transient provider-side / egress failure**.
+
+Ruled out by measurement: the **exact production User-Agent is accepted** (`"Argus-AI/1.0"` →
+HTTP 200 in 0.25s from the dev environment), and DNS/TLS/latency are two orders of magnitude inside
+the 8s budget (dns 3–60ms, tls 113–170ms, total 0.17–0.25s). Worth recording for future incidents:
+FRED's rejection mode is a **silent hang, not a status code** — an absent or browser-like UA times
+out at 40s with zero bytes rather than returning 403 — so any FRED-side refusal reaches the route as
+an abort, never as a readable status.
+
+**C1 behaved correctly throughout.** The unreachable source produced an explicit unmeasured state,
+**no fabricated credit claim appeared at any point**, and the knock-on (Credit & Leverage
+`unmeasured` → Capital Flow coverage 4 of 8 → summary, pressure and chip all reporting insufficient
+coverage) is C2a/C3 working as designed. This is the first production demonstration of that chain
+under a real outage rather than a test.
+
+Recorded for completeness: C1 is the least resilient of the three outbound callers —
+`/api/ipo-pipeline` keeps a 1-hour module cache and serves last-known-good on failure,
+`/api/market-data` has fallback providers, while `/api/credit-spread` has no cache, no retry and no
+fallback, so one failed fetch erases a good prior reading. Both failure branches also collapse to
+the same opaque `reason: "unavailable"`. **Last-known-good caching and retry remain an optional
+resilience decision, not a correctness requirement** — serving a cached spread as current would
+itself violate the C1 contract that produced this behaviour. No C1 code change was made.
+
 **Kept separate, as instructed:** the confidence-0 sector passthrough is **not** fixed and remains
 independently reachable — `predictSectorRotation` returns `found: true, confidence: 0` with prose in
 `currentRotation`, and `intelligenceProfile` guards on a sentinel string that never matches.
