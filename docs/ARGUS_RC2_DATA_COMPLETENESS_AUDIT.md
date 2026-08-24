@@ -1364,6 +1364,45 @@ a sector given observed Feed evidence on its own label reaches trust 53 → conf
 forward view *is* projected and the recorded-rotation clause *is* rendered — proving E2 withholds
 zero-confidence forwards, not all forwards. No other frozen suite required changes.
 
+**Production validation.** Deployed as `5c58d1e`; both Railway services reported success — frontend
+(`argus-ai`) 2026-08-24T15:14:09Z, backend (`perceptive-achievement`) 15:18:19Z. No transient
+failure; `/api/health`, `/api/credit-spread` and `/api/ipo-pipeline` returned 200 throughout.
+
+Public endpoints re-verified against live data:
+
+```
+C1  /api/credit-spread   measured 270bp asOf 2026-08-21, prior 275bp, -5bp -> tightening,
+                         1 business day stale   (FRED fully recovered; the -5bp move exceeds
+                         the +/-3bp threshold, so the direction is real rather than "stable")
+C2b /api/ipo-pipeline    24 entries, formType on every row, 14 amendments, 10 new S-1,
+                         10 deduped CIKs, period 2026-08-19..2026-08-24
+```
+
+Forward counts recomputed from a fresh live payload (11 themes, 74 clusters) against the deployed
+logic:
+
+```
+Theme     11 / 11 forward
+Company    8 / 46 forward
+Sector     0 / 10 forward
+Industry   0 /  9 forward
+
+zero-confidence projections blocked by E2 : 0
+projected forwards, all with confidence>0 : 19
+```
+
+**E2 is confirmed as a latent defect fix with no live-output reduction on the current payload.**
+Zero projections were blocked, because the sector engine already refuses earlier at its
+theme-linkage guard on this data — the same result as before the change. What the deployment does
+establish is the invariant: **every one of the 19 projected forward views carries confidence > 0**,
+so no zero-confidence forecast can reach a surface. The counts also moved with the data (themes
+13 -> 11, companies 6/54 -> 8/46) while the rule held, confirming it tracks confidence rather than a
+fixed set.
+
+**Not directly verified.** `/sectors`, `/ma`, Workstation, the Drawer and Industries are auth-gated
+(307 -> `/auth`). The rendered forward views were **not observed**; the figures above were
+recomputed from a live payload against the deployed logic, not read from a screen.
+
 **Validation.** 14 new tests in `zeroConfidenceForward.test.ts` (the reproduced production
 precondition, engine diagnostics preserved, the exact 0-vs-positive boundary, insufficient sentinel
 still refused, E1 ontology-only still refused, observed-backed still working, probability/confidence
