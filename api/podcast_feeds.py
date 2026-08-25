@@ -33,6 +33,8 @@ from typing import Any
 
 import feedparser
 
+from app.companies import resolve_entities   # RC2-D2: the ONE entity authority (RC2-A)
+
 log = logging.getLogger(__name__)
 
 
@@ -1254,6 +1256,76 @@ _WIM: dict[str, str] = {
     "Markets":         "Market structure and price action encode the aggregate of all current information.",
 }
 
+# ── RC2-D2: episode entity resolution ─────────────────────────────────────────
+
+# Publisher -> ticker, derived at import from the registry itself through the same
+# resolver. No hardcoded table and no new identity mapping: the RC2-A registry is
+# asked what each publisher string resolves to, and only an unambiguous single
+# match is used. Today that is {"Goldman Sachs": GS, "Morgan Stanley": MS};
+# every other publisher resolves to nothing.
+_PUBLISHER_TICKER: dict[str, str] = {}
+
+
+def _publisher_ticker(publisher: str) -> str | None:
+    """The canonical ticker of the producing house, when it is itself an issuer."""
+    if publisher not in _PUBLISHER_TICKER:
+        try:
+            resolved = resolve_entities(publisher).companies
+        except Exception:                                    # never break ingestion
+            resolved = []
+        _PUBLISHER_TICKER[publisher] = resolved[0] if len(resolved) == 1 else ""
+    return _PUBLISHER_TICKER[publisher] or None
+
+
+def _episode_entities(title: str, publisher: str) -> list[str]:
+    """Canonical companies named in the episode TITLE. Coverage, never conviction.
+
+    TITLE ONLY. Descriptions were measured and rejected: they carry publisher
+    boilerplate (10 of 12 MS mentions came from Morgan Stanley's own show) and
+    guest-employer blocks ("Featuring: ... Head of ... Citi"), which together made
+    48% of description-derived mentions artefacts of who produced or appeared on
+    the show rather than who was discussed. Measured title-only across two live
+    corpora a week apart (175 and 149 episodes): 8% of episodes resolve anything,
+    12 and 11 distinct companies, zero publisher artefacts, zero guest-employer
+    blocks, and a hand audit of every resolution found zero false positives.
+
+    Publisher suppression is retained as defence-in-depth. It is inert in
+    title-only mode today (0 suppressions measured) but protects against a future
+    feed that starts putting the producing house in its titles.
+
+    RC2-E3 is the frozen boundary this feeds into: the resulting graph edge is
+    `Episode --mentions--> Company`, which is coverage/context only and can never
+    become thesis evidence or forecast authority.
+
+    Returns canonical tickers, deterministic and deduplicated, or [] when nothing
+    resolves. Non-company tokens - finance terms, indicators, geographies,
+    unresolved acronyms - are excluded by the RC2-A resolver itself; no second
+    ticker regex exists here.
+    """
+    if not title:
+        return []
+    try:
+        resolved = resolve_entities(title).companies
+    except Exception as exc:                                 # never break ingestion
+        log.debug("entity resolution failed for %.60s: %s", title, exc)
+        return []
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for ticker in resolved:                                  # resolver order = deterministic
+        if ticker in seen:
+            continue
+        seen.add(ticker)
+        out.append(ticker)
+
+    own = _publisher_ticker(publisher)
+    if own and own in out:
+        # Self-coverage is not independent conversational evidence.
+        out = [t for t in out if t != own]
+        log.debug("suppressed publisher self-mention %s for %s", own, publisher)
+    return out
+
+
 def _why_it_matters(topics: list[str], show_name: str) -> str:
     # LEGACY-PATH (IRE-1): canned per-topic prose — exactly the "generic prose
     # filling a gap" the reasoning contract bans (Part 8). Earliest safe
@@ -1465,7 +1537,7 @@ def _normalize(entry: Any, parsed_feed: feedparser.FeedParserDict, cfg: dict) ->
         "published_at":     pub_iso,
         "duration_seconds": _parse_duration(getattr(entry, "itunes_duration", None)),
         "topics":           topics,
-        "entities":         [],
+        "entities":         _episode_entities(title, cfg["publisher"]),
         "is_featured":      False,
         "is_secondary":     False,
         "secondary_label":  None,

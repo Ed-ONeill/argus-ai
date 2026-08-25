@@ -1532,6 +1532,87 @@ clean. No backend file changed.
 
 ---
 
+### RC2-D2 — episode entities from the title (implemented)
+
+**Finding D** recorded that `Episode.entities` was hardcoded `[]` in `_normalize`, leaving six
+Listen sections permanently empty and making `ingestListen`'s company loop dead code in production:
+
+```python
+for (const entity of ep.entities ?? []) {      # never executed
+  const c = addCompany(entity, PAGE_LISTEN);
+  link(podId, "mentions", c, { page: PAGE_LISTEN });
+}
+```
+
+**Title only, and the choice was measured rather than assumed.** Description text carries two
+artefact classes that no publisher guard can remove:
+
+| Artefact | Shape | Effect |
+|---|---|---|
+| publisher boilerplate | "Thoughts on the Market" names Morgan Stanley in every episode's closing disclaimer | 10 of 12 `MS` mentions were self-coverage |
+| guest-employer blocks | Bloomberg Surveillance lists "Featuring: … Head of … at Citi" | `JPM`/`SCHW`/`GS`/`C`/`BAC` for the bank that employed the guest, not one being discussed |
+
+Together these made **48%** of description-derived mentions artefacts of who *produced or appeared
+on* the show rather than who was discussed. Title-only was chosen for precision, accepting lower
+coverage.
+
+**Resolver.** RC2-A's `resolve_entities` and nothing else — no second ticker regex, no new identity
+mapping. Publisher suppression is retained as defence-in-depth and derives its ticker by asking that
+same resolver what the registry's publisher string resolves to; only an unambiguous single match is
+used. Today that yields `{Goldman Sachs: GS, Morgan Stanley: MS}` and **zero** live suppressions —
+inert, but it protects against a feed that later puts the producing house in its titles.
+
+**Measured on the live corpus (two runs, one week apart):**
+
+```
+run 1: 175 episodes  ->  14 with an entity (8%), 12 distinct companies, 0 publisher artefacts
+run 2: 149 episodes  ->  13 with an entity (8%), 11 distinct companies, 0 publisher artefacts
+```
+
+The corpus rotated between runs and the shape held.
+
+**Precision audit — all 13 resolutions inspected by hand.** Every one names a company genuinely
+discussed in the title; **zero false positives**. The two guest-employer-shaped titles were examined
+individually and both are true subjects: *"BONUS: JP Morgan Co-Head of Global Banking Filippo Gori"*
+is an interview about JP Morgan's banking franchise, and *"Microsoft's Deputy CISO on Securing AI
+Agents"* is about Microsoft's security posture. `GOOGL` comes from *"Talent Exodus at Google"* — the
+subject, not a guest's employer. Misses are **recall-only** and were left alone: Expedia went
+unresolved, and Anthropic, Canva and Revolut are private and correctly excluded by the registry gate.
+
+**The E3 boundary was the risk, and it holds.** D2 turns on a path that writes `mentions` edges into
+Company nodes on every ingest. Verified against the deployed evidence logic:
+
+```
+company with only Listen mentions   : insufficient_signal, trust 0, 0 supporting items
+forecast enabled by those mentions  : none  (found=false, insufficient_signal)
+profile.forward                     : null
+10 episodes naming the same company : still insufficient_signal, trust 0
+company evidence with vs without    : identical verdict, trust, item count, source count
+theme `supports` edges              : undisturbed (the E3 masking case)
+coverage consumers                  : receive the mention and count it
+```
+
+**Consumer classification.** Every Listen consumer of `.entities` was checked for wording that
+would convert coverage into conviction; none does. `Most discussed companies`, `Company mention
+heatmap` ("which names show up under which narratives"), `N mentions`, and the episode card's
+`Discussed` label are all literal. `influentialEpisodes` uses `entities.length` as a ranking term
+only. Two consumers stay empty and that is correct, not a defect: `mostReferencedPeople` filters on
+`looksLikePerson` and D2 emits canonical tickers only — Argus does not resolve people from titles;
+`mostReferencedFunds` populates only when a title names a fund ticker. Separately,
+`companiesEntering` has **no rendering consumer at all** — dead code, recorded here, not touched.
+
+**Validation.** 30 new backend tests in `test_podcast_entities.py` (title resolution, determinism,
+dedup, publisher guard on both the function and the pipeline path, non-company token exclusion, and
+the audited live titles pinned) — the two `_normalize` wiring tests fail against pre-fix code and
+pass after. 14 new frontend tests in `listenMentionCoverage.test.ts` pinning the E3 boundary under
+D2's new volume, including the before/after evidence-count delta. Backend **1294 passed**, frontend
+**1034 passed / 68 files**, tsc clean, lint 0 errors, production build clean.
+
+**Scope.** Only `_normalize`'s `entities` field changed. Not done: description extraction, guest
+parsing, RC2-D3, `companies_direct`, `acquires` polarity, industry source additions.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
