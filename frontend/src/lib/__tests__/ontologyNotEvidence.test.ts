@@ -125,13 +125,31 @@ describe("observed provenance keeps the same verb admissible", () => {
     expect((ev.sourceBreakdown ?? []).length).toBeGreaterThan(0);
   });
 
-  it("a company mentioned by an observed story regains evidence", () => {
+  /**
+   * RC2-E3 SUPERSEDES this assertion. It previously read "a company mentioned by
+   * an observed story regains evidence" — but a Story->Company edge is
+   * `mentions`, which is coverage, not corroboration. Observed provenance makes
+   * an edge ADMISSIBLE; it does not make a mention into thesis support. What the
+   * observed story genuinely corroborates is the THEME (Story->Theme `supports`).
+   */
+  it("observed provenance admits a real supports edge — but a mention is still not one", () => {
     ingestThemes([theme("T", "t")]);
     ingestStories([story("c1", "Nvidia beats", ["NVDA"])], [theme("T", "t")]);
-    const ev = evaluateEvidenceForNode(G.getNode("NVDA")!.id);
-    expect(ev.supportingEvidence.length).toBeGreaterThan(0);
+    // The theme gains real evidence: Story --supports--> Theme, page "Feed".
+    const themeEv = evaluateEvidenceForNode(G.getNode("T")!.id);
+    expect(themeEv.supportingEvidence.length).toBeGreaterThan(0);
+    expect(themeEv.supportingEvidence.some(i => i.relationship === "supports")).toBe(true);
+    // The company does NOT: its only observed edge is a mention.
+    const coEv = evaluateEvidenceForNode(G.getNode("NVDA")!.id);
+    expect(coEv.supportingEvidence).toHaveLength(0);
+    expect(coEv.verdict).toBe("insufficient_signal");
   });
 
+  // NOTE (RC2-E3): the deal case below asserts admissibility of OBSERVED
+  // provenance, which remains true. Whether `acquires` should carry positive
+  // thesis polarity at all is recorded as an open follow-up — it is in neither
+  // POSITIVE_REL nor NEGATIVE_REL and defaults to +1 through a ternary rather
+  // than by deliberate classification. Not decided here.
   it("a Deal supporting a company IS evidence", () => {
     ingestMA([{ id: "d1", title: "KKR acquires TargetCo", url: "u", source: "FT Deals",
       published: "1h ago", entities: ["APO"], dealType: "sponsor", sector: "Financials",

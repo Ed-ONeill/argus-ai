@@ -1412,6 +1412,86 @@ errors**, production build clean. No backend file changed.
 
 ---
 
+### RC2-E3 — a mention is coverage, not corroboration (implemented)
+
+`evidenceEngine.POSITIVE_REL` listed `mentions` beside `supports` and `drives`, so a single
+mention of any provenance produced verdict `moderate` with trust ~50 (Listen 49, Feed 51, M&A 51).
+It also **defeated the RC2-E1 forecast guard**: E1 refuses when the verdict is
+`insufficient_signal`, so one mention lifted the verdict and re-enabled a forecast whose entire
+basis was "one article named this company" — measured `strengthening, confidence 51,
+probability 44`.
+
+**Every producer uses `mentions` contextually** — Story→Company/Theme (Feed), Event→Company,
+Podcast→Company/Theme and Person→Theme (Listen), Deal→Company (M&A) — and the codebase already said
+so: `ingestEvents` notes the edge *"stays `mentions` (contextual) — never conflated"*, ExplorerGraph
+renders it as *"Coverage link: reporting names the entity"*, and `maIntel.ts` and `listenIntel.ts`
+both implement an explicit **SUPPORTS / CONTRADICTS / MENTIONS / CONTEXT** model documented *"never
+conflated"*. This engine was the one place breaking that contract, so the exclusion is
+vocabulary-level and safe.
+
+**A masking defect found during implementation, and the reason the first attempt was wrong.**
+`G.getNeighbors` returns one entry per neighbour, keeping the **first** edge found, and
+`ingestStories` writes `mentions` before `supports` on the same Story→Theme pair. Filtering the
+output of `getNeighbors` therefore discarded the whole neighbour **and its genuine `supports`
+edge** — silently destroying real evidence while appearing to remove only mentions. On the live
+payload that dropped all 49 `supports[Feed]` edges, which is what produced the initial (wrong)
+"everything goes to zero" prediction. The engine now walks the full relationship list and keeps the
+first **admissible** edge per neighbour.
+
+**Measured, live payload (11 themes / 74 clusters):**
+
+```
+Theme   admissible evidence 11/11    forecasts 11/11     (unchanged)
+Company admissible evidence  0/46    forecasts  0/46     (was 14 / 8)
+Sector  admissible evidence  0/10    forward    0/10
+mention edges preserved      78      (in graph, traversable)
+genuine support edges kept   49      (Story→Theme, page "Feed")
+```
+
+**The clarified conclusion.** Argus currently has real thesis-support evidence for **Themes**, but
+not for **Companies or Sectors**, in the current production graph. Company and entity coverage
+remains available as mentions/involvement — "most discussed", "entered the conversation", heatmaps,
+discussion counts, entity context — but not as conviction. That is the honest state and it was not
+repopulated with proxies.
+
+Diagnosis proved no adapter can supply company thesis support today: `theme --supports--> company`
+is ontology (E1-excluded); `fund --owns--> company` comes from `ingestPrivateMarkets`, which has no
+production producer; Story/Listen→Company are mentions. `MarketEvent.event_type` is categorical
+(`earnings` / `policy` / `market_event`), not directional — *"Nvidia Slides Ahead of Earnings"* is
+typed `earnings`. The deterministic `_EVENT_SIGNAL_RE` bundles opposite directions in one
+alternation (`raises?|lowers?|cuts?`, `beats?|misses?`, `upgrades?|downgrades?`), detecting that an
+event occurred, never which way. The only directional field is `impact`, which is LLM-generated and
+populated on ~15 items per cycle — promoting it would install an LLM judgment as evidence authority.
+Sectors likewise have no reachable path: only `belongs_to` (G5-excluded) and two
+`ingestPrivateMarkets` lines. **Sector forward views remaining unavailable is correct, not a gap**,
+and was explicitly not filled by aggregating company mentions.
+
+**Six prior fixtures superseded, none weakened.** Each had used a mention as "observed backing":
+the RC2-E1 case now asserts that observed provenance admits a real `supports` edge *while a mention
+still is not one*; the two RC2-E2 company cases assert that coverage-only companies get no forward
+view, with the boundary proven on the Theme instead; and the three RC2-E2 sector positive-control
+cases are replaced by an explicit demonstration that **no thesis-bearing sector authority is
+reachable**, with the audit of every sector-directed adapter line recorded in-file. G5.1's surviving
+intent — a bare label is never a hypothesis, the hypothesis composes from the canonical chain,
+same-label provenance suppression — is unchanged and still asserted.
+
+**Recorded as open follow-ups, deliberately not implemented here.** `acquires` is in neither
+`POSITIVE_REL` nor `NEGATIVE_REL` and counts as positive evidence only through the
+`NEGATIVE_REL.has(...) ? -1 : 1` default — positive by fall-through, not by classification; whether
+factual acquisition activity should support a thesis at all needs its own audit.
+`MarketEvent.companies_direct` is a genuine **involvement** authority (its own comment: *"being on a
+linked theme's asset list is exposure, not involvement"*, 6 of 34 live events) that may deserve its
+own graph verb — but involvement does not license thesis support today.
+
+**Validation.** 17 new tests in `mentionNotEvidence.test.ts`: mention-only insufficiency for Feed,
+Listen and M&A; no forecast from mentions; mention edges preserved and countable by coverage
+consumers; and the masking case — a neighbour with both `mentions` and `supports` retains the
+support, with every admitted item asserted non-`mentions`. Targeted E3/E2/E1/G5/G5.1 suites
+**76 passed**. Frontend **1020 passed / 67 files**, tsc clean, **lint 0 errors**, production build
+clean. No backend file changed.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |

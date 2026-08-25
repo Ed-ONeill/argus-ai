@@ -129,8 +129,86 @@ const isStructural = (e: IntelEdge): boolean => STRUCTURAL_REL.has(e.relationshi
 const isOntologyOnly = (e: IntelEdge): boolean =>
   e.originatingPages.length > 0 && e.originatingPages.every(p => p === PAGE_THEMES);
 
+/**
+ * RC2-E3: a MENTION is coverage, not corroboration.
+ *
+ * `mentions` means "this source discussed/named this entity". It does not mean
+ * the entity's thesis is supported. Every production producer uses it that way -
+ * Story->Company/Theme (Feed), Event->Company, Podcast->Company/Theme and
+ * Person->Theme (Listen), Deal->Company (M&A) - and the codebase says so itself:
+ * `ingestEvents` notes the edge "stays `mentions` (contextual) - never
+ * conflated", and ExplorerGraph renders it as "Coverage link: reporting names the
+ * entity".
+ *
+ * `maIntel.ts` and `listenIntel.ts` already implement an explicit classification
+ * - SUPPORTS / CONTRADICTS / MENTIONS / CONTEXT - documented "never conflated",
+ * with listenIntel noting that supporting-type edges are "none are emitted for
+ * podcasts today". This engine was the one place that broke that contract, by
+ * listing `mentions` in POSITIVE_REL beside `supports` and `drives`.
+ *
+ * Measured before this change: a single mention of any provenance produced
+ * verdict `moderate` with trust ~50 (Listen 49, Feed 51, M&A 51). Worse, it
+ * defeated the RC2-E1 forecast guard: E1 refuses when the verdict is
+ * `insufficient_signal`, so one mention lifted the verdict and re-enabled a
+ * forecast whose entire evidentiary basis was "one article named this company"
+ * (measured: strengthening, confidence 51, probability 44).
+ *
+ * The edge is NOT removed from the graph. It stays traversable and remains
+ * available to every coverage consumer - "most discussed", "entered the
+ * conversation", heatmaps, discussion counts, entity context. It simply carries
+ * no thesis authority: no supporting item, no sourceBreakdown entry, no trust, no
+ * verdict lift, and therefore no forecast eligibility.
+ *
+ * Deliberately NOT implemented: any "many mentions = weak corroboration" rule.
+ * There is no calibrated authority for converting mention volume into thesis
+ * support. If attention/momentum from mention volume is wanted later, it belongs
+ * in its own measured feature with its own semantics, not in evidence trust.
+ *
+ * `POSITIVE_REL` is left untouched - it is a polarity vocabulary, not an
+ * admissibility list - so stronger observed relations (`supports`, `drives`,
+ * `weakens`, and observed Event/Deal/Story supporting edges) are unaffected.
+ */
+const MENTION_REL = new Set(["mentions"]);
+const isMention = (e: IntelEdge): boolean => MENTION_REL.has(e.relationshipType);
+
+/**
+ * Per-neighbour selection of an ADMISSIBLE edge.
+ *
+ * `G.getNeighbors` returns one entry per neighbour node, keeping the FIRST edge
+ * it encounters. `ingestStories` writes `mentions` before `supports` for the same
+ * Story->Theme pair, so the mention masks the support. Filtering the output of
+ * `getNeighbors` would therefore discard that neighbour entirely and take its
+ * genuine `supports` edge with it - silently destroying real evidence while
+ * appearing to remove only mentions.
+ *
+ * Measured on the live payload: 49 `supports[Feed]` edges exist, every one of
+ * them paired with a `mentions[Feed]` edge on the same pair. Naive filtering
+ * dropped all 49.
+ *
+ * So the walk is done over the full relationship list, keeping the first
+ * ADMISSIBLE edge per neighbour. A neighbour connected only by a mention
+ * contributes nothing; a neighbour connected by both contributes its support.
+ */
+function admissibleNeighbors(nodeId: string): Neigh[] {
+  const self = G.getNode(nodeId);
+  if (!self) return [];
+  const out: Neigh[] = [];
+  const seen = new Set<string>();
+  for (const edge of G.getRelationships(self.id)) {
+    if (!admissibleAsEvidence(edge)) continue;
+    const otherId = edge.source === self.id ? edge.target : edge.source;
+    if (seen.has(otherId)) continue;
+    const node = G.getNode(otherId);
+    if (!node || node.type === "Event") continue;   // matches getNeighbors' default
+    seen.add(otherId);
+    out.push({ node, edge });
+  }
+  return out;
+}
+
 /** The single admissibility test for anything entering this engine as evidence. */
-const admissibleAsEvidence = (e: IntelEdge): boolean => !isStructural(e) && !isOntologyOnly(e);
+const admissibleAsEvidence = (e: IntelEdge): boolean =>
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
@@ -178,7 +256,7 @@ function contradictionsForNode(node: IntelNode): Contradiction[] {
   const findings: Contradiction[] = [];
   // RC2-G5: structural membership edges are excluded here too, so they cannot
   // move confidence or diversity findings either.
-  const neigh = G.getNeighbors(node.id).filter(x => admissibleAsEvidence(x.edge));
+  const neigh = admissibleNeighbors(node.id);
   const edges = G.getRelationships(node.id).filter(e => admissibleAsEvidence(e));
 
   // Weakening / competing relationships (graph evidence only).
@@ -321,7 +399,7 @@ export function evaluateEvidenceForNode(nodeIdOrLabel: string): NodeEvidence {
   const node = G.getNode(nodeIdOrLabel);
   if (!node) return emptyNodeEvidence(null);
 
-  const items = G.getNeighbors(node.id).filter(x => admissibleAsEvidence(x.edge)).map(toEvidenceItem);
+  const items = admissibleNeighbors(node.id).map(toEvidenceItem);
   if (items.length === 0) return emptyNodeEvidence(node);
 
   const supporting = items.filter(i => i.polarity === 1);

@@ -95,12 +95,22 @@ describe("the boundary is exactly zero", () => {
     expect(f!.confidence).toBe(t.confidence);
   });
 
-  it("a company with real confidence keeps its forward view", () => {
+  /**
+   * RC2-E3 SUPERSEDES this assertion. It used a Story->Company edge as "real
+   * backing", but that edge is `mentions` — coverage, not corroboration. With no
+   * adapter emitting a thesis-bearing edge into a Company (the only candidates
+   * are the ontology `supports` excluded by E1, and `ingestPrivateMarkets`
+   * `owns`, which has no production producer), a company cannot reach positive
+   * confidence at all today. The E2 boundary is therefore proven on the THEME,
+   * which does have real observed support.
+   */
+  it("a company backed only by coverage gets no forward view", () => {
     ingestThemes([theme("AI Compute Arms Race", "ai")]);
     ingestStories([story("c1", "Nvidia beats", ["NVDA"])], [theme("AI Compute Arms Race", "ai")]);
     const c = predictCompanyTrajectory("NVDA");
-    expect(c.confidence).toBeGreaterThan(0);
-    expect(forwardOf("NVDA", "company")?.confidence).toBe(c.confidence);
+    expect(c.found).toBe(false);
+    expect(c.confidence).toBe(0);
+    expect(forwardOf("NVDA", "company")).toBeNull();
   });
 
   it("every projected forward view carries positive confidence", () => {
@@ -137,11 +147,13 @@ describe("the insufficient sentinel is still refused (unchanged)", () => {
     expect(forwardOf("AI Compute Arms Race", "theme")).toBeNull();
   });
 
-  it("observed-backed entities still work end to end", () => {
+  it("thesis-supported entities still work end to end (themes today)", () => {
+    // RC2-E3: the theme carries real Story->Theme `supports`; the company carries
+    // only `mentions`. Coverage does not become conviction.
     ingestThemes([theme("AI Compute Arms Race", "ai")]);
     ingestStories([story("c1", "Nvidia beats", ["NVDA"])], [theme("AI Compute Arms Race", "ai")]);
     expect(forwardOf("AI Compute Arms Race", "theme")).not.toBeNull();
-    expect(forwardOf("NVDA", "company")).not.toBeNull();
+    expect(forwardOf("NVDA", "company")).toBeNull();
   });
 });
 

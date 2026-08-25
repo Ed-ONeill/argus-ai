@@ -212,16 +212,34 @@ describe("same-label provenance is not shown as circular", () => {
   });
 });
 
-// ── RC2-E2 positive control ─────────────────────────────────────────────────
+// ── RC2-E3: the sector positive control is retired, deliberately ────────────
 
 /**
- * The counterpart to the supersession above: E2 withholds ZERO-confidence
- * forwards, not all forwards. A sector with genuinely observed backing still
- * produces a forward view AND still renders its recorded-rotation clause, so
- * G5.1's warm-memory behaviour survives wherever the confidence is real.
+ * RC2-E2 added a positive control here: give the Energy SECTOR observed Feed
+ * stories, reach confidence 53, and assert the forward view and its
+ * recorded-rotation clause still render. RC2-E3 makes that unreachable, and the
+ * reason is worth recording rather than deleting silently.
+ *
+ * A Story->Sector edge is `mentions`. Under E3 that is coverage, not
+ * corroboration, so it can no longer lift sector confidence above 0. Auditing
+ * every adapter, the only edges written INTO a Sector are:
+ *
+ *   industry --belongs_to--> sector      structural, excluded since RC2-G5
+ *   fund --raises_demand_for--> sector   ingestPrivateMarkets, which has NO
+ *                                        production producer (debug harness only)
+ *
+ * So there is no reachable thesis-support authority for a Sector today, and a
+ * sector forward view being unavailable is the CORRECT state, not a gap. It is
+ * explicitly not repopulated by aggregating company mentions - that would be the
+ * fabrication this programme has been removing.
+ *
+ * G5.1's surviving intent is asserted above and unchanged: a bare entity label is
+ * never a hypothesis, the hypothesis is composed from the canonical chain, and
+ * same-label provenance suppression still holds. The theme-side positive control
+ * lives in zeroConfidenceForward.test.ts, where real Story->Theme `supports`
+ * edges exist.
  */
-describe("a sector with POSITIVE confidence keeps its forward and rotation clause", () => {
-  /** Observed Feed stories on the sector label give the Sector node real evidence. */
+describe("sector thesis support is currently unreachable, and that is correct", () => {
   const observedEnergy = () => {
     ingestThemes(WARM);
     ingestStories([
@@ -231,25 +249,31 @@ describe("a sector with POSITIVE confidence keeps its forward and rotation claus
     ] as never, WARM);
   };
 
-  it("the engine reports positive confidence", () => {
+  it("observed stories about a sector are mentions, not support", () => {
     observedEnergy();
-    const p = predictSectorRotation("Energy");
-    expect(p.found).toBe(true);
-    expect(p.confidence).toBeGreaterThan(0);
+    const n = G.getNodeOfType("Energy", "Sector");
+    if (!n) return;                       // taxonomy may not mint the node here
+    const rels = G.getRelationships(n.id);
+    expect(rels.length).toBeGreaterThan(0);          // the edges exist
+    // ...but none of them is a thesis-bearing relation with observed provenance.
+    const thesisBearing = rels.filter(e =>
+      e.relationshipType !== "mentions" &&
+      e.relationshipType !== "belongs_to" &&
+      !(e.originatingPages as string[]).every(p => p === "Theme Intelligence"));
+    expect(thesisBearing).toHaveLength(0);
   });
 
-  it("the forward view is projected, not withheld", () => {
+  it("the sector therefore has no confidence and no forward view", () => {
     observedEnergy();
-    const f = buildIntelligenceProfile("Energy", { kindHint: "sector" }).thesis.data?.forward;
-    expect(f).toBeTruthy();
-    expect(f!.confidence).toBeGreaterThan(0);
-    expect(f!.direction).toMatch(/rotating (in|out)/);
+    expect(predictSectorRotation("Energy").confidence).toBe(0);
+    expect(buildIntelligenceProfile("Energy", { kindHint: "sector" }).thesis.data?.forward ?? null)
+      .toBeNull();
   });
 
-  it("the recorded-rotation clause is preserved (G5.1 behaviour intact)", () => {
+  it("no recorded-rotation clause is fabricated in its place", () => {
     observedEnergy();
     const d = caseFor("Energy", WARM).beat("hypothesis").data as { basis: string | null };
-    expect(d.basis ?? "").toMatch(/Recorded rotation: rotating (in|out)/);
+    expect(d.basis ?? "").not.toMatch(/Recorded rotation: rotating (in|out)/);
   });
 
   it("the hypothesis is still never a bare label (G5.1 purpose preserved)", () => {
