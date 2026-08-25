@@ -1611,6 +1611,67 @@ D2's new volume, including the before/after evidence-count delta. Backend **1294
 **Scope.** Only `_normalize`'s `entities` field changed. Not done: description extraction, guest
 parsing, RC2-D3, `companies_direct`, `acquires` polarity, industry source additions.
 
+#### RC2-D2 production validation
+
+Deployed as `6e2ed2e`. Both Railway services green (`argus-ai`, `perceptive-achievement`); backend
+`/api/health` 200. Prior slices re-verified live and unaffected: **C1** `/api/credit-spread` returns
+real FRED `BAMLH0A0HYM2` — `measured: true`, 270bp, `tightening` at −5bp, 2 business days stale
+(inside the locked 5-day tolerance); **C2b** `/api/ipo-pipeline` returns 22 real S-1 filings, the
+freshest dated the day of validation.
+
+Fresh production corpus:
+
+```
+total episodes             : 149      (25 registered shows, 14d cap)
+episodes with >=1 entity   : 13
+coverage                   : 8.7%
+distinct companies         : 11
+top resolved               : NVDA(4) META(2) MSFT(2) MRNA HD LOW WDAY COST SCHW JPM GOOGL
+publisher suppressions     : 0
+publisher -> ticker (live) : {Goldman Sachs: GS, Morgan Stanley: MS}
+observed false positives   : 0
+```
+
+**Every resolved title was inspected again.** All 13 name a company genuinely discussed in the
+title. The two guest-employer-shaped titles were re-checked individually and both remain true
+subjects: *"BONUS: JP Morgan Co-Head of Global Banking Filippo Gori"* (JP Morgan's banking franchise
+is the topic) and *"Microsoft's Deputy CISO on Securing AI Agents"* (Microsoft's security posture).
+`GOOGL` comes from *"Talent Exodus at Google"* — the subject, not a guest's employer. Publisher
+suppression stayed inert at 0 removals, as designed.
+
+**The critical invariant, measured as a delta.** The graph was built twice from an identical
+themes/clusters baseline — once without episodes, once with the 149-episode production corpus — so
+every difference is attributable to D2 alone:
+
+```
+                              without episodes -> with episodes
+Theme   count                 14    -> 22
+Theme   admissible evidence   14/14 -> 14/22
+Theme   forecasts             14/14 -> 14/22
+Company count                 53    -> 58
+Company admissible evidence    0/53 ->  0/58     <- unchanged
+Company forecasts              0/53 ->  0/58     <- unchanged
+mention edges (all)           85    -> 727
+Listen->Company mentions       0    -> 16
+supports edges               118    -> 118       <- undisturbed
+evidence items by relation   {supports: 54} -> {supports: 54}
+```
+
+**Listen conversation coverage rose and Company thesis evidence did not.** The 16 new
+`Episode --mentions--> Company` edges cross-check exactly against the corpus
+(`sum(len(entities)) == 16`). Company admissible evidence and forecasts both stayed at **zero** while
+the company population grew 53 → 58 — the five companies Listen introduced arrived with no
+evidentiary authority whatsoever. Theme evidence and forecasts held at 14 in absolute terms while the
+denominator grew to 22: the eight themes Listen contributed are topic labels carrying only
+`mentions`, so none gained evidence or a forecast. `supports` edges were untouched at 118, and the
+admitted-evidence relation histogram is still `{supports: 54}` with **zero** `mentions` — confirming
+the E3 masking case did not reappear at D2's higher mention volume (85 → 727 edges).
+
+**Not visually verified.** `/listen` and every other product surface is auth-gated (307 → `/auth`),
+and the backend's `/api/listen` returns 307 to anonymous callers. The figures above were **recomputed
+against the deployed logic from a live payload**, not read from a production response or a screen.
+The rendered Listen sections were not observed.
+
 ---
 
 ## Per-surface index
