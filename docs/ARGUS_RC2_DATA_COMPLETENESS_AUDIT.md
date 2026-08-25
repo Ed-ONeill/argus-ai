@@ -1770,6 +1770,50 @@ than the complete production graph. `acquires`-derived company evidence sat outs
 subset, which is why it did not appear in those numbers. The earlier entries are left as written;
 this note is the correction of record.
 
+#### RC2-L1 deployment validation
+
+Deployed as `b3cfcda`. Both Railway services reached terminal **success** (`argus-ai`,
+`perceptive-achievement`). L1 is a **frontend-only** change — the graph and its evidence engine are
+evaluated client-side — so the backend deploy is unaffected by it and is reported only as a health
+gate.
+
+Public endpoints re-verified after the deploy:
+
+```
+backend /api/health          : 200  {"status":"ok"}
+C1  /api/credit-spread       : 200  measured, BAMLH0A0HYM2 269bp, asOf 2026-08-24,
+                                    changeBp -1 -> direction "stable" (inside the locked +/-3bp
+                                    threshold), businessDaysStale 1
+C2b /api/ipo-pipeline        : 200  27 real filings, freshest 2026-08-25 (S-1/A)
+frontend /                   : 307  -> /auth (middleware gate; the service is up)
+```
+
+**No production `acquires` count is claimed, and the reason is measured rather than assumed.**
+Production `deals` are derived client-side from `FeedResponse.items` filtered to `category === "M&A"`,
+so observing the complete production input shape requires the feed payload, and that payload is
+authenticated:
+
+```
+backend  /api/feed  -> 307      backend  /api/listen -> 307
+frontend /api/feed  -> 401      frontend /api/ma     -> 404 (no such route; /ma is a page)
+```
+
+Per the production-scope correction recorded immediately above, the themes + clusters (+ episodes)
+subset was **not** re-run and re-labelled as production. The live volume of `acquires` edges, and the
+number of companies whose displayed trust changes as a result, are therefore **unmeasured**.
+
+**Expected production effect, stated from the verified code path rather than observation.** L1
+changes **evidence, trust, verdict and `sourceBreakdown` only**. Predictions and forward views cannot
+move: the reproduced deal-only cases measured `found=false` / `forward=null` *before* L1, because
+`predictCompanyTrajectory` gates on theme linkage, and the L1 suite pins that they remain so. Where a
+company's only backing was M&A involvement, its Evidence surface moves from `moderate` / trust ~46-51
+to `insufficient_signal` / trust 0 — an intended reduction, not a regression. Companies holding
+genuine `supports` edges are unaffected, and the E3 parallel-edge masking case is re-pinned.
+
+**Not visually verified.** `/ma`, `/intel`, the Evidence Drawer, Workstation and Industries are all
+auth-gated (307 → `/auth`). The reduced evidence states were **not observed on a screen**; every
+claim above rests on the deployed code path and the 129 passing targeted tests.
+
 ---
 
 ## Per-surface index
