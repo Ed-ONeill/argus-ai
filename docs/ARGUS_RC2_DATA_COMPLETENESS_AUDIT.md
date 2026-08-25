@@ -1483,6 +1483,46 @@ factual acquisition activity should support a thesis at all needs its own audit.
 linked theme's asset list is exposure, not involvement"*, 6 of 34 live events) that may deserve its
 own graph verb — but involvement does not license thesis support today.
 
+**Production validation.** Deployed as `b5e5967`; both Railway services reported success — frontend
+(`argus-ai`) 2026-08-25T00:10:04Z, backend (`perceptive-achievement`) 00:12:41Z. No transient
+failure; `/api/health`, `/api/credit-spread` and `/api/ipo-pipeline` returned 200 throughout. E3
+touches no backend runtime file.
+
+Public endpoints re-verified against live data:
+
+```
+C1  measured 270bp asOf 2026-08-21, prior 275bp, -5bp -> tightening, 2 business days stale
+C2b 30 entries, formType on every row, 15 amendments, 15 new S-1, 15 deduped CIKs,
+    period 2026-08-20..2026-08-24
+```
+
+Counts recomputed from a fresh live payload (14 themes / 71 clusters) against the deployed logic:
+
+```
+Theme   admissible evidence : 14/14
+Theme   forecasts           : 14/14
+Company admissible evidence :  0/53
+Company forecasts           :  0/53
+Sector  evidence / forward  :  0/9  /  0/9
+mention edges preserved     : 85     (in graph, traversable)
+genuine support edges kept  : 54     (Story->Theme, page "Feed")
+evidence items by relation  : supports=54   (zero mentions)
+```
+
+Every admitted evidence item in production is a `supports` relation and none is a `mention`. The
+payload has moved since implementation (11 -> 14 themes, 46 -> 53 companies) and the rule held
+across that change, confirming it tracks relationship semantics rather than a fixed entity set.
+
+**Company and sector forward views are now visibly sparser.** Where `/ma` and the Sector
+Intelligence Card previously rendered a direction and a confidence figure for a company or sector,
+they now render their honest empty state. That is the intended consequence of this ruling, not a
+regression: Argus has thesis-support evidence for Themes and coverage only for Companies and
+Sectors.
+
+**Not directly verified.** `/ma`, `/sectors`, Workstation, the Drawer and Industries are auth-gated
+(307 -> `/auth`). The sparser rendering was **not observed**; every figure above was recomputed from
+a live payload against the deployed logic, not read from a screen.
+
 **Validation.** 17 new tests in `mentionNotEvidence.test.ts`: mention-only insufficiency for Feed,
 Listen and M&A; no forecast from mentions; mention edges preserved and countable by coverage
 consumers; and the masking case — a neighbour with both `mentions` and `supports` retains the
