@@ -1674,6 +1674,104 @@ The rendered Listen sections were not observed.
 
 ---
 
+### RC2-L1 — M&A involvement is not thesis corroboration (implemented)
+
+`acquires` is the remaining half of the contract breach RC2-E3 fixed. `maIntel.ts` — the M&A
+surface's own classifier — files this exact edge under **MENTIONS**, not SUPPORTS:
+
+```
+ *   MENTIONS - a recorded "mentions"/"acquires" edge, or resolved-entity metadata overlap
+```
+
+and its code implements that (`maIntel.ts:159-161`): `NEG_REL_RE` → CONTRADICTS, `SUP_REL_RE` →
+SUPPORTS, **everything else** → MENTIONS. `acquires` matches neither regex.
+
+`evidenceEngine` disagreed **by accident, not by classification**: `acquires` is in neither
+`POSITIVE_REL` nor `NEGATIVE_REL`, and `toEvidenceItem` assigns polarity through
+`NEGATIVE_REL.has(...) ? -1 : 1`, so it fell through to `+1`.
+
+**Measured before the change:**
+
+```
+MSFT --acquires--> WDAY   BOTH endpoints: verdict moderate, trust 46, 1 item [acquires/+]
+KKR  --acquires--> WDAY   target:         verdict moderate, trust 51, 1 item [acquires/+]
+item detail: relationship=acquires  polarity=1  reliability=40  sourceName=null
+```
+
+`sourceName` was `null`, so a deal party was also counted as an independent source through the
+`type:M&A` fallback.
+
+**The edge is broader than "an acquisition"** in three ways the engine could not see, all confirmed
+at the single producer (`intelligenceGraphAdapters.ts:545`):
+
+| Property | Finding |
+|---|---|
+| Roles | **positional** — `companies[0]` acquires `companies[1]`, the order of `affected_entities`. Which party is the acquirer is unverified. |
+| Deal state | `dealType` is **never consulted** at the link site, so `rumored` and `withdrawn` write the identical edge with identical authority. `inferDealType` also maps "joint venture" → `merger`. |
+| strength/confidence | `d.signalScore` — the feed item's newsworthiness, not any property of the deal. |
+
+So the edge records that two parties co-occur in an M&A story. That is involvement. Classifying it
+as support-or-weaken would need a deal-quality authority that does not exist, and inventing one was
+out of scope.
+
+**The fix** is the smallest explicit exclusion beside E3's, in the one choke point:
+
+```ts
+const INVOLVEMENT_REL = new Set(["acquires"]);
+const isInvolvement = (e: IntelEdge): boolean => INVOLVEMENT_REL.has(e.relationshipType);
+
+const admissibleAsEvidence = (e: IntelEdge): boolean =>
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e);
+```
+
+The binary `polarity` type, `POSITIVE_REL`, `NEGATIVE_REL` and the relationship vocabulary are all
+unchanged — this is an admissibility rule, not a polarity or vocabulary change. The edge is **not**
+removed: it stays in the graph, stays traversable, and remains available to the M&A relationship
+map, the transmission graph and the debug reports.
+
+**Deliberately not broadened.** Three relationships share the same silent-positive fall-through:
+
+| Relationship | Default polarity | Intended semantics | Reaches evidence today? |
+|---|---|---|---|
+| `acquires` | +1 by fall-through | M&A involvement | **yes — fixed by L1** |
+| `names` | +1 by fall-through | attributed involvement (Event names a company) | no — `admissibleNeighbors` skips Event-typed neighbours |
+| `evidenced_by` | +1 by fall-through | Event ← its own Story | no — same Event skip |
+| `depends_on` | +1 by fall-through | structural dependency | no — no producer exists |
+
+`names` and `evidenced_by` are unreachable **only** because of that Event-type skip. **Any
+Event-admission work (L2) would activate both immediately**, and `evidenced_by` would be circular in
+the RC2-E1 sense. They must be settled before L2, not after. Recorded here; not fixed here.
+
+**Blast radius.** Evidence, trust, verdict and `sourceBreakdown` only. Predictions and forward views
+were already unaffected — the reproduced deal-only cases measured `found=false` / `forward=null`
+before L1, and still do. Live *volume* is unmeasured: the full feed payload is auth-gated.
+
+**Validation.** 32 new tests in `involvementNotEvidence.test.ts` covering the acquires-only company
+(edge present, traversable, zero items, empty sourceBreakdown, `insufficient_signal`, trust 0, no
+manufactured contradiction), both endpoints separately, graph direction still recorded, the sponsor
+`Fund → Company` path, all six `dealType` values including `rumored`/`withdrawn`, the E3
+parallel-edge masking case, M&A/transmission consumers, and forecast/profile invariance. **16 of
+them fail against pre-L1 code.** One pre-existing assertion was superseded —
+`ontologyNotEvidence.test.ts` "a Deal supporting a company IS evidence", whose own note had recorded
+this decision as pending; it is re-pinned on the deal's genuine `supports` edge to its theme, which
+is what it actually proved. Targeted L1/E1/E2/E3/D2 + graph-integrity suites **129 passed**.
+
+#### Production-scope correction (recorded here, prior entries not rewritten)
+
+The absolute graph counts reported in the **RC2-E3** and **RC2-D2** entries above — "Company
+admissible evidence 0/53", "0/58", `mention edges preserved 85`, `evidence items by relation
+{supports: 54}` — were measured on a **themes + clusters (+ episodes)** input subset.
+
+Production's `useArgusIntelligence` provisions more than that: `themes, clusters, episodes, deals,
+snapshots, events, explanations`, and every graph-consuming surface uses it. The **RC2-D2 delta
+invariant remains valid** — it was a before/after comparison on identical inputs, so it isolates
+D2's contribution correctly — but those **absolute** company-evidence figures were scoped narrower
+than the complete production graph. `acquires`-derived company evidence sat outside the measured
+subset, which is why it did not appear in those numbers. The earlier entries are left as written;
+this note is the correction of record.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |

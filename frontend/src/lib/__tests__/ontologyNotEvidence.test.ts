@@ -145,18 +145,39 @@ describe("observed provenance keeps the same verb admissible", () => {
     expect(coEv.verdict).toBe("insufficient_signal");
   });
 
-  // NOTE (RC2-E3): the deal case below asserts admissibility of OBSERVED
-  // provenance, which remains true. Whether `acquires` should carry positive
-  // thesis polarity at all is recorded as an open follow-up — it is in neither
-  // POSITIVE_REL nor NEGATIVE_REL and defaults to +1 through a ternary rather
-  // than by deliberate classification. Not decided here.
-  it("a Deal supporting a company IS evidence", () => {
+  /**
+   * RC2-L1 SUPERSEDES this assertion, resolving the open follow-up its previous
+   * note recorded. That note said `acquires` was in neither POSITIVE_REL nor
+   * NEGATIVE_REL and defaulted to +1 through a ternary "rather than by
+   * deliberate classification", and left the question undecided. It is decided
+   * now: `acquires` is recorded M&A INVOLVEMENT, not thesis support.
+   *
+   * `maIntel.ts` already classified this exact edge under MENTIONS, so the
+   * engine was the one place disagreeing — and by accident, not by ruling.
+   *
+   * What this case genuinely proved was that OBSERVED provenance is admissible,
+   * and that remains true: the E1 rule is about provenance, not verb. It is
+   * re-pinned below on the deal's `supports` edge to its theme, which is a real
+   * supporting relation from an observed page. The company itself now correctly
+   * gains nothing from being a deal party.
+   */
+  it("observed M&A provenance is admissible — but involvement is not support", () => {
+    const t = theme("Consolidation", "tc");
+    ingestThemes([t]);
     ingestMA([{ id: "d1", title: "KKR acquires TargetCo", url: "u", source: "FT Deals",
-      published: "1h ago", entities: ["APO"], dealType: "sponsor", sector: "Financials",
-      peFirm: "KKR", signalScore: 80, summary: "", whyItMatters: "" } as never], []);
+      published: "1h ago", entities: ["APO"], dealType: "sponsor", sector: "Semiconductors",
+      peFirm: "KKR", signalScore: 80, summary: "", whyItMatters: "" } as never], [t]);
     const n = G.getNode("APO");
     expect(n).toBeTruthy();
-    expect(evaluateEvidenceForNode(n!.id).supportingEvidence.length).toBeGreaterThan(0);
+    // The theme gains real evidence: Deal --supports--> Theme, page "M&A".
+    const themeEv = evaluateEvidenceForNode(G.getNode("Consolidation")!.id);
+    expect(themeEv.supportingEvidence.some(i => i.relationship === "supports")).toBe(true);
+    expect(themeEv.supportingEvidence.every(i => i.pages.every(p => p === "Theme Intelligence")))
+      .toBe(false);
+    // The acquired company does NOT: its only M&A edges are involvement/coverage.
+    const coEv = evaluateEvidenceForNode(n!.id);
+    expect(coEv.supportingEvidence).toHaveLength(0);
+    expect(coEv.verdict).toBe("insufficient_signal");
   });
 
   it("a Podcast mentioning a theme IS evidence", () => {

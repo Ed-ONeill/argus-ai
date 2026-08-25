@@ -172,6 +172,62 @@ const MENTION_REL = new Set(["mentions"]);
 const isMention = (e: IntelEdge): boolean => MENTION_REL.has(e.relationshipType);
 
 /**
+ * RC2-L1: M&A INVOLVEMENT is not thesis corroboration.
+ *
+ * `acquires` is the remaining half of the same contract breach E3 fixed.
+ * `maIntel.ts` - the M&A surface's own classifier - files this exact edge under
+ * MENTIONS, not SUPPORTS:
+ *
+ *     MENTIONS - a recorded "mentions"/"acquires" edge, or resolved-entity
+ *                metadata overlap
+ *
+ * and its code implements that (maIntel.ts:159-161): NEG_REL_RE -> CONTRADICTS,
+ * SUP_REL_RE -> SUPPORTS, everything else -> MENTIONS. `acquires` matches neither
+ * regex, so the M&A surface treats it as involvement. This engine disagreed - not
+ * by classification, but by ACCIDENT: `acquires` is in neither POSITIVE_REL nor
+ * NEGATIVE_REL, and `toEvidenceItem` assigns polarity through
+ * `NEGATIVE_REL.has(...) ? -1 : 1`, so it fell through to +1.
+ *
+ * Measured before this change: MSFT --acquires--> WDAY gave BOTH endpoints
+ * verdict `moderate`, trust 46, one supporting item [acquires/+]. The sponsor
+ * case (KKR --acquires--> WDAY) gave the target trust 51. The evidence item
+ * carried `sourceName: null`, so a deal party was also counted as an independent
+ * source via the `type:M&A` fallback.
+ *
+ * The edge is broader than "an acquisition" in three ways, none of which the
+ * engine could see:
+ *   - roles are POSITIONAL (`companies[0]` acquires `companies[1]`, the order of
+ *     `affected_entities`), so which party is the acquirer is unverified;
+ *   - `dealType` is never consulted at the link site, so `rumored` and
+ *     `withdrawn` deals write the identical edge with identical authority;
+ *   - `strength`/`confidence` carry `signalScore`, which is the feed item's
+ *     newsworthiness, not any property of the deal.
+ *
+ * So the edge records that two parties co-occur in an M&A story. That is
+ * involvement. Whether it supports or weakens either party's thesis would need a
+ * deal-quality authority that does not exist, and inventing one is out of scope.
+ *
+ * As with E3, the edge is NOT removed. It stays in the graph, stays traversable,
+ * and remains available to the M&A relationship map, the transmission graph and
+ * `intelligenceGraphDebug`'s M&A reporting. It simply carries no thesis
+ * authority.
+ *
+ * Deliberately NOT broadened. `names` and `evidenced_by` (Event-sourced) and
+ * `depends_on` (no producer) share the same silent-positive fall-through, but all
+ * three are unreachable today - the first two because `admissibleNeighbors` skips
+ * Event-typed neighbours, the third because nothing writes it. They must be
+ * settled BEFORE any Event-admission work (L2), which would activate `names` and
+ * `evidenced_by` immediately; `evidenced_by` (Event <- its own Story) would be
+ * circular in the RC2-E1 sense. Recorded here, not fixed here.
+ *
+ * The binary `polarity` type, `POSITIVE_REL`, `NEGATIVE_REL` and the relationship
+ * vocabulary are all unchanged - this is an admissibility rule, not a polarity or
+ * vocabulary change.
+ */
+const INVOLVEMENT_REL = new Set(["acquires"]);
+const isInvolvement = (e: IntelEdge): boolean => INVOLVEMENT_REL.has(e.relationshipType);
+
+/**
  * Per-neighbour selection of an ADMISSIBLE edge.
  *
  * `G.getNeighbors` returns one entry per neighbour node, keeping the FIRST edge
@@ -208,7 +264,7 @@ function admissibleNeighbors(nodeId: string): Neigh[] {
 
 /** The single admissibility test for anything entering this engine as evidence. */
 const admissibleAsEvidence = (e: IntelEdge): boolean =>
-  !isStructural(e) && !isOntologyOnly(e) && !isMention(e);
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
