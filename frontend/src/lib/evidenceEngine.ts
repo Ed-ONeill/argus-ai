@@ -279,6 +279,71 @@ const PROVENANCE_REL = new Set(["evidenced_by"]);
 const isProvenance = (e: IntelEdge): boolean => PROVENANCE_REL.has(e.relationshipType);
 
 /**
+ * RC2-L3: a data ATTACHMENT is not a thesis claim.
+ *
+ * `dataAdapters/observationGraphBridge` links provider observations onto the
+ * entity they describe:
+ *
+ *   Company --has_market_metric-->    MarketMetric      (price / volume / liquidity / ohlcv)
+ *   Company --has_financial_metric--> FinancialMetric   (revenue, margin, ...)
+ *   Person  --transacted-->           Company           (an insider filing exists)
+ *
+ * All three say "this datum belongs to this entity". None asserts a direction.
+ * The bridge is explicit about this - `handleMarket` is documented "Purely
+ * descriptive: no bullish or bearish inference from a price move", and the module
+ * header states "When direction is ambiguous it uses mentions or correlates
+ * rather than inventing a claim". The bridge's representation is already MORE
+ * precise than this engine's; the engine was the side losing information, by
+ * assigning +1 through the `NEGATIVE_REL.has(...) ? -1 : 1` fall-through.
+ *
+ * Measured before this change - opposite states were indistinguishable:
+ *
+ *   price   +7.1%  -> moderate, trust 46, +[has_market_metric]
+ *   price   -8.2%  -> moderate, trust 46, +[has_market_metric]      IDENTICAL
+ *   revenue +200   -> moderate, trust 54, +[has_financial_metric]
+ *   revenue -200   -> moderate, trust 54, +[has_financial_metric]   IDENTICAL
+ *
+ * THIS IS AN UNMASKING FIX, not only an exclusion. `handleInsider` already
+ * derives direction from deterministic SEC Form 4 fields (`acquiredDisposedCode`,
+ * `transactionCode`) with no LLM anywhere, and already encodes it with CLASSIFIED
+ * verbs beside the bare fact:
+ *
+ *   link(pid, "transacted", cid, o);                                  // the fact
+ *   buy     -> link(pid, "owns", cid) + link(pid, "supports", cid)    // +1
+ *   sell    -> link(pid, "weakens", cid)                              // -1
+ *   unknown -> link(pid, "mentions", cid)                             // E3-excluded
+ *
+ * But `transacted` is written FIRST, and `admissibleNeighbors` keeps the first
+ * ADMISSIBLE edge per neighbour - so it masked the directional edge entirely.
+ * Measured: buy, sell and unknown all produced verdict `moderate`, trust 54, one
+ * `+[transacted]` item, with `contradictingEvidence` EMPTY on the sell. An insider
+ * SALE read as positive thesis support. Excluding `transacted` restores the
+ * distinction the adapter already encodes: buy keeps `supports`, sell keeps
+ * `weakens`, unknown keeps only an E3-excluded `mentions`.
+ *
+ * Attachment multiplicity was also inflating scoring: six observations from ONE
+ * provider produced six items and `evidenceCount` 6 (trust 46 -> 49). It did not
+ * inflate `independentSources` - all six share a `sourceName`, so they collapse to
+ * a single `sourceBreakdown` entry - but the item count fed the score regardless.
+ *
+ * The edges are NOT removed. They stay in the graph and traversable for
+ * contextual and diagnostic consumers; `node.metadata.latestMarketData` and the
+ * OHLCV series are untouched.
+ *
+ * Production effect today is ZERO: the producers are unreachable.
+ * `ingestProviderObservations` has no caller in the app, `ingestionScheduler` is
+ * mounted nowhere, and `isProviderIngestionEnabled` reads a non-NEXT_PUBLIC_ env
+ * var that a browser cannot see while this graph runs client-side. The correction
+ * is pinned through the real bridge in `attachmentNotEvidence.test.ts`.
+ *
+ * NOT ruled here: `depends_on`, still the only remaining unclassified verb and
+ * still inert (no producer). It is the converse of `supplies`, which IS classified
+ * thesis-bearing, so it keeps its own ledger item.
+ */
+const ATTACHMENT_REL = new Set(["transacted", "has_market_metric", "has_financial_metric"]);
+const isAttachment = (e: IntelEdge): boolean => ATTACHMENT_REL.has(e.relationshipType);
+
+/**
  * Per-neighbour selection of an ADMISSIBLE edge.
  *
  * `G.getNeighbors` returns one entry per neighbour node, keeping the FIRST edge
@@ -316,7 +381,7 @@ function admissibleNeighbors(nodeId: string): Neigh[] {
 /** The single admissibility test for anything entering this engine as evidence. */
 const admissibleAsEvidence = (e: IntelEdge): boolean =>
   !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e)
-  && !isProvenance(e);
+  && !isProvenance(e) && !isAttachment(e);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
