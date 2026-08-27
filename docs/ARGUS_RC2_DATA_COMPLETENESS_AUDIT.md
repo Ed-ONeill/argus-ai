@@ -1816,6 +1816,134 @@ claim above rests on the deployed code path and the 129 passing targeted tests.
 
 ---
 
+### RC2-L2 — contextual and provenance relations are inadmissible by ruling (implemented)
+
+The RC2-L2 diagnosis asked whether Event nodes should participate in thesis evidence at all. The
+answer is **no**, and the ruling is Conclusion A: the canonical Event layer contains **no independent
+thesis-bearing observation**.
+
+**Corrected Event relationship inventory.** `ingestEvents` is the sole producer. Four edges — and
+there is no Event→Sector/Industry edge at all (`ev.industries` is never linked):
+
+| Relationship | source→target | Producer field | Semantic | Default polarity |
+|---|---|---|---|---|
+| `names` | Event→Company | `companies_direct` | attributed involvement | **+1 silent fall-through** |
+| `mentions` | Event→Company | `companies` minus direct | contextual coverage | +1 classified, E3-excluded |
+| `supports` | Event→Theme | `theme_ids` | theme membership | +1 classified |
+| `evidenced_by` | Event→Story | the cluster's Story | provenance | **+1 silent fall-through** |
+
+Two corrections to earlier records, stated rather than quietly amended:
+
+* Prior ledger probes called `ingestEvents(events, themes)`, passing themes into the **`explanations`**
+  slot. Production is `ingestEvents(events, explanations, themes)`, so no `Event --supports--> Theme`
+  edge existed in those probes. Everything here uses the production order.
+* The ledger refresh claimed the Event skip was "the reason Company evidence is zero". **That was
+  wrong.** The only Event→Company verbs are `names` (involvement) and `mentions` (coverage);
+  admitting the layer would manufacture false positives, not recover lost signal.
+
+**Why each verb is not thesis-bearing.** `names` is a *naming* distinction — `types.ts` documents
+`companies_direct` as keying "attribution (what happened to X vs what may affect X)", and a guidance
+cut and a guidance raise both produce it. `evidenced_by` points at the Story built from the **same
+cluster id**, so admitting it closes a `Story → Event → Story` loop — the RC2-E1 self-evidence pattern
+with one extra hop, made worse because the Story item carries `sourceName` "Reuters" while the Event
+node has none, so one observation would count as **two** independent sources. `supports` is a
+**duplicate**: `ev.theme_ids` derives from `theme.contributing_cluster_ids`, and
+`ingestStories:337-345` already writes `Story --supports--> Theme` from the identical check on the
+same cluster. Admitting it would double-count one observation.
+
+**Event corroboration establishes existence, not direction.** `corroboration_count` and
+`source_count` answer "did this happen?". `MarketEvent` carries **no** directional field:
+`event_type` is a taxonomy of kind, `confidence` is the linked theme's own conviction (circular under
+E1), `editorial_score` is newsworthiness, and `why_it_matters` is marked LEGACY LLM-derived with "Do
+not build new consumers on it". Three wires confirming a guidance cut makes the cut certain; it does
+not make the thesis supported.
+
+**The fix is hardening, not admission.** The Event-neighbour exclusion is **untouched**. What changed
+is that the layer no longer *relies* on it:
+
+```ts
+const INVOLVEMENT_REL = new Set(["acquires", "names"]);      // L1 + L2
+const PROVENANCE_REL  = new Set(["evidenced_by"]);           // L2
+const isProvenance = (e: IntelEdge): boolean => PROVENANCE_REL.has(e.relationshipType);
+
+const admissibleAsEvidence = (e: IntelEdge): boolean =>
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e)
+  && !isProvenance(e);
+```
+
+Simulated before the change, on a fixture with corroboration 3:
+
+```
+lift skip entirely            -> 4 new evidence items, 2 SILENT FALL-THROUGHS
+lift skip + keep E3/L1 rules  -> 3 new evidence items, STILL 2 SILENT FALL-THROUGHS
+```
+
+That second line is the trap this slice closes: the intuitive fix does not work. The L1 rule carries
+forward — **unclassified does not mean positive**.
+
+**Why the generic positive fall-through was NOT removed.** Replacing
+`NEGATIVE_REL.has(rel) ? -1 : 1` with explicit three-way classification was evaluated and rejected,
+because a complete producer inventory found unclassified verbs that are **live and ungated** — see
+the L3 item below. Eliminating the fall-through would therefore change product output, which a
+hardening slice must not do. `depends_on` is also left **unresolved**: it is inert (no producer), but
+it is the converse of `supplies`, which *is* classified thesis-bearing, so ruling it without that
+analysis would encode an inconsistency.
+
+**Blast radius — measured, and one accepted delta.**
+
+```
+                  before -> after
+nodes             21 -> 21        edges      35 -> 35
+forecasts          2 ->  2        forwards    2 ->  2
+Company / Theme / Story / Sector / Industry rows : BYTE-IDENTICAL
+Event|Nvidia cuts datacenter guidance|3|moderate|56  ->  |1|moderate|50
+Event|Grid strain deepens            |3|moderate|56  ->  |1|moderate|50
+```
+
+The entire delta sits on the **Event nodes' own** evidence. The skip excludes Event-typed
+*neighbours*; it never stopped an Event node from being *evaluated*, so pre-L2 an Event's own evidence
+included the companies it named and the story it was built from — both self-referential. Removing
+them is correct on the same ruling. The Event verdict is unchanged (`moderate`).
+
+**Rendered product output is unchanged.** No consumer reads an Event node's evidence: the three
+callers of `evaluateEvidenceForNode` are `intelligenceProfile` (`ProfileKind` has no `"event"`
+member), `intelligenceHealth` (filters to `Theme | Company | Sector`, and has no `.tsx` consumer at
+all), and `intelligenceDeltas` (themes only). `eventView.ts` and `EventDossier.tsx` contain no
+reference to evidence, trust or verdict.
+
+**Validation.** 21 new tests in `contextualNotEvidence.test.ts`. `names` and `evidenced_by` are each
+pinned twice — once through the real `ingestEvents` path, and once **re-anchored on non-Event nodes**,
+so the result proves the *verb* is rejected rather than the node-type skip. Also pinned: `mentions` 0,
+`acquires` 0, Story→Theme `supports` still admissible and unchanged, the parallel contextual+genuine
+case still selecting the genuine support, no `Story→Event→Story` loop, the Event→Theme duplicate not
+raising theme trust (identical with and without the Event ingested), corroboration 3→9 changing
+nothing downstream, nothing contextual reaching `sourceBreakdown`, and the Event exclusion still in
+force. Targeted L2/L1/E3/E2/E1/D2/graph-integrity **150 passed**; frontend **1087 passed / 70 files**;
+backend **1294 passed**; tsc clean; lint 0 errors; production build clean.
+
+**Scope.** Only `evidenceEngine.ts` changed. `POSITIVE_REL`, `NEGATIVE_REL`, the binary `polarity`
+type, the relationship vocabulary, adapters, prediction logic, weights, thresholds and calibration are
+all untouched.
+
+#### New ledger item — L3: live silent-positive observation verbs
+
+`dataAdapters/observationGraphBridge` writes three unclassified verbs on **every** provision, and
+unlike the Event verbs **nothing gates them**:
+
+| Verb | source→target | Meaning | Reaches evidence |
+|---|---|---|---|
+| `transacted` | Person→Company | an insider filing exists | **yes, live** |
+| `has_market_metric` | Company→MarketMetric | a price observation is attached | **yes, live** |
+| `has_financial_metric` | Company→FinancialMetric | a financial metric is attached | **yes, live** |
+
+Measured: a company carrying only a price observation, a financial metric and an insider filing reads
+**verdict `moderate`, trust 52, three supporting items**, with the metric attachment counted as an
+independent source in `sourceBreakdown` (`EODHD` ×2). This is materially worse than `acquires` was —
+a company merely *having a price* becomes thesis support. Deliberately **not** touched here: it is
+live, so changing it alters current product semantics and needs its own diagnosis.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |

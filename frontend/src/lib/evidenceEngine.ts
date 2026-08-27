@@ -212,20 +212,71 @@ const isMention = (e: IntelEdge): boolean => MENTION_REL.has(e.relationshipType)
  * `intelligenceGraphDebug`'s M&A reporting. It simply carries no thesis
  * authority.
  *
- * Deliberately NOT broadened. `names` and `evidenced_by` (Event-sourced) and
- * `depends_on` (no producer) share the same silent-positive fall-through, but all
- * three are unreachable today - the first two because `admissibleNeighbors` skips
- * Event-typed neighbours, the third because nothing writes it. They must be
- * settled BEFORE any Event-admission work (L2), which would activate `names` and
- * `evidenced_by` immediately; `evidenced_by` (Event <- its own Story) would be
- * circular in the RC2-E1 sense. Recorded here, not fixed here.
+ * RC2-L2 settles the follow-up this block recorded: `names` joins the set below,
+ * and `evidenced_by` gets its own provenance exclusion. `depends_on` is
+ * deliberately still NOT ruled - see the note on PROVENANCE_REL.
  *
  * The binary `polarity` type, `POSITIVE_REL`, `NEGATIVE_REL` and the relationship
  * vocabulary are all unchanged - this is an admissibility rule, not a polarity or
  * vocabulary change.
  */
-const INVOLVEMENT_REL = new Set(["acquires"]);
+/**
+ * RC2-L2: `names` is attribution, and attribution is involvement.
+ *
+ * `Event --names--> Company` is written from `companies_direct`, which
+ * `types.ts` documents as "Named by the event itself (registry resolver) -
+ * strict subset of `companies`... Attribution (what happened to X vs what may
+ * affect X) keys on this field", and the adapter states the same law: "companies
+ * NAMED by the event link `names` (attributed); theme-transmitted exposure stays
+ * `mentions` (contextual) - never conflated".
+ *
+ * That is a NAMING distinction, not a directional one. A guidance cut and a
+ * guidance raise both produce `names`. `MarketEvent` carries no directional field
+ * at all - `event_type` is a taxonomy of kind, `corroboration_count` and
+ * `source_count` establish that the event OCCURRED, `confidence` is the linked
+ * theme's own conviction (circular under RC2-E1), `editorial_score` is
+ * newsworthiness, and `why_it_matters` is marked LEGACY LLM-derived with "Do not
+ * build new consumers on it". So there is no honest basis for a direction.
+ *
+ * Same class as `acquires`: recorded involvement, zero thesis authority.
+ */
+const INVOLVEMENT_REL = new Set(["acquires", "names"]);
 const isInvolvement = (e: IntelEdge): boolean => INVOLVEMENT_REL.has(e.relationshipType);
+
+/**
+ * RC2-L2: PROVENANCE is where a record came from, never corroboration of it.
+ *
+ * `Event --evidenced_by--> Story` links an Event to the Story node aliasing the
+ * SAME cluster id (`ev.id`) - the story the event was built from. Admitting it
+ * closes a loop:
+ *
+ *     Story --(builds)--> Event --evidenced_by--> Story
+ *
+ * The Story would gain trust from an Event that is a restatement of itself. That
+ * is the RC2-E1 self-evidence pattern with one extra hop. It is worse than E1's
+ * case in one respect: the Story item carries `sourceName` "Reuters" while the
+ * Event node has no `metadata.source`, so its item falls back to `type:Feed` -
+ * and `independentSources` would count one observation as TWO distinct sources.
+ *
+ * NOT RULED HERE: `depends_on`. It shares the silent-positive fall-through and
+ * has no producer, so excluding it would be inert - but the diagnosis did not
+ * establish it as contextual. It sits directly beside `supplies` in the
+ * vocabulary as that verb's converse, and `supplies` IS classified thesis-bearing
+ * in POSITIVE_REL. Ruling it inadmissible without that analysis would encode an
+ * inconsistency. It stays an open ledger item.
+ *
+ * ALSO NOT RULED HERE, and live rather than inert: `transacted`,
+ * `has_market_metric` and `has_financial_metric`, written by
+ * `dataAdapters/observationGraphBridge` on every provision. They are unclassified
+ * and therefore also fall through to +1, and unlike the Event verbs NOTHING
+ * blocks them. Measured: a company carrying only a price observation, a financial
+ * metric and an insider filing reads verdict `moderate`, trust 52, three
+ * supporting items, with the metric attachment counted as an independent source.
+ * Excluding them would CHANGE LIVE OUTPUT, so it cannot ride this
+ * zero-output hardening slice. Recorded as its own ledger item.
+ */
+const PROVENANCE_REL = new Set(["evidenced_by"]);
+const isProvenance = (e: IntelEdge): boolean => PROVENANCE_REL.has(e.relationshipType);
 
 /**
  * Per-neighbour selection of an ADMISSIBLE edge.
@@ -264,7 +315,8 @@ function admissibleNeighbors(nodeId: string): Neigh[] {
 
 /** The single admissibility test for anything entering this engine as evidence. */
 const admissibleAsEvidence = (e: IntelEdge): boolean =>
-  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e);
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e)
+  && !isProvenance(e);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
