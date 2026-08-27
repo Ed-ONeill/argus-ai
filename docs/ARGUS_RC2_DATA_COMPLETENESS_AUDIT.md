@@ -1983,6 +1983,135 @@ live, so changing it alters current product semantics and needs its own diagnosi
 
 ---
 
+### RC2-L3 — a data attachment is not a thesis claim (implemented)
+
+`dataAdapters/observationGraphBridge` links provider observations onto the entity they describe:
+
+```
+Company --has_market_metric-->    MarketMetric      (price / volume / liquidity / ohlcv)
+Company --has_financial_metric--> FinancialMetric   (revenue, margin, ...)
+Person  --transacted-->           Company           (an insider filing exists)
+```
+
+All three say "this datum belongs to this entity". None asserts a direction — and the bridge says so
+itself: `handleMarket` is documented *"Purely descriptive: no bullish or bearish inference from a
+price move"*, and the module header states *"When direction is ambiguous it uses mentions or
+correlates rather than inventing a claim"*. **The bridge's representation was already more precise
+than the evidence engine's.** The engine was the side losing information, assigning +1 through the
+`NEGATIVE_REL.has(...) ? -1 : 1` fall-through. The bridge was therefore left untouched.
+
+**Measured before the change — opposite states were indistinguishable:**
+
+```
+price   +7.1%  -> moderate, trust 46, +[has_market_metric]
+price   -8.2%  -> moderate, trust 46, +[has_market_metric]      IDENTICAL
+revenue +200   -> moderate, trust 54, +[has_financial_metric]
+revenue -200   -> moderate, trust 54, +[has_financial_metric]   IDENTICAL
+```
+
+**This is an unmasking fix, not only an exclusion.** `handleInsider` already derives direction from
+deterministic SEC Form 4 fields (`acquiredDisposedCode` / `transactionCode`, no LLM anywhere) and
+already encodes it with **classified** verbs beside the bare fact — buy → `owns` + `supports`,
+sell → `weakens`, unknown → `mentions`. But `transacted` is linked **first**, and
+`admissibleNeighbors` keeps the first ADMISSIBLE edge per neighbour, so it masked the directional
+edge entirely:
+
+```
+BUY      edges=[transacted, owns, supports]  -> moderate, trust 54, +[transacted]
+SELL     edges=[transacted, weakens]         -> moderate, trust 54, +[transacted], contra EMPTY
+UNKNOWN  edges=[transacted, mentions]        -> moderate, trust 54, +[transacted]
+```
+
+An insider **sale read as positive thesis support**. Excluding the three attachment verbs restores
+the distinction the adapter already encodes: buy admits a positive item (`owns`, the first admissible
+edge on that neighbour, in `POSITIVE_REL`), sell admits `weakens` as contradicting evidence, and
+unknown admits nothing because its only other edge is an E3-excluded `mentions`.
+
+Attachment multiplicity was also inflating scoring: six observations from one provider produced six
+items and `evidenceCount` 6 (trust 46 → 49). It did **not** inflate `independentSources` — all six
+share a `sourceName` and collapse to a single `sourceBreakdown` entry — but the item count fed the
+score regardless.
+
+**The fix** is the fourth semantic exclusion beside E3/L1/L2, in the one choke point:
+
+```ts
+const ATTACHMENT_REL = new Set(["transacted", "has_market_metric", "has_financial_metric"]);
+const isAttachment = (e: IntelEdge): boolean => ATTACHMENT_REL.has(e.relationshipType);
+
+const admissibleAsEvidence = (e: IntelEdge): boolean =>
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e)
+  && !isProvenance(e) && !isAttachment(e);
+```
+
+The edges are **not** removed: they stay present and traversable for contextual and diagnostic
+consumers, and `node.metadata.latestMarketData` and the OHLCV series are untouched.
+
+**`depends_on` remains unruled** and is now the only unclassified verb left. It is inert (no
+producer) but is the converse of `supplies`, which *is* classified thesis-bearing, so ruling it
+without that analysis would encode an inconsistency. It is pinned in the L3 suite as **still
+admissible**, which proves this slice did not quietly rule it.
+
+**Validation.** 21 new tests in `attachmentNotEvidence.test.ts`, all driven through the **real
+bridge** rather than hand-built edges, so they prove L3 restores a distinction the adapter already
+encodes. **15 of the 21 fail against pre-L3 code**, including all four insider-direction cases.
+Pinned: BUY keeps positive evidence, SELL keeps `weakens` as contradicting evidence, BUY and SELL are
+asserted distinguishable, nondirectional transactions produce neither, price ±8 and revenue ±200 are
+equally silent, a metric-only company is `insufficient_signal`/trust 0, six attachments admit zero
+`evidenceCount` and an empty `sourceBreakdown` while all six edges remain traversable, the generic
+parallel-edge case keeps the admissible relation, selection is not a filter over collapsed
+`getNeighbors` output, and the classified observation verbs still work (credit-spread `supports` on
+Credit Stress). Targeted L3/L2/L1/E3/E2/E1/D2/graph-integrity **171 passed**; frontend **1108 passed /
+71 files**; backend **1294 passed**; tsc clean; lint 0 errors; production build clean.
+
+One correction found by the suite itself: the surviving BUY item is `owns`, not `supports` —
+`admissibleNeighbors` keeps exactly one admissible edge per neighbour and `owns` is linked first.
+Both are in `POSITIVE_REL`, so direction is preserved either way; the assertion pins the real
+semantics rather than the expected one.
+
+**Scope.** Only `evidenceEngine.ts` changed. `observationGraphBridge`, `providerIngestion`,
+`ingestionScheduler`, `dataAdapters/types`, the adapters, prediction engines, `POSITIVE_REL`,
+`NEGATIVE_REL`, the binary `polarity` type, weights, thresholds, calibration and feature flags are all
+untouched.
+
+#### RC2-L3 deployment validation
+
+Deployed as `cba5fdb`. Both Railway services reached terminal **success** (`argus-ai`,
+`perceptive-achievement`), with **no restart transients observed in this cycle** — unlike the L2
+deploy, which is recorded in its own entry.
+
+Public gates re-verified after both services settled:
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, BAMLH0A0HYM2 267bp, asOf 2026-08-26,
+                               changeBp -3 -> "tightening", businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  7 real filings, freshest 2026-08-26 (S-1)
+frontend /              : 307  -> /auth (middleware gate; the service is up)
+```
+
+**No production behavioural delta is claimed for L3, and the reason is structural rather than a
+measurement limitation.** Production currently carries **zero** edges of all three attachment verbs,
+because the producer path is unreachable:
+
+* `ingestProviderObservations` has no active caller in the application;
+* `ingestionScheduler` is mounted nowhere in the React tree;
+* `isProviderIngestionEnabled` reads `ARGUS_ENABLE_PROVIDER_INGESTION` via `process.env`, a
+  non-`NEXT_PUBLIC_` variable that a browser cannot see, while this graph is evaluated client-side.
+  The flag's own comment records it as pending "before production rollout".
+
+`reingestCachedMarketObservations()` does run on every provision, but it replays
+`marketObservationCache`, which only `ingestProviderObservations` populates — so it is a no-op.
+
+This deployment therefore validates **code and gates**. The behavioural semantics are validated
+**through the real `observationGraphBridge` fixtures**, not observed in current production data. When
+provider ingestion is eventually enabled, L3 is the rule that keeps a price attachment from becoming
+thesis support and lets an insider sale read as the contradiction it is.
+
+**Not visually verified.** `/ma`, `/intel`, the Evidence Drawer, Workstation and Industries are
+auth-gated (307 → `/auth`). Nothing above was observed on a screen.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
