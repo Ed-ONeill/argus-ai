@@ -1925,6 +1925,45 @@ backend **1294 passed**; tsc clean; lint 0 errors; production build clean.
 type, the relationship vocabulary, adapters, prediction logic, weights, thresholds and calibration are
 all untouched.
 
+
+#### RC2-L2 deployment validation
+
+Deployed as `c748deb`. Both Railway services reached terminal **success** (`argus-ai`,
+`perceptive-achievement`). L2 is a **frontend-only** change — the graph and its evidence engine are
+evaluated client-side — so the backend deploy is reported only as a health gate.
+
+Public gates re-verified after both services settled:
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, BAMLH0A0HYM2 267bp, asOf 2026-08-26,
+                               changeBp -3 -> direction "tightening", businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  7 real filings, freshest 2026-08-26 (S-1),
+                               identical across two consecutive reads
+frontend /              : 307  -> /auth (middleware gate; the service is up)
+```
+
+Two transient 502s were observed **during** the deploy and are recorded rather than smoothed over:
+`/api/ipo-pipeline` returned 502 immediately after `argus-ai` restarted and recovered to 200 on the
+next poll ~37s later; backend `/api/health` returned 502 while `perceptive-achievement` was
+mid-restart and recovered on settle. Both windows coincide with a service restart, and both endpoints
+were re-verified healthy afterwards. No code change is proposed on the strength of them.
+
+The C2b filing count moved from 27 (at the L1 closure) to 7 here. That is the SEC EDGAR recency
+window rotating, not an L2 effect — L2 touches no backend code and no ingestion path — and two
+consecutive reads returned the identical set.
+
+**Expected production effect, stated from the verified code path rather than observation.** L2 is
+semantic hardening. On the blast-radius fixture every Company, Theme, Story, Sector and Industry row
+was byte-identical before and after, as were node count, edge count, forecast count and forward-view
+count. The only measured change is the two Event nodes' **own** evidence (3 items / trust 56 -> 1 /
+50, verdict unchanged), and no consumer reads Event-node evidence — so **rendered product output is
+unchanged**.
+
+**Not visually verified.** `/ma`, `/intel`, the Evidence Drawer, Workstation and Industries are all
+auth-gated (307 -> `/auth`). Nothing above was observed on a screen; every claim rests on the deployed
+code path, the 150 passing targeted tests and the measured before/after fixture.
+
 #### New ledger item — L3: live silent-positive observation verbs
 
 `dataAdapters/observationGraphBridge` writes three unclassified verbs on **every** provision, and
