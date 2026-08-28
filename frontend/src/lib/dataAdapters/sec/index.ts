@@ -12,8 +12,14 @@
 
 import { BaseDataAdapter } from "../BaseDataAdapter";
 import type { AdapterContext, FetchParams, ProviderId, ProviderMetadata, ProviderObservation } from "../types";
+import { requireSecUserAgent } from "../../secIdentity";
 
-const SEC_UA = "Argus Research argus-data@example.com";
+// RC2-N4: the canonical SEC fair-access identity from ARGUS_SEC_CONTACT. This
+// previously read "Argus Research argus-data@example.com" — an RFC 2606
+// reserved domain that can never be a valid contact. `requireSecUserAgent`
+// throws when unset; `request()` already throws for an unknown dataset and the
+// ingestion pipeline is documented to never crash on provider failure, so a
+// throw is this adapter's established decline path.
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : NaN);
 const asRecord = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? v as Record<string, unknown> : {});
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -83,8 +89,8 @@ export class SecAdapter extends BaseDataAdapter {
   protected async request(params: FetchParams): Promise<unknown> {
     const dataset = String(params.dataset ?? "companyfacts");
     const cik = this.resolveCik(params);
-    if (dataset === "companyfacts") return this.getJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { "User-Agent": SEC_UA });
-    if (dataset === "form4" || dataset === "submissions") return this.getJson(`https://data.sec.gov/submissions/CIK${cik}.json`, { "User-Agent": SEC_UA });
+    if (dataset === "companyfacts") return this.getJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { "User-Agent": requireSecUserAgent() });
+    if (dataset === "form4" || dataset === "submissions") return this.getJson(`https://data.sec.gov/submissions/CIK${cik}.json`, { "User-Agent": requireSecUserAgent() });
     if (dataset === "13f") return { note: "13F architecture-ready, parsing not yet implemented", holdings: [] };
     throw new Error(`[sec] unknown dataset: ${dataset}`);
   }

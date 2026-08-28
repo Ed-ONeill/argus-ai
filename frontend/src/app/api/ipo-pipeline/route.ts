@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { secUserAgent } from "@/lib/secIdentity";
 
 export interface IPOFiler {
   companyName:       string;
@@ -23,7 +24,9 @@ interface CacheEntry { data: IPOFiler[]; fetchedAt: number }
 let _cache: CacheEntry | null = null;
 const CACHE_TTL = 60 * 60 * 1_000; // 1 hour
 
-const UA = "Argus Intelligence research@argusintel.com";
+// RC2-N4: the canonical SEC fair-access identity, built from ARGUS_SEC_CONTACT.
+// No default: when unset this route declines rather than sending a fabricated
+// contact. C2b already reads an empty result honestly as "Not measured".
 
 // ── SIC → sector mapping (abbreviated) ───────────────────────────────────────
 
@@ -106,11 +109,11 @@ function parseAtomFeed(xml: string): ParsedEntry[] {
 
 // ── EDGAR submissions enrichment ──────────────────────────────────────────────
 
-async function enrichWithSIC(cik: string): Promise<{ sic: string | null; sicDescription: string | null; stateOfIncorp: string | null }> {
+async function enrichWithSIC(cik: string, ua: string): Promise<{ sic: string | null; sicDescription: string | null; stateOfIncorp: string | null }> {
   try {
     const padded = cik.padStart(10, "0");
     const res    = await fetch(`https://data.sec.gov/submissions/CIK${padded}.json`, {
-      headers: { "User-Agent": UA },
+      headers: { "User-Agent": ua },
       signal:  AbortSignal.timeout(8_000),
     });
     if (!res.ok) return { sic: null, sicDescription: null, stateOfIncorp: null };
@@ -132,12 +135,21 @@ export async function GET() {
     return NextResponse.json(_cache.data);
   }
 
+  // RC2-N4: no real SEC contact configured -> decline rather than identify
+  // falsely. This reuses the route's existing outage idiom (stale cache, else
+  // an empty list), which C2b already reports honestly as "Not measured".
+  const ua = secUserAgent();
+  if (!ua) {
+    console.error("[ipo-pipeline] ARGUS_SEC_CONTACT is not set; refusing to call EDGAR without a fair-access contact");
+    return NextResponse.json(_cache?.data ?? [], { status: 502 });
+  }
+
   const atomUrl = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=S-1&dateb=&owner=include&count=40&search_text=&output=atom";
 
   let xml: string;
   try {
     const res = await fetch(atomUrl, {
-      headers: { "User-Agent": UA, "Accept": "application/atom+xml, application/xml, text/xml" },
+      headers: { "User-Agent": ua, "Accept": "application/atom+xml, application/xml, text/xml" },
       signal:  AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
@@ -157,7 +169,7 @@ export async function GET() {
   const toEnrich = parsed.slice(0, 15);
   const enriched = await Promise.all(
     toEnrich.map(async (entry) => {
-      const { sic, sicDescription, stateOfIncorp } = await enrichWithSIC(entry.cik);
+      const { sic, sicDescription, stateOfIncorp } = await enrichWithSIC(entry.cik, ua);
       return {
         ...entry,
         sic,

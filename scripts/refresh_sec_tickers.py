@@ -23,7 +23,11 @@ from datetime import date
 
 SOURCE = "https://www.sec.gov/files/company_tickers.json"
 # SEC fair-access policy requires a descriptive UA with a contact address.
-UA = "Argus-AI/1.0 (contact: support@argus-market-intelligence.com)"
+# RC2-N4: DEVELOPER-ONLY script, but it holds SEC to the same contract as the
+# live callers — the contact comes from ARGUS_SEC_CONTACT and there is no
+# default. It previously hardcoded a contact string that no other authority on
+# main established as a provisioned mailbox.
+SEC_APP_IDENTITY = "Argus Market Intelligence"
 OUT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "app", "data", "reference", "sec_registered_tickers.json",
@@ -31,7 +35,15 @@ OUT = os.path.join(
 
 
 def main() -> None:
-    req = urllib.request.Request(SOURCE, headers={"User-Agent": UA})
+    contact = (os.environ.get("ARGUS_SEC_CONTACT") or "").strip()
+    if not contact:
+        raise SystemExit(
+            "ARGUS_SEC_CONTACT is not set. SEC fair-access requires a real, "
+            "monitored contact address; this script refuses to send a "
+            "placeholder identity. Set ARGUS_SEC_CONTACT and re-run."
+        )
+    ua = f"{SEC_APP_IDENTITY} {contact}"
+    req = urllib.request.Request(SOURCE, headers={"User-Agent": ua})
     with urllib.request.urlopen(req, timeout=60) as resp:
         rows = json.load(resp)
 

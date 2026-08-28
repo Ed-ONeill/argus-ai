@@ -852,7 +852,32 @@ FEED_REGISTRY: list[tuple[str, str, str]] = [
 # items are materially thesis-relevant (earnings, M&A, debt, control/exec changes,
 # guidance). Routine filings (vote results, bylaw tweaks, exhibit-only) are dropped.
 # CIKs verified against SEC's official company_tickers.json.
-_SEC_UA = "Argus-AI/1.0 (contact: research@argus.example)"   # SEC fair-access: descriptive UA
+# ── SEC fair-access identity (RC2-N4) ─────────────────────────────────────────
+# SEC requires every automated caller to identify itself with a real, monitored
+# contact address. The contact comes from ARGUS_SEC_CONTACT and there is NO
+# default: the tree previously carried `research@argus.example` here and
+# `argus-data@example.com` in the frontend SEC adapter, both RFC 2606 reserved
+# domains that can never be a valid contact, plus a third unrelated identity in
+# the IPO route. One application identity is now used by every SEC caller in
+# both runtimes, pinned equal by tests.
+#
+# When the contact is unset, `_sec_user_agent()` returns None and the caller
+# DECLINES the request. Sending a fabricated identity to SEC is worse than
+# fetching nothing: the fair-access contract is the point of the header.
+_SEC_APP_IDENTITY = "Argus Market Intelligence"
+
+
+def _sec_user_agent() -> str | None:
+    """The canonical SEC User-Agent, or None when no real contact is configured."""
+    try:
+        from app.config import settings
+        contact = (settings.argus_sec_contact or "").strip()
+    except Exception:
+        contact = ""
+    if not contact:
+        return None
+    return f"{_SEC_APP_IDENTITY} {contact}"
+
 
 _SEC_WATCHLIST: dict[str, str] = {
     # AI compute / hyperscaler / semis
@@ -1801,8 +1826,21 @@ class FeedManager:
         item (see _SEC_MATERIAL_8K_ITEMS) are kept; titles are rewritten to a
         readable "TICKER 8-K — <event>" form. Per-CIK responses are cached like
         any other feed (keyed by the EDGAR URL); failures fall back to stale cache.
+
+        RC2-N4: declines entirely when no real SEC contact is configured. Logged at
+        WARNING so the absence is visible in production (which runs at INFO), the
+        same observability rule RC2-D1 established for dead podcast sources.
         """
         import feedparser
+        ua = _sec_user_agent()
+        if not ua:
+            log.warning(
+                "SEC watchlist skipped: ARGUS_SEC_CONTACT is not set, so no "
+                "fair-access identity can be sent. %d issuer(s) not fetched.",
+                len(_SEC_WATCHLIST),
+            )
+            self.fetch_errors["SEC:config"] = "ARGUS_SEC_CONTACT not set"
+            return []
         out: list[FeedItem] = []
         for ticker, cik in _SEC_WATCHLIST.items():
             url = _SEC_8K_ATOM_URL.format(cik=cik)
@@ -1813,7 +1851,7 @@ class FeedManager:
                     out.extend(cached)
                     continue
             try:
-                feed = feedparser.parse(url, request_headers={"User-Agent": _SEC_UA})
+                feed = feedparser.parse(url, request_headers={"User-Agent": ua})
                 items: list[FeedItem] = []
                 for entry in feed.entries:
                     summary = str(entry.get("summary", "") or "")

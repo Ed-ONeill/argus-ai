@@ -133,6 +133,14 @@ class Settings(BaseSettings):
     # write. Public by design.
     supabase_anon_key:         str  = ""      # env SUPABASE_ANON_KEY
 
+    # ── SEC fair-access identity (RC2-N4) ──────────────────────────────────────
+    # The real, monitored contact address SEC requires every automated caller to
+    # identify itself with. There is deliberately NO default: an unset value must
+    # cause the SEC path to decline rather than send a fabricated identity.
+    # Placeholder domains previously in the tree (argus.example, example.com) are
+    # RFC 2606 reserved and can never be a valid fair-access contact.
+    argus_sec_contact: str = ""       # env ARGUS_SEC_CONTACT
+
     @property
     def is_production(self) -> bool:
         return self.argus_env.strip().lower() in ("production", "prod")
