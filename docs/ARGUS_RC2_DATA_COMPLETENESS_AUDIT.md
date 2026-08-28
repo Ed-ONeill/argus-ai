@@ -2112,6 +2112,113 @@ auth-gated (307 → `/auth`). Nothing above was observed on a screen.
 
 ---
 
+### RC2-N4 — one SEC fair-access identity, from configuration (implemented)
+
+SEC requires every automated caller to identify itself with a real, monitored contact address. The
+tree carried **four independently constructed identities across three domains**:
+
+| Caller | Before | Live? |
+|---|---|---|
+| `app/feeds.py` (EDGAR 8-K watchlist) | `Argus-AI/1.0 (contact: research@argus.example)` | **yes** |
+| `api/ipo-pipeline/route.ts` (C2b) | `Argus Intelligence research@argusintel.com` | **yes** |
+| `lib/dataAdapters/sec/index.ts` | `Argus Research argus-data@example.com` | no — provider ingestion unreachable (RC2-L3) |
+| `scripts/refresh_sec_tickers.py` | `Argus-AI/1.0 (contact: support@argus-market-intelligence.com)` | developer-only |
+
+`argus.example` and `example.com` are **RFC 2606 reserved**: they can never be a valid fair-access
+contact, so one of the two *live* SEC callers was identifying itself with an unreachable address.
+
+**A correction to the diagnosis record.** The N4 blocker report stated that
+`support@argus-market-intelligence.com` appeared *only* inside the unmerged commit `a3ed650`. That was
+wrong — it was also hardcoded in `scripts/refresh_sec_tickers.py` on main; `scripts/` had not been
+searched. It did not change the ruling (a hardcoded literal is not evidence that a mailbox is
+provisioned and monitored), but the claim was inaccurate.
+
+**The design is configuration, not a hardcoded mailbox.** `a3ed650` was deliberately **not**
+cherry-picked: it replaces two string literals with a third literal and leaves the four-construction
+structure, the `example.com` caller and the dev script untouched. Instead:
+
+```
+ARGUS_SEC_CONTACT   -> the real monitored contact, no default, required on BOTH Railway services
+UA format           -> "Argus Market Intelligence <contact>"   (one identity, both runtimes)
+```
+
+Backend Python and the Next route handlers cannot import one shared constant, so both runtimes read
+the same variable and build the same string. The format is pinned on both sides, and the frontend
+suite reads `app/feeds.py` to assert the literal — either side changing format fails a test.
+
+**Missing config DECLINES; it never substitutes an identity.** Each caller reuses its own existing
+failure idiom rather than inventing one:
+
+| Caller | Behaviour when `ARGUS_SEC_CONTACT` is unset |
+|---|---|
+| 8-K watchlist | returns `[]`, logs at **WARNING** (the RC2-D1 visibility rule), records `fetch_errors["SEC:config"]`; other feeds unaffected |
+| C2b route | `console.error` + `NextResponse.json(_cache?.data ?? [], { status: 502 })` — byte-identical to its existing EDGAR-outage path, which Capital Flow already reports as "Not measured" |
+| SEC adapter | throws `SecContactMissingError`, matching its existing `throw` for an unknown dataset; the pipeline is documented never to crash on provider failure |
+| dev script | `SystemExit` with instructions |
+
+Sending a fabricated identity to SEC is worse than fetching nothing: the contact is the entire point
+of the header, and a placeholder actively misrepresents the caller.
+
+**Out of scope, deliberately and pinned by test:** the generic RSS `Argus-AI/1.0` in
+`app/feeds.py::_fetch_feed` — it serves every registry URL (Reuters, Bloomberg, ...) and is not a SEC
+fair-access path — and the FRED `credit-spread` caller.
+
+**Validation.** 39 new tests (16 in `tests/test_sec_identity.py`, 23 in
+`frontend/src/lib/__tests__/secIdentity.test.ts`) pinning: no banned placeholder in any request path;
+every SEC caller derives its identity from the shared module; missing contact never sends a
+fake/default identity (the backend test asserts a request is **never attempted**); cross-runtime
+format equality; SEC endpoints and query parameters byte-identical; S-1 vs S-1/A classification,
+`slice(0,30)` / `slice(0,15)` / `slice(15)` bounds and the cache/502 idiom unchanged; and no evidence
+or prediction file touched. Backend **1310 passed**; frontend **1131 passed / 72 files**; tsc clean;
+lint 0 errors; production build clean.
+
+#### RC2-N4 deployment validation
+
+Deployed as `6237bfa` with `ARGUS_SEC_CONTACT=support@argus-market-intelligence.com` set on both
+Railway services. Both reached terminal **success**.
+
+One restart-window transient, recorded rather than smoothed: backend `/api/health` returned **502**
+while `perceptive-achievement` was mid-restart, and recovered on settle — the same pattern recorded in
+the RC2-L2 entry. No code change is proposed on the strength of it.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 263bp asOf 2026-08-27, changeBp -4 -> "tightening",
+                               businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  9 real EDGAR entries, freshest 2026-08-28
+```
+
+**C2b was verified substantively, not by HTTP status.** The payload is real EDGAR data, not the
+missing-config path (which would have returned `[]` with 502):
+
+```
+entries                     : 9        window 2026-08-26 .. 2026-08-28
+formType distribution       : {"S-1": 4, "S-1/A": 5}     <- classification preserved
+distinct CIKs               : 9 of 9, zero duplicates    <- deduplication intact
+SIC-enriched                : 9 of 9                     <- data.sec.gov/submissions also accepted
+narrowing (production rule) : newRegistrations = 4, rawEntries = 9, 5 amendments excluded
+```
+
+The SIC enrichment result is the strongest identity evidence available: it is a **second** SEC
+endpoint (`data.sec.gov/submissions/CIK*.json`), and all nine calls succeeded, so the new
+`ARGUS_SEC_CONTACT`-derived User-Agent was accepted by SEC on both the atom feed and the submissions
+API.
+
+Applying the production narrowing rule (`private-markets/page.tsx`: distinct CIK where
+`formType === "S-1"`) to the live payload yields the claim *"4 distinct issuers filed a new S-1 over
+this window (9 total EDGAR entries; S-1/A amendments excluded)"* — the C2b contract holding exactly as
+specified.
+
+**Old identities.** No `argus.example`, `example.com` or `argusintel.com` string remains in any
+request path in the deployed source (swept, and pinned by tests on both runtimes). Outgoing request
+headers cannot be observed from outside the services; what is observed is that SEC accepted every
+request on two distinct endpoints under the new configuration.
+
+**Not visually verified.** `/private-markets`, `/ma` and the other product surfaces are auth-gated
+(307 → `/auth`), so the rendered Capital Flow IPO layer was not observed on a screen.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
