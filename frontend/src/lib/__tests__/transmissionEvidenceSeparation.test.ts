@@ -108,12 +108,34 @@ describe("Healthcare: evidence is no longer a transmission hop", () => {
     expect(t?.reading).not.toMatch(/No recorded transmission mechanism/);
   });
 
-  it("the evidence itself is UNCHANGED and still recorded", () => {
+  /**
+   * RC2-N1 SUPERSEDES this assertion. G6 scoped itself to the transmission
+   * CHAIN — "evidence scoring, counts and verdicts are untouched" — and this
+   * case guarded that. N1 changes evidence deliberately.
+   *
+   * The fixture is exactly the relation N1 ruled on: the sector's only link is
+   * `Deal --affects--> Sector`, and the deal is titled "How investors KILLED
+   * AstraZeneca's $400bn megadeal". A collapsed megadeal was producing POSITIVE
+   * thesis evidence for Healthcare, because `affects` sat in POSITIVE_REL and
+   * carried observed M&A provenance. `affects` means "this deal concerns this
+   * sector"; the sector label itself came from a headline regex.
+   *
+   * What G6 actually proves — that evidence is not a transmission hop — is
+   * unaffected and still asserted above. The edge remains in the graph and
+   * traversable, so it stays available to structural consumers; it simply no
+   * longer carries thesis authority.
+   */
+  it("the deal edge is still recorded, but is no longer thesis evidence", () => {
     healthcareWorld();
     const n = G.getNodeOfType("Healthcare", "Sector")!;
+    const rels = G.getRelationships(n.id);
+    expect(rels.some(e => e.relationshipType === "affects")).toBe(true);
+    expect(G.getNeighbors(n.id).some(x => /AstraZeneca/.test(x.node.label))).toBe(true);
+
     const ev = evaluateEvidenceForNode(n.id);
-    expect(ev.found).toBe(true);
-    expect(ev.supportingEvidence.some(e => /AstraZeneca/.test(e.from))).toBe(true);
+    expect(ev.supportingEvidence.some(e => /AstraZeneca/.test(e.from))).toBe(false);
+    expect(ev.verdict).toBe("insufficient_signal");
+    expect(ev.overallTrust).toBe(0);
   });
 });
 

@@ -240,7 +240,55 @@ const isMention = (e: IntelEdge): boolean => MENTION_REL.has(e.relationshipType)
  *
  * Same class as `acquires`: recorded involvement, zero thesis authority.
  */
-const INVOLVEMENT_REL = new Set(["acquires", "names"]);
+/**
+ * RC2-N1: `affects` is a structural/involvement relation, not a thesis claim.
+ *
+ * Two producers write it, and neither asserts a direction:
+ *
+ *   Theme --affects--> Industry   (adapters.ts:260, page "Theme Intelligence")
+ *       declared ontology exposure: "this theme concerns this industry". Already
+ *       inadmissible via RC2-E1 (ontology-only provenance). Still read by
+ *       `sectorTaxonomy.ts` to project which themes reach a sector through its
+ *       industries — a structural use that must keep working.
+ *
+ *   Deal --affects--> Sector      (adapters.ts:539 and :549, page "M&A")
+ *       "this deal concerns this sector". The sector comes from `inferSector`,
+ *       a regex sweep over the headline (/software|saas|cloud|cyber|ai|chip|.../
+ *       -> "Technology"), defaulting to "Other". `dealType` is never consulted,
+ *       so announced, rumored, withdrawn, completed, strategic and sponsor deals
+ *       all write the identical edge. Direction must not be inferred from any of
+ *       them, nor from the verb's name.
+ *
+ * The M&A form was OBSERVED provenance, so E1 did not touch it, and `affects`
+ * sits in POSITIVE_REL - so it was admitted at +1. Measured before this change,
+ * a single deal:
+ *
+ *   Sector "Technology"  items=1  verdict=moderate  trust=51  rels=[affects]
+ *   sourceBreakdown      [{ source: "Deal", type: "Deal", count: 1, reliability: 97 }]
+ *
+ * The reliability 97 is `STRUCTURAL_WEIGHT["Deal"]`, not a source rating, so a
+ * headline regex match presented as a near-maximum-reliability source.
+ *
+ * UNLIKE the other exclusions, this one reached FORECASTS. RC2-E2 established
+ * that sector forwards were unavailable because sector confidence was
+ * structurally 0; E2 blocks only `confidence === 0`. Measured:
+ *
+ *   without the deal   trust 0   -> confidence 0  -> E2 blocks  -> forward null
+ *   with the deal      trust 51  -> confidence 51 -> E2 passes  -> forward PRESENT
+ *                      { direction: "rotating in", confidence: 51,
+ *                        reasons: [..., "Cross-source evidence"] }
+ *
+ * One Deal node is not cross-source. Excluding `affects` restores E2's intended
+ * state rather than adding a new rule.
+ *
+ * Same class as `acquires` and `names`: recorded involvement, zero thesis
+ * authority. The edges are NOT removed - they stay in the graph and traversable,
+ * so `sectorTaxonomy`'s projection and every other structural consumer are
+ * unaffected. `POSITIVE_REL` is deliberately left alone: it is a polarity
+ * vocabulary, not an admissibility list, exactly as RC2-E3 recorded for
+ * `mentions`.
+ */
+const INVOLVEMENT_REL = new Set(["acquires", "names", "affects"]);
 const isInvolvement = (e: IntelEdge): boolean => INVOLVEMENT_REL.has(e.relationshipType);
 
 /**
