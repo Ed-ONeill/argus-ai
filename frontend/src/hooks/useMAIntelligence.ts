@@ -82,16 +82,49 @@ const PE_PATTERNS: [string, RegExp][] = [
   ["Berkshire Partners",  /berkshire\s+partners/i],
 ];
 
+/**
+ * RC2-IS: sector matching is LEXICAL, not arbitrary-substring.
+ *
+ * These patterns were unanchored, so a keyword matched anywhere inside an
+ * unrelated word. Measured on 720 real upstream production-feed headlines:
+ * `/ai/` alone matched 90 as a substring — "ret-ai-l", "sp-ai-n", "ch-ai-rman",
+ * "r-ai-sed", "rem-ai-ns", "m-ai-ntenance", "em-ai-l", "-ai-rlines" — plus
+ * `/bank/` 14 ("Bur-bank"), `/gas/` 7 ("Ve-gas"), `/power/` 5, `/semi/` 1
+ * ("Semi-annual"). Because Technology is tested FIRST, those all landed there:
+ * headlines such as "US Strikes Targets in Iran Around Strait of Hormuz" and
+ * "EU Considers Front-Loading Ukraine Loan" classified as Technology, which took
+ * Technology to 24.9% of the corpus.
+ *
+ * Two rules, chosen from measurement rather than applied mechanically:
+ *
+ *   LEADING BOUNDARY for stems — `\bchip` still matches "chips" and
+ *   "chipmaker", `\bdata\s+center` still matches "Data Centers", `\brobot`
+ *   still matches "Robotics", `\bbank` still matches "banking" but NOT
+ *   "Burbank", `\bgas`-family no longer matches "Vegas". Every suffixed form
+ *   observed in the corpus under this rule was legitimate.
+ *
+ *   FULL TOKEN for short, high-collision tokens, with their real inflections
+ *   spelled out. A blanket `\b…\b` here would have been WRONG: `\bsemi\b`
+ *   destroys "semiconductor" and `\brail\b` destroys "railroad", both of which
+ *   the corpus contains as genuine matches. So the legitimate forms are
+ *   enumerated instead of guessed.
+ *
+ * Deterministic, current-fields-only, no LLM and no external data. The sector
+ * taxonomy, the precedence order and the "Other" fallback are all unchanged.
+ * ("Other" being minted as a literal Sector node is a separate ledger item and
+ * is deliberately untouched here, even though safer matching makes it commoner.)
+ */
 const SECTOR_PATTERNS: [string, RegExp][] = [
-  ["Technology",      /software|saas|cloud|cyber|ai|chip|semi|digital|fintech|data\s+center/i],
-  ["Healthcare",      /health|pharma|biotech|medtech|medical|drug|clinical|genomic/i],
-  ["Energy",          /energy|oil|gas|lng|renewable|power|utility|nuclear|pipeline|midstream/i],
-  ["Financials",      /financ|bank|insur|asset\s+manag|credit|lending|broker|wealth/i],
-  ["Industrials",     /industri|manufactur|aerospace|defense|logistic|freight|rail|robot/i],
-  ["Consumer",        /consumer|retail|restaurant|hospitality|travel|leisure|apparel|food/i],
-  ["Real Estate",     /real\s+estate|reit|property|infrastructure|data\s+center\s+reit/i],
-  ["Media & Telecom", /media|telecom|streaming|broadcast|advertis|publish|wireless|social/i],
+  ["Technology",      /\bsoftware|\bsaas\b|\bcloud|\bcyber|\bai\b|\bchip|\bsemi\b|\bsemiconduct|\bdigital|\bfintech|\bdata\s+center/i],
+  ["Healthcare",      /\bhealth|\bpharma|\bbiotech|\bmedtech|\bmedical|\bdrug|\bclinical|\bgenomic/i],
+  ["Energy",          /\benergy|\boils?\b|\bgas\b|\bgasoline|\blng\b|\brenewable|\bpower|\butility|\bnuclear|\bpipeline|\bmidstream/i],
+  ["Financials",      /\bfinanc|\bbank|\binsur|\basset\s+manag|\bcredit|\blending|\bbroker|\bwealth/i],
+  ["Industrials",     /\bindustri|\bmanufactur|\baerospace|\bdefense|\blogistic|\bfreight|\brail(?:road)?s?\b|\brobot/i],
+  ["Consumer",        /\bconsumer|\bretail|\brestaurant|\bhospitality|\btravel|\bleisure|\bapparel|\bfood/i],
+  ["Real Estate",     /\breal\s+estate|\breits?\b|\bproperty|\binfrastructure|\bdata\s+center\s+reit/i],
+  ["Media & Telecom", /\bmedia|\btelecom|\bstreaming|\bbroadcast|\badvertis|\bpublish|\bwireless|\bsocial/i],
 ];
+
 
 function detectPEFirm(text: string): string | null {
   for (const [firm, re] of PE_PATTERNS) {
@@ -109,7 +142,12 @@ function inferDealType(title: string, hasSponsor: boolean): DealType {
   return "strategic";
 }
 
-function inferSector(title: string, entities: string[]): string {
+/**
+ * Exported for RC2-IS regression pinning only. Pure, deterministic, and
+ * unchanged in behaviour by that export — no consumer outside `toMADeal` calls
+ * it, and the taxonomy, precedence order and "Other" fallback are untouched.
+ */
+export function inferSector(title: string, entities: string[]): string {
   const text = `${title} ${entities.join(" ")}`;
   for (const [sector, re] of SECTOR_PATTERNS) {
     if (re.test(text)) return sector;
