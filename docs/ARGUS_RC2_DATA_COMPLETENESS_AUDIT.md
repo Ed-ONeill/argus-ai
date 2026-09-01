@@ -2474,6 +2474,145 @@ next verb added to the vocabulary is inadmissible until someone classifies it de
 
 ---
 
+### RC2-R1 — M&A sector/asset overlap is context, not thesis support (implemented)
+
+`ingestMA` emitted `Deal --supports--> Theme` whenever `hitsSector || hitsAsset`. `maIntel.ts` — the
+M&A surface's **own** contract — already said that must not happen, verbatim:
+
+```
+ *   CONTEXT     - sector/keyword-level overlap only
+ * A deal in the same sector is NOT automatically support; a headline keyword
+ * is NOT evidence (89.x pins it).
+```
+
+The violation was also **circular**: `maIntel` classified a deal as SUPPORTS by finding a
+supporting-type edge that this producer had just created from overlap.
+
+**Neither input carries direction.**
+
+| Condition | Source | What it actually is |
+|---|---|---|
+| `hitsSector` | `d.sector` ← `inferSector(title, entities)` | an **unanchored** headline regex, first-match-wins with Technology tested first |
+| `hitsAsset` | `d.entities` ← RC2-A `resolve_entities(title + snippet)` | companies **named** in the text |
+
+`inferSector`'s `/ai/` matches **retail, Airlines, Chairman, Spain, raised, remains, maintenance,
+email**; `/gas/` matches **Vegas**; `/bank/` matches **Burbank**; `/semi/` matches **Semiannual** — and
+because Technology is tested first, all of those classify as `"Technology"`. `hitsAsset` is not
+stronger merely for being entity-level: RC2-A resolves **names, not roles**, so it cannot distinguish
+acquirer from target from rumored bidder from a party walking away from an incidental comparison.
+
+**No M&A field reaches directional authority.** `dealType` is a headline regex over *kind*;
+`signalScore` is feed relevance; `summary`/`whyItMatters` are LLM prose the IRE-1 contract excludes;
+and `FeedItem.impact` — the one nominally directional field, itself LLM-derived — is **not carried
+onto `MADeal` at all**. Deal status is not thesis polarity either: a collapsed deal may be bullish or
+bearish for a theme depending on why it collapsed, so no `completed = supports / withdrawn = weakens`
+rule was invented.
+
+**Measured before this change**, on a theme whose only link was an overlapping deal:
+
+```
+items=1  verdict=moderate  trust=52  direction=strengthening  confidence=52  forward=PRESENT
+```
+
+identically for **all six deal types, including `withdrawn`**. On a theme that already had genuine
+story support it inflated trust and confidence **53 → 67**.
+
+**The fix — retyped, not deleted.** One line in `ingestMA`:
+
+```ts
+-  link(dealId, "supports", th, { strength: num(d.signalScore, 50), page: PAGE_MA });
++  link(dealId, "mentions",  th, { strength: num(d.signalScore, 50), page: PAGE_MA });
+```
+
+The edge stays in the graph with its M&A provenance and strength, so navigation, transmission and
+`maIntel`'s own CONTEXT/MENTIONS classification keep working. `mentions` is the codebase's existing
+coverage verb and RC2-E3 already bars it from thesis evidence. No new verb, no directional heuristic,
+no change to `supports` globally, and `evidenceEngine`, FT, `maIntel`, `inferenceEngine`,
+`predictionEngine`, `sectorTaxonomy` and `useMAIntelligence` (so `inferSector`, entity extraction and
+deal-type inference) are all untouched.
+
+**`inferSector`'s unanchored regex is a separate ledger defect.** It still labels the M&A sector
+breakdown and `Deal --affects--> Sector`, and was deliberately NOT repaired here.
+
+**Validation.** 27 new tests in `dealThemeContext.test.ts`, **15 of which fail against pre-R1 code**.
+Targeted R1 + E1/E2/E3/G5/G6/L1/L2/L3/N1/FT + graph integrity **252 passed**; frontend **1211 passed /
+75 files**; backend **1310 passed**; tsc clean; lint 0 errors; production build clean.
+
+**Two positive controls re-anchored; no other expectation altered.** Both previously witnessed on
+`Deal --supports--> Theme`, which R1 establishes is CONTEXT rather than thesis support:
+
+* `affectsNotEvidence.test.ts` (N1) now witnesses on `Story --supports--> Theme`. N1's invariants are
+  unchanged: `affects` stays non-evidentiary, a genuine parallel `supports` stays admissible, a
+  rejected `affects` cannot mask legitimate support, and the full-relationship-set walk holds.
+* `ontologyNotEvidence.test.ts` (E1) now witnesses observed provenance on `Story --supports--> Theme`,
+  page `"Feed"`. E1's invariants are unchanged: ontology-only stays inadmissible, genuinely observed
+  thesis evidence stays admissible.
+
+Each change adds one `ingestStories` line and a note; **no `expect` assertion was altered or removed**.
+
+#### RC2-R1 deployment validation
+
+Deployed as `9dc850e`. Both Railway services reached terminal **success**.
+
+**Fixture-proven** (measured on a representative graph; these are NOT production counts):
+
+```
+deal-only theme, hitsSector only   1|moderate|52|strengthening|fwd  ->  0|insufficient_signal|0|0|null
+deal-only theme, hitsAsset only    1|moderate|52|strengthening|fwd  ->  0|insufficient_signal|0|0|null
+deal-only theme, both              1|moderate|52|strengthening|fwd  ->  0|insufficient_signal|0|0|null
+all six deal statuses              identical, incl. withdrawn       ->  all zero, forward null
+story + deal                       2|moderate|67|conf 67            ->  1|moderate|53|conf 53
+                                                                        = EXACTLY the story-only result
+Deal->Theme edge                   present, retyped `supports` -> `mentions`, M&A provenance kept
+node / edge counts                 unchanged in every case
+```
+
+**Production-observed** (only what the unauthenticated endpoints establish):
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C2b /api/ipo-pipeline   : 200  27 real EDGAR entries, window 2026-08-28 .. 2026-09-01
+                               forms {"S-1": 17, "S-1/A": 10}; 27 of 27 distinct CIKs;
+                               newRegistrations = 17
+frontend /              : 307  -> /auth      /auth : 200
+        /ma             : 307  -> /auth      /private-markets : 307 -> /auth
+C1  /api/credit-spread  : 200  {"measured": false, "reason": "unavailable"}   <- SEE BELOW
+```
+
+**No live counts of affected Deal→Theme edges or themes are claimed.** The feed payload and every
+product surface are auth-gated, so the number of real deals, themes and forward views changed by R1 is
+**unmeasured**.
+
+**C1 is currently UNMEASURED, and it is not an R1 effect.** `/api/credit-spread` returned
+`{"measured": false, "reason": "unavailable"}` stably across three samples. Ruled out by measurement:
+`frontend/src/app/api/credit-spread/route.ts` is **not in the R1 commit** (last touched by `de1a69c`,
+RC2-C1), and R1 is a one-line change to a different file that the credit route does not import. FRED
+itself answered **HTTP 200** to the same series from the dev environment during the same window, so
+the failure is provider-side or egress-side.
+
+This is a recurrence of the condition already diagnosed and recorded during RC2-E1 verification, where
+`/api/credit-spread` returned `unavailable` across six consecutive samples, **resolved on its own with
+no deploy and no code change**, and where FRED's rejection mode was established to be a **silent hang
+rather than a status code**. Per that ruling and the standing rule against tuning on a single
+production observation, **no code change is proposed.**
+
+**C1's contract is behaving correctly.** The unreachable source produced an explicit unmeasured state;
+no fabricated credit claim appeared. The knock-on (Credit & Leverage `unmeasured` → Capital Flow
+coverage reduced → summary and pressure reporting insufficient coverage) is C2a/C3 working as
+designed.
+
+**Not visually verified.** `/ma`, `/private-markets`, `/intel`, the Evidence Drawer, Workstation and
+Industries are auth-gated (307 → `/auth`). The R1 reduction was **not observed on a screen**; it rests
+on the deployed code path and the fixture measurements above.
+
+**Restart transients, recorded.** Two, both benign and neither attributable to R1:
+`/api/ipo-pipeline` returned **502 while both services were still `pending`** — i.e. on the *pre-R1*
+build — and recovered to 200 within ~49 seconds, consistent with the transient SEC throttling recorded
+in earlier slices. Backend `/api/health` returned **502** during `perceptive-achievement`'s restart
+window and recovered on settle, the same pattern recorded in the RC2-L2, RC2-N4 and RC2-N1 entries.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
