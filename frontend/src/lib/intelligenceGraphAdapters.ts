@@ -548,7 +548,47 @@ export function ingestMA(deals: MADeal[], themes: ThemeIntelligence[] = []): Ing
         const sec = addLabeled(d.sector, "Sector", PAGE_MA);
         link(dealId, "affects", sec, { strength: num(d.signalScore, 50), page: PAGE_MA });
 
-        // Theme support: any theme whose sector / assets intersect this deal.
+        // RC2-R1: sector / asset overlap is CONTEXT, not thesis support.
+        //
+        // `maIntel.ts` — the M&A surface's own contract — already says so
+        // verbatim: "CONTEXT - sector/keyword-level overlap only", and "A deal
+        // in the same sector is NOT automatically support; a headline keyword
+        // is NOT evidence (89.x pins it)." This producer was converting exactly
+        // that overlap into a `supports` edge, so ingestion contradicted the
+        // product semantics — and circularly, since maIntel then classified the
+        // deal as SUPPORTS by finding the edge this line had just created.
+        //
+        // Neither input carries direction:
+        //   hitsSector  `d.sector` is `inferSector`, an UNANCHORED headline
+        //               regex. "/ai/" matches retail, Airlines, Chairman,
+        //               Spain, raised, remains, maintenance, email; "/gas/"
+        //               matches Vegas; "/bank/" matches Burbank. Technology is
+        //               tested first, so those all become "Technology".
+        //               (inferSector's own repair is a separate ledger item.)
+        //   hitsAsset   `d.entities` is RC2-A `resolve_entities(title+snippet)`
+        //               — companies NAMED in the text. It cannot tell acquirer
+        //               from target from a rumored bidder from a party walking
+        //               away from an incidental comparison.
+        //
+        // No M&A field reaches directional authority: `dealType` is a headline
+        // regex over KIND, `signalScore` is feed relevance, `summary` and
+        // `whyItMatters` are LLM prose the IRE-1 contract excludes, and
+        // `FeedItem.impact` (the one nominally directional field) is LLM-derived
+        // and is not even carried onto MADeal. Deal status is not thesis
+        // polarity either: a collapsed deal may be bullish or bearish for a
+        // theme depending on why it collapsed.
+        //
+        // Measured before this change, a theme whose ONLY link was an overlapping
+        // deal: verdict `moderate`, trust 52, forecast "strengthening" at
+        // confidence 52, forward view PRESENT — identically for all six deal
+        // types INCLUDING `withdrawn`. On a theme that already had genuine story
+        // support it inflated trust 53 -> 67.
+        //
+        // RETYPED, not deleted. The edge stays in the graph with its M&A
+        // provenance so navigation, transmission and maIntel's own
+        // CONTEXT/MENTIONS classification keep working; `mentions` is the
+        // codebase's existing coverage verb and RC2-E3 already bars it from
+        // thesis evidence. No new verb, no directional heuristic invented.
         for (const t of themes) {
           const sectors = (t.related_industries ?? []).map(x => x.toLowerCase());
           const assets  = (t.related_assets ?? []).map(x => x.toUpperCase());
@@ -556,7 +596,7 @@ export function ingestMA(deals: MADeal[], themes: ThemeIntelligence[] = []): Ing
           const hitsAsset  = (d.entities ?? []).some(e => assets.includes(e.toUpperCase()));
           if (hitsSector || hitsAsset) {
             const th = addTheme(t, PAGE_MA);
-            link(dealId, "supports", th, { strength: num(d.signalScore, 50), page: PAGE_MA });
+            link(dealId, "mentions", th, { strength: num(d.signalScore, 50), page: PAGE_MA });
           }
         }
       } catch { fail(); }

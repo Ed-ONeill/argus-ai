@@ -169,7 +169,13 @@ describe("observed provenance keeps the same verb admissible", () => {
       peFirm: "KKR", signalScore: 80, summary: "", whyItMatters: "" } as never], [t]);
     const n = G.getNode("APO");
     expect(n).toBeTruthy();
-    // The theme gains real evidence: Deal --supports--> Theme, page "M&A".
+    // RC2-R1: the observed-provenance anchor moved. This previously used
+    // `Deal --supports--> Theme`, which R1 retyped to `mentions` after
+    // establishing that M&A sector/keyword overlap is CONTEXT, not thesis
+    // support. E1's property is unchanged —
+    // observed provenance is admissible where ontology-only is not — and is now
+    // anchored on `Story --supports--> Theme`, page "Feed".
+    ingestStories([story("c1", "Consolidation wave accelerates", ["APO"])], [t]);
     const themeEv = evaluateEvidenceForNode(G.getNode("Consolidation")!.id);
     expect(themeEv.supportingEvidence.some(i => i.relationship === "supports")).toBe(true);
     expect(themeEv.supportingEvidence.every(i => i.pages.every(p => p === "Theme Intelligence")))

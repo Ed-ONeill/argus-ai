@@ -196,11 +196,20 @@ describe("structural consumers keep working", () => {
 // ── Parallel-edge integrity ─────────────────────────────────────────────────
 
 describe("a genuine supports edge survives beside affects", () => {
-  it("the deal's supports->Theme edge is still admitted", () => {
+  /**
+   * RC2-R1 SUPERSEDES the anchor this case used. It relied on
+   * `Deal --supports--> Theme`, which R1 retyped to `mentions` after
+   * establishing that M&A sector/keyword overlap is CONTEXT, not thesis support
+   * — the rule maIntel's own contract already stated. The PROPERTY under test
+   * is unchanged: a genuine
+   * supporting relation must survive alongside an excluded `affects` edge. It
+   * is re-anchored on `Story --supports--> Theme` (page "Feed"), the canonical
+   * observed supports producer.
+   */
+  it("a genuine supports edge is still admitted beside affects", () => {
     ingestThemes([theme()]);
+    ingestStories([story()], [theme()]);
     ingestMA([deal("strategic", "Semiconductors")], [theme()]);
-    // ingestMA links Deal --supports--> Theme when the deal's sector or assets
-    // intersect the theme. That is a real supporting relation and must survive.
     const t = G.getNode("AI Compute")!;
     const items = evaluateEvidenceForNode(t.id).supportingEvidence;
     expect(items.some(i => i.relationship === "supports")).toBe(true);
