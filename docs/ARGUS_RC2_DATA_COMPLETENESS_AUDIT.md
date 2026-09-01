@@ -2219,6 +2219,125 @@ request on two distinct endpoints under the new configuration.
 
 ---
 
+### RC2-N1 — `affects` is structural involvement, not thesis evidence (implemented)
+
+Two producers write `affects`, and neither asserts a direction:
+
+| Producer | Edge | Provenance | What creates it |
+|---|---|---|---|
+| `intelligenceGraphAdapters.ts:260` | Theme→Industry | `Theme Intelligence` | each entry in the theme's declared `related_industries` |
+| `intelligenceGraphAdapters.ts:539` | Deal→Sector | `M&A` | a curated sector label appearing in `d.entities` |
+| `intelligenceGraphAdapters.ts:549` | Deal→Sector | `M&A` | `d.sector`, from `inferSector` |
+
+There is **no** Company, Theme or Story target: `affects` can only reach Industry and Sector.
+
+`d.sector` is produced by `inferSector` — a regex sweep over the headline
+(`/software|saas|cloud|cyber|ai|chip|semi|digital|fintech|data\s+center/i` → `"Technology"`),
+defaulting to `"Other"`. `dealType` is never consulted at the link site, so announced, rumored,
+withdrawn, completed, strategic, merger and sponsor deals all write the identical edge.
+
+The Theme→Industry form was already inadmissible via **RC2-E1** (ontology-only provenance) — measured
+Industry `items=0`, `insufficient_signal`, trust 0. The Deal→Sector form carried **observed** M&A
+provenance so E1 never touched it, and `affects` sits in `POSITIVE_REL`, so it was admitted at +1:
+
+```
+Sector "Technology"   items=1  verdict=moderate  trust=51  rels=[affects]  polarity=+1
+sourceBreakdown       [{ source: "Deal", type: "Deal", count: 1, reliability: 97 }]
+```
+
+The reliability 97 is `STRUCTURAL_WEIGHT["Deal"]`, not a source rating — so a headline regex match
+presented as a near-maximum-reliability source.
+
+**Unlike every earlier exclusion, this one reached FORECASTS.** RC2-E2 blocks only
+`confidence === 0`, and sector confidence was structurally 0 — until `affects` supplied 51:
+
+```
+without the deal   trust 0   -> confidence 0  -> E2 blocks -> forward null
+with the deal      trust 51  -> confidence 51 -> E2 passes -> forward PRESENT
+                   { direction: "rotating in", confidence: 51,
+                     reasons: [..., "Cross-source evidence"] }
+```
+
+One Deal node is not cross-source. Excluding `affects` **restores E2's intended state** rather than
+adding a new rule.
+
+**The fix** extends RC2-L1's existing involvement set — one line:
+
+```ts
+const INVOLVEMENT_REL = new Set(["acquires", "names", "affects"]);
+```
+
+`POSITIVE_REL` is deliberately untouched: it is a polarity vocabulary, not an admissibility list,
+exactly as RC2-E3 recorded for `mentions`. Adapters, `inferenceEngine`, `sectorTaxonomy`,
+`predictionEngine`, weights, thresholds, calibration, `reliabilityFor` and `STRUCTURAL_WEIGHT` are all
+unchanged.
+
+**This is a real production-output REDUCTION, not zero-output hardening.** Measured:
+
+```
+                                        before -> after
+nodes                                   8 -> 8       edges 10 -> 10
+forecasts                               1 -> 1
+forwards                                2 -> 1                    <- sector forward removed
+Sector|Technology                       1 item | moderate | trust 51 | conf 51 | forward PRESENT
+                                     -> 0 items | insufficient_signal | 0 | 0 | forward null
+Deal|Acquirer to buy Target             1 item | weak | 44  ->  0 | insufficient_signal | 0
+Theme / Story / Company rows            unchanged
+```
+
+**Preserved and asserted:** `Deal --affects--> Sector` and `Theme --affects--> Industry` remain
+present and traversable with their provenance intact; `sectorExposure()` still projects
+Semiconductors → AI Compute through `belongs_to` + `affects`; genuine `supports`/`weakens` evidence is
+untouched; node and edge counts are identical.
+
+**Validation.** 25 new tests in `affectsNotEvidence.test.ts`, **13 of which fail against pre-N1
+code**. Pinned: the E2 boundary restored (no deal can resurrect a sector forward); all six `dealType`
+values including `withdrawn` and `rumored` identical; the headline-derived sector label carries no
+direction; `"Cross-source evidence"` absent from the Deal-only case; parallel `supports` survives;
+selection still walks the full relationship set rather than collapsed `getNeighbors`; `depends_on`
+still untouched and still admissible. Targeted N1/G6/E1/E2/E3/L1/L2/L3 **163 passed**; frontend
+**1156 passed / 73 files**; backend **1310 passed**; tsc clean; lint 0 errors; production build clean.
+
+**RC2-G6 supersession, narrowly scoped.** G6's Healthcare fixture is exactly this relation: a sector
+whose only link is a deal titled *"How investors killed AstraZeneca's $400bn megadeal"* — a
+**collapsed** megadeal that was producing POSITIVE thesis evidence for Healthcare. G6 scoped itself to
+the transmission CHAIN ("evidence scoring, counts and verdicts are untouched") and one assertion
+guarded that. Only that assertion changed: it now pins that the edge is still recorded and traversable
+but is no longer thesis evidence. Every other G6 assertion — evidence is not a transmission hop,
+structure is preserved, populated chains unaffected — is untouched. N1 supersedes **only** that
+evidence-scoring expectation.
+
+#### RC2-N1 deployment validation
+
+Deployed as `6f00011`. Both Railway services reached terminal **success**.
+
+One transient recorded rather than smoothed over: backend `/api/health` returned **502** while
+`perceptive-achievement` was mid-restart and recovered on settle — the same restart-window pattern
+recorded in the RC2-L2 and RC2-N4 entries. No code change is proposed on the strength of it.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 260bp asOf 2026-08-28, changeBp -3 -> "tightening",
+                               businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  20 real EDGAR entries, window 2026-08-27 .. 2026-08-31
+                               forms {"S-1": 12, "S-1/A": 8}; 20 of 20 distinct CIKs;
+                               newRegistrations = 12
+frontend /              : 307  -> /auth (middleware gate; the service is up)
+```
+
+N1 is frontend-only and the graph is evaluated client-side, so the backend deploy is reported as a
+health gate; C2b is unaffected by N1 and its contract is re-confirmed intact (classification,
+deduplication and new-registration narrowing all holding).
+
+**The expected production reduction is not directly observable.** Sectors whose only thesis evidence
+came from an M&A `affects` edge now lose the false evidence item, the `moderate` / trust ~51 verdict,
+the confidence derived from it, and any forward view that existed only because of it. Every product
+surface that renders those values — `/private-markets`, `/ma`, `/intel`, the Evidence Drawer,
+Workstation and Industries — is auth-gated (307 → `/auth`), so the reduction was **not observed on a
+screen**. It rests on the deployed code path and the measured before/after fixture.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
