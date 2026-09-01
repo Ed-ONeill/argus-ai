@@ -258,7 +258,19 @@ describe("E1, E3, L1, L2 and L3 contracts are unchanged", () => {
     expect(predictThemeTrajectory(t.id).predictedDirection).not.toBe("insufficient_signal");
   });
 
-  it("depends_on is still untouched and still admissible", () => {
+  /**
+   * RC2-FT SUPERSEDES this pin. It asserted `depends_on` remained ADMISSIBLE,
+   * and it existed for one narrow reason: to prove that slice had not silently
+   * ruled a verb it had explicitly left open. That guard did its job.
+   *
+   * The fall-through slice now rules it deliberately. `depends_on` is
+   * unclassified and has no producer, and the architectural rule is that an
+   * unclassified verb must not acquire positive thesis meaning merely by
+   * existing in the type vocabulary. This is NOT a claim that `depends_on` is
+   * inherently neutral forever — it is the claim that it must be classified
+   * before it can be evidence.
+   */
+  it("RC2-FT: depends_on is now inadmissible by default", () => {
     const a = G.addNode({ label: "AAA", type: "Company", aliases: ["AAA"],
       sources: ["Feed" as never], metadata: { source: "Reuters" } }).id;
     const b = G.addNode({ label: "BBB", type: "Company", aliases: ["BBB"],
@@ -266,6 +278,6 @@ describe("E1, E3, L1, L2 and L3 contracts are unchanged", () => {
     G.addRelationship({ source: a, target: b, relationshipType: "depends_on",
       strength: 80, confidence: 80, evidenceCount: 1, originatingPages: ["Feed" as never] });
     expect(evaluateEvidenceForNode(b).supportingEvidence
-      .some(i => i.relationship === "depends_on")).toBe(true);
+      .some(i => i.relationship === "depends_on")).toBe(false);
   });
 });

@@ -427,9 +427,58 @@ function admissibleNeighbors(nodeId: string): Neigh[] {
 }
 
 /** The single admissibility test for anything entering this engine as evidence. */
+/**
+ * RC2-FT: an UNCLASSIFIED relationship is not evidence.
+ *
+ * The engine's architectural default was `NEGATIVE_REL.has(rel) ? -1 : 1` —
+ * anything not explicitly negative became positive thesis support. Every
+ * exclusion slice so far existed because some verb fell through that default:
+ *
+ *   E3  mentions            coverage        -> moderate / trust ~50 per mention
+ *   L1  acquires            involvement     -> both deal parties moderate / ~46
+ *   L2  names, evidenced_by attribution +
+ *                           provenance      -> latent behind the Event skip
+ *   L3  transacted,         attachment      -> insider SELL read as support;
+ *       has_*_metric                           opposite price moves identical
+ *   N1  affects             involvement     -> a KILLED megadeal supported its
+ *                                              sector, and resurrected a sector
+ *                                              forward view at confidence 51
+ *
+ * Each was the same bug wearing a different verb. This closes the class: a
+ * relationship must now EARN admission by explicit membership, so a new verb
+ * cannot acquire positive thesis meaning merely by existing.
+ *
+ * Zero live output delta, re-proven on current main: every verb that is
+ * admissible today is already in POSITIVE_REL or NEGATIVE_REL. The set of
+ * relationships both admissible and unclassified is empty. `depends_on` is the
+ * only unclassified verb remaining and it has no producer.
+ *
+ * NOTE the exclusion sets above stay load-bearing and must NOT be deleted:
+ * `mentions` (E3) and `affects` (N1) are IN POSITIVE_REL, so a positive
+ * allowlist alone would re-admit them.
+ */
+const isClassified = (e: IntelEdge): boolean =>
+  POSITIVE_REL.has(e.relationshipType) || NEGATIVE_REL.has(e.relationshipType);
+
+/**
+ * Explicit two-way polarity. No generic positive fallback.
+ *
+ * Admission guarantees membership, so the final branch is unreachable by
+ * construction. It returns -1 rather than +1 deliberately: if a future
+ * classification bug ever did reach it, the failure mode must be "treated as a
+ * contradiction", never "manufactured support". Unclassified does not mean
+ * positive — that is the rule this whole slice encodes.
+ */
+function polarityOf(relationshipType: string): 1 | -1 {
+  if (POSITIVE_REL.has(relationshipType)) return 1;
+  if (NEGATIVE_REL.has(relationshipType)) return -1;
+  return -1;
+}
+
 const admissibleAsEvidence = (e: IntelEdge): boolean =>
   !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e)
-  && !isProvenance(e) && !isAttachment(e);
+  && !isProvenance(e) && !isAttachment(e)
+  && isClassified(e);
 const recencyDaysOf = (node: IntelNode): number => Math.max(0, (Date.now() - num(node.lastSeen)) / 86_400_000);
 
 interface Neigh { node: IntelNode; edge: IntelEdge }
@@ -463,7 +512,7 @@ function toEvidenceItem(n: Neigh): EvidenceItem {
     pages: n.edge.originatingPages, sourceName: name, reliability: reliabilityFor(n.node),
     strength: num(n.edge.strength), confidence: num(n.edge.confidence), evidenceCount: num(n.edge.evidenceCount),
     recencyDays: round(recencyDaysOf(n.node)),
-    polarity: NEGATIVE_REL.has(n.edge.relationshipType) ? -1 : 1,
+    polarity: polarityOf(n.edge.relationshipType),
   };
 }
 
