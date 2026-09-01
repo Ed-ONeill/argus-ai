@@ -2338,6 +2338,142 @@ screen**. It rests on the deployed code path and the measured before/after fixtu
 
 ---
 
+### RC2-FT — an unclassified relationship is not evidence (implemented)
+
+The evidence engine's architectural default was `NEGATIVE_REL.has(rel) ? -1 : 1`: **anything not
+explicitly negative became positive thesis support**. Every exclusion slice in this programme existed
+because some verb fell through that default:
+
+| Slice | Verb(s) | Class | What the fall-through produced |
+|---|---|---|---|
+| **E3** | `mentions` | coverage | `moderate` / trust ~50 from a single mention |
+| **L1** | `acquires` | involvement | both deal parties `moderate` / trust ~46 |
+| **L2** | `names`, `evidenced_by` | attribution, provenance | latent behind the Event-neighbour skip |
+| **L3** | `transacted`, `has_market_metric`, `has_financial_metric` | attachment | an insider **SELL** read as support; opposite price moves indistinguishable |
+| **N1** | `affects` | involvement | a **killed** megadeal supported its sector, and resurrected a sector forward view at confidence 51 |
+
+Each was the same bug wearing a different verb. This slice closes the class: admission now requires
+**explicit membership** in `POSITIVE_REL` or `NEGATIVE_REL`, so a new relationship cannot acquire
+positive thesis meaning merely by existing in the type vocabulary.
+
+```ts
+const isClassified = (e: IntelEdge): boolean =>
+  POSITIVE_REL.has(e.relationshipType) || NEGATIVE_REL.has(e.relationshipType);
+
+const admissibleAsEvidence = (e: IntelEdge): boolean =>
+  !isStructural(e) && !isOntologyOnly(e) && !isMention(e) && !isInvolvement(e)
+  && !isProvenance(e) && !isAttachment(e)
+  && isClassified(e);                      // <- the new requirement, appended last
+
+function polarityOf(relationshipType: string): 1 | -1 {
+  if (POSITIVE_REL.has(relationshipType)) return 1;
+  if (NEGATIVE_REL.has(relationshipType)) return -1;
+  return -1;                               // unreachable; fails SAFE, never to +1
+}
+```
+
+`toEvidenceItem` no longer carries a generic positive fallback. The codebase has no established
+`assertNever`/unreachable idiom, and throwing inside a render path would be a genuine crash risk, so
+the unreachable branch returns **−1**: a future classification bug could only ever fail toward
+"contradiction", never toward "manufactured support". That is the rule the whole programme encodes.
+
+**Complete admission table after the change:**
+
+| Verb | Live producers | Classified | Excluded by | Admissible | Polarity |
+|---|---|---|---|---|---|
+| `supports` / `drives` / `raises_demand_for` / `owns` / `correlates` | 8 / 2 / 1 / 3 / 2 | POSITIVE | — | **yes** | +1 |
+| `weakens` | 2 | NEGATIVE | — | **yes** | −1 |
+| `mentions` | 9 | POSITIVE | E3 | no | — |
+| `affects` | 3 | POSITIVE | N1 | no | — |
+| `acquires` / `names` | 1 / 1 | — | L1 / L2 | no | — |
+| `evidenced_by` | 1 | — | L2 | no | — |
+| `transacted` / `has_market_metric` / `has_financial_metric` | 1 / 1 / 1 | — | L3 | no | — |
+| `belongs_to` | 1 | — | G5 | no | — |
+| `supplies` | 0 | POSITIVE | — | latent | +1 |
+| `competes_with` / `reduces_supply_of` | 0 | NEGATIVE | — | latent | −1 |
+| `depends_on` | 0 | **none** | **FT** | **no** | — |
+| any novel verb | — | **none** | **FT** | **no** | — |
+
+Producer counts exclude `lib/intelligenceTests.ts`, re-proven **not imported anywhere** — a self-test
+module, not a live producer. `buy` / `sell` / `bearish` are `insiderDirection` return values, not
+relationship types.
+
+**The exclusion sets remain LOAD-BEARING and were not deleted.** `mentions` (E3) and `affects` (N1)
+are *in* `POSITIVE_REL`, so a positive allowlist alone would re-admit them. Pinned explicitly.
+
+**Zero live output delta — measured, not assumed.** On a populated fixture (18 nodes, 32 edges,
+spanning themes / stories / Listen / M&A / Events) the before and after dumps are byte-identical:
+
+```
+nodes=18 edges=32 items=7 trustSum=304 forecasts=2 forwards=2 sbEntries=6
+byRelation={"supports":7}   byPolarity={"supports:1":7}
+every per-node row (items / contradictions / verdict / trust / prediction / forward / sourceBreakdown)
+```
+
+Every verb admissible today is already classified, so the set of relationships both admissible and
+unclassified is **empty**.
+
+**`depends_on` is now inadmissible by default.** This is not a claim that it is inherently neutral
+forever — it is the claim that an unclassified verb with no producer must not acquire positive thesis
+meaning merely by existing in the type vocabulary. Two earlier pins asserting it remained admissible
+are superseded with an explicit note recording that they existed only to prove RC2-L3 and RC2-N1 had
+not silently ruled it.
+
+**Scope.** Only `evidenceEngine.ts` changed. `POSITIVE_REL` and `NEGATIVE_REL` contents are unchanged,
+`inferenceEngine.ts` is **byte-for-byte unchanged** (no vocabulary convergence), and no adapter,
+weight, reliability, threshold, calibration, confidence, forecast or forward-view logic was touched.
+
+**Validation.** 28 new tests in `unclassifiedNotEvidence.test.ts`: every classified verb keeps its
+polarity; `weakens` stays −1; the three latent classified verbs (`supplies`, `competes_with`,
+`reduces_supply_of`) retain their declared behaviour should a producer ever appear; a novel verb is
+inadmissible; `depends_on` is inadmissible; `mentions` and `affects` stay inadmissible **despite**
+POSITIVE_REL membership; all L1/L2/L3/G5 exclusions hold; and parallel-edge integrity is re-pinned —
+a rejected unclassified edge written *first* cannot mask a legitimate `supports` or `weakens` on the
+same neighbour, proving selection still walks the full relationship set rather than collapsed
+`getNeighbors`. Targeted E1/E2/E3/G5/L1/L2/L3/N1/FT + G6 + graph-integrity **225 passed**; frontend
+**1184 passed / 74 files**; backend **1310 passed**; tsc clean; lint 0 errors; production build clean.
+
+#### RC2-FT deployment validation
+
+Deployed as `b83944e`. Both Railway services reached terminal **success**, with **no restart
+transients observed in this cycle**.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 260bp asOf 2026-08-28, changeBp -3 -> "tightening",
+                               businessDaysStale 2
+C2b /api/ipo-pipeline   : 200  28 real EDGAR entries, window 2026-08-27 .. 2026-08-31
+                               forms {"S-1": 16, "S-1/A": 12}; 28 of 28 distinct CIKs;
+                               newRegistrations = 16
+frontend /              : 307  -> /auth (middleware gate; the service is up)
+```
+
+C1's `businessDaysStale` moved 1 -> 2 against the RC2-N1 reading of the same 260bp/2026-08-28
+datapoint. That is the FRED calendar advancing, not an FT effect: FT is frontend-only and touches no
+backend code, no ingestion path and no C1 logic. The value remains well inside the locked 5-business-day
+tolerance.
+
+C2b is likewise unaffected by FT, and its contract re-confirms intact on a larger 28-entry payload:
+S-1 vs S-1/A classification, CIK deduplication and new-registration narrowing all holding.
+
+**Expected production effect is zero**, and unusually for this programme that is a positive claim
+rather than an unobservable one: the zero-delta fixture demonstrates that no currently produced
+relationship changes admission, polarity, trust, verdict, `sourceBreakdown`, forecast or forward view.
+FT is architectural hardening — it changes what a *future* verb may do, not what any present verb does.
+
+**Not visually verified.** `/private-markets`, `/ma`, `/intel`, the Evidence Drawer, Workstation and
+Industries are auth-gated (307 → `/auth`). No rendered surface was observed; the zero-delta claim rests
+on the deployed code path and the measured fixture.
+
+**What FT closes.** RC2-E3, L1, L2, L3 and N1 were five instances of ONE architectural defect: a
+relationship acquiring positive thesis polarity simply because it was not explicitly negative. Each
+was found only after it had already reached production — a mention, a deal party, an attributed
+company, an insider sale, a killed megadeal. FT removes the default itself. **An unclassified
+relationship can no longer become positive thesis evidence merely because it is not negative.** The
+next verb added to the vocabulary is inadmissible until someone classifies it deliberately.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
