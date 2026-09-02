@@ -26,6 +26,46 @@ import {
 
 const FETCH_TIMEOUT_MS = 8_000;
 
+/**
+ * RC2-CC — a failure must not be shared-cached for an hour.
+ *
+ * Every response left this route with the SAME header, because there is one
+ * return path:
+ *
+ *   Cache-Control: public, s-maxage=3600, stale-while-revalidate=1800
+ *
+ * That is correct for a measured T+1 daily series. It is wrong for a failure:
+ * `public` + `s-maxage=3600` makes an `unavailable` payload shared-cacheable for
+ * 60 minutes, and `stale-while-revalidate=1800` permits a further 30 while
+ * revalidating — so one transient FRED blip can be served back to users long
+ * after FRED itself has recovered. That matches the observed signature across
+ * three recorded occurrences: `unavailable` stable over many minutes, then
+ * autonomous recovery with no deploy.
+ *
+ * This is DISTINCT from `next: { revalidate: 3600 }` on the outbound fetch. That
+ * is Next's Data Cache, keyed on the FRED request, and it stores only successful
+ * responses — a failed fetch caches nothing there. The header below is a
+ * downstream cache of this route's own output, and it did not discriminate
+ * success from failure. Only the header is changed here; the fetch is untouched.
+ *
+ * `stale` keeps the shared policy deliberately: it is a SUCCESSFUL measurement
+ * carrying a real `asOf` and business-day age, which C1 already treats as honest
+ * data. `unparseable` joins `unavailable` because it means FRED served something
+ * unreadable — a transient upstream condition, not a datum worth pinning.
+ *
+ * This does not prove any particular CDN honours the header. It proves Argus no
+ * longer INSTRUCTS intermediaries to cache the failure. The FRED root cause
+ * remains unproven and is a separate, blocked ledger item.
+ */
+const SHARED_CACHE = "public, s-maxage=3600, stale-while-revalidate=1800";
+const NO_CACHE = "no-store";
+
+/** Failures must not be preserved downstream; measurements may be. */
+function cacheControlFor(state: CreditSpreadState): string {
+  if (state.measured) return SHARED_CACHE;
+  return state.reason === "stale" ? SHARED_CACHE : NO_CACHE;
+}
+
 export async function GET() {
   const t0 = Date.now();
   let state: CreditSpreadState;
@@ -76,6 +116,6 @@ export async function GET() {
 
   return NextResponse.json(
     { credit: state, meta: { seriesId: FRED_SERIES_ID, label: CREDIT_SERIES_LABEL, cadence: "daily-t+1" } },
-    { headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=1800" } },
+    { headers: { "Cache-Control": cacheControlFor(state) } },
   );
 }
