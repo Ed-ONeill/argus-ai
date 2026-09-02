@@ -2613,6 +2613,128 @@ window and recovered on settle, the same pattern recorded in the RC2-L2, RC2-N4 
 
 ---
 
+### RC2-IS — sector matching is lexical, not arbitrary-substring (implemented)
+
+`inferSector`'s patterns were unanchored, so a keyword matched anywhere inside an unrelated word.
+Measured on **720 real upstream production-feed headlines** — a representative classification sample
+pulled live from all 30 registry sources, **not** an M&A corpus (the feed API is auth-gated):
+
+| Collision | Substring-only matches | Examples |
+|---|---|---|
+| `/ai/` | **80** | ret**ai**l, Sp**ai**n, ch**ai**rman, r**ai**sed, rem**ai**ns, m**ai**ntenance, em**ai**l, **Ai**rlines |
+| `/bank/` | 3 | Bur**bank** |
+| `/gas/` | 2 | Ve**gas** |
+| `/power/` | 1 | |
+| `/rail/` | 1 | |
+
+Because **Technology is tested first**, these all landed there. Real headlines classified as
+Technology: *"US Strikes Targets in Iran Around Strait of Hormuz"* and *"EU Considers Front-Loading
+Ukraine Loan as Funding Shortage Looms"*. Technology reached **24.9%** of the corpus.
+
+**Two rules, chosen from measurement rather than applied mechanically.**
+
+*Leading boundary for stems*, so legitimate inflections and compounds keep working — `chips`,
+`chipmaker`, `Data Centers`, `Robotics`, `banking`, `banks`, `financial`, `financing`, `industrial`,
+`industries`, `logistics`, `consumers`, `insurance`, `insurer`, `advertising`, `publishes`,
+`cybersecurity`. Every suffixed form observed in the corpus under this rule was legitimate.
+
+*Full token for short, high-collision tokens — with their real inflections enumerated*:
+
+```
+\bai\b        \bsemi\b|\bsemiconduct      \bgas\b|\bgasoline
+\boils?\b     \brail(?:road)?s?\b         \breits?\b     \blng\b     \bsaas\b
+```
+
+A blanket `\b…\b` was **tested and rejected**: it destroys `semiconductor`, `railroad`, `gasoline`
+and `Data Centers`, all of which the corpus contains as genuine matches.
+
+**Corpus result:**
+
+```
+sector            BEFORE   AFTER
+  Technology         179      95      Technology share  24.9% -> 13.2%
+  Energy              78      83      "Other" share     56.5% -> 65.1%
+  Financials          38      44
+  Industrials          4       8      changed: 90 / 720 = 12.5%
+  Consumer             8      12
+  Media & Telecom      3       6      every substring collision -> 0
+  Other              407     469      false-negative hunt: 0 legitimate whole-token matches lost
+```
+
+**The 90-vs-96 difference from the diagnosis was investigated**, per instruction: exactly six
+headlines, all cases where the implementation is *correct* — five "gasoline" (genuine Energy) and one
+"semiconductor" (genuine Technology), which a uniformly full-anchored matcher would have discarded.
+
+**Critical zero-delta invariant — measured, not assumed.** Flipping the same deal's inferred sector
+from `Technology` to `Other` on a populated fixture changes the intelligence layer not at all:
+
+```
+                    Technology        Other
+items                        2  ==        2
+trustSum                   102  ==      102
+forecasts                    1  ==        1
+forwards                     1  ==        1
+sourceBreakdown              2  ==        2
+every non-Sector node row  byte-identical
+[expected to differ]  Sector node "Technology" -> "Other", edges ["affects"] (N1-excluded)
+```
+
+RC2-N1, RC2-R1 and RC2-E3 guarantee a classification change cannot become thesis conviction:
+`Deal --affects--> Sector` is non-evidentiary (N1) and `Deal --mentions--> Theme` is non-evidentiary
+(R1 retyping + E3).
+
+**Scope.** Only the M&A `inferSector` regexes changed. `inferenceEngine.inferSector` — an unrelated
+function of the same name, consumed by evidenceEngine/memoryEngine/predictionEngine — is
+**byte-for-byte untouched**, as are `evidenceEngine`, `intelligenceGraphAdapters`, `predictionEngine`,
+`maIntel` and `sectorTaxonomy`. Taxonomy, precedence order, `title + entities` input, determinism, the
+`"Other"` fallback, the `toMADeal` contract, `Deal→Sector affects`, `Deal→Theme mentions`, provenance
+and graph construction are all preserved. No LLM, no external data.
+
+**`"Other"` minted as a literal Sector node is deliberately preserved unchanged** and remains its own
+ledger item, even though safer matching makes it more common (56.5% → 65.1%).
+
+**Validation.** 42 new tests in `sectorClassification.test.ts`: a negative control for every
+demonstrated substring failure (retail/Airlines/Chairman/Spain/raised/remains/maintenance/email vs
+`/ai/`, Vegas vs `/gas/`, Burbank vs `/bank/`, Semiannual vs `/semi/`), positive controls for every
+inflection and compound that must survive, and pins for precedence, the `"Other"` fallback, the
+entities input and determinism. `inferSector` is exported solely for this pinning; its behaviour is
+unchanged by the export. Targeted M&A/classification/RC2 **206 passed**; frontend **1253 passed / 76
+files**; backend **1310 passed**; tsc clean; lint 0 errors; production build clean.
+
+#### RC2-IS deployment validation
+
+Deployed as `1eaa301`. Both Railway services reached terminal **success**.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 263bp asOf 2026-08-31, priorLevel 260 (2026-08-28),
+                               changeBp +3 -> "widening", businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  27 real EDGAR entries, window 2026-08-28 .. 2026-09-01
+                               forms {"S-1": 17, "S-1/A": 10}; 27 of 27 distinct CIKs;
+                               newRegistrations = 17
+frontend /              : 307 -> /auth    /auth : 200
+        /ma             : 307 -> /auth    /private-markets : 307 -> /auth
+```
+
+**C1 recovered on its own, confirming the R1-closure diagnosis.** At R1 closure `/api/credit-spread`
+was returning `{"measured": false, "reason": "unavailable"}` across three stable samples. It is now
+`measured` again at 263bp with **no deploy, no configuration change and no code change** in between —
+exactly the transient provider/egress behaviour recorded during E1 verification. Declining to attribute
+it to R1, and declining to propose a code change from it, were both correct.
+
+**One restart transient, recorded.** Backend `/api/health` returned **502** during
+`perceptive-achievement`'s restart window and recovered on settle — the same pattern recorded in the
+L2, N4, N1 and R1 entries. Not attributable to IS, which is frontend-only.
+
+**Expected production delta is presentation and graph only**, and is **not observable from outside**:
+`/ma` sector labels, breakdown counts, comparable-deal grouping and the `SECTOR_TO_INDUSTRY` link
+target shift for roughly 13% of deals, and fewer spurious `Sector` nodes are minted. All of those
+surfaces are auth-gated (307 → `/auth`), so **no live count of reclassified deals is claimed** — the
+720-headline figures are a representative upstream sample, not production M&A counts, and the
+reclassification was **not observed on a screen**.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
