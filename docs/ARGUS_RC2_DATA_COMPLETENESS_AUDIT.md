@@ -2735,6 +2735,125 @@ reclassification was **not observed on a screen**.
 
 ---
 
+### RC2-OS — "Other" is an honest fallback label, not a sector (implemented)
+
+`inferSector` returns `"Other"` when no pattern matches. That means **"sector not confidently
+classified"**. It does not mean a canonical sector, shared economic exposure, comparable-deal
+membership, a resolved sector taxonomy, or a Workstation sector subject.
+
+It is provably not canonical: `industryConfig`'s nine sectors are Communications, Consumer, Energy,
+Financials, Healthcare, Industrials, Real Estate, Technology and Utilities — `"Other"` appears in
+none of them, nor anywhere in `sectorTaxonomy.ts`, and it has no `SECTOR_TO_INDUSTRY` entry.
+
+**Two defects, both measured** on the required fixture (three unrelated unclassified deals — grocery,
+shipping, law firm — plus one Technology and one Energy deal):
+
+| | Defect |
+|---|---|
+| **Graph** | `ingestMA` minted it as a Sector node, collapsing every unclassified deal into one synthetic hub: a single `"Other"` node with **three inbound `affects` edges** and those three unrelated deals as its neighbours. It also gave a non-sector a Workstation subject (`/workstation?kind=sector&subject=Other`), and made `sectorExposure("Other")` report **`resolved: true`** with zero industries — because that function returns `resolved: false` *only* when the Sector node is absent. **Minting was precisely what made a non-sector look resolved.** |
+| **UI** | `/ma` matched comparables on `d.sector === deal.sector`, so a grocery acquisition was presented alongside a shipping sale and a law-firm merger under **"Comparable Deals"**. |
+
+Post-RC2-IS the fallback covers ~65% of classifications, so both were about to get materially worse.
+
+**Fixed at the producer for the graph** — so the invalid node never exists, and `sectorExposure` is
+untouched and now returns `resolved: false` on its own — **and at the predicate for comparables**:
+
+```ts
+// lib/intelligenceGraphAdapters.ts
+const UNCLASSIFIED_SECTOR = "Other";
+export const isClassifiedSector = (sector: string): boolean => {
+  const label = (sector ?? "").trim();
+  return !!label && label !== UNCLASSIFIED_SECTOR;
+};
+const sec = isClassifiedSector(d.sector) ? addLabeled(d.sector, "Sector", PAGE_MA) : null;
+
+// app/ma/page.tsx
+const sameSector = (a: string, b: string): boolean => a === b && isClassifiedSector(a);
+```
+
+**No replacement fallback grouping was introduced.** An unclassified deal simply has no same-sector
+comparables; it can still match on `themeTags`, which is a real shared signal and is untouched.
+
+**Measured before → after:**
+
+```
+nodes                              16 -> 15     exactly the "Other" Sector node removed
+edges                              18 -> 15     exactly its 3 inbound affects edges removed
+SectorNodes  ["Energy","Other","Technology"] -> ["Energy","Technology"]
+affects -> Other                    3 -> 0
+DealNodes                           5 -> 5      no Deal node lost
+sectorExposure("Other").resolved  true -> false
+canonical Technology / Energy       node present, affects = 1 each — unchanged
+comparables of an unclassified deal ["Shipping line sale","Law firm merger"] -> []
+INTEL  items=2 trustSum=102 forecasts=1 forwards=1 sb=2   ==   IDENTICAL
+```
+
+**The `"Other"` label is preserved** wherever it is the honest fallback — still rendered from
+`deal.sector`, and still without an industry link, because `SECTOR_TO_INDUSTRY` has no entry and the
+existing ternary yields a plain span. That rendering path is unchanged.
+
+**Navigation.** No M&A-generated `"Other"` classification can now produce
+`/workstation?kind=sector&subject=Other`, because the node no longer exists. Fixed producer-side; no
+Workstation special-casing was added.
+
+**Validation.** 31 new tests in `unclassifiedSector.test.ts`: the predicate (rejects `"Other"`, empty
+and whitespace; accepts all eight canonical M&A sectors); the graph (no `"Other"` node, zero
+`affects` to it, no Deal lost, unclassified deals no longer share a hub); canonical sectors unchanged
+and still N1-non-evidentiary; `sectorExposure("Other").resolved === false` with `sectorTaxonomy`
+untouched; comparable grouping suppressed for `"Other"` and preserved for legitimate sectors, with a
+source-level pin that neither `/ma` call site compares raw sectors again; the `"Other"` rendering path
+preserved; and the zero-delta intelligence surface. One of these tests caught a real bug in the
+predicate during development — whitespace-only returned `true` because the emptiness check ran before
+the trim — which was fixed in the implementation rather than the assertion. Targeted
+M&A/graph/comparables/sectorExposure/RC2 **237 passed**; frontend **1284 passed / 77 files**; backend
+**1310 passed**; tsc clean; lint 0 errors; production build clean (`/ma` 25.8 kB).
+
+**Scope.** `inferSector`, the RC2-IS matcher, the canonical taxonomy, `SECTOR_TO_INDUSTRY`, `MADeal`'s
+type, evidence semantics and N1/R1/E3 are all untouched. The `"Media & Telecom"` vs `"Communications"`
+divergence and the missing `Utilities` classification remain separate ledger items.
+
+#### RC2-OS deployment validation
+
+Deployed as `dc4d735`. Both Railway services reached terminal **success**, with **no `/api/health`
+restart transient this cycle**.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C2b /api/ipo-pipeline   : 200  15 real EDGAR entries, window 2026-08-31 .. 2026-09-02
+                               forms {"S-1": 8, "S-1/A": 7}; 15 of 15 distinct CIKs;
+                               newRegistrations = 8
+frontend /              : 307 -> /auth    /auth : 200
+        /ma             : 307 -> /auth    /private-markets : 307 -> /auth
+C1  /api/credit-spread  : 200  {"measured": false, "reason": "unavailable"}   <- SEE BELOW
+```
+
+**C1 is unavailable again, and again it is not attributable to this slice.** It was already
+`unavailable` while **both services were still `pending`** — i.e. on the pre-OS build — and OS is a
+frontend-only change that touches neither the credit route nor anything it imports. Three consecutive
+samples after settle all returned `unavailable`, while FRED answered **HTTP 200 in 0.22s** to the same
+series from the dev environment during the same window, so the failure is provider- or egress-side.
+
+**This is the third recorded occurrence** of the same condition — during RC2-E1 verification, at
+RC2-R1 closure (where it later recovered on its own with no deploy and no code change, confirmed at
+RC2-IS validation), and now. The established finding still holds: FRED's rejection mode is a **silent
+hang, not a status code**, so a provider-side refusal reaches the route as an abort. No code change is
+proposed from this slice.
+
+**A recurrence pattern is not the same as a one-off, and is recorded as such.** The standing rule
+against acting on a single production observation was written for isolated events; three occurrences
+across three deploys is a candidate for its own diagnosis — of FRED reachability from Railway egress
+specifically, rather than of C1's logic, which continues to behave correctly.
+
+**C1's contract behaved correctly throughout**: the unreachable source produced an explicit unmeasured
+state and no fabricated credit claim appeared at any point.
+
+**Not visually verified.** `/ma`, `/private-markets` and the other affected surfaces are auth-gated
+(307 → `/auth`). The comparable-grouping and sector-chip changes were **not observed on a screen**;
+they rest on the deployed code path and the fixture measurements above. No live count of affected
+deals is claimed.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
