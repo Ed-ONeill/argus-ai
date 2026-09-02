@@ -149,6 +149,18 @@ const SECTOR_ENTITY_LABELS: ReadonlySet<string> = new Set([
   "Telecom", "Media",
 ]);
 
+/**
+ * RC2-OS: the M&A classifier's fallback label. "Other" means "sector not
+ * confidently classified" — it is not a canonical sector, so it must never
+ * become a Sector node. Kept as a literal here rather than imported from the
+ * hooks layer, which lib/ does not depend on.
+ */
+const UNCLASSIFIED_SECTOR = "Other";
+export const isClassifiedSector = (sector: string): boolean => {
+  const label = (sector ?? "").trim();
+  return !!label && label !== UNCLASSIFIED_SECTOR;
+};
+
 /** True when the entity string is a curated sector label, not a company. */
 export const isSectorEntityLabel = (entity: string): boolean =>
   SECTOR_ENTITY_LABELS.has(s(entity));
@@ -544,8 +556,28 @@ export function ingestMA(deals: MADeal[], themes: ThemeIntelligence[] = []): Ing
         const target   = d.peFirm ? companies[0] ?? null : companies[1] ?? null;
         link(acquirer, "acquires", target, { strength: num(d.signalScore, 60), confidence: num(d.signalScore, 60), page: PAGE_MA });
 
-        // Sector affected.
-        const sec = addLabeled(d.sector, "Sector", PAGE_MA);
+        // RC2-OS: "Other" is the honest UI fallback for "sector not confidently
+        // classified" — it is NOT a sector. It appears nowhere in the canonical
+        // taxonomy (industryConfig's nine: Communications, Consumer, Energy,
+        // Financials, Healthcare, Industrials, Real Estate, Technology,
+        // Utilities) and has no SECTOR_TO_INDUSTRY entry.
+        //
+        // Minting it as a Sector node collapsed every unclassified deal into one
+        // synthetic hub. Measured on three unrelated deals (grocery, shipping,
+        // law firm): a single "Other" node with three inbound `affects` edges and
+        // those three deals as its neighbours. It also gave that non-sector a
+        // Workstation subject (`/workstation?kind=sector&subject=Other`), and it
+        // made `sectorExposure("Other")` report `resolved: true` with zero
+        // industries — because that function returns `resolved: false` only when
+        // the Sector NODE is absent. Minting was precisely what made a non-sector
+        // look resolved. Post-RC2-IS the fallback covers ~65% of classifications,
+        // so the hub was about to get much larger.
+        //
+        // Fixed at the PRODUCER so the invalid node never exists;
+        // `sectorExposure` is untouched and now returns `resolved: false` for
+        // "Other" on its own. Canonical sectors are unaffected. The label still
+        // renders in the UI, still without an industry link.
+        const sec = isClassifiedSector(d.sector) ? addLabeled(d.sector, "Sector", PAGE_MA) : null;
         link(dealId, "affects", sec, { strength: num(d.signalScore, 50), page: PAGE_MA });
 
         // RC2-R1: sector / asset overlap is CONTEXT, not thesis support.

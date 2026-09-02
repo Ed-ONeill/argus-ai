@@ -14,6 +14,7 @@ import { computeThemeEvolutionState, filterMAThemes } from "@/lib/themeEvolution
 import { explainMAActivity } from "@/lib/themeIntelligence";
 import { clusterDealsByTheme } from "@/lib/industryIntelligence";
 import { computeCapitalFlow } from "@/lib/capitalFlow";
+import { isClassifiedSector } from "@/lib/intelligenceGraphAdapters";
 import { useThemeWatchlist } from "@/hooks/useThemeWatchlist";
 import { timeAgo, cn } from "@/lib/utils";
 import { enrichDeal, buildLeagueTables, buildMarketRegime, largestDeals, tickerInfo, type DealContext, type DealIntel } from "@/lib/maIntelligence";
@@ -70,6 +71,21 @@ const SIZE_META: Record<string, { color: string }> = {
 };
 
 // Deal sector → Argus industry page (cross-linking). Omitted sectors are unlinked.
+/**
+ * RC2-OS: "Other" is the honest fallback for "sector not confidently
+ * classified". It is not a canonical sector, so two deals sharing it share
+ * nothing — they are merely both unclassified. Using it as a same-sector match
+ * presented, for example, a grocery acquisition alongside a shipping sale and a
+ * law-firm merger under "Comparable Deals". Post-RC2-IS the fallback covers
+ * ~65% of classifications, which made it the dominant grouping.
+ *
+ * Legitimate sectors are unaffected, and no replacement fallback grouping is
+ * introduced: an unclassified deal simply has no same-sector comparables. It can
+ * still match on themeTags, which is a real shared signal.
+ */
+const sameSector = (a: string, b: string): boolean =>
+  a === b && isClassifiedSector(a);
+
 const SECTOR_TO_INDUSTRY: Record<string, string> = {
   "Technology": "software", "Healthcare": "healthcare", "Energy": "energy",
   "Financials": "financials", "Industrials": "industrials", "Consumer": "consumer",
@@ -495,7 +511,7 @@ function findSimilar(deal: MADeal, intel: DealIntel, siblings: MADeal[], _ctx: D
   return siblings
     .filter(d => d.id !== deal.id)
     .map(d => ({ d, i: enrichDeal(d) }))
-    .filter(({ d, i }) => d.sector === deal.sector || i.themeTags.some(t => tags.has(t)))
+    .filter(({ d, i }) => sameSector(d.sector, deal.sector) || i.themeTags.some(t => tags.has(t)))
     .slice(0, 5);
 }
 
@@ -1086,7 +1102,7 @@ export default function MAPage() {
     return deals
       .filter(d => d.id !== expandedDeal.id)
       .map(d => ({ d, i: enrichDeal(d, dealCtx) }))
-      .filter(({ d, i }) => d.sector === expandedDeal.sector || i.themeTags.some(t => tags.has(t)))
+      .filter(({ d, i }) => sameSector(d.sector, expandedDeal.sector) || i.themeTags.some(t => tags.has(t)))
       .slice(0, 5);
   }, [deals, expandedDeal, expandedIntel, dealCtx]);
 
