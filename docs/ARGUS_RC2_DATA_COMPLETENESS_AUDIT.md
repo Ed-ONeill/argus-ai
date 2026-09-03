@@ -2953,6 +2953,135 @@ cause stays unproven and no retry, timeout or last-known-good work is justified.
 
 ---
 
+### RC2-TX — M&A emitted an INDUSTRY name in the SECTOR slot (implemented)
+
+The canonical taxonomy (`industryConfig`) is a two-level hierarchy:
+
+```
+Sector "Communications"  ->  Industry "Media & Telecom"  ->  slug media-telecom
+```
+
+`inferSector`'s media/telecom branch emitted **`"Media & Telecom"` — the INDUSTRY name — as a
+sector**. This is a level error, not a naming preference: measured, it minted a **third node
+identity** alongside the two canonical ones.
+
+```
+Industry  "Media & Telecom"   id=industry-media-telecom   canonical
+Sector    "Communications"    id=communications           canonical parent
+Sector    "Media & Telecom"   id=media-telecom            ARTIFACT
+```
+
+Canonical Communications intelligence and M&A telecom activity therefore attached to **different
+nodes** — structural fragmentation. It also reproduced the RC2-OS false-resolved pattern:
+`sectorExposure("Media & Telecom")` returned `resolved: true` with **zero** industries, purely because
+a non-canonical Sector node existed.
+
+**Only the emitted label changed.** The keyword set, matcher semantics and precedence order are
+byte-identical, and the canonical Industry `"Media & Telecom"` in `industryConfig` is untouched.
+
+**Three consumers moved with it, because all three are keyed on `deal.sector`:**
+
+| Consumer | Change | Note |
+|---|---|---|
+| `SECTOR_TO_INDUSTRY` | key → `"Communications"` | value `"media-telecom"` **unchanged**, so `/industries/media-telecom` still resolves |
+| `COMPARABLE_DEALS` | key → `"Communications"` | **not optional** — the map is indexed by `deal.sector`, so renaming the classifier alone would have silently reduced curated telecom comparables to `[]`. Verified 3 → 3, and 0 under the old key. |
+| `comparablesFor()` | GICS alias `"Communication Services"` → `"Communications"` | previously resolved to the industry name |
+
+The `COMPARABLE_DEALS` coupling was **not** in the approved change list; it was found while tracing
+and included because the rename is incorrect without it.
+
+**Corpus delta** on the same 720 upstream production-feed headlines used by RC2-IS — narrowly the
+expected shape:
+
+```
+Media & Telecom   6 -> 0
+Communications    0 -> 6
+Consumer 12->12   Energy 83->83   Financials 44->44   Industrials 8->8
+Real Estate 3->3  Technology 95->95   Other 469->469
+every other classification count IDENTICAL
+```
+
+**Graph, driven by the real classifier output rather than a hardcoded fixture:**
+
+```
+inferSector("Telecom operator acquired by broadcast group") = "Communications"
+
+Industry  "Media & Telecom"  id=industry-media-telecom      canonical, untouched
+Sector    "Communications"   id=communications              canonical
+Sector nodes named "Media & Telecom": 0                     artifact gone
+Deal --affects--> Communications: 1 (page "M&A")
+Industry --belongs_to--> Communications: intact
+sectorExposure("Communications")  resolved=true  industries=["Media & Telecom"]
+sectorExposure("Media & Telecom") resolved=false            false identity gone
+```
+
+*(A first before/after harness was confounded — the fixture hardcoded `sector` instead of deriving it
+from `inferSector`, so the "before" arm never exercised the old classifier. It was redone driving the
+ingest from the real classifier, which is what the figures above reflect.)*
+
+**Comparables, navigation and intelligence:** two Communications deals are same-sector comparables;
+they do not mix with Technology or Energy; `"Other"` remains excluded under RC2-OS; legitimate sector
+grouping is unchanged; `/industries/media-telecom` still resolves. Intelligence is **zero-delta** —
+`items=2 trustSum=102 forecasts=1 forwards=1 sb=2`, unchanged — and RC2-N1 keeps the M&A `affects`
+edge non-evidentiary (`insufficient_signal`, trust 0).
+
+**Validation.** 31 new tests in `communicationsTaxonomy.test.ts` covering all nine existing
+media/telecom keyword cases (drawn from the current keyword set, no new coverage invented), the
+two-level identity assertion, the negative assertion that **zero** Sector nodes named
+`"Media & Telecom"` are minted, `sectorExposure` both ways, `SECTOR_TO_INDUSTRY` and the navigation
+slug, comparables including the curated-comparables survival check, the OS `"Other"` regression, N1
+evidence exclusion, and precedence. Two existing suites had **sector-level** assertions updated
+(`sectorClassification`, `unclassifiedSector`); `industryCardView`'s uses are **industry-level** and
+were correctly left alone. Targeted taxonomy/M&A/graph/RC2 **242 passed**; frontend **1330 passed / 79
+files**; backend **1310 passed**; tsc clean; lint 0 errors; production build clean.
+
+**Out of scope, pinned as unchanged rather than fixed:**
+
+* M&A still cannot emit canonical **`"Utilities"`**. Utility-like headlines classify as **Energy** by
+  precedence — `utility` is already a keyword, and it sits in the Energy pattern — so they are not
+  falling through to `"Other"`. Corpus incidence is ~1% (7 of 720) and includes FERC/PJM/MISO/nuclear
+  stories where Energy is defensible. There is **not enough evidence** to establish a Utilities
+  classification correction.
+* The lexical defect **`\butility` does not match the plural "utilities"** — which is why
+  *"Why Utilities Must Reevaluate…"* lands in `"Other"`. Deliberately not fixed: whether the
+  correction is `\butilit…` or something else should be diagnosed against the intended
+  Energy/Utilities semantics first.
+* **C2b's SIC map** in `api/ipo-pipeline/route.ts` still emits `"Media & Telecom"` as a sector label.
+  It is a separate producer with its own vocabulary and was left for its own slice.
+
+#### RC2-TX deployment validation
+
+Deployed as `33a267e`. Both Railway services reached terminal **success**.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 266bp asOf 2026-09-02, prior 265 (2026-09-01),
+                               changeBp +1 -> "stable", businessDaysStale 1
+                               Cache-Control: public, s-maxage=3600, stale-while-revalidate=1800
+                               (the measured-class policy RC2-CC preserved)
+C2b /api/ipo-pipeline   : 200  9 real EDGAR entries, window 2026-09-01 .. 2026-09-03,
+                               forms {"S-1": 4, "S-1/A": 5}; 9 of 9 distinct CIKs;
+                               newRegistrations = 4
+frontend /              : 307 -> /auth      /auth : 200
+        /ma             : 307 -> /auth      /private-markets : 307 -> /auth
+        /industries/media-telecom : 307 -> /auth  (route exists; auth-gated)
+```
+
+**One restart transient, recorded.** Backend `/api/health` returned **502** during
+`perceptive-achievement`'s restart window and recovered on settle — the same pattern recorded in the
+L2, N4, N1, R1 entries. Not attributable to TX, which is frontend-only.
+
+**C2b's own sector labels were sampled and confirm the out-of-scope divergence**: the live payload
+carries `{Technology: 5, null: 4}` — no telecom filings in this window, so the `"Media & Telecom"` SIC
+mapping was not exercised, but the map still contains it.
+
+**Not visually verified.** `/ma`, `/private-markets`, `/industries/*` and every other affected surface
+are auth-gated (307 → `/auth`). The sector-chip relabelling, comparable grouping and industry-link
+behaviour were **not observed on a screen**; they rest on the deployed code path and the fixture and
+corpus measurements above. No live count of reclassified production deals is claimed.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
