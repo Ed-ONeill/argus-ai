@@ -2854,6 +2854,105 @@ deals is claimed.
 
 ---
 
+### RC2-CC — a C1 failure must not be shared-cached for an hour (implemented)
+
+`/api/credit-spread` has a single return path, so **every** response left with the same header:
+
+```
+Cache-Control: public, s-maxage=3600, stale-while-revalidate=1800
+```
+
+Correct for a measured T+1 daily series; wrong for a failure. `public` + `s-maxage=3600` makes an
+`unavailable` payload shared-cacheable for **60 minutes**, and `stale-while-revalidate=1800` permits a
+further 30 while revalidating — so one transient FRED blip can be served back to users long after FRED
+itself recovered. That matches the signature recorded across three occurrences: `unavailable` stable
+over many minutes, then autonomous recovery with no deploy.
+
+This is **distinct** from `next: { revalidate: 3600 }` on the outbound fetch, which is Next's Data
+Cache keyed on the FRED request and stores only *successful* responses — a failed fetch caches nothing
+there. Only the response header changed.
+
+**Policy by response class:**
+
+| Class | `Cache-Control` | Changed |
+|---|---|---|
+| `measured` | `public, s-maxage=3600, stale-while-revalidate=1800` | no |
+| `stale` | same shared policy | no — deliberately: a **successful** measurement carrying a real `asOf` and business-day age, which C1 already treats as honest data |
+| `unavailable` (thrown / non-ok HTTP / AbortError) | `no-store` | **yes** |
+| `unparseable` | `no-store` | **yes** — FRED served something unreadable; a transient upstream condition, not a datum worth pinning |
+
+**This is an amplification fix, not a FRED fix. The root cause remains unproven.**
+
+**Validation.** 15 new tests in `creditSpreadCachePolicy.test.ts` — all four response classes and all
+three `unavailable` sub-modes; the payload and `meta` byte-identical per class; HTTP 200 preserved
+throughout; the outbound request pinned unchanged (same URL, `User-Agent: Argus-AI/1.0`,
+`next: { revalidate: 3600 }`, abort signal, and `FETCH_TIMEOUT_MS = 8_000` asserted in source); and a
+deterministic reproduction in which a failed first call is `no-store` and the route is genuinely
+re-entered on the next call (fetch counter = 2). **6 of the 15 fail against pre-fix code.** Targeted
+credit-spread + C1/C2a/C3 **249 passed**; frontend **1299 passed / 78 files**; backend **1310 passed**;
+tsc clean; lint 0 errors; production build clean.
+
+**Unchanged:** the outbound FRED fetch, `next: { revalidate: 3600 }`, the 8s timeout, the User-Agent,
+`creditStateFromCsv`, the five-business-day staleness policy, the response schema, `measured:false`
+semantics, and C2a/C3 downstream behaviour. No retries and no last-known-good were added.
+
+#### RC2-CC deployment validation
+
+Deployed as `07210e8`. Both Railway services reached terminal **success**, with **no `/api/health`
+restart transient this cycle**.
+
+**The defect was captured live in production immediately before the fix landed.** While both services
+were still `pending` — i.e. on the pre-CC build — a sample returned:
+
+```
+credit = unavailable    Cache-Control: public, s-maxage=3600, stale-while-revalidate=1800
+```
+
+an `unavailable` payload served with a one-hour shared-cache directive. That is direct production
+confirmation of the amplification finding, not merely a code reading.
+
+**After the deploy — five consecutive samples:**
+
+```
+1-5: measured 265bp asOf=2026-09-01 +2bp stable staleBusinessDays=1
+     Cache-Control: public, s-maxage=3600, stale-while-revalidate=1800
+backend /api/health    : 200  {"status":"ok"}
+C2b /api/ipo-pipeline  : 200  15 entries, 2026-08-31 .. 2026-09-02,
+                              forms {"S-1": 8, "S-1/A": 7}, 15/15 distinct CIKs,
+                              newRegistrations = 8
+frontend /  307 -> /auth   /auth 200   /ma 307   /private-markets 307
+```
+
+The measured class correctly retains the shared policy — that half of the matrix is confirmed in
+production.
+
+**Two honest limits on what this deployment proves.**
+
+1. **The `no-store` path was NOT observed in production.** C1 is measured in every post-deploy sample,
+   so only the `measured` header could be verified live. The failure-class headers are proven by the
+   test matrix, not by production observation.
+
+2. **No intermediary cache was detected.** Full header inspection returned only
+   `Cache-Control` and `Server: railway-hikari` — **no** `Age`, `x-vercel-cache`, `cf-cache-status`,
+   `x-cache`, `x-nextjs-cache` or `Via`. So there is no evidence that any edge layer was actually
+   honouring the old directive. The amplification remains a **structural** correction — Argus no
+   longer instructs intermediaries to cache a failure — but its real-world contribution to the three
+   recorded outages is **unproven**, and this entry does not claim it.
+
+**C1's recovery is not attributed to this change.** C1 returned to `measured` as `argus-ai` restarted,
+which is equally consistent with FRED simply becoming reachable again. Per the standing instruction,
+no root-cause inference is drawn from recovery or non-recovery.
+
+**Open ledger item — C1 Railway/FRED root-cause diagnosis, BLOCKED.** Confirmation requires the
+`[credit-spread]` production logs, which are unreachable from this environment: no `railway` CLI, no
+`~/.railway` config, no `RAILWAY_*` credentials, Railway GraphQL rejects unauthenticated queries
+(`me` → "Not Authorized"), and the app exposes no public log surface. The existing log lines are
+already sufficient to classify the failure — they carry elapsed ms and distinguish `HTTP {status}`
+from an exception message — so one occurrence read from Railway would settle it. Until then the root
+cause stays unproven and no retry, timeout or last-known-good work is justified.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
