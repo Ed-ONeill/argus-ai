@@ -125,13 +125,13 @@ describe("legitimate terms, inflections and compounds still classify", () => {
     expect(sec("REIT acquires logistics portfolio")).not.toBe("Other");
     expect(sec("REITs explore consolidation")).not.toBe("Other");
   });
-  it("MediaTek (leading-boundary compound) -> Media & Telecom", () => {
+  it("MediaTek (leading-boundary compound) -> Communications", () => {
     // The existing `media` stem intentionally matches at a word start.
-    expect(sec("Nvidia Invests in MediaTek")).toBe("Media & Telecom");
+    expect(sec("Nvidia Invests in MediaTek")).toBe("Communications");
   });
-  it("advertising / publishes (stem inflections) -> Media & Telecom", () => {
-    expect(sec("Advertising business acquired")).toBe("Media & Telecom");
-    expect(sec("Publishes results ahead of merger vote")).toBe("Media & Telecom");
+  it("advertising / publishes (stem inflections) -> Communications", () => {
+    expect(sec("Advertising business acquired")).toBe("Communications");
+    expect(sec("Publishes results ahead of merger vote")).toBe("Communications");
   });
   it("insurance / insurer -> Financials", () => {
     expect(sec("Insurance broker acquired")).toBe("Financials");

@@ -444,7 +444,8 @@ const COMPARABLE_DEALS: Record<string, Comparable[]> = {
     { acquirer: "Prologis",   target: "Duke Realty",     value: "$26B",  year: "2022" },
     { acquirer: "Blackstone", target: "QTS Realty",      value: "$10B",  year: "2021" },
   ],
-  "Media & Telecom": [
+  // RC2-TX: keyed on `deal.sector`, which is now the canonical sector name.
+  "Communications": [
     { acquirer: "Disney",   target: "21st Century Fox", value: "$71B", year: "2019" },
     { acquirer: "Amazon",   target: "MGM Studios",      value: "$8.5B", year: "2022" },
     { acquirer: "Microsoft", target: "Activision Blizzard", value: "$69B", year: "2023" },
@@ -459,7 +460,7 @@ function pickComparables(deal: MADeal, buyer: string | null, target: string | nu
 /** Comparable historical deals for an (already-resolved) sector key, used by the
  *  transmission graph to add precedent nodes even when intel.comparables is empty. */
 export function comparablesFor(sector: string): { acquirer: string; target: string; value: string; year: string }[] {
-  const alias: Record<string, string> = { "Semiconductors": "Technology", "Communication Services": "Media & Telecom", "Consumer Staples": "Consumer" };
+  const alias: Record<string, string> = { "Semiconductors": "Technology", "Communication Services": "Communications", "Consumer Staples": "Consumer" };
   return COMPARABLE_DEALS[alias[sector] ?? sector] ?? [];
 }
 

@@ -109,7 +109,7 @@ describe("isClassifiedSector", () => {
   });
 
   for (const s of ["Technology", "Healthcare", "Energy", "Financials",
-                   "Industrials", "Consumer", "Real Estate", "Media & Telecom"]) {
+                   "Industrials", "Consumer", "Real Estate", "Communications"]) {
     it(`accepts the canonical M&A sector ${s}`, () => {
       expect(isClassifiedSector(s)).toBe(true);
     });
@@ -204,7 +204,7 @@ describe("comparable-deal grouping", () => {
   it("legitimate same-sector grouping survives", () => {
     expect(sameSector("Technology", "Technology")).toBe(true);
     expect(sameSector("Energy", "Energy")).toBe(true);
-    expect(sameSector("Media & Telecom", "Media & Telecom")).toBe(true);
+    expect(sameSector("Communications", "Communications")).toBe(true);
   });
 
   it("different sectors never match", () => {

@@ -122,7 +122,12 @@ const SECTOR_PATTERNS: [string, RegExp][] = [
   ["Industrials",     /\bindustri|\bmanufactur|\baerospace|\bdefense|\blogistic|\bfreight|\brail(?:road)?s?\b|\brobot/i],
   ["Consumer",        /\bconsumer|\bretail|\brestaurant|\bhospitality|\btravel|\bleisure|\bapparel|\bfood/i],
   ["Real Estate",     /\breal\s+estate|\breits?\b|\bproperty|\binfrastructure|\bdata\s+center\s+reit/i],
-  ["Media & Telecom", /\bmedia|\btelecom|\bstreaming|\bbroadcast|\badvertis|\bpublish|\bwireless|\bsocial/i],
+  // RC2-TX: the canonical taxonomy is Sector "Communications" -> Industry
+  // "Media & Telecom" (slug media-telecom). This branch emitted the INDUSTRY
+  // name in the SECTOR slot, minting a third node identity alongside the
+  // canonical Industry and its canonical parent Sector. Keyword set, matcher
+  // semantics and precedence are unchanged — only the emitted label.
+  ["Communications", /\bmedia|\btelecom|\bstreaming|\bbroadcast|\badvertis|\bpublish|\bwireless|\bsocial/i],
 ];
 
 

@@ -89,7 +89,7 @@ const sameSector = (a: string, b: string): boolean =>
 const SECTOR_TO_INDUSTRY: Record<string, string> = {
   "Technology": "software", "Healthcare": "healthcare", "Energy": "energy",
   "Financials": "financials", "Industrials": "industrials", "Consumer": "consumer",
-  "Real Estate": "real-estate", "Media & Telecom": "media-telecom",
+  "Real Estate": "real-estate", "Communications": "media-telecom",
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
