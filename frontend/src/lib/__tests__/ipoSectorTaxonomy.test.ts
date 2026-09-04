@@ -87,8 +87,9 @@ describe("the corrected SIC mappings", () => {
 describe("the other 44 mappings are unchanged", () => {
   const map = sicSector();
 
-  it("the map still holds 47 SIC codes", () => {
-    expect(Object.keys(map)).toHaveLength(47);
+  /** RC2-C2C added eight high-confidence codes; the rename itself added none. */
+  it("the map holds 55 SIC codes (47 at C2X + 8 added by C2C)", () => {
+    expect(Object.keys(map)).toHaveLength(55);
   });
 
   const UNCHANGED: [string, string][] = [
@@ -108,9 +109,12 @@ describe("the other 44 mappings are unchanged", () => {
   it("per-sector code counts are unchanged apart from the rename", () => {
     const counts = Object.values(map).reduce<Record<string, number>>(
       (a, v) => ((a[v] = (a[v] ?? 0) + 1), a), {});
+    // RC2-C2C additions folded in: +3845 Healthcare, +6411/+6221 Financials,
+    // +2080 Consumer, +3480/+3760/+3620/+3590 Industrials. Communications
+    // stays 3 — the C2X rename moved values, it did not add codes.
     expect(counts).toEqual({
-      Technology: 9, Healthcare: 8, Financials: 7, Consumer: 6,
-      Industrials: 5, Energy: 3, Utilities: 3, "Real Estate": 3,
+      Technology: 9, Healthcare: 9, Financials: 9, Consumer: 7,
+      Industrials: 9, Energy: 3, Utilities: 3, "Real Estate": 3,
       Communications: 3,
     });
   });
@@ -137,10 +141,13 @@ describe("unmapped SICs remain null", () => {
   const map = sicSector();
 
   // Observed in a bounded production-shaped sample; deliberately NOT added.
+  // RC2-C2C SUPERSEDES two entries here: 3620 and 3480 were unmapped when C2X
+  // measured them and are now approved Industrials mappings. 6770 remains
+  // DELIBERATELY null — a SPAC has no operating-sector identity — and is
+  // re-pinned as such in ipoSicCoverage.test.ts.
   for (const [sic, what] of [
     ["6770", "Blank Checks (SPACs)"],
-    ["3620", "Electrical Industrial Apparatus"],
-    ["3480", "Ordnance & Accessories"],
+    ["8742", "Management Consulting"],
     ["9999", "nonexistent"],
   ] as [string, string][]) {
     it(`SIC ${sic} (${what}) is unmapped`, () => {

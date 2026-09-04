@@ -30,21 +30,49 @@ const CACHE_TTL = 60 * 60 * 1_000; // 1 hour
 
 // ── SIC → sector mapping (abbreviated) ───────────────────────────────────────
 
+/**
+ * RC2-C2C: high-confidence coverage additions. Contract is SECTOR BY SIC
+ * CATEGORY — `SIC_SECTOR[sic] ?? null`, a pure function of the code with no
+ * filer-level logic — so a code is mapped on what the SIC means, not on which
+ * issuers happen to use it.
+ *
+ * Measured on 80 distinct S-1/S-1A filers over 12 business days: 43.8% mapped,
+ * 56.2% null, of which 41 had a SIC that simply was not in this map.
+ *
+ * DELIBERATE NULLS — these are correct, not missing, and must not be "fixed"
+ * to improve a coverage statistic:
+ *
+ *   6770  Blank Checks   the single largest unmapped code (10 of 80). A SPAC has
+ *                        no operating business and no sector identity until it
+ *                        de-SPACs. `sicDescription` already renders "Blank
+ *                        Checks", which is MORE informative than any sector.
+ *   8742  Mgmt Consulting  too broad, and issuer-selected SIC is unreliable —
+ *                        the one observed filer was T3 Defense Inc., a defence
+ *                        company self-filed as a consultancy.
+ *   1400  Mining & Quarrying  Argus's nine canonical sectors contain no
+ *                        Materials, so Energy or Industrials would both be
+ *                        semantically dishonest.
+ *   6792  Oil Royalty Traders  pending a decision on whether royalty-trust-like
+ *                        issuers are Energy exposure or a non-operating
+ *                        structure.
+ */
 const SIC_SECTOR: Record<string, string> = {
   "7372": "Technology", "7371": "Technology", "7374": "Technology",
   "7379": "Technology", "7389": "Technology", "3674": "Technology",
   "3672": "Technology", "3669": "Technology", "3679": "Technology",
   "2836": "Healthcare", "2835": "Healthcare", "2834": "Healthcare",
   "8011": "Healthcare", "8099": "Healthcare", "3841": "Healthcare",
-  "3825": "Healthcare", "3826": "Healthcare",
+  "3825": "Healthcare", "3826": "Healthcare", "3845": "Healthcare",
   "1311": "Energy",    "1381": "Energy",    "1382": "Energy",    "4911": "Utilities",
   "4931": "Utilities", "4941": "Utilities",
   "6020": "Financials","6021": "Financials","6022": "Financials","6199": "Financials",
   "6211": "Financials","6282": "Financials","6159": "Financials",
+  "6411": "Financials","6221": "Financials",
   "5000": "Consumer",  "5900": "Consumer",  "5600": "Consumer",  "5700": "Consumer",
-  "5912": "Consumer",  "5411": "Consumer",
+  "5912": "Consumer",  "5411": "Consumer",  "2080": "Consumer",
   "3559": "Industrials","3562": "Industrials","3490": "Industrials",
-  "3812": "Industrials","3761": "Industrials",
+  "3812": "Industrials","3761": "Industrials","3480": "Industrials",
+  "3760": "Industrials","3620": "Industrials","3590": "Industrials",
   // RC2-C2X: the canonical taxonomy is Sector "Communications" -> Industry
   // "Media & Telecom". This map is otherwise canonical at the SECTOR level
   // (the other eight values, including Utilities, are canonical sector
