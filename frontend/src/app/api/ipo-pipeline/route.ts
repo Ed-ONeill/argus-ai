@@ -45,7 +45,16 @@ const SIC_SECTOR: Record<string, string> = {
   "5912": "Consumer",  "5411": "Consumer",
   "3559": "Industrials","3562": "Industrials","3490": "Industrials",
   "3812": "Industrials","3761": "Industrials",
-  "4813": "Media & Telecom","4899": "Media & Telecom","7812": "Media & Telecom",
+  // RC2-C2X: the canonical taxonomy is Sector "Communications" -> Industry
+  // "Media & Telecom". This map is otherwise canonical at the SECTOR level
+  // (the other eight values, including Utilities, are canonical sector
+  // names), so these three were the only entries carrying an INDUSTRY name
+  // in a sector field — the same level error RC2-TX corrected in the M&A
+  // classifier. Unlike that one it minted nothing: IPOFiler.sector is a
+  // presentation category rendered at a single site and never enters graph
+  // ingestion, so this is a display-taxonomy correction with no structural
+  // or intelligence consequence.
+  "4813": "Communications","4899": "Communications","7812": "Communications",
   "6512": "Real Estate","6552": "Real Estate","6726": "Real Estate",
 };
 
