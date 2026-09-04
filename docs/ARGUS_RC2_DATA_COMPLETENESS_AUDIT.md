@@ -3082,6 +3082,130 @@ corpus measurements above. No live count of reclassified production deals is cla
 
 ---
 
+### RC2-C2X — C2b's SIC map carried an INDUSTRY name in a sector field (implemented)
+
+The canonical taxonomy is Sector `"Communications"` → Industry `"Media & Telecom"`. `SIC_SECTOR` maps
+47 codes to nine values, and **eight of those nine were already canonical SECTOR names** — including
+`"Utilities"`, which the M&A classifier cannot even emit. Only three entries carried the industry
+name:
+
+```
+4813  Telephone Communications
+4899  Communications Services NEC
+7812  Motion Picture Production
+```
+
+**The same level error RC2-TX corrected in the M&A classifier — but without the structural
+consequence.** TX's version minted a third graph identity and fragmented Communications intelligence.
+This one mints nothing:
+
+* `IPOFiler.sector` is rendered at **exactly one site** — a muted `<span>` on the private-markets
+  filer row, with `sicDescription` shown as a fallback when `sector` is null.
+* `filers` is otherwise consumed only for the row list, the filer count, and `ipoObservation`, which
+  reads `filingDate`, `formType` and `cik` — **not** `sector`.
+* IPO data is **not** a provisioning input to `useArgusIntelligence` / `intelligenceProvisioning`, so
+  C2b's sector cannot reach Sector nodes, Industry nodes, Workstation, `sectorExposure`, transmission,
+  evidence, trust, forecasts or forward views.
+
+So this is a display-taxonomy correction, **intelligence-neutral by construction** rather than by
+measured delta.
+
+**Measured — 47 mappings before and after; exactly 3 keys changed; 44 byte-for-byte unchanged; no keys
+added or removed:**
+
+```
+"Media & Telecom"   3 SIC mappings -> 0
+"Communications"    0 SIC mappings -> 3
+Technology 9, Healthcare 8, Financials 7, Consumer 6, Industrials 5,
+Energy 3, Utilities 3, Real Estate 3   — all unchanged
+```
+
+C2b can now emit **all nine canonical Argus sectors**; the emitted value set equals the canonical
+taxonomy exactly.
+
+**Representative API objects:**
+
+```
+sic="4813" Telephone Communications       { sector: "Media & Telecom" } -> { sector: "Communications" }
+sic="7812" Motion Picture Production      { sector: "Media & Telecom" } -> { sector: "Communications" }
+sic="7372" Services-Prepackaged Software  { sector: "Technology" }      -> unchanged
+sic="4911" Electric Services              { sector: "Utilities" }       -> unchanged
+sic="6770" Blank Checks                   { sector: null }              -> unchanged
+```
+
+**Unchanged:** `sector: string | null`, the `?? null` fallback, `sicDescription`, row rendering, the
+EDGAR endpoints and query, S-1 vs S-1/A classification, the slice bounds, CIK deduplication,
+`newRegistrations`, and the RC2-N4 SEC identity path. **No mappings were added** for currently
+unmapped SICs.
+
+**Validation.** 48 new tests in `ipoSectorTaxonomy.test.ts`, including explicit assertions that no
+C2b-to-intelligence provisioning path exists (`useArgusIntelligence` references neither
+`useIPOPipeline` nor `filers`; no adapter references `IPOFiler`; `ipoObservation` reads only
+`filingDate`/`formType`/`cik`) and that 6770, 3620 and 3480 remain unmapped. Targeted
+C2X + C2a/C2b/C3 + TX + N4 **283 passed**; frontend **1378 passed / 80 files**; backend **1310
+passed**; tsc clean; lint 0 errors; production build clean.
+
+#### RC2-C2X deployment validation
+
+Deployed as `de57f6f`. Both Railway services reached terminal **success**, with **no restart transient
+this cycle**.
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 265bp asOf 2026-09-03, prior 266 (2026-09-02),
+                               changeBp -1 -> "stable", businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  14 entries, window 2026-09-02 .. 2026-09-03,
+                               forms {"S-1": 8, "S-1/A": 6}, newRegistrations = 7
+                               sector labels {Financials: 1, Technology: 2, null: 11}
+                               "Media & Telecom" present: FALSE
+frontend /              : 307 -> /auth   /auth : 200
+        /private-markets: 307 -> /auth   /ma : 307 -> /auth
+```
+
+**No visible production example of the rename is claimed.** The live window contained **zero** filings
+in SIC 4813, 4899 or 7812, so the corrected mapping was not exercised against real data. What is
+confirmed is that `"Media & Telecom"` no longer appears as a sector value in the deployed payload.
+
+**C1 recovered on its own and is not attributed to C2X.** It read `unavailable` on the pre-deploy
+build while both services were still `pending`, and `measured` afterwards — the fourth recorded
+occurrence of the transient pattern. The root-cause item remains blocked on Railway log access.
+
+**First live demonstration of C2b's CIK deduplication doing real work.** This window returned
+`13/14 distinct CIKs` — every prior window had been N/N, making dedup a no-op. The duplicate is
+legitimate: **T3 Defense Inc. filed two separate S-1s on the same day**, with distinct accession
+numbers `0001185185-26-003839` and `0001213900-26-097287`. The narrowing behaved exactly as
+specified — 8 S-1 entries → **7 distinct S-1 CIKs** → `newRegistrations = 7`. The contract is
+therefore now validated against real duplicate data, not only fixtures.
+
+**Not visually verified.** `/private-markets` and `/ma` are auth-gated (307 → `/auth`), so the filer
+row's sector chip was not observed on a screen.
+
+#### Open ledger item — C2b SIC coverage gap
+
+The deployed window materially strengthens this. Of 14 entries, **12 carried a SIC and 9 of those were
+unmapped**, plus 2 with no SIC at all — 11 of 14 filers displaying no sector. Unmapped codes observed:
+
+```
+8742  Services-Management Consulting Services      (x2)
+6792  Oil Royalty Traders
+1400  Mining & Quarrying of Nonmetallic Minerals
+3590  Misc Industrial & Commercial Machinery
+3845  Electromedical & Electrotherapeutic Apparatus
+3480  Ordnance & Accessories
+3620  Electrical Industrial Apparatus
+6770  Blank Checks
+```
+
+That is a far higher unmapped rate than the earlier bounded sample's 4 of 9, and it spans codes with
+obvious canonical homes (3845 → Healthcare, 3590/3620/3480 → Industrials, 6792/1400 → Energy or
+Materials) alongside genuinely ambiguous ones. **No mappings were added**, deliberately: this warrants
+its own read-only diagnosis, with particular attention to **6770 Blank Checks**, since a SPAC may have
+no operating-sector identity yet — making "correctly unclassified" a real possibility rather than a
+missing mapping. The distinction between *missing mapping* and *correctly unclassified* must be
+established before any code changes.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
