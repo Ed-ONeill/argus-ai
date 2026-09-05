@@ -3206,6 +3206,138 @@ established before any code changes.
 
 ---
 
+### RC2-C2C — high-confidence SIC coverage additions (implemented)
+
+Measured on **80 distinct S-1/S-1A filers over 12 business days** (2026-08-18 .. 2026-09-03), built
+from EDGAR daily indexes. The 424B feed was deliberately excluded: those are post-IPO pricing
+filings, a different population from what C2b reads, and including them would have biased the
+measurement.
+
+```
+mapped 35/80 = 43.8%      null 45/80 = 56.2%
+  of the nulls: 4 had no SIC at all; 41 had a SIC absent from the map
+```
+
+**Eight codes added**, each with sibling codes already present in the map:
+
+| SIC | SEC description | → | Joins |
+|---|---|---|---|
+| 6411 | Insurance Agents, Brokers & Service | Financials | 6020/6021/6022/6159/6199/6211/6282 |
+| 6221 | Commodity Contracts Brokers & Dealers | Financials | — |
+| 2080 | Beverages | Consumer | 5000/5411/5600/5700/5900/5912 |
+| 3845 | Electromedical & Electrotherapeutic | Healthcare | 3825/3826/3841 |
+| 3480 | Ordnance & Accessories | Industrials | 3761/3812 |
+| 3760 | Guided Missiles & Space Vehicles | Industrials | direct sibling of 3761 |
+| 3620 | Electrical Industrial Apparatus | Industrials | — |
+| 3590 | Misc Industrial & Commercial Machinery | Industrials | 3490/3559/3562 |
+
+Verified: **47 → 55 mappings; exactly 8 keys ADDED; ZERO existing keys changed; zero removed.** The
+added set equals the approved set exactly.
+
+**The 6221 gate was confirmed before implementing.** The map contract is **sector by SIC category** —
+`sector: sic ? (SIC_SECTOR[sic] ?? null) : null` is a pure function of the code, and the route
+contains no filer-level logic of any kind. A code is therefore mapped on what the SIC *means*, not on
+which issuers happen to use it, so 6221 is Financials even though the observed filers were crypto ETF
+trusts (*Canary XRP ETF*, *Canary Staked TRX ETF*). No crypto-specific exception was invented.
+
+**Deliberate nulls, preserved and documented in the source** so they are not later "fixed" for
+coverage:
+
+| SIC | Why it stays null |
+|---|---|
+| 6770 Blank Checks | the largest unmapped code, 10 of 80. A SPAC has **no operating business and no sector identity** until it de-SPACs; `sicDescription` already renders "Blank Checks", which is *more* informative than any sector |
+| 8742 Mgmt Consulting | too broad, and issuer-selected SIC is unreliable — the observed filer was **T3 Defense Inc., a defence company self-filed as a consultancy** |
+| 1400 Mining & Quarrying | Argus's nine canonical sectors contain **no Materials**; Energy or Industrials would both be semantically dishonest |
+| 6792 Oil Royalty Traders | pending a decision on whether royalty-trust-like issuers are Energy exposure or a non-operating structure |
+
+**Coverage on the 80-filer sample, reproducing exactly:**
+
+```
+before 35/80 = 43.8%    gained 15    after 50/80 = 62.5%
+residual null                30/80 = 37.5%
+deliberate 6770 nulls        10/80 = 12.5%
+residual excluding 6770      20/80 = 25.0%
+```
+
+**Validation.** 53 new tests in `ipoSicCoverage.test.ts`. The measured SIC distribution is derived
+from the enriched sample rather than hand-authored — an earlier draft hand-wrote plausible counts that
+summed to 78 instead of 80, and the arithmetic pin caught it; the fix was to use the real data, not to
+adjust the expected percentage. Full frontend **1430 passed / 81 files**; backend **1310 passed**; tsc
+clean; lint 0 errors; production build clean.
+
+Four RC2-C2X assertions were superseded narrowly, all of which pinned the pre-C2C state: the map size
+(47 → 55), the per-sector counts, and `3620`/`3480` as "unmapped" — both now approved Industrials
+mappings. `6770` remains pinned as deliberately null in **both** suites.
+
+**Unchanged:** S-1/S-1A narrowing, CIK deduplication, `newRegistrations`, the RC2-N4 SEC identity
+path, RC2-C2X taxonomy, the `?? null` fallback, `sicDescription` fallback rendering, and the response
+schema. C2b intelligence impact remains **zero by construction** — no provisioning path exists.
+
+**Not in this slice:** `7389 → Technology`, whose SEC description is "Services-Business Services,
+NEC". Recorded as **RC2-C2M** for its own diagnosis.
+
+#### RC2-C2C deployment validation
+
+Deployed as `c488f14`. Both Railway services reached terminal **success**, with **no restart transient
+this cycle**.
+
+**The additions are confirmed live on real filings — a same-window before/after:**
+
+```
+pre-C2C  (both services pending)   n=14  mapped=3  {Financials 1, Technology 2, null 11}
+post-C2C                           n=14  mapped=7  {Financials 1, Technology 2,
+                                                    Industrials 3, Healthcare 1, null 7}
+```
+
+Identical 14-entry window, so the delta is attributable to the mappings rather than a changed corpus.
+**Mapped rate 21.4% → 50.0%.** Four filings took a sector from a C2C addition:
+
+```
+sic=3590 -> Industrials   Misc Industrial & Commercial Machinery   VenHub Global, Inc.
+sic=3845 -> Healthcare    Electromedical & Electrotherapeutic      Nexalin Technology, Inc.
+sic=3480 -> Industrials   Ordnance & Accessories                   First Breach, Inc.
+sic=3620 -> Industrials   Electrical Industrial Apparatus          Accelevation Holdings Corp.
+```
+
+Unlike RC2-C2X — where no filing in the corrected SICs appeared and no live example could be claimed —
+this slice has direct production evidence. The remaining four additions (6411, 6221, 2080, 3760) did
+**not** appear in this window and are therefore **not** live-verified.
+
+**Every deliberate-null category was exercised on real data**, which is a stronger validation than the
+sample alone provided:
+
+```
+6792  Oil Royalty Traders               PBT Land & Minerals      -> null  OK
+1400  Mining & Quarrying of Nonmetallic  ECOMINAS CORP.          -> null  OK
+8742  Services-Management Consulting     T3 Defense Inc.  (x2)   -> null  OK
+6770  Blank Checks                       Haymaker Acquisition    -> null  OK
+```
+
+Each is a case where chasing coverage would have produced a wrong label — a mining company forced into
+Energy, a defence company labelled by its self-selected consulting SIC, a cash shell presented as
+Financials.
+
+**Other gates:**
+
+```
+backend /api/health     : 200  {"status":"ok"}
+C1  /api/credit-spread  : 200  measured, 265bp asOf 2026-09-03, prior 266 (2026-09-02),
+                               changeBp -1 -> "stable", businessDaysStale 1
+C2b /api/ipo-pipeline   : 200  14 entries, 2026-09-02 .. 2026-09-03,
+                               forms {"S-1": 8, "S-1/A": 6}, 13/14 distinct CIKs,
+                               newRegistrations = 7
+frontend /              : 307 -> /auth   /auth : 200   /private-markets : 307 -> /auth
+```
+
+The 13/14 CIK count is the same legitimate T3 Defense duplicate first recorded at C2X — two separate
+S-1s filed on the same day — and the narrowing again produced `newRegistrations = 7` from 8 S-1
+entries.
+
+**Not visually verified.** `/private-markets` is auth-gated (307 → `/auth`), so the filer rows' sector
+chips were not observed on a screen; the payload was inspected directly instead.
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
