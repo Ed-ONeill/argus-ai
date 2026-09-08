@@ -3338,6 +3338,89 @@ chips were not observed on a screen; the payload was inspected directly instead.
 
 ---
 
+### RC2-C2M — SIC 7389 mapping — **CLOSED: DIAGNOSED / NO CHANGE WARRANTED**
+
+**There is no implementation commit for this item.** `SIC_SECTOR["7389"] === "Technology"` is unchanged
+and no runtime behaviour was altered.
+
+**Where the suspicion came from.** During the RC2-C2C coverage diagnosis this entry was flagged as
+"one real semantic mistake", reasoning that SEC's own description — *"Services-Business Services,
+NEC"* — showed a generic business-services code sitting under Technology, and that Industrials would
+be more appropriate. **Empirical issuer analysis refuted that inference.** The SEC label describes the
+*residual* nature of the code within Major Group 73; it does not describe who actually occupies it.
+
+**Methodological correction, recorded because it changed the answer.** The first issuer pull used
+EDGAR's `getcompany` browse, which returns results in alphabetical order, so the initial 24 issuers
+were entirely numerics and "A" names. **That sample was not treated as representative.** The analysis
+was redone against the full reachable population — **600 distinct SIC-7389 S-1 issuers**, paged across
+the alphabetical range — and sampled **stratified** (every 20th) across that span. The conclusion below
+comes from the corrected sample, not the biased one.
+
+**Stratified sample: 30 of 30 confirmed SIC 7389.**
+
+| Business type | Count | Representative issuers |
+|---|---|---|
+| IT services / software / fintech | ~11 | **FISERV (FISV)**, **FAIR ISAAC (FICO)**, **Accenture plc (ACN)**, Change Healthcare, Convergent Group, Mainspring, PFSweb, PMT Services, Prism Technologies |
+| Internet / dot-com | ~9 | AltaVista, CareData.com, ChineseWorldNet, Essential.com, Innofone.com, Medsite.com, MoreDirect.com, Impresse, Hub Deals |
+| Health IT | 2 | PaperFree Medical Solutions, Accolade |
+| Marketing / business services | 2 | ACI Telecentrics, Affinion Group |
+| Media | 1 | Here Media |
+| Shells / undetermined | ~5 | 1 Class Corp, MayDAO, Mint Inc, Endeavor IP, Collectors Universe |
+
+**Approximately 22 of 30 are internet, software, IT-services or fintech** — the category is materially
+technology-heavy. Only two are marketing/business services. The three largest and most recognisable
+7389 issuers — **Fiserv, Fair Isaac and Accenture** — are all classified Information Technology under
+GICS.
+
+**Sibling consistency.** 7389 is the NEC tail of the same 737x computer-services block, every mapped
+member of which is already Technology:
+
+```
+7371 Computer Programming     -> Technology
+7372 Prepackaged Software     -> Technology
+7374 Data Processing          -> Technology
+7379 Computer Rental/Leasing  -> Technology
+7389 Business Services NEC    -> Technology
+7310 Services-Advertising     -> unmapped (different sub-family; correctly left alone)
+```
+
+The current mapping therefore has a defensible rationale rather than being a historical accident.
+
+**Options compared:**
+
+| | Semantic accuracy | False-classification risk | Sibling consistency | Coverage on the 80-filer sample |
+|---|---|---|---|---|
+| **A — keep Technology** | **high**, matches ~22/30 | low | **consistent with 737x** | 50/80 unchanged |
+| B — Industrials | **poor** — would misclassify Fiserv, Fair Isaac, Accenture and the whole internet cohort | **high** | breaks the block | 50/80 (relabel only) |
+| C — null | safe, but discards a well-supported signal | none | inconsistent with siblings | 49/80 = 61.2% |
+
+**Ruling: A.** Industrials would create more semantic error than it removes, and null would discard a
+useful, reasonably well-supported classification. Unlike 6770 Blank Checks — where there is genuinely
+*no* operating sector — 7389 is heterogeneous only at the margins and has a clear centre of gravity.
+**No correction is warranted.**
+
+**Blast radius, reconfirmed and moot.** Had 7389 moved it would have affected **1 of 80** sample filers
+(1.2%) and **0 of 14** in the live window, and would have remained presentation-only: `IPOFiler.sector`
+renders at a single site, IPO data is not a provisioning input, and there is no graph, Workstation,
+`sectorExposure`, evidence, trust, forecast or forward effect.
+
+**Invariants preserved (no code changed):**
+
+```
+SIC_SECTOR["7389"] === "Technology"
+7371 / 7372 / 7374 / 7389 all -> Technology
+7310 remains unmapped
+map size remains 55
+RC2-C2C additions intact: 2080, 3480, 3590, 3620, 3760, 3845, 6221, 6411
+deliberate nulls intact: 6770, 8742, 1400, 6792
+emitted vocabulary remains exactly the nine canonical Argus sectors
+no runtime behaviour changes
+```
+
+**Status: CLOSED — DIAGNOSED / NO CHANGE WARRANTED.**
+
+---
+
 ## Per-surface index
 
 | Surface | Empty / static field | Class | Root cause |
