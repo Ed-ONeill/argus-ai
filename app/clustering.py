@@ -10,6 +10,9 @@ Design principles:
   - Both paths require a time-window gate; similarity path is stricter.
   - Generic entities (USD, Fed, S&P, etc.) are excluded from entity-overlap matching
     to prevent semantically unrelated stories from being grouped.
+  - Path 3 (salient topic anchor) never merges on a lone shared word (RC3-EA1):
+    a shared country/catalyst token is subject overlap, not event identity, and
+    must be corroborated by event-specific headline agreement.
 """
 
 from __future__ import annotations
@@ -36,9 +39,21 @@ _MAX_RELATED      = 6     # max related stories stored per cluster (payload cont
 # but have low overall title overlap. Salient tokens are found data-driven: a
 # token is an anchor when it appears in 2..N distinct titles in the current feed
 # (rare enough to denote a specific subject, common enough to link coverage).
+#
+# RC3-EA1: one shared anchor is SUBJECT overlap, not event identity. A single
+# country or catalyst word ("China", "Iran", "Canada", even "Here's") provably
+# merged unrelated events into one evidence list (persisted 2026-07-25 record;
+# authenticated production China/AI event). A Path-3 merge now needs
+# affirmative event-specific support: a second shared anchor, or at least
+# _ANCHOR_MIN_SUPPORT additional shared content tokens between the headlines —
+# and two headlines that each carry salient anchors the other lacks are
+# treated as different events regardless (generalized subject-divergence
+# guard, mirroring the existing ticker guard).
 _ANCHOR_WINDOW_H   = 8    # macro/geopolitical coverage spreads over many hours
 _ANCHOR_MAX_DF     = 6    # token in more than this many titles is too generic
 _ANCHOR_MIN_LEN    = 4    # minimum token length to qualify as an anchor
+_ANCHOR_MIN_SUPPORT = 2   # shared non-anchor content tokens required when only
+                          # ONE anchor is shared (RC3-EA1 affirmative support)
 
 # ── Entity blocklist ───────────────────────────────────────────────────────────
 # Terms too broad to be used as cluster anchors.  Matching on these would
@@ -278,11 +293,12 @@ def _should_cluster(
             if j >= _JACCARD_THRESH:
                 return True
 
-    # ── Path 3: Shared salient topic anchor ────────────────────────────────────
+    # ── Path 3: Shared salient topic anchor + event-specific support ───────────
     # Catches same-event/same-catalyst coverage that shares a specific topic word
-    # (e.g. "Iran", "Broadcom", "inflation") but not enough of the rest of the
-    # headline to clear the Jaccard bar. Precision comes from the anchor vocabulary
-    # (generic finance words are excluded; anchors must denote a specific subject).
+    # (e.g. "Broadcom", "Houthis") but not enough of the rest of the headline to
+    # clear the Jaccard bar. RC3-EA1: a single shared anchor establishes shared
+    # SUBJECT, never shared EVENT — the merge additionally requires affirmative
+    # event-specific agreement between the two headlines (see the guards below).
     if (
         salient_vocab
         and delta_h <= _ANCHOR_WINDOW_H
@@ -290,14 +306,37 @@ def _should_cluster(
     ):
         anc_c = _name_tokens(candidate.title) & salient_vocab
         anc_p = _name_tokens(primary.title)   & salient_vocab
-        if anc_c & anc_p:
+        shared_anchors = anc_c & anc_p
+        if shared_anchors:
             # Guard: if both name DIFFERENT specific (ticker-like) entities, they
             # are about different subjects despite a shared catalyst word.
             tickers_c = {e for e in spec_c if e.isupper() and len(e) <= 5}
             tickers_p = {e for e in spec_p if e.isupper() and len(e) <= 5}
             if tickers_c and tickers_p and not (tickers_c & tickers_p):
                 return False
-            return True
+            # Guard (RC3-EA1): generalized subject divergence. When BOTH titles
+            # carry salient anchors the other lacks, each story has its own
+            # specific subject ("Houthis … Saudi Arabia" vs "India … LPG tanker
+            # … Iran") and the shared word is shared context, not one event.
+            if (anc_c - shared_anchors) and (anc_p - shared_anchors):
+                return False
+            # Affirmative support (RC3-EA1): two shared specific subjects are
+            # event-level agreement …
+            if len(shared_anchors) >= 2:
+                return True
+            # … a single shared anchor is not. It must be corroborated by
+            # shared content about the event itself (action/object words,
+            # any casing, generic market words excluded). The anchor and its
+            # trivial singular/plural variants never support themselves.
+            variants = set(shared_anchors)
+            variants |= {a + "s" for a in shared_anchors}
+            variants |= {a[:-1] for a in shared_anchors if a.endswith("s")}
+            support = (
+                (_title_tokens(candidate.title) & _title_tokens(primary.title))
+                - _GENERIC_TOKENS - variants
+            )
+            if len(support) >= _ANCHOR_MIN_SUPPORT:
+                return True
 
     return False
 
