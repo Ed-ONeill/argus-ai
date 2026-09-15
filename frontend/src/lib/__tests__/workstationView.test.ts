@@ -20,7 +20,7 @@ function mkProfile(over: Partial<Record<keyof IntelligenceProfile, unknown>> = {
     transmission: sec({ stages: [{ layer: 0, caption: "Drivers", entities: ["AI capex"] }, { layer: 1, caption: "Themes", entities: ["AI Infrastructure"] }, { layer: 3, caption: "Companies", entities: ["NVDA"] }], strongestPath: ["AI capex", "AI Infrastructure", "NVDA"], upstreamCount: 1, downstreamCount: 2 }),
     beneficiaries: sec([]),
     risks: sec({ invalidation: "A downturn in hyperscaler capex guidance.", weakening: [{ id: "pwr", label: "Power supply", nodeType: "Sector", relationship: "weakens", strength: 0.3, confidence: 0.4, trend: "flat", via: null }], contradictions: [{ detail: "The memory record shows the trend cooling.", severity: 2 }] }),
-    evidence: sec({ verdict: "strong", overallTrust: 80, supporting: [{ from: "NVIDIA earnings", relationship: "supports", strength: 0.8, confidence: 0.7, pages: ["Reuters", "Bloomberg", "SEC"] }, { from: "Power demand", relationship: "supports", strength: 0.5, confidence: 0.5, pages: ["Nikkei"] }], sourceBreakdown: [], totalEvidence: 4 }),
+    evidence: sec({ verdict: "strong", overallTrust: 80, supporting: [{ from: "NVIDIA earnings", relationship: "supports", strength: 0.8, confidence: 0.7, pages: ["feed", "markets", "ma"] }, { from: "Power demand", relationship: "supports", strength: 0.5, confidence: 0.5, pages: ["listen"] }], sourceBreakdown: [], totalEvidence: 4 }),
     confidence: sec({ existence: 90, conviction: 70, trust: 80, verdict: "strong", explanation: "decomposed" }),
     evolution: sec({ firstSeen: "", sessions: 2, deltas: null, lines: [], patterns: [], analogs: [] }),
     watch: sec({ items: ["Watch the next hyperscaler capex guide."] }),
@@ -62,7 +62,7 @@ describe("the graph exhibit reveals progressively", () => {
 });
 
 describe("evidence and support (evidence-first, no score)", () => {
-  it("grades each link by independent sources", () => {
+  it("preserves each link's count and grade from its product surfaces", () => {
     const e = caseView().beats![2].data as { links: { link: string; strength: string; sources: number }[]; independentSources: number };
     expect(e.links[0]).toMatchObject({ link: "NVIDIA earnings", strength: "strong", sources: 3 });
     expect(e.links[1]).toMatchObject({ link: "Power demand", strength: "thin", sources: 1 });
@@ -71,9 +71,9 @@ describe("evidence and support (evidence-first, no score)", () => {
   it("answers 'how much supports this view' as support only — decomposed, no confidence number", () => {
     const s = caseView().beats![3].data as { level: string; supports: string[]; against: string[] };
     expect(s.level).toBe("Moderate");
-    expect(s.supports.join(" ")).toMatch(/4 independent sources/);
+    expect(s.supports).toEqual(["4 product surfaces", "support recorded across 2 links in the chain"]);
     expect(s.against.join(" ")).toMatch(/unresolved contradiction/);
-    expect(s.against.join(" ")).toMatch(/single source/);
+    expect(s.against).toContain("one link appears on at most one product surface");
     expect(JSON.stringify(s).toLowerCase()).not.toContain("confidence");
   });
 });

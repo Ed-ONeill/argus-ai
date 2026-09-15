@@ -67,10 +67,10 @@ function body(b: Beat<unknown>): ReactNode {
           <div key={`${l.link}-${i}`} className="flex flex-wrap items-baseline gap-x-2">
             <span className={cn("text-[9px] font-semibold uppercase tracking-[0.1em]", STRENGTH_COLOR[l.strength] ?? "text-ink-faint")}>{l.strength}</span>
             <span className="text-[13px] font-medium text-ink">{l.link}</span>
-            <span className="text-[11px] text-ink-faint">{l.sources} {l.sources === 1 ? "source" : "sources"}</span>
+            <span className="text-[11px] text-ink-faint">{l.sources} {l.sources === 1 ? "product surface" : "product surfaces"}</span>
           </div>
         ))}
-        <p className="mt-1 text-[11px] text-ink-faint">{d.independentSources} independent sources across the chain.</p>
+        <p className="mt-1 text-[11px] text-ink-faint">{d.independentSources} {d.independentSources === 1 ? "product surface" : "product surfaces"} across the chain.</p>
       </div>);
     }
     case "support": {

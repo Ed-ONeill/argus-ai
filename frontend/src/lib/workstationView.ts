@@ -245,11 +245,11 @@ export function buildSupport(p: IntelligenceProfile | null): Support | null {
   const contradictions = risks?.contradictions.length ?? 0;
 
   const supports: string[] = [];
-  if (independent >= 1) supports.push(`${independent} independent ${independent === 1 ? "source" : "sources"}`);
-  if (links >= 2) supports.push(`corroborated across ${links} links in the chain`);
+  if (independent >= 1) supports.push(`${independent} product ${independent === 1 ? "surface" : "surfaces"}`);
+  if (links >= 2) supports.push(`support recorded across ${links} links in the chain`);
   const against: string[] = [];
   if (contradictions > 0) against.push(`${contradictions === 1 ? "an unresolved contradiction" : `${contradictions} unresolved contradictions`}`);
-  if (e.supporting.some((s) => new Set(s.pages ?? []).size <= 1)) against.push("one link rests on a single source");
+  if (e.supporting.some((s) => new Set(s.pages ?? []).size <= 1)) against.push("one link appears on at most one product surface");
   if (evo && evo.sessions < 3) against.push("limited historical precedent");
 
   const level: SupportLevel = independent >= 3 && contradictions === 0 ? "Strong"

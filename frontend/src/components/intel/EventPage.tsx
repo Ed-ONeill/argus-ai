@@ -159,7 +159,7 @@ export default function EventPage({ clusterId }: { clusterId: string }) {
         <Section title="Evidence">
           {view.evidence ? (
             <>
-              <p className="mb-1 text-[11px] text-ink-muted">{view.evidence.sourceCount} {view.evidence.sourceCount === 1 ? "source" : "sources"}{view.evidence.corroboration >= 2 ? `, ${view.evidence.corroboration} agree` : ""}</p>
+              <p className="mb-1 text-[11px] text-ink-muted">{view.evidence.sourceCount} {view.evidence.sourceCount === 1 ? "source label" : "source labels"}{view.evidence.corroboration >= 2 ? `, ${view.evidence.corroboration} qualified` : ""}</p>
               <ol className="flex flex-col divide-y divide-edge-subtle/50">{view.evidence.items.map((e, i) => <EvidenceRow key={`${e.url}-${i}`} e={e} />)}</ol>
             </>
           ) : (

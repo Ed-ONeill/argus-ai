@@ -174,9 +174,9 @@ function editorialState(docs: EvidenceDoc[], developing: boolean): { state: Trus
     return { state: "primary", stateLabel: label };
   }
   const outlets = new Set(docs.map((d) => lc(d.outlet.trim())));
-  if (outlets.size >= 2) return { state: "corroborated", stateLabel: `Supported by ${outlets.size} independent sources` };
-  if (developing) return { state: "developing", stateLabel: "Still developing, awaiting confirmation" };
-  return { state: "single", stateLabel: "Single source" };
+  if (outlets.size >= 2) return { state: "corroborated", stateLabel: `Reported by ${outlets.size} source labels` };
+  if (developing) return { state: "developing", stateLabel: "Still developing, awaiting another qualified source label" };
+  return { state: "single", stateLabel: "Single source label" };
 }
 
 const outletsOf = (docs: EvidenceDoc[]): number => new Set(docs.map((d) => lc(d.outlet.trim()))).size;
@@ -207,8 +207,8 @@ export function buildEvidenceStories(m: Matches): EvidenceStory[] {
     const docs: EvidenceDoc[] = [{ outlet: p.source, title: sanitizeCopy(p.title) ?? p.title, url: p.url, dateISO: p.published ?? null, kind: "news" }];
     // A cluster with many articles is corroborated even though we surface the lead source.
     const state = c.story_count >= 2
-      ? { state: "corroborated" as TrustState, stateLabel: `Supported by ${c.story_count} independent sources` }
-      : { state: "single" as TrustState, stateLabel: "Single source" };
+      ? { state: "corroborated" as TrustState, stateLabel: `${c.story_count} reports` }
+      : { state: "single" as TrustState, stateLabel: "Single report" };
     stories.push({ id: c.id, headline: sanitizeCopy(p.title) ?? p.title, whenISO: p.published ?? null, docs, sourceCount: Math.max(1, c.story_count), ...state });
   }
   for (const d of m.deals) {

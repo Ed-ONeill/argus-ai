@@ -69,15 +69,15 @@ describe("editorial trust states (not scores)", () => {
     expect(build({ evidence: [doc("SEC", "10-Q", "sec_filing", "2026-08-06T10:00:00Z")] }).stateLabel).toBe("Primary filing");
     expect(build({ evidence: [doc("IR", "call", "transcript", "2026-08-06T10:00:00Z")] }).stateLabel).toBe("Primary transcript");
   });
-  it("multiple outlets -> 'Supported by N independent sources'", () => {
+  it("multiple displayed labels -> 'Reported by N source labels'", () => {
     const s = build({ evidence: [doc("Reuters", "a", "news", "2026-08-06T10:00:00Z"), doc("Bloomberg", "b", "news", "2026-08-06T10:00:00Z"), doc("WSJ", "c", "news", "2026-08-06T10:00:00Z")] });
-    expect(s.stateLabel).toBe("Supported by 3 independent sources");
+    expect(s.stateLabel).toBe("Reported by 3 source labels");
   });
-  it("single developing source -> 'Still developing, awaiting confirmation'", () => {
-    expect(build({ developing: true, evidence: [doc("Bloomberg", "a", "news", "2026-08-06T10:00:00Z")] }).stateLabel).toBe("Still developing, awaiting confirmation");
+  it("single developing source label -> awaiting another qualified label", () => {
+    expect(build({ developing: true, evidence: [doc("Bloomberg", "a", "news", "2026-08-06T10:00:00Z")] }).stateLabel).toBe("Still developing, awaiting another qualified source label");
   });
-  it("single confirmed source -> 'Single source'", () => {
-    expect(build({ developing: false, evidence: [doc("Reuters", "a", "news", "2026-08-06T10:00:00Z")] }).stateLabel).toBe("Single source");
+  it("single non-developing source label -> 'Single source label'", () => {
+    expect(build({ developing: false, evidence: [doc("Reuters", "a", "news", "2026-08-06T10:00:00Z")] }).stateLabel).toBe("Single source label");
   });
 });
 

@@ -232,7 +232,7 @@ export function buildCounterView(explanation: Explanation | null): string[] | nu
 
 export function buildWatchView(developing: boolean, why: WhyCare | null): string[] {
   const out: string[] = [];
-  if (developing) out.push("Watch for a second independent source; a single report is not yet confirmed.");
+  if (developing) out.push("Watch for reporting from a second qualified source label.");
   if (why && why.chain.length >= 2) out.push(`Watch whether the link between ${why.chain[0].label} and ${why.chain[why.chain.length - 1].label} persists.`);
   return Array.from(new Set(out)).slice(0, 3);
 }

@@ -152,7 +152,7 @@ describe("the other side (only when a credible one exists)", () => {
 describe("what to watch", () => {
   it("asks for a second source while developing, and tracks the live chain", () => {
     const v = ev({ events: [event({ ...EARN, id: "d1", developing: true })] }, "d1");
-    expect(v.watch[0]).toContain("second independent source");
+    expect(v.watch[0]).toBe("Watch for reporting from a second qualified source label.");
     expect(v.watch.some((w) => w.includes("AI demand") && w.includes("NVDA"))).toBe(true);
   });
 });
