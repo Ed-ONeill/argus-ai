@@ -59,9 +59,9 @@ async function mergeLocalToSupabase(
   supabase: any,
 ) {
   const items = localGetItems();
-  if (items.length === 0) return;
+  if (items.length === 0) return false;
 
-  await supabase.from("saved_items").upsert(
+  const { error } = await supabase.from("saved_items").upsert(
     items.map((item) => ({
       user_id:         userId,
       item_id:         item.id,
@@ -79,7 +79,11 @@ async function mergeLocalToSupabase(
     { onConflict: "user_id,item_id", ignoreDuplicates: true },
   );
 
+  // Supabase reports failed writes in the result, rather than rejecting.
+  // Keep the local copy available for the next login if persistence failed.
+  if (error) return false;
   localClear();
+  return true;
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -92,7 +96,12 @@ export function useSaved() {
 
   // On login: silently migrate any localStorage saves to Supabase
   useEffect(() => {
-    if (user) mergeLocalToSupabase(user.id, supabase);
+    if (user) {
+      const userId = user.id;
+      void mergeLocalToSupabase(userId, supabase).then((migrated) => {
+        if (migrated) return queryClient.invalidateQueries({ queryKey: ["saved", userId] });
+      }).catch(() => { /* Keep local data on transport failure; retry on next login. */ });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 

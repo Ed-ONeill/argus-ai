@@ -26,9 +26,9 @@ async function mergeLocalToSupabase(
   supabase: any,
 ) {
   const local = localLoad();
-  if (local.length === 0) return;
+  if (local.length === 0) return false;
 
-  await supabase.from("watchlist").upsert(
+  const { error } = await supabase.from("watchlist").upsert(
     local.map((w) => ({
       user_id:   userId,
       item_id:   w.id,
@@ -37,7 +37,9 @@ async function mergeLocalToSupabase(
     { onConflict: "user_id,item_id", ignoreDuplicates: true },
   );
 
+  if (error) return false;
   localStorage.removeItem(STORAGE_KEY);
+  return true;
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -49,16 +51,23 @@ export function useWatchlist() {
   const queryKey    = ["watchlist", user?.id ?? "anon"] as const;
 
   // Anonymous state — local only
-  const [localItems, setLocalItems] = useState<WatchlistItem[]>(() =>
-    user ? [] : localLoad(),
-  );
+  // Retain pending anonymous items through a failed login migration. Signed-in
+  // rendering still exclusively uses the account-scoped remote query below.
+  const [localItems, setLocalItems] = useState<WatchlistItem[]>(localLoad);
 
   // On login: merge localStorage → Supabase and clear local state
   useEffect(() => {
+    let active = true;
     if (user) {
-      mergeLocalToSupabase(user.id, supabase);
-      setLocalItems([]);
+      const userId = user.id;
+      void mergeLocalToSupabase(userId, supabase).then((migrated) => {
+        if (migrated) {
+          if (active) setLocalItems([]);
+          return queryClient.invalidateQueries({ queryKey: ["watchlist", userId] });
+        }
+      }).catch(() => { /* Keep local data on transport failure; retry on next login. */ });
     }
+    return () => { active = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
