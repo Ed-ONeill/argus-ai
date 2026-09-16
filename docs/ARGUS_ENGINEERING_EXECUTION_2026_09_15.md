@@ -38,6 +38,9 @@ healthy.
 - `89e0dc3`: RC3-TM1 causal diagnosis and offline mechanism audit.
 - `01301d2`: isolated RC3-TM1a resolver-grounded ticker contributions.
 - TM1a was pushed separately after the operational release passed its checks.
+- Both TM1a Railway deployment statuses succeeded: frontend at 2026-09-16
+  02:21:00 UTC and backend at 02:24:36 UTC. Fresh-cycle semantic validation remains
+  pending; deployment success does not close TM1a.
 - See `RC3_TM1A_IMPLEMENTATION.md` for gates and production closure requirements.
 
 An additional controlled reconstruction used all 125 retained observations,

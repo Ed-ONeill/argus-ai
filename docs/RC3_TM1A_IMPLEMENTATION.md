@@ -1,6 +1,11 @@
 # RC3-TM1a: Resolver-grounded ticker contributions
 
-Status: IMPLEMENTED / LOCAL GATES PASSED / PENDING DEPLOYMENT AND FRESH-CYCLE VALIDATION.
+Status: IMPLEMENTED / DEPLOYED / PENDING FRESH-CYCLE PRODUCTION VALIDATION.
+
+Implementation: `01301d2`. Railway deployment statuses succeeded for the frontend
+at 2026-09-16 02:21:00 UTC and backend at 02:24:36 UTC. The browser client blocked
+direct authenticated `/api/feed/` navigation; fresh source-to-membership controls
+are therefore not claimed as verified. This slice is not closed.
 
 ## Boundary
 
