@@ -1,0 +1,42 @@
+[
+  {
+    "id": "a2501a02cd5fc31e",
+    "theme_id": "utility-capex-supercycle",
+    "title": "Pay raises keep shrinking. Here’s how much smaller they’ll be next year.",
+    "snippet": "One solution is getting a different job — but that’s not so simple.",
+    "source": "MarketWatch",
+    "original_url": "https://www.marketwatch.com/story/pay-raises-keep-shrinking-heres-how-much-smaller-theyll-be-next-year-3fa51395?mod=mw_rss_topstories",
+    "original_published_dt": "2026-07-25T13:03:00-04:00",
+    "provenance": "Retained 2026-07-25 observation; unmodified title/snippet; test clock and cluster context are synthetic"
+  },
+  {
+    "id": "310b6b6ea9a8a23c",
+    "theme_id": "consumer-stress",
+    "title": "Zelensky tries to fix crisis over removal of defence minister and counts the cost",
+    "snippet": "Protests have continued over Zelensky's decision to dismiss Mykhailo Fedorov, and some commentators believe he has been damaged politically.",
+    "source": "BBC World",
+    "original_url": "https://www.bbc.co.uk/news/articles/c1d1gz3n99ro?at_medium=RSS&at_campaign=rss",
+    "original_published_dt": "2026-07-24T19:01:06-04:00",
+    "provenance": "Retained 2026-07-25 observation; unmodified title/snippet; test clock and cluster context are synthetic"
+  },
+  {
+    "id": "63593e667e79e8c8",
+    "theme_id": "consumer-stress",
+    "title": "EU review of airline ownership rules clouds Apollo’s £5.7bn easyJet bid",
+    "snippet": "Shares in UK low-cost carrier slide as Brussels move casts doubt on takeover",
+    "source": "FT Deals",
+    "original_url": "https://www.ft.com/content/8c3a155b-03c0-4034-9403-839674a3df9e?syn-25a6b1a6=1",
+    "original_published_dt": "2026-07-22T11:48:01-04:00",
+    "provenance": "Retained 2026-07-25 observation; unmodified title/snippet; test clock and cluster context are synthetic"
+  },
+  {
+    "id": "7b56cfd0bdcc7958",
+    "theme_id": "consumer-stress",
+    "title": "Trump plans generic drug tariffs from 2028 with two-year delay testing U.S. onshoring push",
+    "snippet": "The latest tariff salvo underscored Trump's goal of reshoring low-cost drug production, but displacing established suppliers like India won't be easy.",
+    "source": "CNBC Economy",
+    "original_url": "https://www.cnbc.com/2026/07/22/trump-generic-drugs-tariffs-medicine-trade-.html",
+    "original_published_dt": "2026-07-22T02:28:08-04:00",
+    "provenance": "Retained 2026-07-25 observation; unmodified title/snippet; test clock and cluster context are synthetic"
+  }
+]

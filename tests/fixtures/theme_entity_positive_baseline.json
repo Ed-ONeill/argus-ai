@@ -1,0 +1,465 @@
+{
+  "consumer-stress": [
+    {
+      "id": "consumer-stress",
+      "name": "Real Income Compression",
+      "description": "Persistent real-wage compression, revolving credit utilisation approaching cycle highs, and accelerating delinquency rates signal that the consumer spending-velocity normalisation is transmitting into earnings pressure across discretionary and lower-income spending channels.",
+      "signal_strength": "medium",
+      "confidence": 51,
+      "momentum_direction": "neutral",
+      "related_industries": [
+        "Consumer",
+        "Financials",
+        "Real Estate",
+        "Industrials"
+      ],
+      "related_assets": [
+        "WMT",
+        "TGT",
+        "HD",
+        "AMZN"
+      ],
+      "related_macro_factors": [
+        "Real Wage Growth",
+        "CPI Delta",
+        "Credit Utilisation Rate",
+        "Household Savings Rate"
+      ],
+      "contributing_cluster_ids": [
+        "p1",
+        "p2"
+      ],
+      "contributing_story_count": 2,
+      "second_order_effects": [
+        "Value-channel retailers gain share as discretionary spending bifurcates by income cohort. A positioning rotation, not a sector decline",
+        "Revolving credit utilisation approaching cycle highs signals spending-velocity compression 3-6 months ahead of reported retail sales",
+        "Restaurant and leisure traffic declines as non-essential spending is cut first. The consumer stress signal usually leads the headline number",
+        "Auto delinquency acceleration historically leads broader consumer credit quality deterioration by 2-4 quarters"
+      ],
+      "podcast_topics": [
+        "Macro",
+        "Markets",
+        "Company"
+      ],
+      "last_updated": "2026-07-25T18:00:00+00:00",
+      "relationship_weights": {
+        "Consumer": {
+          "weight": 0.92,
+          "type": "direct",
+          "direction": "negative"
+        },
+        "Financials": {
+          "weight": 0.71,
+          "type": "direct",
+          "direction": "negative"
+        },
+        "Real Estate": {
+          "weight": 0.44,
+          "type": "narrative",
+          "direction": "negative"
+        },
+        "Industrials": {
+          "weight": 0.35,
+          "type": "macro_overlap",
+          "direction": "negative"
+        }
+      },
+      "confidence_label": "Moderate",
+      "signal_quality": "developing",
+      "evidence_count": 2,
+      "persistence_score": 20,
+      "volatility_score": 0,
+      "cross_category_confirmed": false,
+      "momentum_label": "emerging",
+      "momentum_delta": 0,
+      "persistence_cycles": 1,
+      "competition_penalty": 0.0,
+      "causal_narrative": "",
+      "breadth_score": 2,
+      "persistence_days": 0.0
+    }
+  ],
+  "utility-capex-supercycle": [
+    {
+      "id": "utility-capex-supercycle",
+      "name": "Utility Capex Supercycle",
+      "description": "Structural load growth from electrification and data centres is ending two decades of flat power demand, driving regulated rate-base expansion that compounds utility earnings growth well above the historical GDP-linked trend.",
+      "signal_strength": "medium",
+      "confidence": 51,
+      "momentum_direction": "neutral",
+      "related_industries": [
+        "Utilities",
+        "Energy",
+        "Industrials"
+      ],
+      "related_assets": [
+        "NEE",
+        "SO",
+        "DUK",
+        "AEP",
+        "XEL"
+      ],
+      "related_macro_factors": [
+        "Rate-Base Growth",
+        "Load Growth Forecast",
+        "Allowed ROE",
+        "Electrification Demand"
+      ],
+      "contributing_cluster_ids": [
+        "p1",
+        "p2"
+      ],
+      "contributing_story_count": 2,
+      "second_order_effects": [
+        "Load growth ends the decoupling era. Utilities re-rate from bond-proxy defensives toward structural earnings compounders",
+        "Rising capital plans pressure balance sheets, lifting equity-issuance and putting the allowed-ROE regulatory debate in focus",
+        "Demand visibility from data-centre anchor load reduces the regulatory risk premium embedded in utility multiples",
+        "Capex intensity favours utilities with constructive regulatory jurisdictions and large interconnection pipelines"
+      ],
+      "podcast_topics": [
+        "Markets",
+        "Macro"
+      ],
+      "last_updated": "2026-07-25T18:00:00+00:00",
+      "relationship_weights": {
+        "Utilities": {
+          "weight": 0.95,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Energy": {
+          "weight": 0.55,
+          "type": "macro_overlap",
+          "direction": "positive"
+        },
+        "Industrials": {
+          "weight": 0.48,
+          "type": "indirect",
+          "direction": "positive"
+        }
+      },
+      "confidence_label": "Moderate",
+      "signal_quality": "developing",
+      "evidence_count": 2,
+      "persistence_score": 20,
+      "volatility_score": 0,
+      "cross_category_confirmed": false,
+      "momentum_label": "emerging",
+      "momentum_delta": 0,
+      "persistence_cycles": 1,
+      "competition_penalty": 0.0,
+      "causal_narrative": "",
+      "breadth_score": 2,
+      "persistence_days": 0.0
+    }
+  ],
+  "semiconductor-capex-cycle": [
+    {
+      "id": "semiconductor-capex-cycle",
+      "name": "Silicon Sovereignty Capex",
+      "description": "AI-driven chip demand and export-control-induced supply concentration are sustaining an elevated semiconductor equipment investment cycle, with TSMC capacity expansion and domestic-fab subsidies creating multi-year earnings visibility for the equipment-and-materials stack.",
+      "signal_strength": "strong",
+      "confidence": 43,
+      "momentum_direction": "neutral",
+      "related_industries": [
+        "Semiconductors",
+        "Software",
+        "Energy",
+        "Real Estate"
+      ],
+      "related_assets": [
+        "NVDA",
+        "AMD",
+        "ASML",
+        "MU",
+        "AMAT"
+      ],
+      "related_macro_factors": [
+        "AI Capex Supercycle",
+        "Export Control Regime",
+        "GPU Supply Stack",
+        "TSMC Yield Ramp"
+      ],
+      "contributing_cluster_ids": [
+        "p1",
+        "p2"
+      ],
+      "contributing_story_count": 2,
+      "second_order_effects": [
+        "Semiconductor equipment makers benefit from both domestic-fab subsidies and TSMC capacity expansion in their key markets",
+        "Export controls concentrate leading-edge foundry share at TSMC, creating strategic concentration risk and domestic-fab urgency",
+        "Memory upcycle creates an earnings inflection for DRAM and NAND producers with inventory normalisation well-progressed",
+        "Advanced packaging demand creates incremental revenue for substrate and materials suppliers not captured in chip-level metrics"
+      ],
+      "podcast_topics": [
+        "Tech / AI",
+        "Company"
+      ],
+      "last_updated": "2026-07-25T18:00:00+00:00",
+      "relationship_weights": {
+        "Semiconductors": {
+          "weight": 0.97,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Software": {
+          "weight": 0.75,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Real Estate": {
+          "weight": 0.5,
+          "type": "indirect",
+          "direction": "positive"
+        },
+        "Energy": {
+          "weight": 0.38,
+          "type": "macro_overlap",
+          "direction": "positive"
+        }
+      },
+      "confidence_label": "Moderate",
+      "signal_quality": "developing",
+      "evidence_count": 2,
+      "persistence_score": 20,
+      "volatility_score": 0,
+      "cross_category_confirmed": false,
+      "momentum_label": "emerging",
+      "momentum_delta": 0,
+      "persistence_cycles": 1,
+      "competition_penalty": 0.0,
+      "causal_narrative": "Silicon Sovereignty Capex \u2192 AI Compute Arms Race",
+      "breadth_score": 2,
+      "persistence_days": 0.0
+    },
+    {
+      "id": "ai-compute-arms-race",
+      "name": "AI Compute Arms Race",
+      "description": "Frontier-model labs and hyperscalers are committing to multi-gigawatt training clusters faster than accelerator supply can scale, turning raw compute access into the binding competitive constraint and a durable demand floor under the entire AI hardware stack.",
+      "signal_strength": "medium",
+      "confidence": 43,
+      "momentum_direction": "neutral",
+      "related_industries": [
+        "Semiconductors",
+        "Software",
+        "Utilities",
+        "Energy"
+      ],
+      "related_assets": [
+        "NVDA",
+        "AVGO",
+        "AMD",
+        "MSFT",
+        "ORCL"
+      ],
+      "related_macro_factors": [
+        "AI Capex Supercycle",
+        "GPU Supply Stack",
+        "Accelerator Lead Times",
+        "Frontier Model Scaling"
+      ],
+      "contributing_cluster_ids": [
+        "p1",
+        "p2"
+      ],
+      "contributing_story_count": 2,
+      "second_order_effects": [
+        "Compute access becomes the binding moat. Frontier capability now tracks GPU allocation more tightly than algorithmic edge",
+        "Multi-year accelerator purchase commitments create a demand floor that decouples chip revenue from the broader tech cycle",
+        "Custom-silicon (TPU, Trainium, MTIA) investment accelerates as hyperscalers seek to escape single-vendor pricing power",
+        "Training-cluster scale pulls forward power-procurement and data-centre siting decisions years ahead of grid capacity"
+      ],
+      "podcast_topics": [
+        "Tech / AI",
+        "Markets"
+      ],
+      "last_updated": "2026-07-25T18:00:00+00:00",
+      "relationship_weights": {
+        "Semiconductors": {
+          "weight": 0.96,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Software": {
+          "weight": 0.82,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Utilities": {
+          "weight": 0.6,
+          "type": "indirect",
+          "direction": "positive"
+        },
+        "Energy": {
+          "weight": 0.45,
+          "type": "macro_overlap",
+          "direction": "positive"
+        }
+      },
+      "confidence_label": "Moderate",
+      "signal_quality": "developing",
+      "evidence_count": 2,
+      "persistence_score": 20,
+      "volatility_score": 0,
+      "cross_category_confirmed": false,
+      "momentum_label": "emerging",
+      "momentum_delta": 0,
+      "persistence_cycles": 1,
+      "competition_penalty": 0.0,
+      "causal_narrative": "Silicon Sovereignty Capex \u2192 AI Compute Arms Race",
+      "breadth_score": 2,
+      "persistence_days": 0.0
+    }
+  ],
+  "glp1-healthcare-revolution": [
+    {
+      "id": "glp1-healthcare-revolution",
+      "name": "Metabolic Disease Repricing",
+      "description": "The GLP-1 drug class is forcing a structural re-rating of healthcare subsectors as the market reprices the long-run prevalence of obesity-related comorbidities, with second-order volume headwinds hitting medical devices and surgical-volume chains.",
+      "signal_strength": "strong",
+      "confidence": 74,
+      "momentum_direction": "neutral",
+      "related_industries": [
+        "Healthcare",
+        "Consumer"
+      ],
+      "related_assets": [
+        "LLY",
+        "NVO",
+        "UNH",
+        "ABBV"
+      ],
+      "related_macro_factors": [
+        "FDA Pipeline Calendar",
+        "GLP-1 Market Penetration",
+        "Drug Pricing Policy",
+        "IRA Impact"
+      ],
+      "contributing_cluster_ids": [
+        "p2",
+        "p1"
+      ],
+      "contributing_story_count": 2,
+      "second_order_effects": [
+        "Medical device makers face structural volume headwinds as obesity drugs reduce the incidence of surgical intervention at scale",
+        "Food and beverage companies face a secular demand-mix shift as GLP-1-treated patients reduce caloric consumption",
+        "Health insurers benefit from reduced obesity-related comorbidity costs, but near-term drug cost inflation creates a transitory headwind",
+        "AI drug discovery investment accelerates as GLP-1 commercial success validates large-molecule platform economics"
+      ],
+      "podcast_topics": [
+        "Company",
+        "Markets"
+      ],
+      "last_updated": "2026-07-25T18:00:00+00:00",
+      "relationship_weights": {
+        "Healthcare": {
+          "weight": 0.95,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Consumer": {
+          "weight": 0.41,
+          "type": "indirect",
+          "direction": "negative"
+        },
+        "Financials": {
+          "weight": 0.28,
+          "type": "narrative",
+          "direction": "positive"
+        }
+      },
+      "confidence_label": "Elevated",
+      "signal_quality": "developing",
+      "evidence_count": 2,
+      "persistence_score": 20,
+      "volatility_score": 0,
+      "cross_category_confirmed": false,
+      "momentum_label": "emerging",
+      "momentum_delta": 0,
+      "persistence_cycles": 1,
+      "competition_penalty": 0.0,
+      "causal_narrative": "",
+      "breadth_score": 2,
+      "persistence_days": 0.0
+    }
+  ],
+  "defense-reindustrialization": [
+    {
+      "id": "defense-reindustrialization",
+      "name": "NATO Rearmament Cycle",
+      "description": "Sustained NATO spending commitments above 2% of GDP and persistent geopolitical escalation are driving a multi-year defence procurement expansion that is structurally decoupled from the economic cycle.",
+      "signal_strength": "strong",
+      "confidence": 62,
+      "momentum_direction": "neutral",
+      "related_industries": [
+        "Aerospace & Defense",
+        "Industrials",
+        "Semiconductors",
+        "Energy"
+      ],
+      "related_assets": [
+        "LMT",
+        "RTX",
+        "NOC",
+        "GD"
+      ],
+      "related_macro_factors": [
+        "NATO Budget Mandates",
+        "Defence Backlog",
+        "NDAA Authorisation",
+        "Geopolitical Risk Premium"
+      ],
+      "contributing_cluster_ids": [
+        "p1",
+        "p2"
+      ],
+      "contributing_story_count": 2,
+      "second_order_effects": [
+        "Multi-year order books create durable earnings visibility structurally decoupled from the economic cycle",
+        "European defence consolidation creates M&A activity among second-tier contractors seeking scale for large-programme bids",
+        "Rare-earth and critical-mineral supply chains for defence hardware face strategic stockpiling pressure and supply-chain friend-shoring",
+        "Dual-use semiconductor and drone technology creates cross-sector earnings leverage between civil and defence procurement"
+      ],
+      "podcast_topics": [
+        "Geopolitical",
+        "Markets"
+      ],
+      "last_updated": "2026-07-25T18:00:00+00:00",
+      "relationship_weights": {
+        "Aerospace & Defense": {
+          "weight": 0.97,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Industrials": {
+          "weight": 0.82,
+          "type": "direct",
+          "direction": "positive"
+        },
+        "Semiconductors": {
+          "weight": 0.54,
+          "type": "indirect",
+          "direction": "positive"
+        },
+        "Energy": {
+          "weight": 0.38,
+          "type": "macro_overlap",
+          "direction": "positive"
+        }
+      },
+      "confidence_label": "Elevated",
+      "signal_quality": "developing",
+      "evidence_count": 2,
+      "persistence_score": 20,
+      "volatility_score": 0,
+      "cross_category_confirmed": false,
+      "momentum_label": "emerging",
+      "momentum_delta": 0,
+      "persistence_cycles": 1,
+      "competition_penalty": 0.0,
+      "causal_narrative": "",
+      "breadth_score": 2,
+      "persistence_days": 0.0
+    }
+  ]
+}

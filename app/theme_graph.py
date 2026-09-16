@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from app.data.theme_ontology import THEME_ONTOLOGY, THEME_CATALOG  # noqa: F401
 from app.causal_chain import build_causal_narrative
 from app.language_quality import score_text_quality
+from app.companies import COMPANY_REGISTRY, resolve_companies
 
 log = logging.getLogger(__name__)
 
@@ -389,6 +390,7 @@ def extract_themes(
     # diagnostics counters (observability only)
     _diag_candidates = 0
     _diag_suppressed: dict[str, int] = {}
+    resolved_by_item: dict[int, set[str]] = {}
 
     # ── Pass 1: keyword / entity scoring ─────────────────────────────────────
     for theme_id, cfg in THEME_CATALOG.items():
@@ -412,11 +414,28 @@ def extract_themes(
             snippet_n = _norm(getattr(item, "snippet", "") or "")
             entities  = {e.upper() for e in (getattr(item, "affected_entities", None) or [])}
 
+            # RC3-TM1a: ontology tickers must satisfy the same company-context
+            # rule as event entities. Lowercasing "so" or "cost" must not
+            # create SO/COST exposure. Resolve once per primary, not per theme.
+            item_key = id(item)
+            if item_key not in resolved_by_item:
+                resolved_by_item[item_key] = set(resolve_companies(
+                    f"{getattr(item, 'title', '') or ''} {getattr(item, 'snippet', '') or ''}",
+                    entities=getattr(item, "affected_entities", None) or [],
+                    limit=len(COMPANY_REGISTRY),
+                ))
+            grounded_entities = [
+                e for e in theme_entities
+                if e not in COMPANY_REGISTRY or e in resolved_by_item[item_key]
+            ]
+
             raw = 0.0
 
             # Entity overlap
-            entity_hits = sum(1 for e in theme_entities if e.upper() in entities)
-            for tkr in theme_entities:
+            # Preserve the existing hit arithmetic and non-ticker ontology
+            # terms. This gate neither adds alias matches nor changes keywords.
+            entity_hits = sum(1 for e in grounded_entities if e.upper() in entities)
+            for tkr in grounded_entities:
                 tkr_n = f" {tkr.lower()} "
                 if tkr_n in title_n or tkr_n in snippet_n:
                     entity_hits += 1
