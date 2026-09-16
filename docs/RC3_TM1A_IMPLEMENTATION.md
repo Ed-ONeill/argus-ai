@@ -7,6 +7,10 @@ at 2026-09-16 02:21:00 UTC and backend at 02:24:36 UTC. The browser client block
 direct authenticated `/api/feed/` navigation; fresh source-to-membership controls
 are therefore not claimed as verified. This slice is not closed.
 
+After both services succeeded, the authenticated Iran-munitions Event loaded and
+retained its BBC/FT evidence with `2 source labels, 2 qualified`. This is a bounded
+post-deployment UI smoke check, not a collision-control or fresh-cycle closure.
+
 ## Boundary
 
 One runtime file changes: `app/theme_graph.py`. A registry ticker must be
