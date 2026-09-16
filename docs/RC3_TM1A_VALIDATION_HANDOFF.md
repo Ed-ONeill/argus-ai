@@ -1,6 +1,8 @@
 # A1: TM1a production validation handoff
 
-Status: BLOCKED ON VALIDATION ACCESS, NOT CLOSED.
+Status: COMPLETED 2026-09-16. This historical handoff was fulfilled by user-supplied
+matched cycle-139 responses. See [closure record](RC3_TM1A_CLOSURE.md). The access
+blocker described below records the earlier attempt, not current milestone status.
 
 Implementation `01301d2` is deployed. Backend deployment succeeded at
 2026-09-16 02:24:36 UTC. Local gates and previous authenticated UI smoke checks

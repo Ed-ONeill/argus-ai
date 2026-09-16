@@ -23,8 +23,8 @@ exactly why. Governing direction: user-supplied phase plan, accepted 2026-09-15.
 
 | Milestone | Outcome required | Current status |
 |---|---|---|
-| A1 / TM1a | Fresh post-deployment full-cycle ticker-collision negative and legitimate-company positive controls, traced source to membership, with evidence checks | Implemented/deployed; validation blocked by browser-client API access |
-| A2 / TM1b | Read-only generic/entity/multiple-specific-term diagnosis, reviewed relevance labels, then a separately scoped correction and production validation | Not started under this phase plan |
+| A1 / TM1a | Fresh post-deployment full-cycle ticker-collision negative and legitimate-company positive controls, traced source to membership, with evidence checks | CLOSED 2026-09-16; exact cycle-139 snapshot and bounded controls validated |
+| A2 / TM1b | Read-only generic/entity/multiple-specific-term diagnosis, reviewed relevance labels, then a separately scoped correction and production validation | NOT STARTED; awaiting user approval for read-only diagnosis |
 | A3 / DI1 | Direct participants and contextual exposures have distinct, tested source-to-display contracts | Not started |
 | A4 / MI1 | Instrument, proxy role, unit, and observation date are honest everywhere affected | Not started |
 | A5 / MA1 | Transaction existence, type, and lifecycle are distinct; unknown is valid | Not started |
@@ -33,8 +33,8 @@ exactly why. Governing direction: user-supplied phase plan, accepted 2026-09-15.
 | O1 / Release gates | Existing tests/checks run reproducibly before release; release revision and rollback are recorded | Prior gates run locally; automation not implemented |
 | O2 / Pipeline health | Liveness, readiness, freshness, source coverage, and archive outcomes have separate truthful operational states | Separate read-only ticket prepared; no runtime change |
 
-The immediate stop is A1. Human review preparation and the operational ticket can
-progress independently, but TM1b does not bypass the A1 closure requirement.
+A1 is complete; stop at this milestone and request user approval before starting
+TM1b read-only diagnosis. Its later implementation remains a separate decision.
 
 Phase 1 exit: each semantic milestone has its own validated closure; the reviewed
 benchmark and release/operational gates have explicit evidence. Report incomplete

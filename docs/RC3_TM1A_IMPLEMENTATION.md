@@ -1,11 +1,14 @@
 # RC3-TM1a: Resolver-grounded ticker contributions
 
-Status: IMPLEMENTED / DEPLOYED / PENDING FRESH-CYCLE PRODUCTION VALIDATION.
+Status: CLOSED - IMPLEMENTED / DEPLOYED / FRESH-CYCLE PRODUCTION VALIDATED.
+
+Milestone A1 closed 2026-09-16 using the exact cycle-139 feed/status snapshot and
+bounded semantic controls. See [closure record](RC3_TM1A_CLOSURE.md).
 
 Implementation: `01301d2`. Railway deployment statuses succeeded for the frontend
-at 2026-09-16 02:21:00 UTC and backend at 02:24:36 UTC. The browser client blocked
-direct authenticated `/api/feed/` navigation; fresh source-to-membership controls
-are therefore not claimed as verified. This slice is not closed.
+at 2026-09-16 02:21:00 UTC and backend at 02:24:36 UTC. The browser client initially
+blocked direct authenticated `/api/feed/` navigation. The user subsequently
+supplied the exact matched production responses, resolving that validation blocker.
 
 After both services succeeded, the authenticated Iran-munitions Event loaded and
 retained its BBC/FT evidence with `2 source labels, 2 qualified`. This is a bounded
@@ -55,7 +58,7 @@ ordering, and admission/folding outcomes. Those effects need fresh-cycle review.
 - Production build passed. No frontend runtime edits.
 - Existing `frontend/tsconfig.tsbuildinfo` preserved, not included in the commit.
 
-## Production validation required
+## Production validation contract, now satisfied within recorded bounds
 
 After the backend deployment and a successful full refresh, inspect a current
 ordinary-word collision control and a legitimate direct-company/theme control.
@@ -63,8 +66,8 @@ Trace primary title/snippet and resulting memberships, not just a missing chip.
 Check evidence preservation and unexpected downstream event-count changes. An
 authenticated rendered UI smoke check alone does not prove the matcher correction.
 
-Keep this slice pending until those controls can be observed. Do not rewrite old
-persisted events to manufacture a pass. Do not bundle generic keyword policy,
+The closure records the observed controls and their limitations. No old persisted
+events were rewritten to manufacture a pass. Do not bundle generic keyword policy,
 direct/contextual exposure, instrument identity, M&A, Home, OP1.2, or historical
 remediation into this release.
 
