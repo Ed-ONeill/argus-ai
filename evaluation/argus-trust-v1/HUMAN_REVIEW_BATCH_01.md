@@ -12,7 +12,7 @@ Return judgments by packet ID or edit the fields below. Identify the human revie
 
 **Pay raises keep shrinking. Here’s how much smaller they’ll be next year.**
 
-Source: MarketWatch | Published: 07/25/2026 13:03:00
+Source: MarketWatch | Published: 2026-07-25T17:03:00+00:00
 
 [Original source](https://www.marketwatch.com/story/pay-raises-keep-shrinking-heres-how-much-smaller-theyll-be-next-year-3fa51395?mod=mw_rss_topstories)
 
@@ -38,7 +38,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Zelensky tries to fix crisis over removal of defence minister and counts the cost**
 
-Source: BBC World | Published: 07/24/2026 19:01:06
+Source: BBC World | Published: 2026-07-24T23:01:06+00:00
 
 [Original source](https://www.bbc.co.uk/news/articles/c1d1gz3n99ro?at_medium=RSS&at_campaign=rss)
 
@@ -64,7 +64,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **EU review of airline ownership rules clouds Apollo’s £5.7bn easyJet bid**
 
-Source: FT Deals | Published: 07/22/2026 11:48:01
+Source: FT Deals | Published: 2026-07-22T15:48:01+00:00
 
 [Original source](https://www.ft.com/content/8c3a155b-03c0-4034-9403-839674a3df9e?syn-25a6b1a6=1)
 
@@ -74,7 +74,7 @@ Reference: observation:c845c6b635a8c64f72d0, retained ledger line 74, content ha
 
 **EU review of airline ownership rules could complicate Apollo’s easyJet takeover bid**
 
-Source: PE Wire | Published: 07/23/2026 06:07:25
+Source: PE Wire | Published: 2026-07-23T10:07:25+00:00
 
 [Original source](https://www.privateequitywire.co.uk/eu-review-of-airline-ownership-rules-could-complicate-apollos-easyjet-takeover-bid/)
 
@@ -100,7 +100,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Trump plans generic drug tariffs from 2028 with two-year delay testing U.S. onshoring push**
 
-Source: CNBC Economy | Published: 07/22/2026 02:28:08
+Source: CNBC Economy | Published: 2026-07-22T06:28:08+00:00
 
 [Original source](https://www.cnbc.com/2026/07/22/trump-generic-drugs-tariffs-medicine-trade-.html)
 
@@ -126,7 +126,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Ukraine Seeks 30-Year Energy Pact With Canada, Minister Says**
 
-Source: Bloomberg Markets | Published: 07/25/2026 05:07:34
+Source: Bloomberg Markets | Published: 2026-07-25T09:07:34+00:00
 
 [Original source](https://www.bloomberg.com/news/articles/2026-07-25/ukraine-seeks-30-year-energy-pact-with-canada-minister-says)
 
@@ -152,7 +152,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Intern arrested on suspicion of spying at Nato military HQ**
 
-Source: FT Companies | Published: 07/25/2026 05:22:40
+Source: FT Companies | Published: 2026-07-25T09:22:40+00:00
 
 [Original source](https://www.ft.com/content/b55e3656-4733-4eb8-bb83-b7dbb4ea8888?syn-25a6b1a6=1)
 
@@ -178,7 +178,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Blackstone, KKR and Brookfield take Kuwait pipelines stake in $16bn deal**
 
-Source: FT Companies | Published: 07/25/2026 04:44:03
+Source: FT Companies | Published: 2026-07-25T08:44:03+00:00
 
 [Original source](https://www.ft.com/content/780bc4bb-1916-4fe2-ad2b-22663c66f16e?syn-25a6b1a6=1)
 
@@ -204,7 +204,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Over 250,000 People Flee Wildfires Ravaging France and Spain**
 
-Source: Bloomberg Markets | Published: 07/25/2026 04:49:50
+Source: Bloomberg Markets | Published: 2026-07-25T08:49:50+00:00
 
 [Original source](https://www.bloomberg.com/news/articles/2026-07-25/bordeaux-suburbs-at-risk-as-200-000-flee-fires-in-france-spain)
 
@@ -214,7 +214,7 @@ Reference: observation:ec6c7e00fd98f3ce5dfe, retained ledger line 26, content ha
 
 **More than 250,000 flee wildfires in France and Spain**
 
-Source: BBC World | Published: 07/25/2026 13:13:40
+Source: BBC World | Published: 2026-07-25T17:13:40+00:00
 
 [Original source](https://www.bbc.co.uk/news/articles/cd7le0d53y2o?at_medium=RSS&at_campaign=rss)
 
@@ -240,7 +240,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **NVDA 8-K — Results of Operations and Financial Condition**
 
-Source: SEC Filings | Published: 05/20/2026 16:21:19
+Source: SEC Filings | Published: 2026-05-20T20:21:19+00:00
 
 [Original source](https://www.sec.gov/Archives/edgar/data/1045810/000104581026000051/0001045810-26-000051-index.htm)
 
@@ -266,7 +266,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **China posts slowest quarterly growth since 2022 as investment slumps, fanning stimulus calls**
 
-Source: CNBC Economy | Published: 07/15/2026 01:14:11
+Source: CNBC Economy | Published: 2026-07-15T05:14:11+00:00
 
 [Original source](https://www.cnbc.com/2026/07/15/china-gdp-retail-sales-investment-june-.html)
 
@@ -292,7 +292,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Wholesale prices unexpectedly declined 0.3% in June on big drop in gasoline**
 
-Source: CNBC Economy | Published: 07/15/2026 10:22:48
+Source: CNBC Economy | Published: 2026-07-15T14:22:48+00:00
 
 [Original source](https://www.cnbc.com/2026/07/15/wholesale-inflation-june-2026-.html)
 
@@ -318,7 +318,7 @@ Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements
 
 **Buyout groups hunt for software bargains after ‘SaaS-pocalypse’**
 
-Source: FT Deals | Published: 07/23/2026 00:00:21
+Source: FT Deals | Published: 2026-07-23T04:00:21+00:00
 
 [Original source](https://www.ft.com/content/d331c1f5-27c0-4d5a-a4ab-7a52e1119cc5?syn-25a6b1a6=1)
 
@@ -339,4 +339,3 @@ Reference: observation:1f912cddde1a0a9f5bbd, retained ledger line 71, content ha
 | Required abstention / information missing | |
 
 Human reviewer: _____ | Date: _____ | Approved dimensions: _____ | Disagreements / further evidence needed: _____
-
