@@ -206,11 +206,30 @@ export function buildWhoAffected(ev: MarketEvent, linked: ThemeIntelligence[]): 
   return { directional: beneficiaries.length > 0 || losers.length > 0, beneficiaries, losers, companies, industries, markets };
 }
 
+// RC3-ET1a — event-anchored chain gate (explicitly authorized narrow edit to the frozen
+// Event surface). The selected chain displays ONLY when at least one of its company
+// exposure-target nodes matches a directly resolved entity of THIS event
+// (companies_direct: resolver-named from the event's own text — a strict subset of
+// `companies`, which also carries theme-injected assets and must never ground a chain).
+// Identity is the canonical ticker segment of the company uid, the same convention
+// actorFromUid renders; unresolved names never match; missing or empty direct data fails
+// closed. A conservative display gate: candidate generation, ordering, and selection are
+// untouched, no alternative chain is sought, and passing says only that the event names
+// one exposed company — not that every node or edge is causally supported.
+function chainGroundedInEvent(ev: MarketEvent, hops: TransmissionHop[]): boolean {
+  const direct = new Set((ev.companies_direct ?? []).map((c) => c.trim().toUpperCase()).filter(Boolean));
+  if (direct.size === 0) return false;
+  return hops.some((h) => {
+    const uid = h.target_uid ?? "";
+    return uid.startsWith("company:") && direct.has((uid.split(":").pop() ?? "").trim().toUpperCase());
+  });
+}
+
 export function buildWhyCare(ev: MarketEvent, explanation: Explanation | null, who: WhoAffected): WhyCare | null {
   const pos = sectionData<{ chains?: { hops: TransmissionHop[] }[] }>(explanation?.sections.position);
   const hops = ev.transmission_chain?.length ? ev.transmission_chain : (pos?.chains?.[0]?.hops ?? []);
   const chain = buildChain(hops);
-  if (chain.length >= 2) {
+  if (chain.length >= 2 && chainGroundedInEvent(ev, hops)) {
     // Label-agnostic phrasing: no verb is conjugated against an arbitrary market label, so
     // singular ("the Fed") and plural ("Risk-off flows") subjects both read correctly.
     return { read: `The connection runs from ${chain[0].label} to ${chain[chain.length - 1].label}.`, chain };

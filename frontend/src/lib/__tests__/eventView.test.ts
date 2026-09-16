@@ -169,27 +169,38 @@ describe("copy correctness (F1-F3 regressions)", () => {
   });
 
   // F2 — no verb is conjugated against a market label; singular and plural both read correctly.
+  // (RC3-ET1a: the fixture chain now ends on a directly named company so it passes the
+  // event-anchoring gate; the plural-subject copy rule under test is unchanged.)
   it("phrases the causal read and watch label-agnostically for a plural subject", () => {
-    const v = ev({ events: [event({ id: "s2", event_type: "policy", title: "Fresh sanctions land",
-      transmission_chain: [{ source_uid: "driver:sanctions", relationship: "pressures", target_uid: "driver:oil-supply", rel_uid: "r", basis: "recorded_graph", strength: null, confidence: null, source_label: "Sanctions" }] })] }, "s2");
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from Sanctions to Oil supply.");
-    expect(v.watch).toContain("Watch whether the link between Sanctions and Oil supply persists.");
+    const v = ev({ events: [event({ id: "s2", event_type: "policy", title: "Fresh sanctions land", companies_direct: ["XOM"],
+      transmission_chain: [
+        { source_uid: "driver:sanctions", relationship: "pressures", target_uid: "driver:oil-supply", rel_uid: "r", basis: "recorded_graph", strength: null, confidence: null, source_label: "Sanctions" },
+        { source_uid: "theme:energy", relationship: "exposed_to", target_uid: "company:ticker:XOM", rel_uid: "r2", basis: "curated_ontology", strength: null, confidence: null, source_label: null },
+      ] })] }, "s2");
+    expect(v.whyInvestorsCare!.read).toBe("The connection runs from Sanctions to XOM.");
+    expect(v.whyInvestorsCare!.chain.map((c) => c.label)).toEqual(["Sanctions", "Oil supply", "XOM"]);
+    expect(v.watch).toContain("Watch whether the link between Sanctions and XOM persists.");
     expect([v.whyInvestorsCare!.read, ...v.watch].join(" ")).not.toMatch(/feeds|keeps feeding/);
   });
 
   // F3 — a label leading a sentence is capitalized for display but preserved verbatim
   // ("the Fed") wherever it is not sentence-initial; the canonical label is never mutated.
+  // (RC3-ET1a: chain grounded on a directly named company; the capitalization rules
+  // under test — sentence-start capitalized, mid-sentence verbatim — are unchanged.)
   it("capitalizes a label at sentence start without mutating it elsewhere", () => {
-    const FED = event({ id: "fed2", event_type: "macro", title: "Fed holds rates steady",
-      transmission_chain: [{ source_uid: "driver:fed", relationship: "drives", target_uid: "driver:treasury-yields", rel_uid: "r", basis: "recorded_graph", strength: null, confidence: null, source_label: "the Fed" }] });
+    const FED = event({ id: "fed2", event_type: "macro", title: "Fed holds rates steady", companies_direct: ["JPM"],
+      transmission_chain: [
+        { source_uid: "driver:fed", relationship: "drives", target_uid: "driver:treasury-yields", rel_uid: "r", basis: "recorded_graph", strength: null, confidence: null, source_label: "the Fed" },
+        { source_uid: "theme:rates", relationship: "exposed_to", target_uid: "company:ticker:JPM", rel_uid: "r2", basis: "curated_ontology", strength: null, confidence: null, source_label: null },
+      ] });
     const dossier: EventDossier = {
       kind: "event", uid: "event:cluster:fed2", clusterId: "fed2", found: true, event: FED, executive: [], watch: [],
       explanation: { sections: { counter: { status: "available", note: "", data: { searched: [], items: [{ kind: "recorded_pressure", source_label: "the Fed", theme: "", basis: "recorded_graph" }] } } } } as unknown as Explanation,
     };
     const v = buildEventView(dossier, feed({}))!;
-    expect(v.theOtherSide).toEqual(["The Fed could weigh against it."]);                        // sentence-start: capitalized
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from the Fed to Treasury yields.");  // mid-sentence: verbatim
-    expect(v.whyInvestorsCare!.chain[0].label).toBe("the Fed");                                 // canonical label untouched
+    expect(v.theOtherSide).toEqual(["The Fed could weigh against it."]);            // sentence-start: capitalized
+    expect(v.whyInvestorsCare!.read).toBe("The connection runs from the Fed to JPM.");  // mid-sentence: verbatim
+    expect(v.whyInvestorsCare!.chain[0].label).toBe("the Fed");                     // canonical label untouched
   });
 });
 
