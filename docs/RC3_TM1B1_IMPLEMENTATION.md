@@ -1,6 +1,6 @@
 # RC3-TM1b1: consumer-stress spending qualification
 
-Status: IMPLEMENTED / LOCAL GATES PASSED / DEPLOYMENT AND FRESH VALIDATION PENDING.
+Status: IMPLEMENTED / LOCAL GATES PASSED / DEPLOYED / FRESH SEMANTIC VALIDATION PENDING.
 
 Recorded 2026-09-23 UTC (2026-09-22 America/New_York). The user accepted the
 23-judgment human-review milestone and explicitly authorized TM1b1 implementation,
@@ -138,11 +138,34 @@ documentation commit, keeping the runtime correction independently reversible.
 
 ## Release and production validation
 
-Implementation SHA and deployment result will be recorded after release. Railway
-is the existing deployment provider; deploy from the configured repository branch
-without changing production configuration. The dashboard currently reports an
-outstanding balance while both services are online; no billing action is part
-of this task.
+Implementation: `0b1acc082393f37cd7a3be4f49bccf17f9531393`. Accepted diagnosis/review:
+`d75769e`. Both were pushed to `main` and `codex/argus-audit-2026-09-15` through a
+normal fast-forward push. Railway's backend Source settings confirmed the
+production branch is `main`; no configuration was changed. The release detail
+links to this exact implementation SHA.
+
+Deployment records:
+
+- [Backend release](https://railway.com/project/7d210700-5209-4fea-987a-b43e3bd60b2f/service/1ff459b1-df94-44b4-92d6-e763297bc97e?environmentId=defe6ba2-6283-44d5-a6a5-1441aa259087&id=8589a2e9-11a0-482e-8199-1fa62e156445).
+- [Frontend automatic release](https://railway.com/project/7d210700-5209-4fea-987a-b43e3bd60b2f/service/700d880b-adcc-4480-9aea-b84c951013c3?environmentId=defe6ba2-6283-44d5-a6a5-1441aa259087&id=f6350719-def1-45a6-9074-44eca642f9ee).
+
+Both builds started at 2026-09-22 23:31 EDT. Both reached **Deployment successful**
+and the implementation release is Active. Backend startup logs identify the
+current deployment as `8589a2e9-11a0-482e-8199-1fa62e156445`:
+
+- 2026-09-23 03:37:36 UTC: persistent-volume marker survived; storage writable.
+- 03:37:37 UTC: readiness passed for storage, enforced authentication/JWKS,
+  required environment and Supabase RLS. Full-feed pipeline started with empty
+  category/source filters.
+- 03:38:06.032 UTC: that pipeline logged DONE after 28.71 seconds, with 11 active
+  themes logged. This is operational evidence, not a matched control payload.
+- 03:38:09.349 UTC: the public backend `/api/health` returned HTTP 200 and
+  `{"status":"ok"}`.
+- Authenticated production Feed rendered after the frontend release.
+
+No exact provider completion timestamp is inferred from the start timestamp or
+poll time. The dashboard still reports an outstanding balance; no billing action
+was taken. It did not prevent this release.
 
 Production validation must inspect a successful post-deployment full cycle and
 an exact corporate-spending negative plus household-pressure positive. Require
@@ -151,6 +174,18 @@ and check unrelated memberships in those records. Absence from top five alone
 does not establish exclusion. If suitable controls/access are unavailable,
 leave production validation pending. Never manufacture production articles or
 rewrite historical records to obtain a pass.
+
+**Fresh corporate-negative / household-positive validation remains pending.**
+The authenticated Argus Home and Feed were accessible during release. Direct
+navigation to `https://argus-market-intelligence.com/api/feed/status` was blocked
+by the browser client (`net::ERR_BLOCKED_BY_CLIENT`). Thus this run has not
+obtained an exact matched post-deployment status/full-feed pair or established
+both required fresh controls. Page rendering and the successful pipeline log
+alone do not satisfy the fresh-control requirement. A later capture must use
+normal authenticated response bodies only, with no cookies or access tokens.
+No unrelated production-membership preservation claim is made without those
+records; that property is established only in the focused fixtures and retained
+replays. TM1b1 is not marked closed and no later milestone was started.
 
 ## Limits and rollback
 

@@ -24,7 +24,7 @@ exactly why. Governing direction: user-supplied phase plan, accepted 2026-09-15.
 | Milestone | Outcome required | Current status |
 |---|---|---|
 | A1 / TM1a | Fresh post-deployment full-cycle ticker-collision negative and legitimate-company positive controls, traced source to membership, with evidence checks | CLOSED 2026-09-16; exact cycle-139 snapshot and bounded controls validated |
-| A2 / TM1b | Read-only generic/entity/multiple-specific-term diagnosis, reviewed relevance labels, then a separately scoped correction and production validation | Diagnosis and 23/23 human review accepted 2026-09-22; TM1b1 implemented, local gates passed, deployment/fresh validation pending |
+| A2 / TM1b | Read-only generic/entity/multiple-specific-term diagnosis, reviewed relevance labels, then a separately scoped correction and production validation | Diagnosis and 23/23 human review accepted 2026-09-22; TM1b1 `0b1acc0` implemented/deployed, 1,384 backend tests passed; fresh semantic controls pending |
 | A3 / DI1 | Direct participants and contextual exposures have distinct, tested source-to-display contracts | Not started |
 | A4 / MI1 | Instrument, proxy role, unit, and observation date are honest everywhere affected | Not started |
 | A5 / MA1 | Transaction existence, type, and lifecycle are distinct; unknown is valid | Not started |
