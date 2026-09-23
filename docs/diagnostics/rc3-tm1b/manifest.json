@@ -1,0 +1,16 @@
+{
+  "analysis_revision": "fe93a34",
+  "runtime_revision": "01301d2",
+  "annotation_status": "unreviewed",
+  "candidate_rows": 125,
+  "contribution_rows": 391,
+  "distinct_content_theme_pairs": 295,
+  "historical_replay_is_not_historical_runtime": true,
+  "source_hashes": {
+    "app\\theme_graph.py": "ef14be952c25bd002a6621cb10b07bad3e41e463be704ad959430f54cf80dfa8",
+    "app\\data\\theme_ontology.py": "0fb6586822ed132a8533943d8c6abec776dbff4cee84f87d49eecc649c671027",
+    "app\\companies.py": "4dfb83e127c05e48d3e52eb6c23c741f8f1889d52403b1bf0596c92d217e0319",
+    "evaluation\\argus-trust-v1\\candidates.jsonl": "164d2a0b5edffe5e936960517cea451be6db349872dc2f54d8a56086e6a80c6e",
+    "evaluation\\argus-trust-v1\\manifest.json": "80243fb9890fa03b553bd074d225c49f672b1570d32a852f2c35893e5719c287"
+  }
+}

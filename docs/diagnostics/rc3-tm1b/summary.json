@@ -1,0 +1,1298 @@
+{
+  "retained-0f875b7be67b": {
+    "clusters": 75,
+    "pair_count": 56,
+    "buckets": {
+      "entity_only": 22,
+      "generic_plus_entity": 9,
+      "specific_only": 4,
+      "generic_plus_specific": 6,
+      "generic_only": 13,
+      "generic_plus_entity_plus_specific": 2
+    },
+    "emitted_top_pairs": 43,
+    "emitted_generic_only": 8,
+    "emitted_single_generic_only": 8,
+    "actual_extractor_replay_equal": true,
+    "stored_snapshot_equals_current_replay": false,
+    "policies": {
+      "A": {
+        "eligible_pairs": 56,
+        "themes": 10,
+        "top_pairs": 43,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "defense-reindustrialization",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "direct-lending-expansion",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [],
+        "gained_top_pairs": []
+      },
+      "B": {
+        "eligible_pairs": 43,
+        "themes": 9,
+        "top_pairs": 34,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "direct-lending-expansion",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "87a29f5a632a"
+          ],
+          [
+            "ai-compute-arms-race",
+            "de6ac9b5f265"
+          ],
+          [
+            "defense-reindustrialization",
+            "4bd941f6896d"
+          ],
+          [
+            "defense-reindustrialization",
+            "5954250711bc"
+          ],
+          [
+            "defense-reindustrialization",
+            "f75c95b9df0f"
+          ],
+          [
+            "direct-lending-expansion",
+            "de6ac9b5f265"
+          ],
+          [
+            "private-capital-takeover",
+            "44057695f2a5"
+          ],
+          [
+            "private-capital-takeover",
+            "7e245817ec2b"
+          ],
+          [
+            "private-credit-expansion",
+            "7e245817ec2b"
+          ]
+        ],
+        "gained_top_pairs": []
+      },
+      "C": {
+        "eligible_pairs": 34,
+        "themes": 8,
+        "top_pairs": 27,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "direct-lending-expansion",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "87a29f5a632a"
+          ],
+          [
+            "ai-compute-arms-race",
+            "de6ac9b5f265"
+          ],
+          [
+            "ai-energy-demand",
+            "30f444a72dfe"
+          ],
+          [
+            "china-stimulus-rotation",
+            "03646040d196"
+          ],
+          [
+            "china-stimulus-rotation",
+            "26d7f041448b"
+          ],
+          [
+            "china-stimulus-rotation",
+            "5141b6633e0c"
+          ],
+          [
+            "china-stimulus-rotation",
+            "c2cc112b8a37"
+          ],
+          [
+            "china-stimulus-rotation",
+            "de07104f7c3b"
+          ],
+          [
+            "defense-reindustrialization",
+            "4bd941f6896d"
+          ],
+          [
+            "defense-reindustrialization",
+            "5954250711bc"
+          ],
+          [
+            "defense-reindustrialization",
+            "f75c95b9df0f"
+          ],
+          [
+            "direct-lending-expansion",
+            "de6ac9b5f265"
+          ],
+          [
+            "private-capital-takeover",
+            "44057695f2a5"
+          ],
+          [
+            "private-capital-takeover",
+            "7e245817ec2b"
+          ],
+          [
+            "private-credit-expansion",
+            "2019eb91c0fe"
+          ],
+          [
+            "private-credit-expansion",
+            "7e245817ec2b"
+          ],
+          [
+            "treasury-yield-pressure",
+            "36e35f2ad29e"
+          ],
+          [
+            "treasury-yield-pressure",
+            "bd2b11190d56"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de07104f7c3b"
+          ]
+        ],
+        "gained_top_pairs": [
+          [
+            "ai-energy-demand",
+            "ffeec6879917"
+          ],
+          [
+            "treasury-yield-pressure",
+            "a88fecd3b46c"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de6ac9b5f265"
+          ]
+        ]
+      },
+      "D": {
+        "eligible_pairs": 27,
+        "themes": 5,
+        "top_pairs": 16,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "nuclear-power-renaissance",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "26a2a64aad57"
+          ],
+          [
+            "ai-compute-arms-race",
+            "2a7dc3c3a5d2"
+          ],
+          [
+            "ai-compute-arms-race",
+            "30f444a72dfe"
+          ],
+          [
+            "ai-compute-arms-race",
+            "87a29f5a632a"
+          ],
+          [
+            "ai-compute-arms-race",
+            "de6ac9b5f265"
+          ],
+          [
+            "ai-energy-demand",
+            "2a7dc3c3a5d2"
+          ],
+          [
+            "ai-energy-demand",
+            "30f444a72dfe"
+          ],
+          [
+            "china-stimulus-rotation",
+            "03646040d196"
+          ],
+          [
+            "china-stimulus-rotation",
+            "26d7f041448b"
+          ],
+          [
+            "china-stimulus-rotation",
+            "5141b6633e0c"
+          ],
+          [
+            "china-stimulus-rotation",
+            "c2cc112b8a37"
+          ],
+          [
+            "china-stimulus-rotation",
+            "de07104f7c3b"
+          ],
+          [
+            "consumer-stress",
+            "26d7f041448b"
+          ],
+          [
+            "consumer-stress",
+            "2a7dc3c3a5d2"
+          ],
+          [
+            "consumer-stress",
+            "44057695f2a5"
+          ],
+          [
+            "consumer-stress",
+            "f16270208b97"
+          ],
+          [
+            "defense-reindustrialization",
+            "4bd941f6896d"
+          ],
+          [
+            "defense-reindustrialization",
+            "5954250711bc"
+          ],
+          [
+            "defense-reindustrialization",
+            "f75c95b9df0f"
+          ],
+          [
+            "direct-lending-expansion",
+            "1f14211ec0e3"
+          ],
+          [
+            "direct-lending-expansion",
+            "2019eb91c0fe"
+          ],
+          [
+            "direct-lending-expansion",
+            "de6ac9b5f265"
+          ],
+          [
+            "private-capital-takeover",
+            "2019eb91c0fe"
+          ],
+          [
+            "private-capital-takeover",
+            "44057695f2a5"
+          ],
+          [
+            "private-capital-takeover",
+            "7e245817ec2b"
+          ],
+          [
+            "private-credit-expansion",
+            "2019eb91c0fe"
+          ],
+          [
+            "private-credit-expansion",
+            "7e245817ec2b"
+          ],
+          [
+            "treasury-yield-pressure",
+            "36e35f2ad29e"
+          ],
+          [
+            "treasury-yield-pressure",
+            "8cf88fae1b30"
+          ],
+          [
+            "treasury-yield-pressure",
+            "bd2b11190d56"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de07104f7c3b"
+          ]
+        ],
+        "gained_top_pairs": [
+          [
+            "ai-energy-demand",
+            "de6ac9b5f265"
+          ],
+          [
+            "ai-energy-demand",
+            "ffeec6879917"
+          ],
+          [
+            "treasury-yield-pressure",
+            "a88fecd3b46c"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de6ac9b5f265"
+          ]
+        ]
+      }
+    },
+    "single_generic_word_only": 12,
+    "generic_token_frequency_pairs": {
+      "inflation": 3,
+      "anthropic": 1,
+      "openai": 1,
+      "ai": 6,
+      "credit": 1,
+      "military": 3,
+      "chinese": 3,
+      "blackstone": 1,
+      "private equity": 1,
+      "nuclear": 2,
+      "buyout": 2,
+      "apollo": 1,
+      "beijing": 2,
+      "china": 5,
+      "oil": 2,
+      "rates": 1,
+      "crude": 1
+    },
+    "generic_only_with_any_hints": 9,
+    "generic_only_with_theme_resolved_company_support": 0,
+    "single_generic_word_only_in_top": 7
+  },
+  "retained-9ac9473db0fa": {
+    "clusters": 54,
+    "pair_count": 58,
+    "buckets": {
+      "entity_only": 21,
+      "generic_plus_entity": 12,
+      "specific_only": 4,
+      "generic_only": 10,
+      "generic_plus_specific": 7,
+      "generic_plus_entity_plus_specific": 4
+    },
+    "emitted_top_pairs": 40,
+    "emitted_generic_only": 2,
+    "emitted_single_generic_only": 2,
+    "actual_extractor_replay_equal": true,
+    "stored_snapshot_equals_current_replay": false,
+    "policies": {
+      "A": {
+        "eligible_pairs": 58,
+        "themes": 11,
+        "top_pairs": 40,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "hyperscaler-capex",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [],
+        "gained_top_pairs": []
+      },
+      "B": {
+        "eligible_pairs": 48,
+        "themes": 10,
+        "top_pairs": 36,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "semiconductor-capex-cycle",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "hyperscaler-capex",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "8f2bf651e808"
+          ],
+          [
+            "energy-security",
+            "47f2c9548144"
+          ],
+          [
+            "energy-security",
+            "7964fd77f429"
+          ],
+          [
+            "energy-security",
+            "da477cb69c2a"
+          ]
+        ],
+        "gained_top_pairs": []
+      },
+      "C": {
+        "eligible_pairs": 41,
+        "themes": 10,
+        "top_pairs": 33,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "hyperscaler-capex",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "8f2bf651e808"
+          ],
+          [
+            "china-stimulus-rotation",
+            "03646040d196"
+          ],
+          [
+            "china-stimulus-rotation",
+            "26d7f041448b"
+          ],
+          [
+            "china-stimulus-rotation",
+            "8f2bf651e808"
+          ],
+          [
+            "china-stimulus-rotation",
+            "c2cc112b8a37"
+          ],
+          [
+            "china-stimulus-rotation",
+            "de07104f7c3b"
+          ],
+          [
+            "energy-security",
+            "da477cb69c2a"
+          ],
+          [
+            "treasury-yield-pressure",
+            "36e35f2ad29e"
+          ],
+          [
+            "treasury-yield-pressure",
+            "bd2b11190d56"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de07104f7c3b"
+          ]
+        ],
+        "gained_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "2010d85a752e"
+          ],
+          [
+            "treasury-yield-pressure",
+            "a88fecd3b46c"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de6ac9b5f265"
+          ]
+        ]
+      },
+      "D": {
+        "eligible_pairs": 38,
+        "themes": 10,
+        "top_pairs": 30,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "nuclear-power-renaissance",
+          "consumer-stress",
+          "ai-compute-arms-race",
+          "hyperscaler-capex",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "8f2bf651e808"
+          ],
+          [
+            "ai-energy-demand",
+            "0a0497ea788e"
+          ],
+          [
+            "ai-energy-demand",
+            "26a2a64aad57"
+          ],
+          [
+            "ai-energy-demand",
+            "2a7dc3c3a5d2"
+          ],
+          [
+            "ai-energy-demand",
+            "f65cb81cc5d3"
+          ],
+          [
+            "china-stimulus-rotation",
+            "03646040d196"
+          ],
+          [
+            "china-stimulus-rotation",
+            "26d7f041448b"
+          ],
+          [
+            "china-stimulus-rotation",
+            "8f2bf651e808"
+          ],
+          [
+            "china-stimulus-rotation",
+            "c2cc112b8a37"
+          ],
+          [
+            "china-stimulus-rotation",
+            "de07104f7c3b"
+          ],
+          [
+            "consumer-stress",
+            "26d7f041448b"
+          ],
+          [
+            "consumer-stress",
+            "f16270208b97"
+          ],
+          [
+            "energy-security",
+            "da477cb69c2a"
+          ],
+          [
+            "treasury-yield-pressure",
+            "36e35f2ad29e"
+          ],
+          [
+            "treasury-yield-pressure",
+            "8cf88fae1b30"
+          ],
+          [
+            "treasury-yield-pressure",
+            "bd2b11190d56"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de07104f7c3b"
+          ]
+        ],
+        "gained_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "2010d85a752e"
+          ],
+          [
+            "ai-energy-demand",
+            "2010d85a752e"
+          ],
+          [
+            "ai-energy-demand",
+            "7964fd77f429"
+          ],
+          [
+            "ai-energy-demand",
+            "de6ac9b5f265"
+          ],
+          [
+            "ai-energy-demand",
+            "ffeec6879917"
+          ],
+          [
+            "treasury-yield-pressure",
+            "a88fecd3b46c"
+          ],
+          [
+            "treasury-yield-pressure",
+            "de6ac9b5f265"
+          ]
+        ]
+      }
+    },
+    "single_generic_word_only": 10,
+    "generic_token_frequency_pairs": {
+      "inflation": 3,
+      "ai": 12,
+      "china": 6,
+      "chinese": 3,
+      "credit": 1,
+      "military": 2,
+      "blackstone": 1,
+      "nvidia": 1,
+      "oil": 3,
+      "nuclear": 2,
+      "rates": 1,
+      "beijing": 1,
+      "crude": 1
+    },
+    "generic_only_with_any_hints": 4,
+    "generic_only_with_theme_resolved_company_support": 1,
+    "single_generic_word_only_in_top": 2
+  },
+  "retained-3a7b87bcf0f9": {
+    "clusters": 67,
+    "pair_count": 46,
+    "buckets": {
+      "generic_only": 19,
+      "generic_plus_entity_plus_specific": 2,
+      "entity_only": 5,
+      "generic_plus_entity": 13,
+      "specific_only": 5,
+      "generic_plus_specific": 1,
+      "entity_plus_specific": 1
+    },
+    "emitted_top_pairs": 36,
+    "emitted_generic_only": 12,
+    "emitted_single_generic_only": 12,
+    "actual_extractor_replay_equal": true,
+    "stored_snapshot_equals_current_replay": false,
+    "policies": {
+      "A": {
+        "eligible_pairs": 46,
+        "themes": 9,
+        "top_pairs": 36,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "defense-reindustrialization",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "consumer-stress",
+          "ai-compute-arms-race"
+        ],
+        "lost_A_top_pairs": [],
+        "gained_top_pairs": []
+      },
+      "B": {
+        "eligible_pairs": 27,
+        "themes": 7,
+        "top_pairs": 22,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "ai-compute-arms-race"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "530ca9cbde61"
+          ],
+          [
+            "ai-compute-arms-race",
+            "fbd5ae5b9a93"
+          ],
+          [
+            "ai-energy-demand",
+            "530ca9cbde61"
+          ],
+          [
+            "ai-energy-demand",
+            "fbd5ae5b9a93"
+          ],
+          [
+            "consumer-stress",
+            "188014636b8b"
+          ],
+          [
+            "consumer-stress",
+            "50a4632f9a27"
+          ],
+          [
+            "consumer-stress",
+            "ca72a82cb356"
+          ],
+          [
+            "consumer-stress",
+            "fd245bd14b0b"
+          ],
+          [
+            "defense-reindustrialization",
+            "3c3231db7421"
+          ],
+          [
+            "defense-reindustrialization",
+            "430730480985"
+          ],
+          [
+            "defense-reindustrialization",
+            "ca72a82cb356"
+          ],
+          [
+            "energy-security",
+            "1cb5daad94ae"
+          ],
+          [
+            "energy-security",
+            "67dc36ac017a"
+          ],
+          [
+            "energy-security",
+            "d068c56e1e76"
+          ]
+        ],
+        "gained_top_pairs": []
+      },
+      "C": {
+        "eligible_pairs": 19,
+        "themes": 4,
+        "top_pairs": 14,
+        "theme_ids": [
+          "ai-energy-demand",
+          "private-credit-expansion",
+          "energy-security",
+          "ai-compute-arms-race"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "530ca9cbde61"
+          ],
+          [
+            "ai-energy-demand",
+            "530ca9cbde61"
+          ],
+          [
+            "ai-energy-demand",
+            "fbd5ae5b9a93"
+          ],
+          [
+            "china-stimulus-rotation",
+            "3a986ae025a8"
+          ],
+          [
+            "china-stimulus-rotation",
+            "f661ce24651c"
+          ],
+          [
+            "consumer-stress",
+            "188014636b8b"
+          ],
+          [
+            "consumer-stress",
+            "50a4632f9a27"
+          ],
+          [
+            "consumer-stress",
+            "ca72a82cb356"
+          ],
+          [
+            "consumer-stress",
+            "fd245bd14b0b"
+          ],
+          [
+            "defense-reindustrialization",
+            "3c3231db7421"
+          ],
+          [
+            "defense-reindustrialization",
+            "430730480985"
+          ],
+          [
+            "defense-reindustrialization",
+            "ca72a82cb356"
+          ],
+          [
+            "energy-security",
+            "1cb5daad94ae"
+          ],
+          [
+            "energy-security",
+            "67dc36ac017a"
+          ],
+          [
+            "energy-security",
+            "d068c56e1e76"
+          ],
+          [
+            "semiconductor-capex-cycle",
+            "4a9f9cf8eae1"
+          ],
+          [
+            "semiconductor-capex-cycle",
+            "fbd5ae5b9a93"
+          ],
+          [
+            "treasury-yield-pressure",
+            "50a4632f9a27"
+          ],
+          [
+            "treasury-yield-pressure",
+            "6cee669cbf7c"
+          ],
+          [
+            "treasury-yield-pressure",
+            "ca72a82cb356"
+          ],
+          [
+            "treasury-yield-pressure",
+            "e1264b6976d3"
+          ],
+          [
+            "treasury-yield-pressure",
+            "f291d4546fa6"
+          ]
+        ],
+        "gained_top_pairs": []
+      },
+      "D": {
+        "eligible_pairs": 17,
+        "themes": 4,
+        "top_pairs": 14,
+        "theme_ids": [
+          "ai-energy-demand",
+          "private-credit-expansion",
+          "energy-security",
+          "ai-compute-arms-race"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-compute-arms-race",
+            "530ca9cbde61"
+          ],
+          [
+            "ai-energy-demand",
+            "530ca9cbde61"
+          ],
+          [
+            "ai-energy-demand",
+            "fbd5ae5b9a93"
+          ],
+          [
+            "china-stimulus-rotation",
+            "3a986ae025a8"
+          ],
+          [
+            "china-stimulus-rotation",
+            "f661ce24651c"
+          ],
+          [
+            "consumer-stress",
+            "188014636b8b"
+          ],
+          [
+            "consumer-stress",
+            "50a4632f9a27"
+          ],
+          [
+            "consumer-stress",
+            "ca72a82cb356"
+          ],
+          [
+            "consumer-stress",
+            "fd245bd14b0b"
+          ],
+          [
+            "defense-reindustrialization",
+            "3c3231db7421"
+          ],
+          [
+            "defense-reindustrialization",
+            "430730480985"
+          ],
+          [
+            "defense-reindustrialization",
+            "ca72a82cb356"
+          ],
+          [
+            "energy-security",
+            "1cb5daad94ae"
+          ],
+          [
+            "energy-security",
+            "67dc36ac017a"
+          ],
+          [
+            "energy-security",
+            "d068c56e1e76"
+          ],
+          [
+            "semiconductor-capex-cycle",
+            "4a9f9cf8eae1"
+          ],
+          [
+            "semiconductor-capex-cycle",
+            "fbd5ae5b9a93"
+          ],
+          [
+            "treasury-yield-pressure",
+            "50a4632f9a27"
+          ],
+          [
+            "treasury-yield-pressure",
+            "6cee669cbf7c"
+          ],
+          [
+            "treasury-yield-pressure",
+            "ca72a82cb356"
+          ],
+          [
+            "treasury-yield-pressure",
+            "e1264b6976d3"
+          ],
+          [
+            "treasury-yield-pressure",
+            "f291d4546fa6"
+          ]
+        ],
+        "gained_top_pairs": []
+      }
+    },
+    "single_generic_word_only": 16,
+    "generic_token_frequency_pairs": {
+      "ai": 12,
+      "broadcom": 2,
+      "nvidia": 1,
+      "oil": 4,
+      "china": 2,
+      "inflation": 3,
+      "spending": 3,
+      "treasury": 1,
+      "military": 1,
+      "bitcoin": 1,
+      "private equity": 4,
+      "taiwan": 1,
+      "defense": 1
+    },
+    "generic_only_with_any_hints": 9,
+    "generic_only_with_theme_resolved_company_support": 1,
+    "single_generic_word_only_in_top": 12
+  },
+  "fresh-cycle139": {
+    "clusters": 60,
+    "pair_count": 60,
+    "buckets": {
+      "entity_only": 21,
+      "generic_plus_entity_plus_specific": 4,
+      "specific_only": 4,
+      "generic_only": 18,
+      "generic_plus_entity": 5,
+      "generic_plus_specific": 6,
+      "entity_plus_specific": 2
+    },
+    "emitted_top_pairs": 39,
+    "emitted_generic_only": 7,
+    "emitted_single_generic_only": 5,
+    "actual_extractor_replay_equal": true,
+    "stored_snapshot_equals_current_replay": true,
+    "policies": {
+      "A": {
+        "eligible_pairs": 60,
+        "themes": 9,
+        "top_pairs": 39,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "ai-compute-arms-race",
+          "hyperscaler-capex",
+          "private-capital-takeover"
+        ],
+        "lost_A_top_pairs": [],
+        "gained_top_pairs": []
+      },
+      "B": {
+        "eligible_pairs": 42,
+        "themes": 8,
+        "top_pairs": 31,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "china-stimulus-rotation",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "ai-compute-arms-race",
+          "hyperscaler-capex"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "china-stimulus-rotation",
+            "a571ef55089d"
+          ],
+          [
+            "energy-security",
+            "df231f17b1b6"
+          ],
+          [
+            "private-capital-takeover",
+            "4b26174edc01"
+          ],
+          [
+            "private-capital-takeover",
+            "62d724be183a"
+          ],
+          [
+            "private-capital-takeover",
+            "dad3542fe4de"
+          ],
+          [
+            "private-capital-takeover",
+            "ec09100bcf72"
+          ],
+          [
+            "private-capital-takeover",
+            "fd5de1111776"
+          ],
+          [
+            "private-credit-expansion",
+            "62d724be183a"
+          ]
+        ],
+        "gained_top_pairs": []
+      },
+      "C": {
+        "eligible_pairs": 39,
+        "themes": 7,
+        "top_pairs": 29,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "ai-compute-arms-race",
+          "hyperscaler-capex"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "china-stimulus-rotation",
+            "a571ef55089d"
+          ],
+          [
+            "china-stimulus-rotation",
+            "b2df587028db"
+          ],
+          [
+            "china-stimulus-rotation",
+            "cc1946fc6a15"
+          ],
+          [
+            "energy-security",
+            "df231f17b1b6"
+          ],
+          [
+            "private-capital-takeover",
+            "4b26174edc01"
+          ],
+          [
+            "private-capital-takeover",
+            "62d724be183a"
+          ],
+          [
+            "private-capital-takeover",
+            "dad3542fe4de"
+          ],
+          [
+            "private-capital-takeover",
+            "ec09100bcf72"
+          ],
+          [
+            "private-capital-takeover",
+            "fd5de1111776"
+          ],
+          [
+            "private-credit-expansion",
+            "62d724be183a"
+          ],
+          [
+            "treasury-yield-pressure",
+            "d6ec30572c7d"
+          ]
+        ],
+        "gained_top_pairs": [
+          [
+            "treasury-yield-pressure",
+            "2bb0f52ad810"
+          ]
+        ]
+      },
+      "D": {
+        "eligible_pairs": 38,
+        "themes": 7,
+        "top_pairs": 29,
+        "theme_ids": [
+          "ai-energy-demand",
+          "treasury-yield-pressure",
+          "private-credit-expansion",
+          "energy-security",
+          "semiconductor-capex-cycle",
+          "ai-compute-arms-race",
+          "hyperscaler-capex"
+        ],
+        "lost_A_top_pairs": [
+          [
+            "ai-energy-demand",
+            "3b4e25162519"
+          ],
+          [
+            "china-stimulus-rotation",
+            "a571ef55089d"
+          ],
+          [
+            "china-stimulus-rotation",
+            "b2df587028db"
+          ],
+          [
+            "china-stimulus-rotation",
+            "cc1946fc6a15"
+          ],
+          [
+            "energy-security",
+            "df231f17b1b6"
+          ],
+          [
+            "private-capital-takeover",
+            "4b26174edc01"
+          ],
+          [
+            "private-capital-takeover",
+            "62d724be183a"
+          ],
+          [
+            "private-capital-takeover",
+            "dad3542fe4de"
+          ],
+          [
+            "private-capital-takeover",
+            "ec09100bcf72"
+          ],
+          [
+            "private-capital-takeover",
+            "fd5de1111776"
+          ],
+          [
+            "private-credit-expansion",
+            "62d724be183a"
+          ],
+          [
+            "treasury-yield-pressure",
+            "d6ec30572c7d"
+          ]
+        ],
+        "gained_top_pairs": [
+          [
+            "ai-energy-demand",
+            "386e06ec2a09"
+          ],
+          [
+            "treasury-yield-pressure",
+            "397b2556aeb5"
+          ]
+        ]
+      }
+    },
+    "single_generic_word_only": 13,
+    "generic_token_frequency_pairs": {
+      "amd": 1,
+      "nvidia": 1,
+      "private equity": 4,
+      "inflation": 1,
+      "treasury": 2,
+      "ai": 6,
+      "credit": 2,
+      "data center": 1,
+      "grid": 1,
+      "oil": 4,
+      "yields": 2,
+      "rates": 2,
+      "chinese": 1,
+      "beijing": 1,
+      "military": 1,
+      "buyout": 4,
+      "healthcare": 1,
+      "china": 2,
+      "uranium": 1,
+      "nuclear": 1
+    },
+    "generic_only_with_any_hints": 7,
+    "generic_only_with_theme_resolved_company_support": 0,
+    "single_generic_word_only_in_top": 3
+  },
+  "evaluation125": {
+    "observations": 125,
+    "exact_retained_context_recovered": 80,
+    "pair_count": 171,
+    "observations_with_contributions": 74,
+    "buckets": {
+      "entity_only": 129,
+      "generic_plus_entity": 10,
+      "specific_only": 5,
+      "generic_plus_specific": 6,
+      "generic_only": 14,
+      "generic_plus_entity_plus_specific": 3,
+      "entity_plus_specific": 4
+    },
+    "policies": {
+      "A": 171,
+      "B": 157,
+      "C": 147,
+      "D": 139
+    },
+    "single_generic_word_only": 13,
+    "generic_token_frequency_pairs": {
+      "inflation": 3,
+      "anthropic": 1,
+      "openai": 1,
+      "ai": 6,
+      "credit": 1,
+      "ukraine": 1,
+      "military": 3,
+      "chinese": 3,
+      "blackstone": 1,
+      "private equity": 2,
+      "nuclear": 2,
+      "buyout": 2,
+      "apollo": 2,
+      "beijing": 2,
+      "china": 5,
+      "oil": 2,
+      "rates": 1,
+      "crude": 1
+    },
+    "generic_only_with_any_hints": 10,
+    "generic_only_with_theme_resolved_company_support": 0,
+    "single_generic_word_only_in_top": 0
+  }
+}

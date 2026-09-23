@@ -1,0 +1,42 @@
+[
+  {
+    "corpus": "retained-0f875b7be67b",
+    "path": "C:\\Users\\Edward\\Documents\\LLM_Assistant\\data\\feed_cache\\feed_0f875b7be67b.pkl",
+    "sha256": "3dd8cecc034267a453ddd3652f6443bee6587a6c915041687ac98ad7497c4455",
+    "generated_at": "2026-07-25 17:26:00.673305+00:00",
+    "items": 80,
+    "clusters": 75
+  },
+  {
+    "corpus": "retained-9ac9473db0fa",
+    "path": "C:\\Users\\Edward\\Documents\\LLM_Assistant\\data\\feed_cache\\feed_9ac9473db0fa.pkl",
+    "sha256": "d2f983ee95bf74363915f1178e516987d5ca0695d88274e0f83d1dcb1a851af5",
+    "generated_at": "2026-07-25 17:26:50.311033+00:00",
+    "items": 58,
+    "clusters": 54
+  },
+  {
+    "corpus": "retained-3a7b87bcf0f9",
+    "path": "C:\\Users\\Edward\\Documents\\LLM_Assistant\\data\\feed_cache\\feed_3a7b87bcf0f9.pkl",
+    "sha256": "c43e40eb3e4909c885229b26ec21ca659d2f8718f38fb520d769135cbaac091e",
+    "generated_at": "2026-06-03 23:45:25.191469+00:00",
+    "items": 73,
+    "clusters": 67
+  },
+  {
+    "corpus": "fresh-cycle139",
+    "path": "C:\\Users\\Edward\\.codex\\attachments\\cdb43e4f-c3be-4c9d-80d4-18454e8582db\\pasted-text.txt",
+    "sha256": "9d4b02427e28fa23794c773efaee73bca8c639ec7316cf0de091220cc510fae7",
+    "generated_at": "2026-09-16T16:42:43.576105+00:00",
+    "items": 62,
+    "clusters": 60
+  },
+  {
+    "path": "C:\\Users\\Edward\\Documents\\LLM_Assistant\\evaluation\\argus-trust-v1\\candidates.jsonl",
+    "sha256": "164d2a0b5edffe5e936960517cea451be6db349872dc2f54d8a56086e6a80c6e"
+  },
+  {
+    "path": "C:\\Users\\Edward\\Documents\\LLM_Assistant\\data\\ledger\\observations-2026-07-25.jsonl",
+    "sha256": "9e5991360d15f7ca00b7670e44206d209a642b84039974bb1b8b412afbfe7f8a"
+  }
+]

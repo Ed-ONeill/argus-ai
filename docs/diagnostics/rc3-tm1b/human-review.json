@@ -1,0 +1,417 @@
+[
+  {
+    "id": "TM1B-R01",
+    "corpus": "retained-3a7b87bcf0f9",
+    "source_id": "fd245bd14b0b",
+    "url": "https://www.ft.com/content/85299cdd-d9b3-4b40-8d10-73fc9ddb4573",
+    "source": "FT Companies",
+    "title": "Google upsizes historic equity raising to $85bn to back AI spending spree",
+    "snippet": "Tech giant’s first stock offering in more than two decades gets strong demand as investors shrug off huge investment plans",
+    "source_line": null,
+    "focus": "Corporate spending versus household spending; same word, different mechanisms.",
+    "decisions": [
+      {
+        "theme": "consumer-stress",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "ai-energy-demand",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R02",
+    "corpus": "retained-3a7b87bcf0f9",
+    "source_id": "50a4632f9a27",
+    "url": "https://www.marketwatch.com/story/squeezing-more-life-out-of-every-dollar-how-inflation-is-forcing-a-new-reality-on-american-families-and-amplifying-the-economys-k-shape-c3ba42de?mod=mw_rss_topstories",
+    "source": "MarketWatch",
+    "title": "‘Squeezing more life out of every dollar’: How inflation is forcing a new reality on American families and amplifying the economy’s ‘K shape’",
+    "snippet": "Higher prices are crimping spending among lower- and middle-income consumers, the Fed’s beige book reports.",
+    "source_line": null,
+    "focus": "Household spending pressure without a company or exact specific ontology phrase.",
+    "decisions": [
+      {
+        "theme": "consumer-stress",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R03",
+    "corpus": "fresh-cycle139",
+    "source_id": "386e06ec2a09",
+    "url": "https://www.datacenterdynamics.com/en/news/goodman-raises-455m-for-its-hong-kong-data-center-partnership/",
+    "source": "Data Center Dynamics",
+    "title": "Goodman raises $455m for its Hong Kong data center partnership",
+    "snippet": "Will fund construction of Hong Kong data center, due to open in 2028",
+    "source_line": null,
+    "focus": "The ontology marks data center generic although the snippet states construction.",
+    "decisions": [
+      {
+        "theme": "data-center-buildout",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R04",
+    "corpus": "retained-3a7b87bcf0f9",
+    "source_id": "1cb5daad94ae",
+    "url": "https://www.ft.com/content/d0be73c8-b8d8-4ffd-874e-e97a6ecffef7",
+    "source": "FT Companies",
+    "title": "Trump’s Iran war drains US oil stocks to lowest level since 2004",
+    "snippet": "Industry warns prices could soon jump as inventories reach ‘critically low’ threshold",
+    "source_line": null,
+    "focus": "Oil-only lexical match with inventory depletion context.",
+    "decisions": [
+      {
+        "theme": "energy-security",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R05",
+    "corpus": "evaluation125",
+    "source_id": "observation:547ec59b12c7700b701a",
+    "url": "https://www.bloomberg.com/news/articles/2026-07-25/heat-bakes-central-us-raising-energy-demand-as-east-stays-cool",
+    "source": "Bloomberg Markets",
+    "title": "Heat Bakes Central US, Raising Energy Demand as East Stays Cool",
+    "snippet": "Baking temperatures will sear the central US from the Rocky Mountains to the Mississippi River and eventually push down into the Gulf Coast for the rest of the month, putting regional power grids to the test.",
+    "source_line": 18,
+    "focus": "Does weather-driven energy demand establish an AI structural grid constraint?",
+    "decisions": [
+      {
+        "theme": "ai-energy-demand",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R06",
+    "corpus": "fresh-cycle139",
+    "source_id": "09f1b49bd14e",
+    "url": "https://www.ft.com/content/21b663e4-60ee-4937-a561-5b0f505676a2?syn-25a6b1a6=1",
+    "source": "FT Deals",
+    "title": "GE HealthCare in talks over $1bn deal for maker of cancer scan chemicals",
+    "snippet": "Acquisition of Sofie Biosciences is second big purchase for medical imaging specialist after split from General Electric",
+    "source_line": null,
+    "focus": "Healthcare category versus a GLP-1-specific mechanism.",
+    "decisions": [
+      {
+        "theme": "glp1-healthcare-revolution",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R07",
+    "corpus": "evaluation125",
+    "source_id": "observation:1f912cddde1a0a9f5bbd",
+    "url": "https://www.ft.com/content/d331c1f5-27c0-4d5a-a4ab-7a52e1119cc5?syn-25a6b1a6=1",
+    "source": "FT Deals",
+    "title": "Buyout groups hunt for software bargains after ‘SaaS-pocalypse’",
+    "snippet": "Francisco Partners co-founder Dipanjan ‘DJ’ Deb says AI will not kill software sector as firm raises $21bn",
+    "source_line": 71,
+    "focus": "Buyout software opportunity versus AI power demand versus private credit.",
+    "decisions": [
+      {
+        "theme": "ai-energy-demand",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "private-capital-takeover",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "private-credit-expansion",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R08",
+    "corpus": "evaluation125",
+    "source_id": "observation:43237f13ae73e9cede70",
+    "url": "https://www.marketwatch.com/story/these-16-states-are-offering-tax-holidays-as-back-to-school-costs-soar-to-over-800-per-student-0ec92464?mod=mw_rss_topstories",
+    "source": "MarketWatch",
+    "title": "These 16 states are offering tax-free shopping days as back-to-school costs soar to over $800 per student",
+    "snippet": "As inflation continues to squeeze household budgets, parents and students are on a mission to find back-to-school bargains.",
+    "source_line": 4,
+    "focus": "Inflation counted as keyword and entity; household article versus duration repricing.",
+    "decisions": [
+      {
+        "theme": "treasury-yield-pressure",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R09",
+    "corpus": "retained-3a7b87bcf0f9",
+    "source_id": "fbd5ae5b9a93",
+    "url": "https://www.marketwatch.com/story/broadcoms-stock-falls-despite-accelerating-ai-chip-growth-7731ee89?mod=mw_rss_topstories",
+    "source": "MarketWatch",
+    "title": "Broadcom’s stock falls despite accelerating AI-chip growth",
+    "snippet": "Latest revenue figures lack meaningful upside after the stock’s sharp recent rally.",
+    "source_line": null,
+    "focus": "Company-supported generic AI versus an explicit AI-chip growth mechanism.",
+    "decisions": [
+      {
+        "theme": "ai-compute-arms-race",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "semiconductor-capex-cycle",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R10",
+    "corpus": "fresh-cycle139",
+    "source_id": "fd5de1111776",
+    "url": "https://www.ft.com/content/a4a22443-2082-409b-96e1-650c44a40f44?syn-25a6b1a6=1",
+    "source": "FT Deals",
+    "title": "CVC faces shareholder revolt over €10.7bn Recordati take-private",
+    "snippet": "Investors accuse private equity group of pressuring them into selling at ‘lowball’ price",
+    "source_line": null,
+    "focus": "Take-private phrase versus private-equity/private-credit ambiguity; theme-level gate loss.",
+    "decisions": [
+      {
+        "theme": "private-capital-takeover",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "private-credit-expansion",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R11",
+    "corpus": "evaluation125",
+    "source_id": "observation:7c19f9aa793b7aab7f5c",
+    "url": "https://www.nytimes.com/2026/07/25/business/dealbook/spacex-anthropic-philanthropy.html",
+    "source": "NYT DealBook",
+    "title": "Blockbuster I.P.O.s Are Creating New Millionaires. Philanthropies Want a Cut.",
+    "snippet": "As start-ups like Anthropic and OpenAI prepare to go public, nonprofits are hoping for a secondary giving windfall from the new tech ultrawealthy.",
+    "source_line": 17,
+    "focus": "Private AI company names and charitable IPO proceeds versus power-demand mechanism.",
+    "decisions": [
+      {
+        "theme": "ai-energy-demand",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R12",
+    "corpus": "evaluation125",
+    "source_id": "observation:addecfa32a9a4bdd1714",
+    "url": "https://www.bloomberg.com/news/articles/2026-07-25/big-tech-debt-flood-is-taking-over-risk-in-market-credit-weekly",
+    "source": "Bloomberg Markets",
+    "title": "Big Tech Debt Flood Is Taking Over Risk In Market: Credit Weekly",
+    "snippet": "Big Tech’s insatiable appetite for AI investment is unleashing a relentless wave of bond sales — and having a bigger impact on the US corporate bond market than might be obvious.",
+    "source_line": 20,
+    "focus": "Public bond funding for AI versus nonbank direct lending; broad credit collision.",
+    "decisions": [
+      {
+        "theme": "ai-compute-arms-race",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "direct-lending-expansion",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R13",
+    "corpus": "evaluation125",
+    "source_id": "observation:672b7511005202844a22",
+    "url": "https://www.privateequitywire.co.uk/llcp-hits-2bn-hard-cap-for-oversubscribed-lower-middle-market-fund/",
+    "source": "PE Wire",
+    "title": "LLCP hits $2bn hard cap for oversubscribed lower-middle market fund",
+    "snippet": "Los Angeles-based private equity firm LLCP has closed its fourth lower-middle-market fund – LLCP Lower Middle Market IV– at its $2bn hard cap after attracting commitments well above its original $1.7bn target.",
+    "source_line": 51,
+    "focus": "Two specific dictionary phrases: are they independent evidence of credit rather than equity?",
+    "decisions": [
+      {
+        "theme": "private-credit-expansion",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R14",
+    "corpus": "fresh-cycle139",
+    "source_id": "a571ef55089d",
+    "url": "https://www.ft.com/content/3a88d016-9575-4c11-bd34-14606964a867?syn-25a6b1a6=1",
+    "source": "FT Companies",
+    "title": "Chinese oil prices hit record highs after attacks on Saudi pipeline",
+    "snippet": "Beijing has cushioned global impact of Iran war by drawing down stocks but is now ‘coming off its crash diet’",
+    "source_line": null,
+    "focus": "Geographic context versus policy-easing theme; contrast with supply-shock mechanism.",
+    "decisions": [
+      {
+        "theme": "china-stimulus-rotation",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      },
+      {
+        "theme": "energy-security",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R15",
+    "corpus": "fresh-cycle139",
+    "source_id": "709162e2cefe",
+    "url": "https://www.sec.gov/Archives/edgar/data/1730168/000173016826000076/0001730168-26-000076-index.htm",
+    "source": "SEC Filings",
+    "title": "AVGO 8-K — Results of Operations and Financial Condition",
+    "snippet": "SEC 8-K filing by AVGO: Item 2.02 Results of Operations; Item 8.01 Other Material Event",
+    "source_line": null,
+    "focus": "Explicit resolved ticker control: identity alone versus sufficient theme evidence.",
+    "decisions": [
+      {
+        "theme": "semiconductor-capex-cycle",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  },
+  {
+    "id": "TM1B-R16",
+    "corpus": "evaluation125",
+    "source_id": "observation:c845c6b635a8c64f72d0",
+    "url": "https://www.ft.com/content/8c3a155b-03c0-4034-9403-839674a3df9e?syn-25a6b1a6=1",
+    "source": "FT Deals",
+    "title": "EU review of airline ownership rules clouds Apollo’s £5.7bn easyJet bid",
+    "snippet": "Shares in UK low-cost carrier slide as Brussels move casts doubt on takeover",
+    "source_line": 74,
+    "focus": "Ontology name match not accepted by the current company resolver; do not silently drop or certify it.",
+    "decisions": [
+      {
+        "theme": "private-capital-takeover",
+        "decision": null,
+        "evidence_span": null,
+        "mechanism": null,
+        "reviewer": null,
+        "reviewed_at": null,
+        "adjudication": null
+      }
+    ]
+  }
+]

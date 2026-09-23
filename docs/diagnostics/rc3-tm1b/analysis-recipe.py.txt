@@ -1,0 +1,149 @@
+import sys, json, pickle, hashlib, logging, re
+from pathlib import Path
+from collections import Counter
+from types import SimpleNamespace as NS
+from datetime import datetime
+ROOT=Path(r'C:\Users\Edward\Documents\LLM_Assistant');sys.path.insert(0,str(ROOT));logging.disable(logging.CRITICAL)
+from app.data.theme_ontology import THEME_CATALOG as CAT
+from app.companies import COMPANY_REGISTRY as REG, resolve_companies, resolve_entities
+from app.feeds import FeedItem, _extract_entities
+import app.theme_graph as tg
+OUT=Path(sys.argv[1]);OUT.mkdir(parents=True,exist_ok=True)
+def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def obj(d):
+ d=dict(d)
+ if d.get('published_ts'):d['published_dt']=datetime.fromisoformat(d['published_ts'])
+ return NS(**d)
+def jd(o):
+ if isinstance(o,datetime):return o.isoformat()
+ if isinstance(o,(set,frozenset)):return sorted(o)
+ if hasattr(o,'__dict__'):return vars(o)
+ raise TypeError(type(o))
+def measure(item,cid,corpus,score=None):
+ title=getattr(item,'title','') or '';snippet=getattr(item,'snippet','') or '';text=title+' '+snippet
+ tn,sn=tg._norm(title),tg._norm(snippet);hints=getattr(item,'affected_entities',[]) or [];upper={e.upper() for e in hints}
+ resolved=set(resolve_companies(text,entities=hints,limit=len(REG)));typed=resolve_entities(text,limit=100)
+ rows=[]
+ for tid,cfg in CAT.items():
+  eligible=[e for e in cfg['entities'] if e not in REG or e in resolved]
+  hint_hits=sorted(e for e in eligible if e.upper() in upper)
+  literal=sorted(e for e in eligible if f' {e.lower()} ' in tn or f' {e.lower()} ' in sn)
+  entity_hits=len(hint_hits)+bool(literal);ent_points=min(entity_hits*3,9)
+  kws=[];allk=[]
+  for k in cfg['keywords']:
+   pattern=f" {tg._PUNCT_RE.sub(' ',k.lower())} "
+   loc='title' if pattern in tn else 'snippet' if pattern in sn else None
+   if loc:allk.append(dict(term=k,location=loc,points=2 if loc=='title' else 1,generic=k in cfg.get('generic_keywords',[])))
+  kws=allk[:3];raw=ent_points+sum(k['points'] for k in kws)
+  if not raw:continue
+  hits=sorted(set(hint_hits+literal));generic=[k['term'] for k in kws if k['generic']];specific=[k['term'] for k in kws if not k['generic']]
+  # Ontology-declared specific != human-validated specificity. Classify overlap explicitly.
+  company_entities=[];noncompany=[]
+  for e in hits:
+   er=set(resolve_companies(e,limit=len(REG)))
+   if e in resolved or er.intersection(resolved):company_entities.append(e)
+   else:noncompany.append(e)
+  explicit=[e for e in hits if e in REG and re.search(r'(?<!\w)'+re.escape(e)+r'(?!\w)',text)]
+  independent_entities=[e for e in hits if e.lower() not in set(cfg.get('generic_keywords',[])) and (e in company_entities or len(e.split())>=2 or e.isupper())]
+  context_companies=sorted(resolved.intersection({e for e in cfg['entities'] if e in REG}) - {t for g in generic for t in resolve_companies(g,limit=len(REG))})
+  bucket='generic_only' if generic and not specific and not entity_hits else 'generic_plus_entity' if generic and entity_hits and not specific else 'generic_plus_specific' if generic and specific and not entity_hits else 'generic_plus_entity_plus_specific' if generic and specific and entity_hits else 'entity_only' if entity_hits and not kws else 'entity_plus_specific' if entity_hits else 'specific_only'
+  classes=[]
+  if company_entities:classes.append('resolved_company_entity')
+  if explicit:classes.append('explicit_ticker')
+  if any(len(k.split())>1 for k in specific):classes.append('specific_multiword_phrase')
+  distinct_nonoverlap=[k for k in specific if not any(k!=other and k in other for other in specific)]
+  if len(distinct_nonoverlap)>=2:classes.append('multiple_specific_keywords_candidate')
+  if bucket=='generic_only' and len(generic)==1:classes.append('single_generic_only')
+  if generic and (hints or resolved):classes.append('generic_with_contextual_entity_or_sector')
+  if noncompany:classes.append('noncompany_ontology_term')
+  if not classes or any(e not in company_entities for e in hits):classes.append('ambiguous_or_unresolved_semantics')
+  # B: any generic-only evidence cannot qualify. C: generic must have a distinct specific proxy.
+  b=not(bucket=='generic_only')
+  c=not generic or bool(specific or independent_entities or context_companies)
+  d_entities=set(context_companies)
+  for e in independent_entities:
+   canonical=set(resolve_companies(e,limit=len(REG))).intersection(resolved)
+   d_entities.update(canonical or {e.lower()})
+  d_raw=min(3*len(d_entities),9)+sum(3 if len(k.split())>1 else 2 for k in distinct_nonoverlap)+.25*len(set(generic))
+  d=d_raw>=2
+  weight=None if score is None else 1+min(score,2)*.4
+  rows.append(dict(corpus=corpus,cluster_or_observation_id=cid,url=item.url,title=title,snippet=snippet,source=item.source,category=getattr(item,'category',None),entity_hints=hints,resolved_companies=sorted(resolved),typed_entities=typed,theme=tid,theme_name=cfg['name'],theme_description=cfg['description'],entity_hint_hits=hint_hits,entity_literal_alternatives=literal,entity_hits_count=entity_hits,entity_points=ent_points,company_entity_hits=company_entities,noncompany_ontology_hits=noncompany,explicit_ticker_hits=explicit,keyword_hits=kws,unscored_keyword_hits=allk[3:],generic=generic,specific=specific,independent_specific_entity_proxy=independent_entities,context_company_support=context_companies,policy_D_entity_units=sorted(d_entities),classes=classes,bucket=bucket,raw_score=raw,cluster_weight=weight,weighted_score=None if weight is None else raw*weight,policy_keep={'A':True,'B':b,'C':c,'D':d},policy_D_raw=d_raw,review_status='unreviewed',semantic_label=None))
+ return rows
+
+def aggregate(rows,policy,now):
+ candidates={};info={}
+ for tid,cfg in CAT.items():
+  r=[x for x in rows if x['theme']==tid and x['policy_keep'][policy]]
+  if not r:continue
+  weighted=lambda x:(x['policy_D_raw'] if policy=='D' else x['raw_score'])*x['cluster_weight']
+  total=sum(weighted(x) for x in r);n=len(r);sources={x['source'] for x in r};cats={x['category'] for x in r}
+  recent=sum(bool(x.get('published_dt')) and (now-datetime.fromisoformat(x['published_dt'])).total_seconds()<21600 for x in r)
+  conf=min(95,int(total*2+n*4+min(len(sources)*2,10)+(8 if len(cats)>=2 else 0)+min(recent*3,9)))
+  gen=sum(len(x['generic']) for x in r);kh=sum(len(x['keyword_hits']) for x in r);ratio=gen/max(kh,1)
+  if ratio>.6 and conf>=25:conf=max(1,int(conf*(1-min(.30,.15+(ratio-.6)*.375))))
+  breadth=min(len(cfg['related_industries']),max(1,n))
+  gates=n>=2 and len(sources)>=2 and breadth>=2 and conf>=20 and total>=1
+  top=sorted(r,key=weighted,reverse=True)[:5]
+  info[tid]=dict(eligible_pairs=n,total_weight=total,confidence_pre_competition=conf,evidence_count=len(sources),top=[x['cluster_or_observation_id'] for x in top],passed_precompetition=gates)
+  if gates:candidates[tid]=conf
+ out={}
+ for tid,conf in candidates.items():
+  penalty=min(.4,sum(.15 for ct in CAT[tid].get('competing_themes',[]) if candidates.get(ct,-1)>conf));final=max(1,int(conf*(1-penalty))) if penalty else conf
+  if final>=20:out[tid]=dict(info[tid],confidence=final,competition_penalty=round(penalty,2))
+ return out,info
+
+files=[];corpora=[]
+for name in ['feed_0f875b7be67b.pkl','feed_9ac9473db0fa.pkl','feed_3a7b87bcf0f9.pkl']:
+ p=ROOT/'data/feed_cache'/name;x=pickle.loads(p.read_bytes());key='retained-'+name[5:17]
+ corpora.append((key,x.clusters,x.theme_intelligence,getattr(x,'events',[]),x.generated_at));files.append(dict(corpus=key,path=str(p),sha256=digest(p),generated_at=str(x.generated_at),items=len(x.items),clusters=len(x.clusters)))
+p=Path(r'C:\Users\Edward\.codex\attachments\cdb43e4f-c3be-4c9d-80d4-18454e8582db\pasted-text.txt');f=json.loads(p.read_text(encoding='utf-8-sig'));clusters=[NS(**dict(c,primary=obj(c['primary']),related=[obj(i) for i in c['related']])) for c in f['clusters']]
+corpora.append(('fresh-cycle139',clusters,[obj(t) for t in f['theme_intelligence']],[obj(e) for e in f['events']],datetime.fromisoformat(f['generated_at'])));files.append(dict(corpus='fresh-cycle139',path=str(p),sha256=digest(p),generated_at=f['generated_at'],items=len(f['items']),clusters=len(clusters)))
+# Match ledger source revisions to actual retained scored items where exact text agrees.
+retained={}
+for key,cs,ts,es,now in corpora:
+ for cl in cs:
+  for it in [cl.primary]+cl.related:retained[(it.url,it.title,getattr(it,'snippet',''))]=it
+p=ROOT/'evaluation/argus-trust-v1/candidates.jsonl';cands=[json.loads(s) for s in p.read_text(encoding='utf-8-sig').splitlines() if s];files.append(dict(path=str(p),sha256=digest(p)))
+p=ROOT/'data/ledger/observations-2026-07-25.jsonl';ledger=[json.loads(s) for s in p.read_text(encoding='utf-8-sig').splitlines() if s];files.append(dict(path=str(p),sha256=digest(p)))
+allrows=[];recovered=0
+for cand in cands:
+ r=ledger[cand['source_line']-1];assert r['content_hash']==cand['source_content_hash'] and r['url']==cand['url']
+ it=retained.get((r['url'],r['title'],r.get('snippet','')))
+ recovery='exact retained item' if it else 'current extraction; category unknown'
+ if it:recovered+=1
+ else:
+  it=FeedItem(title=r['title'],snippet=r.get('snippet',''),url=r['url'],source=r['source'],category='');it.affected_entities=_extract_entities(it)
+ rr=measure(it,cand['id'],'evaluation125')
+ for v in rr:v['context_recovery']=recovery;v['source_line']=cand['source_line'];v['content_hash']=cand['source_content_hash'];v['entered_top_current']=None;v['downstream_event']=None
+ allrows.extend(rr)
+summary={};policyout={}
+for key,cs,ts,es,now in corpora:
+ rows=[];old={t.id:t for t in ts};ev={e.id:e for e in es}
+ for cl in cs:
+  rr=measure(cl.primary,cl.id,key,cl.cluster_score)
+  for r in rr:
+   r['published_dt']=getattr(cl.primary,'published_dt',None).isoformat() if getattr(cl.primary,'published_dt',None) else None
+   r['stored_theme_top']=cl.id in getattr(old.get(r['theme']),'contributing_cluster_ids',[])
+   e=ev.get(cl.id)
+   r['downstream_event']=None if e is None else {k:getattr(e,k,None) for k in ('id','title','theme_ids','companies','companies_direct','industries','transmission_chain','source_count','corroboration_count')}
+  rows.extend(rr)
+ policies={p:aggregate(rows,p,now)[0] for p in 'ABCD'};ainfo=aggregate(rows,'A',now)[1]
+ tg._momentum_rehydrated=True;tg._momentum_tracker=tg.ThemeMomentumTracker();tg._persist_momentum_state=lambda now:None
+ exact=tg.extract_themes(cs,now=now)
+ expected={t.id:dict(confidence=t.confidence,top=t.contributing_cluster_ids,evidence_count=t.evidence_count) for t in exact}
+ actual={t:{k:v[k] for k in ('confidence','top','evidence_count')} for t,v in policies['A'].items()}
+ assert expected==actual,(key,'replay mismatch',expected,actual)
+ for r in rows:
+  tid=r['theme'];cid=r['cluster_or_observation_id'];r['theme_emitted_current']=tid in policies['A'];r['entered_top_current']=cid in policies['A'].get(tid,{}).get('top',[])
+  r['rank_before_gate']=next((i+1 for i,x in enumerate(sorted([x for x in rows if x['theme']==tid],key=lambda x:x['weighted_score'],reverse=True)) if x['cluster_or_observation_id']==cid),None)
+  r['policy_retained_top']={p:cid in policies[p].get(tid,{}).get('top',[]) for p in 'ABCD'}
+ allrows.extend(rows);policyout[key]=policies
+ stored={t.id:dict(confidence=t.confidence,top=t.contributing_cluster_ids,evidence_count=t.evidence_count) for t in ts}
+ summary[key]=dict(clusters=len(cs),pair_count=len(rows),buckets=dict(Counter(x['bucket'] for x in rows)),emitted_top_pairs=sum(r['entered_top_current'] for r in rows),emitted_generic_only=sum(r['entered_top_current'] and r['bucket']=='generic_only' for r in rows),emitted_single_generic_only=sum(r['entered_top_current'] and r['bucket']=='generic_only' and len(r['generic'])==1 for r in rows),actual_extractor_replay_equal=True,stored_snapshot_equals_current_replay=stored==actual,policies={p:dict(eligible_pairs=sum(x['policy_keep'][p] for x in rows),themes=len(v),top_pairs=sum(len(t['top']) for t in v.values()),theme_ids=list(v)) for p,v in policies.items()})
+for r in allrows:
+ if r['corpus']=='evaluation125':
+  r['recovered_snapshot_links']=[{k:x[k] for k in ('corpus','cluster_or_observation_id','weighted_score','entered_top_current','stored_theme_top','theme_emitted_current','policy_retained_top')} for x in allrows if x['corpus']!='evaluation125' and x['url']==r['url'] and x['title']==r['title'] and x['snippet']==r['snippet'] and x['theme']==r['theme']]
+rows=[r for r in allrows if r['corpus']=='evaluation125'];summary['evaluation125']=dict(observations=125,exact_retained_context_recovered=recovered,pair_count=len(rows),observations_with_contributions=len({r['cluster_or_observation_id'] for r in rows}),buckets=dict(Counter(r['bucket'] for r in rows)),policies={p:sum(r['policy_keep'][p] for r in rows) for p in 'ABCD'})
+for name,val in [('contributions.json',allrows),('summary.json',summary),('policies.json',policyout),('sources.json',files),('ontology.json',CAT)]:
+ (OUT/name).write_text(json.dumps(val,indent=2,ensure_ascii=False,default=jd)+'\n',encoding='utf-8')
+print(json.dumps(summary,indent=2));print('OUTPUT',str(OUT))

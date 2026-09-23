@@ -1,0 +1,1923 @@
+{
+  "retained-0f875b7be67b": {
+    "A": {
+      "ai-energy-demand": {
+        "eligible_pairs": 9,
+        "total_weight": 36.0,
+        "confidence_pre_competition": 76,
+        "evidence_count": 4,
+        "top": [
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "30f444a72dfe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 76,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 7,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "bd2b11190d56",
+          "de07104f7c3b",
+          "36e35f2ad29e",
+          "8cf88fae1b30",
+          "cd5ff8cbace7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "defense-reindustrialization": {
+        "eligible_pairs": 3,
+        "total_weight": 7.0,
+        "confidence_pre_competition": 25,
+        "evidence_count": 3,
+        "top": [
+          "5954250711bc",
+          "f75c95b9df0f",
+          "4bd941f6896d"
+        ],
+        "passed_precompetition": true,
+        "confidence": 21,
+        "competition_penalty": 0.15
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 5,
+        "total_weight": 30.0,
+        "confidence_pre_competition": 79,
+        "evidence_count": 4,
+        "top": [
+          "1f14211ec0e3",
+          "2019eb91c0fe",
+          "ebc6cb202973",
+          "44057695f2a5",
+          "7e245817ec2b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 67,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 6,
+        "total_weight": 31.0,
+        "confidence_pre_competition": 69,
+        "evidence_count": 4,
+        "top": [
+          "5141b6633e0c",
+          "de07104f7c3b",
+          "26d7f041448b",
+          "c2cc112b8a37",
+          "03646040d196"
+        ],
+        "passed_precompetition": true,
+        "confidence": 69,
+        "competition_penalty": 0
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 3,
+        "top": [
+          "0a0497ea788e",
+          "4951e68c8908",
+          "269bc6323086"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "44057695f2a5",
+          "26d7f041448b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 6,
+        "total_weight": 19.0,
+        "confidence_pre_competition": 56,
+        "evidence_count": 4,
+        "top": [
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "30f444a72dfe",
+          "87a29f5a632a",
+          "de6ac9b5f265"
+        ],
+        "passed_precompetition": true,
+        "confidence": 47,
+        "competition_penalty": 0.15
+      },
+      "direct-lending-expansion": {
+        "eligible_pairs": 3,
+        "total_weight": 8.0,
+        "confidence_pre_competition": 29,
+        "evidence_count": 3,
+        "top": [
+          "1f14211ec0e3",
+          "2019eb91c0fe",
+          "de6ac9b5f265"
+        ],
+        "passed_precompetition": true,
+        "confidence": 20,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 5,
+        "total_weight": 18.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 4,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973",
+          "2019eb91c0fe",
+          "7e245817ec2b",
+          "44057695f2a5"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      }
+    },
+    "B": {
+      "ai-energy-demand": {
+        "eligible_pairs": 7,
+        "total_weight": 33.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 3,
+        "top": [
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "30f444a72dfe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 7,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "bd2b11190d56",
+          "de07104f7c3b",
+          "36e35f2ad29e",
+          "8cf88fae1b30",
+          "cd5ff8cbace7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 4,
+        "total_weight": 28.0,
+        "confidence_pre_competition": 88,
+        "evidence_count": 4,
+        "top": [
+          "1f14211ec0e3",
+          "2019eb91c0fe",
+          "ebc6cb202973",
+          "44057695f2a5"
+        ],
+        "passed_precompetition": true,
+        "confidence": 74,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 5,
+        "total_weight": 30.0,
+        "confidence_pre_competition": 63,
+        "evidence_count": 3,
+        "top": [
+          "5141b6633e0c",
+          "de07104f7c3b",
+          "26d7f041448b",
+          "c2cc112b8a37",
+          "03646040d196"
+        ],
+        "passed_precompetition": true,
+        "confidence": 63,
+        "competition_penalty": 0
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 3,
+        "top": [
+          "0a0497ea788e",
+          "4951e68c8908",
+          "269bc6323086"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "44057695f2a5",
+          "26d7f041448b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 57,
+        "evidence_count": 2,
+        "top": [
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "30f444a72dfe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 48,
+        "competition_penalty": 0.15
+      },
+      "direct-lending-expansion": {
+        "eligible_pairs": 2,
+        "total_weight": 6.0,
+        "confidence_pre_competition": 32,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "2019eb91c0fe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 22,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 56,
+        "evidence_count": 3,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973",
+          "2019eb91c0fe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 47,
+        "competition_penalty": 0.15
+      }
+    },
+    "C": {
+      "ai-energy-demand": {
+        "eligible_pairs": 6,
+        "total_weight": 28.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 2,
+        "top": [
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "ffeec6879917"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 4,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 56,
+        "evidence_count": 4,
+        "top": [
+          "8cf88fae1b30",
+          "cd5ff8cbace7",
+          "a88fecd3b46c",
+          "de6ac9b5f265"
+        ],
+        "passed_precompetition": true,
+        "confidence": 47,
+        "competition_penalty": 0.15
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 3,
+        "total_weight": 21.0,
+        "confidence_pre_competition": 68,
+        "evidence_count": 3,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973",
+          "44057695f2a5"
+        ],
+        "passed_precompetition": true,
+        "confidence": 68,
+        "competition_penalty": 0
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 3,
+        "top": [
+          "0a0497ea788e",
+          "4951e68c8908",
+          "269bc6323086"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "44057695f2a5",
+          "26d7f041448b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 57,
+        "evidence_count": 2,
+        "top": [
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "30f444a72dfe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 48,
+        "competition_penalty": 0.15
+      },
+      "direct-lending-expansion": {
+        "eligible_pairs": 2,
+        "total_weight": 6.0,
+        "confidence_pre_competition": 32,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "2019eb91c0fe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 22,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 56,
+        "evidence_count": 3,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973",
+          "2019eb91c0fe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 47,
+        "competition_penalty": 0.15
+      }
+    },
+    "D": {
+      "ai-energy-demand": {
+        "eligible_pairs": 6,
+        "total_weight": 18.25,
+        "confidence_pre_competition": 75,
+        "evidence_count": 2,
+        "top": [
+          "de6ac9b5f265",
+          "ffeec6879917",
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57"
+        ],
+        "passed_precompetition": true,
+        "confidence": 75,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 3,
+        "total_weight": 9.25,
+        "confidence_pre_competition": 47,
+        "evidence_count": 3,
+        "top": [
+          "cd5ff8cbace7",
+          "a88fecd3b46c",
+          "de6ac9b5f265"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.15
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 3,
+        "total_weight": 14.25,
+        "confidence_pre_competition": 54,
+        "evidence_count": 3,
+        "top": [
+          "44057695f2a5",
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 54,
+        "competition_penalty": 0
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 9.5,
+        "confidence_pre_competition": 45,
+        "evidence_count": 3,
+        "top": [
+          "4951e68c8908",
+          "269bc6323086",
+          "0a0497ea788e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 38,
+        "competition_penalty": 0.15
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 2,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 38,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 32,
+        "competition_penalty": 0.15
+      }
+    }
+  },
+  "retained-9ac9473db0fa": {
+    "A": {
+      "ai-energy-demand": {
+        "eligible_pairs": 11,
+        "total_weight": 46.0,
+        "confidence_pre_competition": 78,
+        "evidence_count": 3,
+        "top": [
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "e4788e083112"
+        ],
+        "passed_precompetition": true,
+        "confidence": 78,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 7,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "bd2b11190d56",
+          "de07104f7c3b",
+          "36e35f2ad29e",
+          "8cf88fae1b30",
+          "cd5ff8cbace7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 2,
+        "total_weight": 18.0,
+        "confidence_pre_competition": 46,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 7,
+        "total_weight": 34.0,
+        "confidence_pre_competition": 69,
+        "evidence_count": 4,
+        "top": [
+          "de07104f7c3b",
+          "8f2bf651e808",
+          "26d7f041448b",
+          "c2cc112b8a37",
+          "03646040d196"
+        ],
+        "passed_precompetition": true,
+        "confidence": 69,
+        "competition_penalty": 0
+      },
+      "energy-security": {
+        "eligible_pairs": 3,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 29,
+        "evidence_count": 3,
+        "top": [
+          "47f2c9548144",
+          "7964fd77f429",
+          "da477cb69c2a"
+        ],
+        "passed_precompetition": true,
+        "confidence": 20,
+        "competition_penalty": 0.3
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 13.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 2,
+        "top": [
+          "e4788e083112",
+          "26a2a64aad57",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 35,
+        "competition_penalty": 0.3
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 3,
+        "top": [
+          "0a0497ea788e",
+          "4951e68c8908",
+          "269bc6323086"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "2010d85a752e",
+          "26d7f041448b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 8,
+        "total_weight": 27.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 3,
+        "top": [
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "e4788e083112",
+          "7964fd77f429",
+          "8f2bf651e808"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 48,
+        "evidence_count": 2,
+        "top": [
+          "2a7dc3c3a5d2",
+          "7964fd77f429",
+          "2010d85a752e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 33,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 2,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 44,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 37,
+        "competition_penalty": 0.15
+      }
+    },
+    "B": {
+      "ai-energy-demand": {
+        "eligible_pairs": 9,
+        "total_weight": 43.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 3,
+        "top": [
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "e4788e083112"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 7,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "bd2b11190d56",
+          "de07104f7c3b",
+          "36e35f2ad29e",
+          "8cf88fae1b30",
+          "cd5ff8cbace7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 2,
+        "total_weight": 18.0,
+        "confidence_pre_competition": 46,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 6,
+        "total_weight": 33.0,
+        "confidence_pre_competition": 70,
+        "evidence_count": 3,
+        "top": [
+          "de07104f7c3b",
+          "8f2bf651e808",
+          "26d7f041448b",
+          "c2cc112b8a37",
+          "03646040d196"
+        ],
+        "passed_precompetition": true,
+        "confidence": 70,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 13.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 2,
+        "top": [
+          "e4788e083112",
+          "26a2a64aad57",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 3,
+        "top": [
+          "0a0497ea788e",
+          "4951e68c8908",
+          "269bc6323086"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "2010d85a752e",
+          "26d7f041448b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 4,
+        "total_weight": 21.0,
+        "confidence_pre_competition": 49,
+        "evidence_count": 2,
+        "top": [
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "e4788e083112",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 34,
+        "competition_penalty": 0.3
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 48,
+        "evidence_count": 2,
+        "top": [
+          "2a7dc3c3a5d2",
+          "7964fd77f429",
+          "2010d85a752e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 33,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 2,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 44,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 37,
+        "competition_penalty": 0.15
+      }
+    },
+    "C": {
+      "ai-energy-demand": {
+        "eligible_pairs": 9,
+        "total_weight": 43.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 3,
+        "top": [
+          "f65cb81cc5d3",
+          "0a0497ea788e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "e4788e083112"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 4,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 56,
+        "evidence_count": 4,
+        "top": [
+          "8cf88fae1b30",
+          "cd5ff8cbace7",
+          "a88fecd3b46c",
+          "de6ac9b5f265"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 2,
+        "total_weight": 18.0,
+        "confidence_pre_competition": 46,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.15
+      },
+      "energy-security": {
+        "eligible_pairs": 2,
+        "total_weight": 8.0,
+        "confidence_pre_competition": 28,
+        "evidence_count": 2,
+        "top": [
+          "47f2c9548144",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 23,
+        "competition_penalty": 0.15
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 13.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 2,
+        "top": [
+          "e4788e083112",
+          "26a2a64aad57",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 35,
+        "competition_penalty": 0.3
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 50,
+        "evidence_count": 3,
+        "top": [
+          "0a0497ea788e",
+          "4951e68c8908",
+          "269bc6323086"
+        ],
+        "passed_precompetition": true,
+        "confidence": 42,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "2010d85a752e",
+          "26d7f041448b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 5,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 54,
+        "evidence_count": 2,
+        "top": [
+          "26a2a64aad57",
+          "2a7dc3c3a5d2",
+          "e4788e083112",
+          "7964fd77f429",
+          "2010d85a752e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 45,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 48,
+        "evidence_count": 2,
+        "top": [
+          "2a7dc3c3a5d2",
+          "7964fd77f429",
+          "2010d85a752e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 33,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 2,
+        "total_weight": 12.0,
+        "confidence_pre_competition": 44,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 37,
+        "competition_penalty": 0.15
+      }
+    },
+    "D": {
+      "ai-energy-demand": {
+        "eligible_pairs": 9,
+        "total_weight": 31.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 3,
+        "top": [
+          "7964fd77f429",
+          "de6ac9b5f265",
+          "e4788e083112",
+          "2010d85a752e",
+          "ffeec6879917"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 3,
+        "total_weight": 9.25,
+        "confidence_pre_competition": 47,
+        "evidence_count": 3,
+        "top": [
+          "cd5ff8cbace7",
+          "a88fecd3b46c",
+          "de6ac9b5f265"
+        ],
+        "passed_precompetition": true,
+        "confidence": 47,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 2,
+        "total_weight": 8.25,
+        "confidence_pre_competition": 29,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 20,
+        "competition_penalty": 0.3
+      },
+      "energy-security": {
+        "eligible_pairs": 2,
+        "total_weight": 6.75,
+        "confidence_pre_competition": 25,
+        "evidence_count": 2,
+        "top": [
+          "47f2c9548144",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 21,
+        "competition_penalty": 0.15
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 7.25,
+        "confidence_pre_competition": 38,
+        "evidence_count": 2,
+        "top": [
+          "26a2a64aad57",
+          "e4788e083112",
+          "7964fd77f429"
+        ],
+        "passed_precompetition": true,
+        "confidence": 26,
+        "competition_penalty": 0.3
+      },
+      "nuclear-power-renaissance": {
+        "eligible_pairs": 3,
+        "total_weight": 9.5,
+        "confidence_pre_competition": 45,
+        "evidence_count": 3,
+        "top": [
+          "4951e68c8908",
+          "269bc6323086",
+          "0a0497ea788e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 38,
+        "competition_penalty": 0.15
+      },
+      "consumer-stress": {
+        "eligible_pairs": 2,
+        "total_weight": 6.0,
+        "confidence_pre_competition": 32,
+        "evidence_count": 2,
+        "top": [
+          "2010d85a752e",
+          "2a7dc3c3a5d2"
+        ],
+        "passed_precompetition": true,
+        "confidence": 32,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 5,
+        "total_weight": 15.75,
+        "confidence_pre_competition": 44,
+        "evidence_count": 2,
+        "top": [
+          "e4788e083112",
+          "7964fd77f429",
+          "2010d85a752e",
+          "26a2a64aad57",
+          "2a7dc3c3a5d2"
+        ],
+        "passed_precompetition": true,
+        "confidence": 37,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 42,
+        "evidence_count": 2,
+        "top": [
+          "7964fd77f429",
+          "2010d85a752e",
+          "2a7dc3c3a5d2"
+        ],
+        "passed_precompetition": true,
+        "confidence": 29,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 2,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 38,
+        "evidence_count": 2,
+        "top": [
+          "1f14211ec0e3",
+          "ebc6cb202973"
+        ],
+        "passed_precompetition": true,
+        "confidence": 38,
+        "competition_penalty": 0
+      }
+    }
+  },
+  "retained-3a7b87bcf0f9": {
+    "A": {
+      "ai-energy-demand": {
+        "eligible_pairs": 7,
+        "total_weight": 22.40488,
+        "confidence_pre_competition": 71,
+        "evidence_count": 4,
+        "top": [
+          "fd245bd14b0b",
+          "787f037d3528",
+          "4a9f9cf8eae1",
+          "fbd5ae5b9a93",
+          "530ca9cbde61"
+        ],
+        "passed_precompetition": true,
+        "confidence": 71,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 5,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 63,
+        "evidence_count": 4,
+        "top": [
+          "f291d4546fa6",
+          "50a4632f9a27",
+          "ca72a82cb356",
+          "6cee669cbf7c",
+          "e1264b6976d3"
+        ],
+        "passed_precompetition": true,
+        "confidence": 63,
+        "competition_penalty": 0
+      },
+      "defense-reindustrialization": {
+        "eligible_pairs": 3,
+        "total_weight": 6.0,
+        "confidence_pre_competition": 32,
+        "evidence_count": 3,
+        "top": [
+          "ca72a82cb356",
+          "3c3231db7421",
+          "430730480985"
+        ],
+        "passed_precompetition": true,
+        "confidence": 27,
+        "competition_penalty": 0.15
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 5,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 53,
+        "evidence_count": 2,
+        "top": [
+          "b884042f42dd",
+          "d8fbc65241fd",
+          "c35bf4be53c2",
+          "6904482349fc",
+          "3c3231db7421"
+        ],
+        "passed_precompetition": true,
+        "confidence": 45,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 2,
+        "total_weight": 10.0,
+        "confidence_pre_competition": 24,
+        "evidence_count": 2,
+        "top": [
+          "3a986ae025a8",
+          "f661ce24651c"
+        ],
+        "passed_precompetition": true,
+        "confidence": 20,
+        "competition_penalty": 0.15
+      },
+      "energy-security": {
+        "eligible_pairs": 5,
+        "total_weight": 13.43312,
+        "confidence_pre_competition": 56,
+        "evidence_count": 5,
+        "top": [
+          "47d7b63fd36d",
+          "67dc36ac017a",
+          "1cb5daad94ae",
+          "e1264b6976d3",
+          "d068c56e1e76"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 2,
+        "total_weight": 14.03768,
+        "confidence_pre_competition": 36,
+        "evidence_count": 2,
+        "top": [
+          "fbd5ae5b9a93",
+          "4a9f9cf8eae1"
+        ],
+        "passed_precompetition": true,
+        "confidence": 25,
+        "competition_penalty": 0.3
+      },
+      "consumer-stress": {
+        "eligible_pairs": 4,
+        "total_weight": 8.0,
+        "confidence_pre_competition": 38,
+        "evidence_count": 3,
+        "top": [
+          "188014636b8b",
+          "ca72a82cb356",
+          "fd245bd14b0b",
+          "50a4632f9a27"
+        ],
+        "passed_precompetition": true,
+        "confidence": 38,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 7,
+        "total_weight": 20.40488,
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "top": [
+          "787f037d3528",
+          "fd245bd14b0b",
+          "4a9f9cf8eae1",
+          "fbd5ae5b9a93",
+          "530ca9cbde61"
+        ],
+        "passed_precompetition": true,
+        "confidence": 55,
+        "competition_penalty": 0.15
+      }
+    },
+    "B": {
+      "ai-energy-demand": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 45,
+        "evidence_count": 2,
+        "top": [
+          "fd245bd14b0b",
+          "787f037d3528",
+          "4a9f9cf8eae1"
+        ],
+        "passed_precompetition": true,
+        "confidence": 45,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 5,
+        "total_weight": 23.0,
+        "confidence_pre_competition": 63,
+        "evidence_count": 4,
+        "top": [
+          "f291d4546fa6",
+          "50a4632f9a27",
+          "ca72a82cb356",
+          "6cee669cbf7c",
+          "e1264b6976d3"
+        ],
+        "passed_precompetition": true,
+        "confidence": 63,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 5,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 53,
+        "evidence_count": 2,
+        "top": [
+          "b884042f42dd",
+          "d8fbc65241fd",
+          "c35bf4be53c2",
+          "6904482349fc",
+          "3c3231db7421"
+        ],
+        "passed_precompetition": true,
+        "confidence": 45,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 2,
+        "total_weight": 10.0,
+        "confidence_pre_competition": 24,
+        "evidence_count": 2,
+        "top": [
+          "3a986ae025a8",
+          "f661ce24651c"
+        ],
+        "passed_precompetition": true,
+        "confidence": 24,
+        "competition_penalty": 0
+      },
+      "energy-security": {
+        "eligible_pairs": 2,
+        "total_weight": 8.0,
+        "confidence_pre_competition": 39,
+        "evidence_count": 2,
+        "top": [
+          "47d7b63fd36d",
+          "e1264b6976d3"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 2,
+        "total_weight": 14.03768,
+        "confidence_pre_competition": 36,
+        "evidence_count": 2,
+        "top": [
+          "fbd5ae5b9a93",
+          "4a9f9cf8eae1"
+        ],
+        "passed_precompetition": true,
+        "confidence": 30,
+        "competition_penalty": 0.15
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 3,
+        "total_weight": 13.0,
+        "confidence_pre_competition": 35,
+        "evidence_count": 2,
+        "top": [
+          "787f037d3528",
+          "fd245bd14b0b",
+          "4a9f9cf8eae1"
+        ],
+        "passed_precompetition": true,
+        "confidence": 24,
+        "competition_penalty": 0.3
+      }
+    },
+    "C": {
+      "ai-energy-demand": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 45,
+        "evidence_count": 2,
+        "top": [
+          "fd245bd14b0b",
+          "787f037d3528",
+          "4a9f9cf8eae1"
+        ],
+        "passed_precompetition": true,
+        "confidence": 45,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 5,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 53,
+        "evidence_count": 2,
+        "top": [
+          "b884042f42dd",
+          "d8fbc65241fd",
+          "c35bf4be53c2",
+          "6904482349fc",
+          "3c3231db7421"
+        ],
+        "passed_precompetition": true,
+        "confidence": 53,
+        "competition_penalty": 0
+      },
+      "energy-security": {
+        "eligible_pairs": 2,
+        "total_weight": 8.0,
+        "confidence_pre_competition": 39,
+        "evidence_count": 2,
+        "top": [
+          "47d7b63fd36d",
+          "e1264b6976d3"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 4,
+        "total_weight": 15.296479999999999,
+        "confidence_pre_competition": 42,
+        "evidence_count": 3,
+        "top": [
+          "787f037d3528",
+          "fd245bd14b0b",
+          "4a9f9cf8eae1",
+          "fbd5ae5b9a93"
+        ],
+        "passed_precompetition": true,
+        "confidence": 35,
+        "competition_penalty": 0.15
+      }
+    },
+    "D": {
+      "ai-energy-demand": {
+        "eligible_pairs": 3,
+        "total_weight": 12.5,
+        "confidence_pre_competition": 41,
+        "evidence_count": 2,
+        "top": [
+          "fd245bd14b0b",
+          "787f037d3528",
+          "4a9f9cf8eae1"
+        ],
+        "passed_precompetition": true,
+        "confidence": 34,
+        "competition_penalty": 0.15
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 5,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 65,
+        "evidence_count": 2,
+        "top": [
+          "d8fbc65241fd",
+          "b884042f42dd",
+          "c35bf4be53c2",
+          "6904482349fc",
+          "3c3231db7421"
+        ],
+        "passed_precompetition": true,
+        "confidence": 65,
+        "competition_penalty": 0
+      },
+      "energy-security": {
+        "eligible_pairs": 2,
+        "total_weight": 6.25,
+        "confidence_pre_competition": 35,
+        "evidence_count": 2,
+        "top": [
+          "47d7b63fd36d",
+          "e1264b6976d3"
+        ],
+        "passed_precompetition": true,
+        "confidence": 35,
+        "competition_penalty": 0
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 4,
+        "total_weight": 16.23178,
+        "confidence_pre_competition": 44,
+        "evidence_count": 3,
+        "top": [
+          "4a9f9cf8eae1",
+          "fbd5ae5b9a93",
+          "787f037d3528",
+          "fd245bd14b0b"
+        ],
+        "passed_precompetition": true,
+        "confidence": 44,
+        "competition_penalty": 0
+      }
+    }
+  },
+  "fresh-cycle139": {
+    "A": {
+      "ai-energy-demand": {
+        "eligible_pairs": 9,
+        "total_weight": 43.0,
+        "confidence_pre_competition": 75,
+        "evidence_count": 5,
+        "top": [
+          "3e838fa14d15",
+          "dee12bbdaf8e",
+          "df4a34f193e9",
+          "f50afab5f677",
+          "3b4e25162519"
+        ],
+        "passed_precompetition": true,
+        "confidence": 75,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 8,
+        "total_weight": 38.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 7,
+        "top": [
+          "03614d3e5c73",
+          "3c1f9a0c2819",
+          "1f8414eaecff",
+          "d6ec30572c7d",
+          "1e008c8f052e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 5,
+        "total_weight": 8.0,
+        "confidence_pre_competition": 56,
+        "evidence_count": 3,
+        "top": [
+          "ec09100bcf72",
+          "4b26174edc01",
+          "dad3542fe4de",
+          "62d724be183a",
+          "fd5de1111776"
+        ],
+        "passed_precompetition": true,
+        "confidence": 47,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 3,
+        "total_weight": 13.0,
+        "confidence_pre_competition": 32,
+        "evidence_count": 3,
+        "top": [
+          "cc1946fc6a15",
+          "b2df587028db",
+          "a571ef55089d"
+        ],
+        "passed_precompetition": true,
+        "confidence": 32,
+        "competition_penalty": 0
+      },
+      "energy-security": {
+        "eligible_pairs": 5,
+        "total_weight": 20.0,
+        "confidence_pre_competition": 87,
+        "evidence_count": 5,
+        "top": [
+          "14adba7d99d1",
+          "a571ef55089d",
+          "cc1946fc6a15",
+          "3c1f9a0c2819",
+          "df231f17b1b6"
+        ],
+        "passed_precompetition": true,
+        "confidence": 87,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 27.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 2,
+        "top": [
+          "dee12bbdaf8e",
+          "709162e2cefe",
+          "d55940903eb7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 8,
+        "total_weight": 44.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 5,
+        "top": [
+          "dee12bbdaf8e",
+          "3e838fa14d15",
+          "f50afab5f677",
+          "3b4e25162519",
+          "709162e2cefe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 57,
+        "evidence_count": 2,
+        "top": [
+          "f50afab5f677",
+          "3b4e25162519",
+          "3e838fa14d15"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.3
+      },
+      "private-capital-takeover": {
+        "eligible_pairs": 5,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 43,
+        "evidence_count": 3,
+        "top": [
+          "ec09100bcf72",
+          "fd5de1111776",
+          "4b26174edc01",
+          "dad3542fe4de",
+          "62d724be183a"
+        ],
+        "passed_precompetition": true,
+        "confidence": 36,
+        "competition_penalty": 0.15
+      }
+    },
+    "B": {
+      "ai-energy-demand": {
+        "eligible_pairs": 7,
+        "total_weight": 39.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "3e838fa14d15",
+          "dee12bbdaf8e",
+          "df4a34f193e9",
+          "f50afab5f677",
+          "3b4e25162519"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 7,
+        "total_weight": 37.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 7,
+        "top": [
+          "03614d3e5c73",
+          "3c1f9a0c2819",
+          "1f8414eaecff",
+          "d6ec30572c7d",
+          "1e008c8f052e"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 4,
+        "total_weight": 7.0,
+        "confidence_pre_competition": 48,
+        "evidence_count": 2,
+        "top": [
+          "ec09100bcf72",
+          "4b26174edc01",
+          "dad3542fe4de",
+          "fd5de1111776"
+        ],
+        "passed_precompetition": true,
+        "confidence": 40,
+        "competition_penalty": 0.15
+      },
+      "china-stimulus-rotation": {
+        "eligible_pairs": 2,
+        "total_weight": 10.0,
+        "confidence_pre_competition": 22,
+        "evidence_count": 2,
+        "top": [
+          "cc1946fc6a15",
+          "b2df587028db"
+        ],
+        "passed_precompetition": true,
+        "confidence": 22,
+        "competition_penalty": 0
+      },
+      "energy-security": {
+        "eligible_pairs": 4,
+        "total_weight": 18.0,
+        "confidence_pre_competition": 74,
+        "evidence_count": 4,
+        "top": [
+          "14adba7d99d1",
+          "a571ef55089d",
+          "cc1946fc6a15",
+          "3c1f9a0c2819"
+        ],
+        "passed_precompetition": true,
+        "confidence": 74,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 27.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 2,
+        "top": [
+          "dee12bbdaf8e",
+          "709162e2cefe",
+          "d55940903eb7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 6,
+        "total_weight": 40.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 3,
+        "top": [
+          "dee12bbdaf8e",
+          "3e838fa14d15",
+          "f50afab5f677",
+          "3b4e25162519",
+          "709162e2cefe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 57,
+        "evidence_count": 2,
+        "top": [
+          "f50afab5f677",
+          "3b4e25162519",
+          "3e838fa14d15"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.3
+      }
+    },
+    "C": {
+      "ai-energy-demand": {
+        "eligible_pairs": 7,
+        "total_weight": 39.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "3e838fa14d15",
+          "dee12bbdaf8e",
+          "df4a34f193e9",
+          "f50afab5f677",
+          "3b4e25162519"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 6,
+        "total_weight": 32.0,
+        "confidence_pre_competition": 95,
+        "evidence_count": 6,
+        "top": [
+          "03614d3e5c73",
+          "3c1f9a0c2819",
+          "1f8414eaecff",
+          "1e008c8f052e",
+          "2bb0f52ad810"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 4,
+        "total_weight": 7.0,
+        "confidence_pre_competition": 48,
+        "evidence_count": 2,
+        "top": [
+          "ec09100bcf72",
+          "4b26174edc01",
+          "dad3542fe4de",
+          "fd5de1111776"
+        ],
+        "passed_precompetition": true,
+        "confidence": 40,
+        "competition_penalty": 0.15
+      },
+      "energy-security": {
+        "eligible_pairs": 4,
+        "total_weight": 18.0,
+        "confidence_pre_competition": 74,
+        "evidence_count": 4,
+        "top": [
+          "14adba7d99d1",
+          "a571ef55089d",
+          "cc1946fc6a15",
+          "3c1f9a0c2819"
+        ],
+        "passed_precompetition": true,
+        "confidence": 74,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 27.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 2,
+        "top": [
+          "dee12bbdaf8e",
+          "709162e2cefe",
+          "d55940903eb7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 6,
+        "total_weight": 40.0,
+        "confidence_pre_competition": 66,
+        "evidence_count": 3,
+        "top": [
+          "dee12bbdaf8e",
+          "3e838fa14d15",
+          "f50afab5f677",
+          "3b4e25162519",
+          "709162e2cefe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 56,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 15.0,
+        "confidence_pre_competition": 57,
+        "evidence_count": 2,
+        "top": [
+          "f50afab5f677",
+          "3b4e25162519",
+          "3e838fa14d15"
+        ],
+        "passed_precompetition": true,
+        "confidence": 39,
+        "competition_penalty": 0.3
+      }
+    },
+    "D": {
+      "ai-energy-demand": {
+        "eligible_pairs": 7,
+        "total_weight": 21.25,
+        "confidence_pre_competition": 95,
+        "evidence_count": 4,
+        "top": [
+          "3e838fa14d15",
+          "dee12bbdaf8e",
+          "386e06ec2a09",
+          "df4a34f193e9",
+          "f50afab5f677"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "treasury-yield-pressure": {
+        "eligible_pairs": 5,
+        "total_weight": 28.25,
+        "confidence_pre_competition": 95,
+        "evidence_count": 5,
+        "top": [
+          "03614d3e5c73",
+          "1f8414eaecff",
+          "1e008c8f052e",
+          "3c1f9a0c2819",
+          "397b2556aeb5"
+        ],
+        "passed_precompetition": true,
+        "confidence": 95,
+        "competition_penalty": 0
+      },
+      "private-credit-expansion": {
+        "eligible_pairs": 4,
+        "total_weight": 15.25,
+        "confidence_pre_competition": 64,
+        "evidence_count": 2,
+        "top": [
+          "4b26174edc01",
+          "ec09100bcf72",
+          "dad3542fe4de",
+          "fd5de1111776"
+        ],
+        "passed_precompetition": true,
+        "confidence": 54,
+        "competition_penalty": 0.15
+      },
+      "energy-security": {
+        "eligible_pairs": 4,
+        "total_weight": 17.75,
+        "confidence_pre_competition": 73,
+        "evidence_count": 4,
+        "top": [
+          "cc1946fc6a15",
+          "14adba7d99d1",
+          "a571ef55089d",
+          "3c1f9a0c2819"
+        ],
+        "passed_precompetition": true,
+        "confidence": 73,
+        "competition_penalty": 0
+      },
+      "semiconductor-capex-cycle": {
+        "eligible_pairs": 3,
+        "total_weight": 11.5,
+        "confidence_pre_competition": 41,
+        "evidence_count": 2,
+        "top": [
+          "dee12bbdaf8e",
+          "709162e2cefe",
+          "d55940903eb7"
+        ],
+        "passed_precompetition": true,
+        "confidence": 28,
+        "competition_penalty": 0.3
+      },
+      "ai-compute-arms-race": {
+        "eligible_pairs": 6,
+        "total_weight": 21.25,
+        "confidence_pre_competition": 60,
+        "evidence_count": 3,
+        "top": [
+          "dee12bbdaf8e",
+          "3e838fa14d15",
+          "f50afab5f677",
+          "3b4e25162519",
+          "709162e2cefe"
+        ],
+        "passed_precompetition": true,
+        "confidence": 51,
+        "competition_penalty": 0.15
+      },
+      "hyperscaler-capex": {
+        "eligible_pairs": 3,
+        "total_weight": 9.0,
+        "confidence_pre_competition": 45,
+        "evidence_count": 2,
+        "top": [
+          "3e838fa14d15",
+          "f50afab5f677",
+          "3b4e25162519"
+        ],
+        "passed_precompetition": true,
+        "confidence": 31,
+        "competition_penalty": 0.3
+      }
+    }
+  }
+}

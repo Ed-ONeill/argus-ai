@@ -1,0 +1,1023 @@
+{
+  "status": "human_adjudication_complete_milestone_accepted_tm1b1_authorized",
+  "reviewed_judgments": 23,
+  "source_packets": 16,
+  "counts": {
+    "A": 9,
+    "B": 5,
+    "C": 9,
+    "D": 0
+  },
+  "benchmark_truth_modified": false,
+  "model_recommendations_are_not_human_labels": true,
+  "family_results": [
+    {
+      "family": "entity_only",
+      "total": 2,
+      "A": 1,
+      "B": 1,
+      "C": 0,
+      "D": 0,
+      "ids": [
+        "J22",
+        "J23"
+      ]
+    },
+    {
+      "family": "generic_only",
+      "total": 12,
+      "A": 5,
+      "B": 2,
+      "C": 5,
+      "D": 0,
+      "ids": [
+        "J01",
+        "J03",
+        "J04",
+        "J05",
+        "J07",
+        "J08",
+        "J09",
+        "J10",
+        "J12",
+        "J17",
+        "J18",
+        "J20"
+      ]
+    },
+    {
+      "family": "generic_plus_entity",
+      "total": 2,
+      "A": 0,
+      "B": 0,
+      "C": 2,
+      "D": 0,
+      "ids": [
+        "J11",
+        "J16"
+      ]
+    },
+    {
+      "family": "generic_plus_entity_plus_specific",
+      "total": 2,
+      "A": 1,
+      "B": 1,
+      "C": 0,
+      "D": 0,
+      "ids": [
+        "J02",
+        "J13"
+      ]
+    },
+    {
+      "family": "generic_plus_specific",
+      "total": 2,
+      "A": 2,
+      "B": 0,
+      "C": 0,
+      "D": 0,
+      "ids": [
+        "J14",
+        "J21"
+      ]
+    },
+    {
+      "family": "specific_only",
+      "total": 3,
+      "A": 0,
+      "B": 1,
+      "C": 2,
+      "D": 0,
+      "ids": [
+        "J06",
+        "J15",
+        "J19"
+      ]
+    }
+  ],
+  "prior_simulation_pair_eligibility": [
+    {
+      "simulation": "A",
+      "eligible": 23,
+      "human_A_retained": 9,
+      "human_B_retained": 5,
+      "human_C_retained": 9,
+      "human_A_lost": []
+    },
+    {
+      "simulation": "B",
+      "eligible": 11,
+      "human_A_retained": 4,
+      "human_B_retained": 3,
+      "human_C_retained": 4,
+      "human_A_lost": [
+        "J03",
+        "J04",
+        "J05",
+        "J09",
+        "J12"
+      ]
+    },
+    {
+      "simulation": "C",
+      "eligible": 10,
+      "human_A_retained": 5,
+      "human_B_retained": 3,
+      "human_C_retained": 2,
+      "human_A_lost": [
+        "J03",
+        "J04",
+        "J05",
+        "J09"
+      ]
+    },
+    {
+      "simulation": "D",
+      "eligible": 9,
+      "human_A_retained": 4,
+      "human_B_retained": 3,
+      "human_C_retained": 2,
+      "human_A_lost": [
+        "J03",
+        "J04",
+        "J05",
+        "J09",
+        "J23"
+      ]
+    }
+  ],
+  "judgments": [
+    {
+      "id": "J01",
+      "human_decision": "C",
+      "title": "Google upsizes historic equity raising to $85bn to back AI spending spree",
+      "theme": "consumer-stress",
+      "bucket": "generic_only",
+      "generic": [
+        "spending"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [
+        "GOOGL"
+      ],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J02",
+      "human_decision": "B",
+      "title": "Google upsizes historic equity raising to $85bn to back AI spending spree",
+      "theme": "ai-energy-demand",
+      "bucket": "generic_plus_entity_plus_specific",
+      "generic": [
+        "ai"
+      ],
+      "specific": [
+        "ai spending"
+      ],
+      "classes": [
+        "resolved_company_entity",
+        "specific_multiword_phrase",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [
+        "Google"
+      ],
+      "resolved_companies": [
+        "GOOGL"
+      ],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J03",
+      "human_decision": "A",
+      "title": "‘Squeezing more life out of every dollar’: How inflation is forcing a new reality on American families and amplifying the economy’s ‘K shape’",
+      "theme": "consumer-stress",
+      "bucket": "generic_only",
+      "generic": [
+        "spending"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J04",
+      "human_decision": "A",
+      "title": "Goodman raises $455m for its Hong Kong data center partnership",
+      "theme": "data-center-buildout",
+      "bucket": "generic_only",
+      "generic": [
+        "data center"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": {
+        "A": false,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J05",
+      "human_decision": "A",
+      "title": "Trump’s Iran war drains US oil stocks to lowest level since 2004",
+      "theme": "energy-security",
+      "bucket": "generic_only",
+      "generic": [
+        "oil"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J06",
+      "human_decision": "C",
+      "title": "Heat Bakes Central US, Raising Energy Demand as East Stays Cool",
+      "theme": "ai-energy-demand",
+      "bucket": "specific_only",
+      "generic": [],
+      "specific": [
+        "energy demand"
+      ],
+      "classes": [
+        "specific_multiword_phrase"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "ffeec6879917",
+          "weighted_score": 2.0,
+          "entered_top_current": false,
+          "stored_theme_top": false,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": false,
+            "B": false,
+            "C": true,
+            "D": true
+          }
+        },
+        {
+          "corpus": "retained-9ac9473db0fa",
+          "cluster_or_observation_id": "ffeec6879917",
+          "weighted_score": 2.0,
+          "entered_top_current": false,
+          "stored_theme_top": false,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": false,
+            "B": false,
+            "C": false,
+            "D": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "J07",
+      "human_decision": "C",
+      "title": "GE HealthCare in talks over $1bn deal for maker of cancer scan chemicals",
+      "theme": "glp1-healthcare-revolution",
+      "bucket": "generic_only",
+      "generic": [
+        "healthcare"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [
+        "GE"
+      ],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": {
+        "A": false,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J08",
+      "human_decision": "C",
+      "title": "Buyout groups hunt for software bargains after ‘SaaS-pocalypse’",
+      "theme": "ai-energy-demand",
+      "bucket": "generic_only",
+      "generic": [
+        "ai"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "7e245817ec2b",
+          "weighted_score": 1.0,
+          "entered_top_current": false,
+          "stored_theme_top": false,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": false,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J09",
+      "human_decision": "A",
+      "title": "Buyout groups hunt for software bargains after ‘SaaS-pocalypse’",
+      "theme": "private-capital-takeover",
+      "bucket": "generic_only",
+      "generic": [
+        "buyout"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "7e245817ec2b",
+          "weighted_score": 2.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J10",
+      "human_decision": "B",
+      "title": "Buyout groups hunt for software bargains after ‘SaaS-pocalypse’",
+      "theme": "private-credit-expansion",
+      "bucket": "generic_only",
+      "generic": [
+        "buyout"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "7e245817ec2b",
+          "weighted_score": 2.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J11",
+      "human_decision": "C",
+      "title": "These 16 states are offering tax-free shopping days as back-to-school costs soar to over $800 per student",
+      "theme": "treasury-yield-pressure",
+      "bucket": "generic_plus_entity",
+      "generic": [
+        "inflation"
+      ],
+      "specific": [],
+      "classes": [
+        "noncompany_ontology_term",
+        "ambiguous_or_unresolved_semantics"
+      ],
+      "entity_hits": [
+        "Inflation"
+      ],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "36e35f2ad29e",
+          "weighted_score": 4.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": true,
+            "C": false,
+            "D": false
+          }
+        },
+        {
+          "corpus": "retained-9ac9473db0fa",
+          "cluster_or_observation_id": "36e35f2ad29e",
+          "weighted_score": 4.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": true,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J12",
+      "human_decision": "A",
+      "title": "Broadcom’s stock falls despite accelerating AI-chip growth",
+      "theme": "ai-compute-arms-race",
+      "bucket": "generic_only",
+      "generic": [
+        "ai"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [
+        "AVGO"
+      ],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": false,
+        "C": true,
+        "D": true
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J13",
+      "human_decision": "A",
+      "title": "Broadcom’s stock falls despite accelerating AI-chip growth",
+      "theme": "semiconductor-capex-cycle",
+      "bucket": "generic_plus_entity_plus_specific",
+      "generic": [
+        "broadcom"
+      ],
+      "specific": [
+        "ai chip"
+      ],
+      "classes": [
+        "resolved_company_entity",
+        "specific_multiword_phrase",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [
+        "Broadcom"
+      ],
+      "resolved_companies": [
+        "AVGO"
+      ],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": true,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J14",
+      "human_decision": "A",
+      "title": "CVC faces shareholder revolt over €10.7bn Recordati take-private",
+      "theme": "private-capital-takeover",
+      "bucket": "generic_plus_specific",
+      "generic": [
+        "private equity"
+      ],
+      "specific": [
+        "take private"
+      ],
+      "classes": [
+        "specific_multiword_phrase"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J15",
+      "human_decision": "B",
+      "title": "CVC faces shareholder revolt over €10.7bn Recordati take-private",
+      "theme": "private-credit-expansion",
+      "bucket": "specific_only",
+      "generic": [],
+      "specific": [
+        "private equity"
+      ],
+      "classes": [
+        "specific_multiword_phrase"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J16",
+      "human_decision": "C",
+      "title": "Blockbuster I.P.O.s Are Creating New Millionaires. Philanthropies Want a Cut.",
+      "theme": "ai-energy-demand",
+      "bucket": "generic_plus_entity",
+      "generic": [
+        "openai",
+        "anthropic"
+      ],
+      "specific": [],
+      "classes": [
+        "noncompany_ontology_term",
+        "ambiguous_or_unresolved_semantics"
+      ],
+      "entity_hits": [
+        "Anthropic",
+        "OpenAI"
+      ],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "30f444a72dfe",
+          "weighted_score": 5.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": true,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J17",
+      "human_decision": "B",
+      "title": "Big Tech Debt Flood Is Taking Over Risk In Market: Credit Weekly",
+      "theme": "ai-compute-arms-race",
+      "bucket": "generic_only",
+      "generic": [
+        "ai"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "de6ac9b5f265",
+          "weighted_score": 1.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        },
+        {
+          "corpus": "retained-9ac9473db0fa",
+          "cluster_or_observation_id": "de6ac9b5f265",
+          "weighted_score": 1.0,
+          "entered_top_current": false,
+          "stored_theme_top": false,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": false,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J18",
+      "human_decision": "C",
+      "title": "Big Tech Debt Flood Is Taking Over Risk In Market: Credit Weekly",
+      "theme": "direct-lending-expansion",
+      "bucket": "generic_only",
+      "generic": [
+        "credit"
+      ],
+      "specific": [],
+      "classes": [
+        "single_generic_only"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "de6ac9b5f265",
+          "weighted_score": 2.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        },
+        {
+          "corpus": "retained-9ac9473db0fa",
+          "cluster_or_observation_id": "de6ac9b5f265",
+          "weighted_score": 2.0,
+          "entered_top_current": false,
+          "stored_theme_top": false,
+          "theme_emitted_current": false,
+          "policy_retained_top": {
+            "A": false,
+            "B": false,
+            "C": false,
+            "D": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "J19",
+      "human_decision": "C",
+      "title": "LLCP hits $2bn hard cap for oversubscribed lower-middle market fund",
+      "theme": "private-credit-expansion",
+      "bucket": "specific_only",
+      "generic": [],
+      "specific": [
+        "middle market",
+        "private equity"
+      ],
+      "classes": [
+        "specific_multiword_phrase",
+        "multiple_specific_keywords_candidate"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "44057695f2a5",
+          "weighted_score": 3.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": true,
+            "C": true,
+            "D": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "J20",
+      "human_decision": "C",
+      "title": "Chinese oil prices hit record highs after attacks on Saudi pipeline",
+      "theme": "china-stimulus-rotation",
+      "bucket": "generic_only",
+      "generic": [
+        "chinese",
+        "beijing"
+      ],
+      "specific": [],
+      "classes": [
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": false,
+        "C": false,
+        "D": false
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J21",
+      "human_decision": "A",
+      "title": "Chinese oil prices hit record highs after attacks on Saudi pipeline",
+      "theme": "energy-security",
+      "bucket": "generic_plus_specific",
+      "generic": [
+        "oil"
+      ],
+      "specific": [
+        "oil prices"
+      ],
+      "classes": [
+        "specific_multiword_phrase",
+        "generic_with_contextual_entity_or_sector"
+      ],
+      "entity_hits": [],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J22",
+      "human_decision": "B",
+      "title": "AVGO 8-K — Results of Operations and Financial Condition",
+      "theme": "semiconductor-capex-cycle",
+      "bucket": "entity_only",
+      "generic": [],
+      "specific": [],
+      "classes": [
+        "resolved_company_entity",
+        "explicit_ticker"
+      ],
+      "entity_hits": [
+        "AVGO"
+      ],
+      "resolved_companies": [
+        "AVGO"
+      ],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "policy_retained_top": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": true
+      },
+      "recovered_snapshot_links": null
+    },
+    {
+      "id": "J23",
+      "human_decision": "A",
+      "title": "EU review of airline ownership rules clouds Apollo’s £5.7bn easyJet bid",
+      "theme": "private-capital-takeover",
+      "bucket": "entity_only",
+      "generic": [],
+      "specific": [],
+      "classes": [
+        "noncompany_ontology_term",
+        "ambiguous_or_unresolved_semantics"
+      ],
+      "entity_hits": [
+        "Apollo"
+      ],
+      "resolved_companies": [],
+      "policy_keep": {
+        "A": true,
+        "B": true,
+        "C": true,
+        "D": false
+      },
+      "policy_retained_top": null,
+      "recovered_snapshot_links": [
+        {
+          "corpus": "retained-0f875b7be67b",
+          "cluster_or_observation_id": "2019eb91c0fe",
+          "weighted_score": 3.0,
+          "entered_top_current": true,
+          "stored_theme_top": true,
+          "theme_emitted_current": true,
+          "policy_retained_top": {
+            "A": true,
+            "B": true,
+            "C": true,
+            "D": false
+          }
+        }
+      ]
+    }
+  ]
+}
