@@ -1,0 +1,63 @@
+{
+  "provenance": "Four exact consumer-stress primary contributors from retained June snapshot; original timestamps, hints and weights. Other clusters omitted only in this focused boundary fixture. Full snapshot replay is recorded separately.",
+  "sha256": "c43e40eb3e4909c885229b26ec21ca659d2f8718f38fb520d769135cbaac091e",
+  "now": "2026-06-03T23:45:25.191469+00:00",
+  "clusters": [
+    {
+      "id": "50a4632f9a27",
+      "cluster_score": 0.0,
+      "published_dt": "2026-06-03T21:03:00+00:00",
+      "primary": {
+        "title": "‘Squeezing more life out of every dollar’: How inflation is forcing a new reality on American families and amplifying the economy’s ‘K shape’",
+        "snippet": "Higher prices are crimping spending among lower- and middle-income consumers, the Fed’s beige book reports.",
+        "url": "https://www.marketwatch.com/story/squeezing-more-life-out-of-every-dollar-how-inflation-is-forcing-a-new-reality-on-american-families-and-amplifying-the-economys-k-shape-c3ba42de?mod=mw_rss_topstories",
+        "source": "MarketWatch",
+        "category": "Markets",
+        "affected_entities": []
+      }
+    },
+    {
+      "id": "ca72a82cb356",
+      "cluster_score": 0.0,
+      "published_dt": "2026-06-03T20:00:08+00:00",
+      "primary": {
+        "title": "UK Treasury set to take control of fighter jet spending after defence ministry mishaps",
+        "snippet": "Move comes as Keir Starmer prepares to announce £15bn increase in military expenditure",
+        "url": "https://www.ft.com/content/f910fdc1-5721-41b7-8727-d5fb1f4ff4e0",
+        "source": "FT Companies",
+        "category": "Geopolitical",
+        "affected_entities": [
+          "Defense"
+        ]
+      }
+    },
+    {
+      "id": "fd245bd14b0b",
+      "cluster_score": 0.0,
+      "published_dt": "2026-06-03T19:25:42+00:00",
+      "primary": {
+        "title": "Google upsizes historic equity raising to $85bn to back AI spending spree",
+        "snippet": "Tech giant’s first stock offering in more than two decades gets strong demand as investors shrug off huge investment plans",
+        "url": "https://www.ft.com/content/85299cdd-d9b3-4b40-8d10-73fc9ddb4573",
+        "source": "FT Companies",
+        "category": "Markets",
+        "affected_entities": []
+      }
+    },
+    {
+      "id": "188014636b8b",
+      "cluster_score": 0.0,
+      "published_dt": "2026-06-02T04:00:23+00:00",
+      "primary": {
+        "title": "EasyJet’s summer sale reaches Wall Street",
+        "snippet": "Europe’s famed budget airline has become a potential takeover target as war in Iran hits industry",
+        "url": "https://www.ft.com/content/696e7363-9c46-4b5e-98a5-26701e032e5c",
+        "source": "FT Deals",
+        "category": "Geopolitical",
+        "affected_entities": [
+          "Airlines"
+        ]
+      }
+    }
+  ]
+}

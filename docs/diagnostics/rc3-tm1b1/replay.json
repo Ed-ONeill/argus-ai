@@ -1,0 +1,365 @@
+{
+  "baseline_ref": "fe93a34",
+  "controls_before": {
+    "J01": true,
+    "J03": true,
+    "retained-government": true,
+    "fed-household-excerpt": true,
+    "idc-infrastructure-title": true,
+    "household-cutback": true,
+    "purchasing-power": true,
+    "budget-pressure": true,
+    "spending-by-households": true,
+    "mixed-positive": true,
+    "mixed-neutral": true,
+    "negated": true,
+    "contraction-negated": true,
+    "easing": true,
+    "no-longer": true,
+    "ambiguous": true,
+    "hypothetical": true,
+    "corporate": true,
+    "acquisition": true,
+    "financing": true,
+    "household-neutral": true,
+    "household-growth": true,
+    "corporate-household-nearby": true,
+    "mixed-two-clauses": true
+  },
+  "controls_after": {
+    "J01": false,
+    "J03": true,
+    "retained-government": false,
+    "fed-household-excerpt": true,
+    "idc-infrastructure-title": false,
+    "household-cutback": true,
+    "purchasing-power": true,
+    "budget-pressure": true,
+    "spending-by-households": true,
+    "mixed-positive": true,
+    "mixed-neutral": false,
+    "negated": false,
+    "contraction-negated": false,
+    "easing": false,
+    "no-longer": false,
+    "ambiguous": false,
+    "hypothetical": false,
+    "corporate": false,
+    "acquisition": false,
+    "financing": false,
+    "household-neutral": false,
+    "household-growth": false,
+    "corporate-household-nearby": false,
+    "mixed-two-clauses": true
+  },
+  "unrelated_focused_payloads_equal": true,
+  "corpora": {
+    "retained-0f875b7be67b": {
+      "input_sha256": "3dd8cecc034267a453ddd3652f6443bee6587a6c915041687ac98ad7497c4455",
+      "cluster_count": 75,
+      "generated_at": "2026-07-25T17:26:00.673305+00:00",
+      "changed_themes": [],
+      "consumer_stress_before": {
+        "ranked_contributors": [
+          {
+            "id": "2a7dc3c3a5d2",
+            "rank": 1,
+            "weight": 6.0
+          },
+          {
+            "id": "f16270208b97",
+            "rank": 2,
+            "weight": 3.0
+          },
+          {
+            "id": "44057695f2a5",
+            "rank": 3,
+            "weight": 3.0
+          },
+          {
+            "id": "26d7f041448b",
+            "rank": 4,
+            "weight": 3.0
+          }
+        ],
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "story_count": 4,
+        "breadth": 4,
+        "emitted": true,
+        "confidence": 65,
+        "top_five": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "44057695f2a5",
+          "26d7f041448b"
+        ]
+      },
+      "consumer_stress_after": {
+        "ranked_contributors": [
+          {
+            "id": "2a7dc3c3a5d2",
+            "rank": 1,
+            "weight": 6.0
+          },
+          {
+            "id": "f16270208b97",
+            "rank": 2,
+            "weight": 3.0
+          },
+          {
+            "id": "44057695f2a5",
+            "rank": 3,
+            "weight": 3.0
+          },
+          {
+            "id": "26d7f041448b",
+            "rank": 4,
+            "weight": 3.0
+          }
+        ],
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "story_count": 4,
+        "breadth": 4,
+        "emitted": true,
+        "confidence": 65,
+        "top_five": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "44057695f2a5",
+          "26d7f041448b"
+        ]
+      },
+      "event_theme_changes": {},
+      "event_count_before": 29,
+      "event_count_after": 29
+    },
+    "retained-9ac9473db0fa": {
+      "input_sha256": "d2f983ee95bf74363915f1178e516987d5ca0695d88274e0f83d1dcb1a851af5",
+      "cluster_count": 54,
+      "generated_at": "2026-07-25T17:26:50.311033+00:00",
+      "changed_themes": [],
+      "consumer_stress_before": {
+        "ranked_contributors": [
+          {
+            "id": "2a7dc3c3a5d2",
+            "rank": 1,
+            "weight": 6.0
+          },
+          {
+            "id": "f16270208b97",
+            "rank": 2,
+            "weight": 3.0
+          },
+          {
+            "id": "2010d85a752e",
+            "rank": 3,
+            "weight": 3.0
+          },
+          {
+            "id": "26d7f041448b",
+            "rank": 4,
+            "weight": 3.0
+          }
+        ],
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "story_count": 4,
+        "breadth": 4,
+        "emitted": true,
+        "confidence": 65,
+        "top_five": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "2010d85a752e",
+          "26d7f041448b"
+        ]
+      },
+      "consumer_stress_after": {
+        "ranked_contributors": [
+          {
+            "id": "2a7dc3c3a5d2",
+            "rank": 1,
+            "weight": 6.0
+          },
+          {
+            "id": "f16270208b97",
+            "rank": 2,
+            "weight": 3.0
+          },
+          {
+            "id": "2010d85a752e",
+            "rank": 3,
+            "weight": 3.0
+          },
+          {
+            "id": "26d7f041448b",
+            "rank": 4,
+            "weight": 3.0
+          }
+        ],
+        "confidence_pre_competition": 65,
+        "evidence_count": 4,
+        "story_count": 4,
+        "breadth": 4,
+        "emitted": true,
+        "confidence": 65,
+        "top_five": [
+          "2a7dc3c3a5d2",
+          "f16270208b97",
+          "2010d85a752e",
+          "26d7f041448b"
+        ]
+      },
+      "event_theme_changes": {},
+      "event_count_before": 28,
+      "event_count_after": 28
+    },
+    "retained-3a7b87bcf0f9": {
+      "input_sha256": "c43e40eb3e4909c885229b26ec21ca659d2f8718f38fb520d769135cbaac091e",
+      "cluster_count": 67,
+      "generated_at": "2026-06-03T23:45:25.191469+00:00",
+      "changed_themes": [
+        "consumer-stress"
+      ],
+      "consumer_stress_before": {
+        "ranked_contributors": [
+          {
+            "id": "188014636b8b",
+            "rank": 1,
+            "weight": 3.0
+          },
+          {
+            "id": "ca72a82cb356",
+            "rank": 2,
+            "weight": 2.0
+          },
+          {
+            "id": "fd245bd14b0b",
+            "rank": 3,
+            "weight": 2.0
+          },
+          {
+            "id": "50a4632f9a27",
+            "rank": 4,
+            "weight": 1.0
+          }
+        ],
+        "confidence_pre_competition": 38,
+        "evidence_count": 3,
+        "story_count": 4,
+        "breadth": 4,
+        "emitted": true,
+        "confidence": 38,
+        "top_five": [
+          "188014636b8b",
+          "ca72a82cb356",
+          "fd245bd14b0b",
+          "50a4632f9a27"
+        ]
+      },
+      "consumer_stress_after": {
+        "ranked_contributors": [
+          {
+            "id": "188014636b8b",
+            "rank": 1,
+            "weight": 3.0
+          },
+          {
+            "id": "50a4632f9a27",
+            "rank": 2,
+            "weight": 1.0
+          }
+        ],
+        "confidence_pre_competition": 21,
+        "evidence_count": 2,
+        "story_count": 2,
+        "breadth": 2,
+        "emitted": true,
+        "confidence": 21,
+        "top_five": [
+          "188014636b8b",
+          "50a4632f9a27"
+        ]
+      },
+      "event_theme_changes": {
+        "ca72a82cb356": {
+          "before": [
+            "treasury-yield-pressure",
+            "consumer-stress",
+            "defense-reindustrialization"
+          ],
+          "after": [
+            "treasury-yield-pressure",
+            "defense-reindustrialization"
+          ]
+        },
+        "fd245bd14b0b": {
+          "before": [
+            "ai-energy-demand",
+            "ai-compute-arms-race",
+            "consumer-stress"
+          ],
+          "after": [
+            "ai-energy-demand",
+            "ai-compute-arms-race"
+          ]
+        }
+      },
+      "event_count_before": 41,
+      "event_count_after": 41
+    },
+    "fresh-cycle139": {
+      "input_sha256": "9d4b02427e28fa23794c773efaee73bca8c639ec7316cf0de091220cc510fae7",
+      "cluster_count": 60,
+      "generated_at": "2026-09-16T16:42:43.576105+00:00",
+      "changed_themes": [],
+      "consumer_stress_before": {
+        "ranked_contributors": [
+          {
+            "id": "f50afab5f677",
+            "rank": 1,
+            "weight": 6.0
+          },
+          {
+            "id": "3b4e25162519",
+            "rank": 2,
+            "weight": 6.0
+          }
+        ],
+        "confidence_pre_competition": 34,
+        "evidence_count": 1,
+        "story_count": 2,
+        "breadth": 2,
+        "emitted": false,
+        "confidence": null,
+        "top_five": []
+      },
+      "consumer_stress_after": {
+        "ranked_contributors": [
+          {
+            "id": "f50afab5f677",
+            "rank": 1,
+            "weight": 6.0
+          },
+          {
+            "id": "3b4e25162519",
+            "rank": 2,
+            "weight": 6.0
+          }
+        ],
+        "confidence_pre_competition": 34,
+        "evidence_count": 1,
+        "story_count": 2,
+        "breadth": 2,
+        "emitted": false,
+        "confidence": null,
+        "top_five": []
+      },
+      "event_theme_changes": {},
+      "event_count_before": 35,
+      "event_count_after": 35
+    }
+  }
+}

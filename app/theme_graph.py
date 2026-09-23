@@ -49,6 +49,60 @@ def _norm(text: str) -> str:
     return " " + _PUNCT_RE.sub(" ", text.lower()) + " "
 
 
+# RC3-TM1b1: bounded source-context qualification, used ONLY for a spending-only
+# consumer-stress match. These are affirmative relations, not a bag of words:
+# a household actor must be linked to constrained spending within one clause.
+_SPENDING_FORMS = frozenset({"spending", "spend", "spends", "spent"})
+_HOUSEHOLD = r"(?:households?|consumers|families|shoppers)"
+_SPENDING_PRESSURE = (
+    r"(?:crimp(?:s|ed|ing)?|squeez(?:e|es|ed|ing)|constrain(?:s|ed|ing)?|"
+    r"compress(?:es|ed|ing)?|curb(?:s|ed|ing)?|cut(?:s|ting)?(?: back)?|"
+    r"reduc(?:e|es|ed|ing)|pull(?:s|ed|ing)? back|"
+    r"fall(?:s|ing)?|fell|fallen|declin(?:e|es|ed|ing)|"
+    r"weaken(?:s|ed|ing)?|slow(?:s|ed|ing)?|down)")
+_SPENDING_RELATIONS = tuple(re.compile(pattern) for pattern in (
+    # Families cut back on spending; consumers pull back on spending.
+    rf"\b{_HOUSEHOLD}\b(?: (?:are|is|have|has|had|were|was|now|still|reportedly|"
+    rf"also|continue|continues|continued|to|further|sharply)){{0,5}} {_SPENDING_PRESSURE}\b"
+    r"(?: (?:back|on|their|own|personal|essential|overall|sharply|further)){0,3} spending\b",
+    # Higher prices crimp spending among lower- and middle-income consumers (J03).
+    rf"\b{_SPENDING_PRESSURE}\b(?: (?:back|on|the|overall|sharply|further)){{0,3}}"
+    rf" spending (?:among|by|of)\b(?: \w+){{0,8}} {_HOUSEHOLD}\b",
+    # Spending by households has fallen.
+    rf"\bspending (?:among|by|of) {_HOUSEHOLD}\b(?: \w+){{0,5}} {_SPENDING_PRESSURE}\b",
+    # Household purchasing power ... constrains spending.
+    rf"\b{_HOUSEHOLD}\b(?: \w+){{0,3}} (?:budgets?|purchasing power|real income)\b"
+    rf"(?: \w+){{0,5}} {_SPENDING_PRESSURE}\b(?: \w+){{0,3}} spending\b",
+    # Spending falls as families face tighter budgets.
+    rf"\bspending {_SPENDING_PRESSURE}\b(?: \w+){{0,3}} (?:as|because) {_HOUSEHOLD}\b"
+    r"(?: \w+){0,3} (?:tighter budgets|budget pressure|higher bills)\b",
+))
+_SPENDING_CLAUSE_SPLIT = re.compile(r"[.!;\n]|(?<=\?)\s+|\b(?:but|while|whereas|however)\b", re.I)
+_SPENDING_UNCERTAIN = re.compile(
+    r"\b(?:not|no|never|without|may|might|could|if|whether|"
+    r"isn t|aren t|wasn t|weren t|don t|doesn t|didn t|won t|can t)\b")
+_SPENDING_RELIEF = re.compile(r"\b(?:eas(?:e|es|ed|ing)|reliev(?:e|ed|ing)|recover(?:s|ed|ing)?)\b")
+
+
+def _qualifies_household_spending(title: str, snippet: str) -> bool:
+    """Require an affirmative household-pressure relation; otherwise abstain.
+
+    Never join a headline to an unrelated snippet or cross sentence/contrast
+    boundaries to manufacture support. Negation, hypothetical and relief clauses
+    conservatively abstain. This small English rule is not a general classifier.
+    """
+    for text in (title, snippet):
+        for clause in _SPENDING_CLAUSE_SPLIT.split(text):
+            if "?" in clause:
+                continue
+            clause = " ".join(_norm(clause).split())
+            if _SPENDING_UNCERTAIN.search(clause) or _SPENDING_RELIEF.search(clause):
+                continue
+            if any(pattern.search(clause) for pattern in _SPENDING_RELATIONS):
+                return True
+    return False
+
+
 def _item_sentiment(item: object) -> str:
     impact = (getattr(item, "impact", "") or "").lower()
     if impact.startswith("bullish"): return "bullish"
@@ -445,6 +499,7 @@ def extract_themes(
             # Keyword match — normalize so "glp-1" matches " glp 1 "
             kw_score = 0.0
             kw_hits  = 0
+            matched_keywords: list[str] = []
             for kw in theme_keywords:
                 if kw_hits >= 3:
                     break
@@ -459,14 +514,24 @@ def extract_themes(
                     kw_hits  += 1
                     hit = True
                 if hit:
-                    all_kw_hits_total += 1
-                    if kw in generic_kw_set:
-                        generic_kw_hits_total += 1
+                    matched_keywords.append(kw)
             raw += kw_score
+
+            if (theme_id == "consumer-stress" and not entity_hits
+                    and matched_keywords
+                    and all(kw.strip().lower() in _SPENDING_FORMS for kw in matched_keywords)
+                    and not _qualifies_household_spending(
+                        getattr(item, "title", "") or "",
+                        getattr(item, "snippet", "") or "")):
+                # Exclude this pair before ANY aggregate score/diversity/ratio
+                # accounting. Repeated forms of spending are not new support.
+                continue
 
             if raw <= 0:
                 continue
 
+            all_kw_hits_total += kw_hits
+            generic_kw_hits_total += sum(kw in generic_kw_set for kw in matched_keywords)
             weight   = 1.0 + min(getattr(cluster, "cluster_score", 0.0), 2.0) * 0.4
             weighted = raw * weight
             total_score += weighted

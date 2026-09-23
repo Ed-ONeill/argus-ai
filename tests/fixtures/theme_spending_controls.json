@@ -1,0 +1,210 @@
+[
+  {
+    "id": "J01",
+    "title": "Google upsizes historic equity raising to $85bn to back AI spending spree",
+    "snippet": "Tech giant’s first stock offering in more than two decades gets strong demand as investors shrug off huge investment plans",
+    "entity_hints": [],
+    "eligible": false,
+    "provenance": "retained production primary title/snippet",
+    "corpus": "retained-3a7b87bcf0f9",
+    "cluster_id": "fd245bd14b0b",
+    "url": "https://www.ft.com/content/85299cdd-d9b3-4b40-8d10-73fc9ddb4573",
+    "label_origin": "human adjudication"
+  },
+  {
+    "id": "J03",
+    "title": "‘Squeezing more life out of every dollar’: How inflation is forcing a new reality on American families and amplifying the economy’s ‘K shape’",
+    "snippet": "Higher prices are crimping spending among lower- and middle-income consumers, the Fed’s beige book reports.",
+    "entity_hints": [],
+    "eligible": true,
+    "provenance": "retained production primary title/snippet",
+    "corpus": "retained-3a7b87bcf0f9",
+    "cluster_id": "50a4632f9a27",
+    "url": "https://www.marketwatch.com/story/squeezing-more-life-out-of-every-dollar-how-inflation-is-forcing-a-new-reality-on-american-families-and-amplifying-the-economys-k-shape-c3ba42de?mod=mw_rss_topstories",
+    "label_origin": "human adjudication"
+  },
+  {
+    "id": "retained-government",
+    "title": "UK Treasury set to take control of fighter jet spending after defence ministry mishaps",
+    "snippet": "Move comes as Keir Starmer prepares to announce £15bn increase in military expenditure",
+    "entity_hints": [
+      "Defense"
+    ],
+    "eligible": false,
+    "provenance": "retained production primary title/snippet",
+    "corpus": "retained-3a7b87bcf0f9",
+    "cluster_id": "ca72a82cb356",
+    "url": "https://www.ft.com/content/f910fdc1-5721-41b7-8727-d5fb1f4ff4e0",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "fed-household-excerpt",
+    "title": "Beige Book - February 2026",
+    "snippet": "sales were dampened by economic uncertainty, increased price sensitivity, and lower-income consumers pulling back on spending.",
+    "eligible": true,
+    "provenance": "external primary-source excerpt, not retained feed; contiguous excerpt from national summary; no artificial production input",
+    "url": "https://www.federalreserve.gov/monetarypolicy/beigebook202602-summary.htm",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "idc-infrastructure-title",
+    "title": "AI Infrastructure Spending Caps Historic Year at ~$90 Billion in Q4 2025; 2029 Spending to Eclipse $1 Trillion",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "external primary-source headline, not retained feed",
+    "url": "https://www.idc.com/resource-center/blog/ai-infrastructure-spending-caps-historic-year-at-90-billion-in-q4-2025-2029-spending-to-eclipse-1-trillion/",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "household-cutback",
+    "title": "Families are cutting back on spending as bills rise.",
+    "snippet": "",
+    "eligible": true,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "purchasing-power",
+    "title": "Inflation erodes household purchasing power and constrains spending.",
+    "snippet": "",
+    "eligible": true,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "budget-pressure",
+    "title": "Spending falls as families face tighter budgets.",
+    "snippet": "",
+    "eligible": true,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "spending-by-households",
+    "title": "Spending by households has fallen sharply.",
+    "snippet": "",
+    "eligible": true,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "mixed-positive",
+    "title": "Google expands AI spending; households are cutting back on spending as prices rise.",
+    "snippet": "",
+    "eligible": true,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "mixed-neutral",
+    "title": "Google expands AI spending; households keep their budgets steady.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "negated",
+    "title": "Higher prices are not crimping spending among lower-income consumers.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "contraction-negated",
+    "title": "Higher prices aren't crimping spending among families.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "easing",
+    "title": "Pressure on families is easing and spending is recovering.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "no-longer",
+    "title": "Households are no longer cutting back on spending.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "ambiguous",
+    "title": "Spending outlook shifts",
+    "snippet": "Analysts disagree about the cause and direction.",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "hypothetical",
+    "title": "Households may cut back on spending if prices rise.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "corporate",
+    "title": "Business spending on new factories increases.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "acquisition",
+    "title": "Acquisition spending increases at the group.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "financing",
+    "title": "Financing supports spending on a new data center.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "household-neutral",
+    "title": "Spending by families remains steady.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "household-growth",
+    "title": "Families increase spending as incomes improve.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "corporate-household-nearby",
+    "title": "Google expands spending on consumer software despite pressure on families.",
+    "snippet": "",
+    "eligible": false,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  },
+  {
+    "id": "mixed-two-clauses",
+    "title": "Google raises AI spending while consumers pull back on spending.",
+    "snippet": "",
+    "eligible": true,
+    "provenance": "synthetic fixture",
+    "label_origin": "development control; not benchmark truth"
+  }
+]
