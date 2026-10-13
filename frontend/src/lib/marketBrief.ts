@@ -1,59 +1,38 @@
-// lib/marketBrief.ts — the "Before the Bell" lead, written deterministically from REAL
-// signals only. No pre-market futures and no forward calendar exist yet, so this never
-// claims them: it describes the tape (delayed closes we actually have), the day's lead
-// story, and the session. A morning-note voice built from facts, not a model narrative.
-// Pure; honest by omission — absent inputs are simply left out, and an empty note is null.
+// ETF reference observations. Session clocks and retrieval times never replace bar dates.
+import type { PriceSeries } from "./platform/types/prices";
+import { toDisplayPoints } from "./platform/chart/geometry";
 
-export interface AssetMove { label: string; pct: number | null; }
-
+export const ETF_LOOKBACK_DAYS = 120;
+export interface AssetMove { label: string; pct: number | null; asOf?: string | null; stale?: boolean; }
+export interface ETFObservation extends AssetMove { close: number; asOf: string; }
 export interface MarketBriefInput {
-  index: AssetMove | null;    // S&P 500 (delayed close)
-  rates: AssetMove | null;    // Treasuries via TLT (price up => yields lower)
-  oil: AssetMove | null;      // Oil via USO
-  topStory: string | null;    // the day's real lead headline
+  index: AssetMove | null;
+  rates: AssetMove | null;
+  oil: AssetMove | null;
+  topStory: string | null;
   sessionLabel: string | null;
   live: boolean;
 }
 
+export function etfObservation(series: PriceSeries | null, symbol: string, label: string, stale = false): ETFObservation | null {
+  if (!series || series.symbol !== symbol || series.exchange !== "US") return null;
+  const points = toDisplayPoints(series).filter(p => Number.isFinite(Date.parse(p.t)));
+  const last = points.at(-1);
+  const previous = points.at(-2);
+  if (!last || last.v <= 0) return null;
+  return {
+    label, close: last.v, asOf: last.t.slice(0, 10),
+    pct: previous && previous.v > 0 ? ((last.v - previous.v) / previous.v) * 100 : null,
+    stale: stale || series.quality?.freshness === "stale" || series.quality?.grade === "STALE",
+  };
+}
+
 const pct = (p: number): string => `${p >= 0 ? "+" : "-"}${Math.abs(p).toFixed(1)}%`;
-
-function sessionPrefix(label: string | null, live: boolean): string {
-  if (live) return "With markets open";
-  const l = (label ?? "").toLowerCase();
-  if (l.includes("pre")) return "Ahead of the open";
-  if (l.includes("after")) return "After the close";
-  if (l.includes("weekend")) return "Heading into the week";
-  return "";
-}
-
-function joinList(parts: string[]): string {
-  if (parts.length <= 1) return parts.join("");
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
-}
-
 export function buildMarketBrief(input: MarketBriefInput): string | null {
-  const moves: string[] = [];
-  if (input.index?.pct != null) moves.push(`the S&P 500 last closed ${pct(input.index.pct)}`);
-  if (input.rates?.pct != null) {
-    // TLT up => bond prices up => yields lower (a real inverse mapping, not a guess).
-    moves.push(input.rates.pct > 0 ? "Treasury yields eased"
-      : input.rates.pct < 0 ? "Treasury yields pushed higher" : "Treasury yields held");
-  }
-  if (input.oil?.pct != null) moves.push(`oil ${pct(input.oil.pct)}`);
-
-  const prefix = sessionPrefix(input.sessionLabel, input.live);
-  let note = "";
-
-  if (moves.length > 0) {
-    note = prefix ? `${prefix}, ${joinList(moves)}.` : `${joinList(moves).replace(/^the/, "The")}.`;
-  } else if (prefix) {
-    note = `${prefix}.`;
-  }
-
-  if (input.topStory) {
-    note += (note ? " " : "") + `In focus: ${input.topStory.replace(/\.$/, "")}.`;
-  }
-
-  return note.trim() ? note.trim() : null;
+  const moves = [input.index, input.rates, input.oil]
+    .filter((m): m is AssetMove => !!m && m.pct != null && Number.isFinite(m.pct))
+    .map(m => `${m.label} ${pct(m.pct!)} (${m.asOf ?? "date unavailable"}${m.stale ? "; marked stale" : ""})`);
+  const note = moves.length ? `Latest available ETF adjusted-close changes: ${moves.join("; ")}. Dates are trading sessions (UTC), not live quotes.` : "";
+  const story = input.topStory ? `In focus: ${input.topStory.replace(/\.$/, "")}.` : "";
+  return [note, story].filter(Boolean).join(" ") || null;
 }
