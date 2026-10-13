@@ -12,6 +12,7 @@ import { useFollowedThemes } from "@/hooks/useFollowedThemes";
 import { useSaved } from "@/hooks/useSaved";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { LivingBrief } from "@/components/brief/LivingBrief";
+import { buildTopStories } from "@/lib/topStories";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -407,7 +408,7 @@ export default function LandingPage() {
                   marginBottom: "18px",
                 }}
               >
-                {feedLoading ? "Your Argus Brief is loading." : feedError && !feedData ? "Your Argus Brief is unavailable right now." : feedData?.events?.length ? "Your Argus Brief is ready." : "No developments are available for your brief yet."}
+                {feedLoading ? "Your Argus Brief is loading." : feedError && !feedData ? "Your Argus Brief is unavailable right now." : buildTopStories(feedData).length ? "Your Argus Brief is ready." : "No developments are available for your brief yet."}
               </motion.p>
 
               {/* Date stamp */}
