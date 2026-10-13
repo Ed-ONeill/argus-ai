@@ -39,6 +39,9 @@ function SpineNode({ node, active, from, onFocus }: {
   const move = useMemo(() => dayMove(series), [series]);
   const up = move != null && move > 0;
   const down = move != null && move < 0;
+  const asOf = series?.asOf && Number.isFinite(Date.parse(series.asOf))
+    ? new Date(series.asOf).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+    : "Unknown date";
   return (
     <button type="button" onClick={() => onFocus(node)} style={nodeStyle(node)}
       className={cn(
@@ -48,7 +51,7 @@ function SpineNode({ node, active, from, onFocus }: {
       <span title={`${node.symbol} representative ETF; latest available daily close${series?.asOf ? ` as of ${series.asOf}` : ""}`} className="whitespace-nowrap text-[10px] font-semibold text-ink-secondary">{node.label}</span>
       {move != null ? (
         <span className={cn("font-mono text-[9.5px] tabular-nums", up ? "text-emerald-400" : down ? "text-rose-400" : "text-ink-muted")}>
-          {up ? "+" : ""}{move.toFixed(1)}%<span className="block text-[8px] text-ink-faint">{node.symbol} · {series?.asOf ?? "date unavailable"}</span>
+          {up ? "+" : ""}{move.toFixed(1)}%<span title={series?.asOf ?? "date unavailable"} className="block text-[8px] text-ink-faint">{node.symbol}<span className="block">{asOf}</span></span>
         </span>
       ) : (
         <span className="font-mono text-[9px] text-ink-faint">Price unavailable</span>
@@ -86,7 +89,7 @@ export function MarketLandscape({ feed, activeId, onFocus }: {
   }, []);
 
   return (
-    <div><p className="mb-2 text-[11px] text-ink-muted">Connections show shared reporting topics, not causal effects. Select a label to inspect the matching developments. Prices are representative ETF daily changes.</p>
+    <div><p className="mb-2 text-[11px] text-ink-muted">Connections show shared reporting topics, not causal effects. Select a label to inspect the matching developments. Prices are representative ETF daily changes; dates show the latest available daily close (UTC).</p>
     <section aria-label="Today's market landscape"
       className="relative w-full overflow-hidden rounded-2xl border border-edge/60 bg-surface/30" style={{ height: HEIGHT }}>
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
