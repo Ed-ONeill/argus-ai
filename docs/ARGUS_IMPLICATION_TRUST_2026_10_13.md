@@ -1,7 +1,7 @@
 # Event implication trust correction — 2026-10-13
 
-Status: core correction deployed and rendered checks passed; final landscape-date
-follow-up deployment pending.
+Status: deployed; core correction and final landscape-date follow-up verified in
+authenticated production. Release blocker closed on 2026-10-13.
 
 ## Scope and authority
 
@@ -63,15 +63,29 @@ date follow-up: `f491b69` (full timestamp retained on hover).
 
 ## Release and rendered verification
 
-Railway accepted the main-branch deployments. Final release status remains pending.
-At 15:25 UTC, `f491b69` still reports pending in both Railway contexts, and the
-production browser still shows the earlier ISO-date layout. Railway's dashboard is
-signed out; owner sign-in was requested to inspect the prolonged deployment. Do not
-claim the date-layout follow-up is live until its caption and compact dates render.
+Railway accepted the main-branch deployments. At the initial 15:25 UTC checkpoint,
+`f491b69` was pending in both contexts and the browser still showed ISO dates.
+After owner sign-in, the dashboard confirmed both final deployments ACTIVE and
+successful. GitHub status history records final success at 15:27:56 UTC for
+`argus-ai` and 15:31:44 UTC for `perceptive-achievement`.
+
+Final deployment IDs:
+- Production-domain service: `87be5b66-8f4c-423e-ad66-3aed81a6e9d4`.
+- Second service: `5a6472c1-38f2-475e-a95e-b67357752af7`.
+
+Authenticated Feed verification after sign-in showed all seven reference ETFs with
+compact “Oct 12” dates, full `2026-10-12T00:00:00.000Z` tooltip attributes, and the
+explicit latest-daily-close (UTC) caption. The screenshot confirmed that these date
+labels no longer overlap. Missing article-publication labels and the reporting versus
+implication disclosure remain visible. The current feed is a later cycle, not a
+replacement for any frozen audit sample. No further runtime edits or redeployment
+were needed. Railway's dashboard displayed a platform build-delay notice linking to
+https://status.railway.com/incident/U3RALRQ7; this is consistent with the prolonged
+wait, but does not independently establish the cause of each individual build delay.
 GitHub's Railway status history reports success for `argus-ai` at
 15:08:02 UTC for `9f2206d` and 15:16:01 UTC for `33b608e`, each naming
 `argus-market-intelligence.com`. Service roles must not be inferred from their names;
-the other status context, `perceptive-achievement`, remains pending at this checkpoint.
+the other status context, `perceptive-achievement`, was pending at that earlier checkpoint.
 Authenticated production rendering at approximately 11:09–11:12 EDT established:
 
 - Feed: strong model-generated impact lines removed; source-label counts and
@@ -111,3 +125,7 @@ The JPM company destination still displayed older “moves with”/“forces tha
 language and a retirement-advice development with thematic tickers. Navigation works,
 but Company remains a separate trust/coherence concern; it is not cleared by this
 three-surface presentation correction.
+
+The final Feed screenshot also showed crowding/clipping among the upper company
+nodes (JPM/GS/AMAT). The compact reference-date correction does not resolve that
+separate graph-layout issue; no overall Landscape layout sign-off is claimed.
