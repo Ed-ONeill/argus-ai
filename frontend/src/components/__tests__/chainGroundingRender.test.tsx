@@ -76,12 +76,12 @@ describe("Event page: ungrounded chain and its dependent assertions vanish toget
     expect(JSON.stringify(current.feed)).toBe(before);        // payload invariant
   });
 
-  it("renders a grounded control's chain, prose, and watch line exactly as before", () => {
+  it("preserves grounded context but explicitly denies event-level causal proof", () => {
     current.feed = feed([GROUNDED]);
     render(<EventPage clusterId="rot1" />);
     const body = document.body.textContent ?? "";
-    expect(body).toContain("The connection runs from AI Capex Supercycle to AMD.");
-    expect(body).toContain("Watch whether the link between AI Capex Supercycle and AMD persists.");
+    expect(body).toContain("Related context includes AI Capex Supercycle and AMD. These connections do not establish this event's impact.");
+    expect(body).toContain("Look for reporting that explains how these connections affect the named companies.");
     for (const chipLabel of ["AI Capex Supercycle", "AVGO", "NVDA", "AMD"]) {
       expect(screen.getAllByText(chipLabel).length).toBeGreaterThan(0);
     }

@@ -1,3 +1,4 @@
+import { directCompanies } from "./eventPresentation";
 // lib/adaptiveHero.ts — the deterministic Adaptive Hero selector (PX3 / PX3.1). Pure.
 //
 // The Hero adapts its emphasis to the day's LEAD INTELLIGENCE. Today that lead intelligence
@@ -52,7 +53,7 @@ const REP_ETF: [RegExp, string, string][] = [
 ];
 
 function companyInstrument(ev: MarketEvent): HeroInstrument | null {
-  const names = (ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [];
+  const names = directCompanies(ev);
   const ticker = names.map((s) => s.trim()).find((s) => TICKER_RE.test(s));
   return ticker ? { symbol: ticker.toUpperCase(), exchange: "US", representative: false } : null;
 }

@@ -180,7 +180,7 @@ describe("ungrounded chains are suppressed (retained-record analogues)", () => {
     const v = view({ events: [TESLA] }, "tsla1");
     noChain(v);
     // the existing fallback still speaks to the event's own named company
-    expect(v.whyInvestorsCare?.read).toBe("The market in focus here is TSLA.");
+    expect(v.whyInvestorsCare?.read).toBe("Reporting names TSLA. Company involvement alone does not establish a benefit or loss.");
   });
 });
 
@@ -222,7 +222,7 @@ describe("no reselection when the selected chain fails the gate", () => {
       found: true, event: TESLA, executive: [], watch: [], explanation };
     const v = buildEventView(dossier, feed({}))!;
     noChain(v);   // chain stays [] — the grounded chains[1] alternative is never promoted
-    expect(v.whyInvestorsCare?.read).toBe("The market in focus here is TSLA.");   // existing fallback only
+    expect(v.whyInvestorsCare?.read).toBe("Reporting names TSLA. Company involvement alone does not establish a benefit or loss.");   // existing fallback only
   });
 });
 
@@ -230,13 +230,13 @@ describe("positive controls pass unchanged (direct exposure-target overlap)", ()
   it("AI rotation: AI Capex Supercycle -> AVGO -> NVDA -> AMD preserved exactly", () => {
     const v = view({ events: [AI_ROTATION] }, "rot1");
     expect(v.whyInvestorsCare!.chain.map((c) => c.label)).toEqual(["AI Capex Supercycle", "AVGO", "NVDA", "AMD"]);
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from AI Capex Supercycle to AMD.");
-    expect(v.watch).toContain("Watch whether the link between AI Capex Supercycle and AMD persists.");
+    expect(v.whyInvestorsCare!.read).toBe("Related context includes AI Capex Supercycle and AMD. These connections do not establish this event's impact.");
+    expect(v.watch).toContain("Look for reporting that explains how these connections affect the named companies.");
   });
   it("GLP-1: LLY -> NVO -> ABBV preserved exactly", () => {
     const v = view({ events: [GLP1] }, "glp1");
     expect(v.whyInvestorsCare!.chain.map((c) => c.label)).toEqual(["LLY", "NVO", "ABBV"]);
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from LLY to ABBV.");
+    expect(v.whyInvestorsCare!.read).toBe("Related context includes LLY and ABBV. These connections do not establish this event's impact.");
   });
   it("Defense: GD -> LMT -> NOC preserved exactly", () => {
     const v = view({ events: [DEFENSE] }, "def1");

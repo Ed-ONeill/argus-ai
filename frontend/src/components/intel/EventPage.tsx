@@ -18,6 +18,7 @@ import { useSeries } from "@/lib/platform/hooks/useSeries";
 import { ArgusChart, changeInfo, toDisplayPoints } from "@/lib/platform/chart";
 import { EntityChip } from "@/components/common/EntityChip";
 import { cn, timeAgo } from "@/lib/utils";
+import { IMPLICATION_LIMIT } from "@/lib/eventPresentation";
 
 const RANGES = ["1M", "3M", "6M", "1Y", "5Y"] as const;
 type Range = (typeof RANGES)[number];
@@ -73,7 +74,7 @@ function HeroChart({ viz }: { viz: PriceChartViz }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-ink-faint">{title}</h2>
+      <h2 id={title === "Evidence" ? "evidence" : undefined} className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-ink-faint">{title}</h2>
       {children}
     </section>
   );
@@ -86,7 +87,9 @@ function ChipRow({ label, items, color }: { label: string; items: EventChip[]; c
       <span className="w-28 shrink-0 text-[9px] font-semibold uppercase tracking-[0.14em]" style={color ? { color } : undefined}>{label}</span>
       <div className="flex flex-wrap gap-1.5">
         {items.map((c, i) => (
-          <EntityChip key={`${c.label}-${i}`} kind={c.kind} label={c.label} color={color} size="md"
+          c.kind === "ticker" ? <Link key={`${c.label}-${i}`} href={`/company/${encodeURIComponent(c.label)}`}
+            className="rounded-lg border border-edge-subtle bg-raised/60 px-2 py-0.5 text-[12px] font-medium text-accent underline underline-offset-2">{c.label}</Link> :
+          <EntityChip key={`${c.label}-${i}`} kind={c.kind} label={c.label} color={color} size="md" activatable={false}
             className="rounded-lg border border-edge-subtle bg-raised/60 px-2 py-0.5 text-[12px] font-medium text-ink-secondary" />
         ))}
       </div>
@@ -100,8 +103,9 @@ function EvidenceRow({ e }: { e: EvidenceItem }) {
     <li className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-2">
       <span className="text-[11px] font-semibold text-ink-secondary">{e.source}</span>
       {kind && <span className="text-[8px] uppercase tracking-[0.1em] text-ink-faint">{kind}</span>}
-      <a href={e.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-[12px] text-ink-muted hover:text-accent">{e.title}</a>
-      {e.when && <span className="font-mono text-[9.5px] text-ink-faint">{timeAgo(e.when)}</span>}
+      <a href={e.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 text-[12px] text-ink-muted hover:text-accent">{e.title}</a>
+      <span title={e.when ?? undefined} className="font-mono text-[9.5px] text-ink-faint">{e.when ? `Published ${timeAgo(e.when)}` : "Publication time unavailable"}</span>
+      {e.excerpt && <details className="w-full text-[12px] leading-relaxed text-ink-secondary"><summary className="cursor-pointer text-accent">Read source excerpt</summary><blockquote className="mt-2 border-l border-edge pl-3">{e.excerpt}</blockquote></details>}
     </li>
   );
 }
@@ -137,10 +141,11 @@ export default function EventPage({ clusterId }: { clusterId: string }) {
         <header>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-accent">{hero.typeTag}</span>
-            {hero.whenISO && <span className="font-mono text-[10px] text-ink-faint">{timeAgo(hero.whenISO)}</span>}
+            <span title={hero.whenISO ?? undefined} className="font-mono text-[10px] text-ink-faint">{hero.whenISO ? `Latest report ${timeAgo(hero.whenISO)}` : "Publication time unavailable"}</span>
             {hero.developing && <span className="rounded-full bg-amber-400/12 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-amber-400/90">Developing</span>}
           </div>
           <h1 className="mt-1.5 max-w-[34ch] font-serif text-[clamp(1.35rem,3vw,2rem)] font-normal leading-[1.2] tracking-[-0.01em] text-ink">{hero.headline}</h1>
+          <a href="#evidence" className="mt-3 inline-block text-[12px] text-accent underline underline-offset-2">Inspect reporting and sources</a>
           {hero.visualization.kind === "price-chart" && (
             <div className="mt-4">
               <HeroChart viz={hero.visualization} />
@@ -160,6 +165,7 @@ export default function EventPage({ clusterId }: { clusterId: string }) {
           {view.evidence ? (
             <>
               <p className="mb-1 text-[11px] text-ink-muted">{view.evidence.sourceCount} {view.evidence.sourceCount === 1 ? "source label" : "source labels"}{view.evidence.corroboration >= 2 ? `, ${view.evidence.corroboration} qualified` : ""}</p>
+              <p className="mb-2 text-[12px] leading-relaxed text-ink-muted">These reports cover the development. Source counts do not establish its financial impact or independently verify every interpretation.</p>
               <ol className="flex flex-col divide-y divide-edge-subtle/50">{view.evidence.items.map((e, i) => <EvidenceRow key={`${e.url}-${i}`} e={e} />)}</ol>
             </>
           ) : (
@@ -167,16 +173,19 @@ export default function EventPage({ clusterId }: { clusterId: string }) {
           )}
         </Section>
 
-        {/* 3. Why investors care */}
+        <Section title="Implications and uncertainty">
+          <p className="text-[13.5px] leading-relaxed text-ink-secondary">{IMPLICATION_LIMIT} Company mentions and broader market connections do not establish winners, losers, or a forecast.</p>
+        </Section>
+        {/* Context remains inspectable without being presented as causal proof. */}
         {view.whyInvestorsCare && (
-          <Section title="Why investors care">
+          <Section title="Related context">
             <p className="max-w-[64ch] text-[13.5px] leading-relaxed text-ink-secondary">{view.whyInvestorsCare.read}</p>
             {view.whyInvestorsCare.chain.length > 0 && (
               <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1">
                 {view.whyInvestorsCare.chain.map((a, i) => (
                   <span key={`${a.label}-${i}`} className="flex items-center gap-1.5">
-                    <EntityChip kind={a.kind} label={a.label} size="md" className="rounded-md border border-edge-subtle bg-raised/50 px-1.5 py-0.5 text-[12px] font-semibold text-ink" />
-                    {i < view.whyInvestorsCare!.chain.length - 1 && <span className="text-ink-faint" aria-hidden>&rarr;</span>}
+                    <EntityChip kind={a.kind} label={a.label} size="md" activatable={false} className="rounded-md border border-edge-subtle bg-raised/50 px-1.5 py-0.5 text-[12px] font-semibold text-ink" />
+                    {i < view.whyInvestorsCare!.chain.length - 1 && <span className="text-ink-faint" aria-hidden>·</span>}
                   </span>
                 ))}
               </div>
@@ -185,19 +194,21 @@ export default function EventPage({ clusterId }: { clusterId: string }) {
         )}
 
         {/* 4. Who's affected (required) */}
-        <Section title="Who&rsquo;s affected">
+        <Section title="Companies and market context">
           {(who.beneficiaries.length || who.losers.length || who.companies.length || who.industries.length || who.markets.length) ? (
             <div className="flex flex-col gap-3">
               <ChipRow label="Beneficiaries" items={who.beneficiaries} color="#34D399" />
               <ChipRow label="Losers" items={who.losers} color="#F87171" />
-              <ChipRow label="Companies involved" items={who.companies} />
-              <ChipRow label="Industries exposed" items={who.industries} />
-              <ChipRow label="Markets affected" items={who.markets} />
+              <ChipRow label="Companies named" items={who.companies} />
+              <ChipRow label="Thematic context" items={who.industries} />
+              <ChipRow label="Market reference" items={who.markets} />
+              <p className="text-[12px] text-ink-muted">Thematic context comes from linked market themes, not a demonstrated effect of this event.</p>
             </div>
           ) : (
             <p className="text-[13px] text-ink-muted">No specific companies or markets are named by this event yet.</p>
           )}
         </Section>
+        <Link href="/workstation" className="text-[12px] text-accent underline underline-offset-2">Open Workstation for broader analysis</Link>
 
         {/* 5. The other side (only when a credible one exists) */}
         {view.theOtherSide && (

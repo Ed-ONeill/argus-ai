@@ -55,13 +55,13 @@ describe("buildFeedStream", () => {
     expect(by).toMatchObject({ co: "Company", ma: "M&A", mac: "Macro", pol: "Policy", px: "Markets" });
   });
 
-  it("omits a why-line that carries engine vocabulary (Law 10), keeps a clean one", () => {
+  it("omits legacy interpretations regardless of how convincing the wording sounds", () => {
     const filler = Array.from({ length: 5 }, (_, i) => event({ id: `f${i}`, editorial_score: 90 + i }));
     const dirty = event({ id: "dirty", editorial_score: 10, why_it_matters: "This theme's conviction is rising fast." });
     const clean = event({ id: "clean", editorial_score: 9, why_it_matters: "Chip demand is surging into year-end." });
     const cards = buildFeedStream(feed({ events: [...filler, dirty, clean] }));
     expect(cards.find((c) => c.id === "dirty")!.why).toBeNull();
-    expect(cards.find((c) => c.id === "clean")!.why).toBe("Chip demand is surging into year-end.");
+    expect(cards.find((c) => c.id === "clean")!.why).toBeNull();
   });
 
   it("falls back to clustered stories when no canonical events exist", () => {

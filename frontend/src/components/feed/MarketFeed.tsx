@@ -20,8 +20,8 @@ const PAGE = 20;
 
 function Card({ card }: { card: FeedCard }) {
   const meta = [
-    card.sources ? `${card.sources} ${card.sources === 1 ? "source" : "sources"}` : null,
-    timeAgo(card.when),
+    card.sources ? `${card.sources} ${card.sources === 1 ? "source label" : "source labels"}` : null,
+    card.when ? `Latest report ${timeAgo(card.when)}` : "Publication time unavailable",
   ].filter(Boolean).join(" · ");
 
   return (
@@ -43,9 +43,9 @@ function Card({ card }: { card: FeedCard }) {
         {(card.entities.length > 0 || meta) && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
             {card.entities.map((e, i) => (
-              <EntityChip key={`${e.label}-${i}`} kind={e.kind} label={e.label} size="md" className="text-[11px] font-medium text-ink-muted" />
+              <EntityChip key={`${e.label}-${i}`} kind={e.kind} label={e.label} size="md" className="text-[11px] font-medium text-ink-muted" activatable={false} />
             ))}
-            {meta && <span className="font-mono text-[10px] text-ink-faint">{meta}</span>}
+            {meta && <span title={card.when ?? undefined} className="font-mono text-[10px] text-ink-faint">{meta}</span>}
           </div>
         )}
       </Link>
@@ -100,13 +100,14 @@ export function MarketFeed({ feed, isLoading, focus, onClearFocus }: {
   if (stream.length === 0) {
     return (
       <p className="text-[13px] leading-relaxed text-ink-muted">
-        Nothing new beyond your briefing yet. The feed fills in as fresh events clear corroboration.
+        Nothing new beyond your briefing yet. The feed fills in as new reporting arrives.
       </p>
     );
   }
 
   return (
     <div>
+      <p className="mb-4 text-[12px] text-ink-muted">Developments and named companies from reporting. Financial implications require further evidence; open an event to inspect its sources and limits.</p>
       <div className="mb-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Categories">
         {(["All", ...cats] as const).map((c) => (
           <button key={c} type="button" role="tab" aria-selected={active === c}

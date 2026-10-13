@@ -69,8 +69,8 @@ describe("hero (primary visualization descriptor)", () => {
 });
 
 describe("what changed (the hero's plain summary)", () => {
-  it("re-voices plainly from the record", () => {
-    expect(ev({ events: [EARN] }, "e1").hero.summary).toBe("Data-center orders are surging into year-end.");
+  it("omits unsupported legacy interpretation even when plainly worded", () => {
+    expect(ev({ events: [EARN] }, "e1").hero.summary).toBeNull();
   });
   it("omits the line when the only summary carries internal vocabulary", () => {
     const v = ev({ events: [event({ id: "x", why_it_matters: "Conviction on the AI thesis rose beyond the deadband." })] }, "x");
@@ -100,7 +100,7 @@ describe("why investors care", () => {
   it("reads the causal chain as market actors, never a theme node", () => {
     const v = ev({ theme_intelligence: [AI], events: [EARN] }, "e1");
     expect(v.whyInvestorsCare!.chain.map((c) => c.label)).toEqual(["AI demand", "NVDA"]);
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from AI demand to NVDA.");
+    expect(v.whyInvestorsCare!.read).toBe("Related context includes AI demand and NVDA. These connections do not establish this event's impact.");
   });
   it("drops theme nodes out of the actor chain", () => {
     const v = ev({ events: [event({ id: "c", companies_direct: ["JPM"], transmission_chain: [
@@ -118,11 +118,11 @@ describe("who's affected (hard directional-evidence rule)", () => {
   const SIGNED = theme({ id: "t2", name: "Rate cuts", relationship_weights: { Homebuilders: rel(0.8, "positive"), Banks: rel(0.6, "negative") } });
   const CUT = event({ id: "e2", event_type: "macro", title: "Fed signals a rate cut", theme_ids: ["t2"], companies_direct: ["XHB"], industries: ["Homebuilding"] });
 
-  it("populates beneficiaries/losers ONLY from signed relationship evidence", () => {
+  it("does not treat signed theme configuration as event evidence", () => {
     const v = ev({ theme_intelligence: [SIGNED], events: [CUT] }, "e2");
-    expect(v.whoAffected.directional).toBe(true);
-    expect(v.whoAffected.beneficiaries.map((c) => c.label)).toEqual(["Homebuilders"]);
-    expect(v.whoAffected.losers.map((c) => c.label)).toEqual(["Banks"]);
+    expect(v.whoAffected.directional).toBe(false);
+    expect(v.whoAffected.beneficiaries.map((c) => c.label)).toEqual([]);
+    expect(v.whoAffected.losers.map((c) => c.label)).toEqual([]);
   });
   it("never infers a winner/loser without signed evidence — falls back to neutral groups", () => {
     const v = ev({ theme_intelligence: [theme({ id: "t3", name: "unsigned" })], events: [event({ id: "e3", event_type: "macro", title: "CPI comes in hot", theme_ids: ["t3"], industries: ["Retail"] })] }, "e3");
@@ -140,9 +140,9 @@ describe("the other side (only when a credible one exists)", () => {
     explanation: { sections: { counter: { status: "available", note: "", data: { searched: [], items } } } } as unknown as Explanation,
   });
 
-  it("re-voices recorded pressures plainly, dropping edge ids and theme names", () => {
+  it("does not use theme pressures as event-specific counterevidence", () => {
     const v = buildEventView(dossierWith([{ kind: "recorded_pressure", source_label: "China", theme: "AI Infrastructure", basis: "recorded_graph" }]), feed({}))!;
-    expect(v.theOtherSide).toEqual(["China could weigh against it."]);
+    expect(v.theOtherSide).toBeNull();
   });
   it("is omitted (null) when the symmetric search found nothing", () => {
     expect(ev({ events: [EARN] }, "e1").theOtherSide).toBeNull();   // no explanation attached -> no other side
@@ -153,19 +153,19 @@ describe("what to watch", () => {
   it("asks for a second source while developing, and tracks the live chain", () => {
     const v = ev({ events: [event({ ...EARN, id: "d1", developing: true })] }, "d1");
     expect(v.watch[0]).toBe("Watch for reporting from a second qualified source label.");
-    expect(v.watch.some((w) => w.includes("AI demand") && w.includes("NVDA"))).toBe(true);
+    expect(v.watch).toContain("Look for reporting that explains how these connections affect the named companies.");
   });
 });
 
 describe("copy correctness (F1-F3 regressions)", () => {
   // F1 — a visible sentence is never truncated mid-thought by an abbreviation period or a cap.
-  it("keeps a complete sentence containing 'U.S.' instead of cutting at the abbreviation", () => {
+  it("does not turn a legacy interpretation containing U.S. into a fact", () => {
     const v = ev({ events: [event({ id: "u", why_it_matters: "A single report says the chipmaker is scouting sites for a third U.S. fab." })] }, "u");
-    expect(v.hero.summary).toBe("A single report says the chipmaker is scouting sites for a third U.S. fab.");
+    expect(v.hero.summary).toBeNull();
   });
-  it("still returns only the first complete sentence when several are present", () => {
+  it("does not use a factual-sounding legacy interpretation as reporting", () => {
     const v = ev({ events: [event({ id: "m2", why_it_matters: "Rates held steady. Cuts were pushed out to next year." })] }, "m2");
-    expect(v.hero.summary).toBe("Rates held steady.");
+    expect(v.hero.summary).toBeNull();
   });
 
   // F2 — no verb is conjugated against a market label; singular and plural both read correctly.
@@ -177,9 +177,9 @@ describe("copy correctness (F1-F3 regressions)", () => {
         { source_uid: "driver:sanctions", relationship: "pressures", target_uid: "driver:oil-supply", rel_uid: "r", basis: "recorded_graph", strength: null, confidence: null, source_label: "Sanctions" },
         { source_uid: "theme:energy", relationship: "exposed_to", target_uid: "company:ticker:XOM", rel_uid: "r2", basis: "curated_ontology", strength: null, confidence: null, source_label: null },
       ] })] }, "s2");
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from Sanctions to XOM.");
+    expect(v.whyInvestorsCare!.read).toBe("Related context includes Sanctions and XOM. These connections do not establish this event's impact.");
     expect(v.whyInvestorsCare!.chain.map((c) => c.label)).toEqual(["Sanctions", "Oil supply", "XOM"]);
-    expect(v.watch).toContain("Watch whether the link between Sanctions and XOM persists.");
+    expect(v.watch).toContain("Look for reporting that explains how these connections affect the named companies.");
     expect([v.whyInvestorsCare!.read, ...v.watch].join(" ")).not.toMatch(/feeds|keeps feeding/);
   });
 
@@ -198,8 +198,8 @@ describe("copy correctness (F1-F3 regressions)", () => {
       explanation: { sections: { counter: { status: "available", note: "", data: { searched: [], items: [{ kind: "recorded_pressure", source_label: "the Fed", theme: "", basis: "recorded_graph" }] } } } } as unknown as Explanation,
     };
     const v = buildEventView(dossier, feed({}))!;
-    expect(v.theOtherSide).toEqual(["The Fed could weigh against it."]);            // sentence-start: capitalized
-    expect(v.whyInvestorsCare!.read).toBe("The connection runs from the Fed to JPM.");  // mid-sentence: verbatim
+    expect(v.theOtherSide).toBeNull();            // sentence-start: capitalized
+    expect(v.whyInvestorsCare!.read).toBe("Related context includes the Fed and JPM. These connections do not establish this event's impact.");  // mid-sentence: verbatim
     expect(v.whyInvestorsCare!.chain[0].label).toBe("the Fed");                     // canonical label untouched
   });
 });

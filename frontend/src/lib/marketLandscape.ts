@@ -1,3 +1,4 @@
+import { directCompanies } from "./eventPresentation";
 // lib/marketLandscape.ts — "Today's Market Landscape" model (Law-10 Feed centerpiece).
 //
 // A calm, composed picture of the market concepts that matter today and how today's REAL
@@ -70,13 +71,13 @@ const ACTORS: [RegExp, string, LandscapeNodeKind][] = [
 ];
 
 function spineSubjectOf(ev: MarketEvent): string | null {
-  const hay = `${ev.title} ${(ev.industries ?? []).join(" ")}`;
+  const hay = ev.title;
   for (const [re, id] of SPINE_SUBJECT) if (re.test(hay)) return id;
   return null;
 }
 
 function actorOf(ev: MarketEvent): { id: string; label: string; kind: LandscapeNodeKind } | null {
-  const hay = `${ev.title} ${(ev.industries ?? []).join(" ")}`;
+  const hay = ev.title;
   for (const [re, label, kind] of ACTORS) if (re.test(hay)) return { id: `macro:${label}`, label, kind };
   return null;
 }
@@ -102,7 +103,7 @@ export function buildMarketLandscape(feed: FeedResponse | undefined): MarketLand
     if (market) spineById.get(market)?.eventIds.push(ev.id);
 
     const prots: { id: string; label: string; kind: LandscapeNodeKind }[] = [];
-    const companies = (ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [];
+    const companies = directCompanies(ev);
     for (const c of companies) {
       if (isTicker(c)) prots.push({ id: `co:${c.trim().toUpperCase()}`, label: c.trim().toUpperCase(), kind: "company" });
     }

@@ -45,11 +45,11 @@ const AI_POWER = theme({
 });
 
 describe("Why the lead is moving — attached to the real event", () => {
-  it("builds an actor chain (no theme node) with signed benefits / at-risk", () => {
+  it("rejects configured chains and signed benefits as event-specific evidence", () => {
     const vm = buildHomeBriefing(feed([AI_POWER], [event("e1", "1", 100)]));
-    expect(vm.why!.chain.map((c) => c.label)).toEqual(["CPI", "Treasury Yields", "Semiconductors", "NVDA"]);
-    expect(vm.why!.benefits.map((b) => b.label)).toContain("Utilities");
-    expect(vm.why!.atRisk.map((b) => b.label)).toContain("Homebuilders");
+    expect(vm.why!.chain.map((c) => c.label)).toEqual([]);
+    expect(vm.why!.benefits.map((b) => b.label)).toEqual([]);
+    expect(vm.why!.atRisk.map((b) => b.label)).toEqual([]);
     expect(JSON.stringify(vm.why)).not.toContain("AI Power Demand");
   });
 
@@ -63,27 +63,27 @@ describe("Why the lead is moving — attached to the real event", () => {
       related_assets: ["XOM"], causal_narrative: "Supply cuts are pushing crude higher.",
     });
     const vm = buildHomeBriefing(feed([topRanked, leadStory], [event("e1", "lead", 100)]));
-    expect(vm.why!.subject).toBe("XOM");   // from the lead story's theme, not JPM
+    expect(vm.why!.subject).toBe("Event e1");   // from the lead story's theme, not JPM
   });
 
   it("attaches NO interpretation when no real event links to a theme (honest)", () => {
     const vm = buildHomeBriefing(feed([AI_POWER]));   // themes exist, but no events
-    expect(vm.hasIntelligence).toBe(true);
+    expect(vm.hasIntelligence).toBe(false);
     expect(vm.why).toBeNull();
     expect(vm.watchLine).toBeNull();
   });
 });
 
 describe("What to watch — a single forward line on the lead", () => {
-  it("uses a real tension in market nouns when one exists", () => {
+  it("does not invent tension from an unrelated cooling theme", () => {
     const cooling = theme({ id: "c", name: "Rate Cut Bets", momentum_label: "cooling", related_industries: ["Banks"] });
     const vm = buildHomeBriefing(feed([AI_POWER, cooling], [event("e1", "1", 100)]));
-    expect(vm.watchLine).toContain("Can NVDA hold if");
+    expect(vm.watchLine).toBeNull();
   });
 
-  it("falls back to the lead's next second-order effect", () => {
+  it("does not turn configured second-order effects into forecasts", () => {
     const vm = buildHomeBriefing(feed([AI_POWER], [event("e1", "1", 100)]));
-    expect(vm.watchLine).toBe("Watch if credit spreads follows.");
+    expect(vm.watchLine).toBeNull();
   });
 });
 

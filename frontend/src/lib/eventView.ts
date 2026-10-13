@@ -17,6 +17,7 @@ import type { EventDossier } from "./intel/dossier";
 import { sectionData, type XCounter } from "./intel/dossier";
 import type { Explanation, EventEvidence as RawEventEvidence, FeedResponse, MarketEvent, ThemeIntelligence, TransmissionHop } from "./types";
 import { sanitizeCopy } from "./utils";
+import { directCompanies, latestReportTime } from "./eventPresentation";
 
 type EventEvidenceKind = RawEventEvidence["kind"];
 
@@ -46,7 +47,7 @@ export interface EventHero {
   visualization: SurfaceVisualization;
 }
 
-export interface EvidenceItem { source: string; title: string; url: string; kind: EventEvidenceKind; tier: number; when: string | null; qualified: boolean; }
+export interface EvidenceItem { source: string; title: string; url: string; kind: EventEvidenceKind; tier: number; when: string | null; qualified: boolean; excerpt?: string; }
 export interface EventEvidence { items: EvidenceItem[]; sourceCount: number; corroboration: number; }
 export interface WhyCare { read: string; chain: EventChip[]; }
 
@@ -74,22 +75,6 @@ const isTicker = (s: string): boolean => /^[A-Z]{1,5}$/.test(s.trim());
 // Law 10: any re-voiced line carrying an internal-object word is omitted, never shown.
 const ENGINE_RE = /\b(themes?|conviction|transmission|momentum|signals?|regime|lifecycle|thesis|theses|node|entities|coherence|ledger|deadband|corroboration)\b/i;
 
-// The first COMPLETE sentence. A terminator only ends a sentence when it is followed by
-// whitespace + a capital letter, or by end-of-text — so the periods inside "U.S.", "Q2.",
-// "Inc." never truncate the line. Deterministic; never cuts mid-thought.
-function firstSentence(text: string): string {
-  const clean = (sanitizeCopy(text) ?? "").trim();
-  if (!clean) return "";
-  const m = clean.match(/^[\s\S]*?[.!?](?=\s+[A-Z]|\s*$)/);
-  return (m ? m[0] : clean).trim();
-}
-// A plain summary line: the first complete sentence, or nothing. No length cap — shortening
-// may never leave a sentence ending mid-thought, so we keep the whole sentence or omit it.
-function cleanProse(text: string | undefined): string | null {
-  const s = firstSentence(text ?? "");
-  if (!s) return null;
-  return ENGINE_RE.test(s) ? null : s;
-}
 function uidLabel(uid: string): string {
   return (uid.split(":").pop() ?? uid).replace(/[-_]/g, " ").trim();
 }
@@ -105,7 +90,7 @@ const TYPE_TAG: Record<MarketEvent["event_type"], string> = {
 
 // ── instrument resolution (a detail of the price-chart visualization) ─────────
 function companyTicker(ev: MarketEvent): string | null {
-  const names = (ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [];
+  const names = directCompanies(ev);
   const t = names.map((s) => s.trim()).find((s) => isTicker(s));
   return t ? t.toUpperCase() : null;
 }
@@ -167,9 +152,9 @@ export function buildHero(ev: MarketEvent): EventHero {
   return {
     headline: sanitizeCopy(ev.title) ?? ev.title,
     typeTag: TYPE_TAG[ev.event_type] ?? "Market",
-    whenISO: ev.first_seen || ev.last_updated || null,
+    whenISO: latestReportTime(ev),
     developing: !!ev.developing,
-    summary: cleanProse(ev.why_it_matters),
+    summary: null, // legacy LLM interpretation is not an observed development
     visualization: resolveSurfaceVisualization(ev),
   };
 }
@@ -181,27 +166,23 @@ export function buildEvidence(ev: MarketEvent): EventEvidence | null {
   return items.length ? { items, sourceCount: ev.source_count, corroboration: ev.corroboration_count } : null;
 }
 
-export function buildWhoAffected(ev: MarketEvent, linked: ThemeIntelligence[]): WhoAffected {
+export function buildWhoAffected(ev: MarketEvent, _linked: ThemeIntelligence[]): WhoAffected {
   const chip = (label: string, kind: EntityKind): EventChip => ({ label: label.trim(), kind });
   const dedupe = (arr: EventChip[]): EventChip[] => {
     const seen = new Set<string>();
     return arr.filter((c) => c.label && !seen.has(c.label.toLowerCase()) && seen.add(c.label.toLowerCase()));
   };
 
-  const companies = dedupe(((ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [])
+  const companies = dedupe(directCompanies(ev)
     .slice(0, 5).map((c) => chip(c, isTicker(c) ? "ticker" : "company")));
   const industries = dedupe((ev.industries ?? []).slice(0, 5).map((i) => chip(i, "sector")));
   const rep = repProxy(ev);
   const markets = rep ? [chip(rep.of, "macro")] : [];
 
-  // Beneficiaries / Losers ONLY from signed directional evidence (never inferred).
-  const rels = linked.flatMap((t) => Object.entries(t.relationship_weights ?? {}));
-  const pick = (dir: "positive" | "negative"): EventChip[] =>
-    dedupe(rels.filter(([, r]) => r.direction === dir)
-      .sort((a, b) => (b[1].weight ?? 0) - (a[1].weight ?? 0)).slice(0, 4)
-      .map(([name]) => chip(name, "sector")));
-  const beneficiaries = pick("positive");
-  const losers = pick("negative");
+  // relationship_weights is copied from theme configuration. A signed weight
+  // describes thematic context; it is not evidence of THIS event's impact.
+  const beneficiaries: EventChip[] = [];
+  const losers: EventChip[] = [];
 
   return { directional: beneficiaries.length > 0 || losers.length > 0, beneficiaries, losers, companies, industries, markets };
 }
@@ -232,10 +213,10 @@ export function buildWhyCare(ev: MarketEvent, explanation: Explanation | null, w
   if (chain.length >= 2 && chainGroundedInEvent(ev, hops)) {
     // Label-agnostic phrasing: no verb is conjugated against an arbitrary market label, so
     // singular ("the Fed") and plural ("Risk-off flows") subjects both read correctly.
-    return { read: `The connection runs from ${chain[0].label} to ${chain[chain.length - 1].label}.`, chain };
+    return { read: `Related context includes ${chain[0].label} and ${chain[chain.length - 1].label}. These connections do not establish this event's impact.`, chain };
   }
-  const affected = [...who.markets, ...who.beneficiaries, ...who.companies][0];
-  return affected ? { read: `The market in focus here is ${affected.label}.`, chain: [] } : null;
+  const affected = who.companies[0];
+  return affected ? { read: `Reporting names ${affected.label}. Company involvement alone does not establish a benefit or loss.`, chain: [] } : null;
 }
 
 export function buildCounterView(explanation: Explanation | null): string[] | null {
@@ -252,7 +233,7 @@ export function buildCounterView(explanation: Explanation | null): string[] | nu
 export function buildWatchView(developing: boolean, why: WhyCare | null): string[] {
   const out: string[] = [];
   if (developing) out.push("Watch for reporting from a second qualified source label.");
-  if (why && why.chain.length >= 2) out.push(`Watch whether the link between ${why.chain[0].label} and ${why.chain[why.chain.length - 1].label} persists.`);
+  if (why && why.chain.length >= 2) out.push("Look for reporting that explains how these connections affect the named companies.");
   return Array.from(new Set(out)).slice(0, 3);
 }
 
@@ -265,14 +246,20 @@ export function buildEventView(dossier: EventDossier | null, feed: FeedResponse 
 
   const whoAffected = buildWhoAffected(ev, linked);
   const whyInvestorsCare = buildWhyCare(ev, explanation, whoAffected);
+  const evidence = buildEvidence(ev);
+  const reports = (feed?.clusters ?? []).flatMap(c => [c.primary, ...(c.related ?? [])]);
+  for (const item of evidence?.items ?? []) {
+    const report = reports.find(r => r.url === item.url && r.title === item.title);
+    if (report && "snippet" in report && report.snippet?.trim()) item.excerpt = sanitizeCopy(report.snippet) ?? undefined;
+  }
 
   return {
     found: true,
     hero: buildHero(ev),
-    evidence: buildEvidence(ev),
+    evidence,
     whyInvestorsCare,
     whoAffected,
-    theOtherSide: buildCounterView(explanation),
+    theOtherSide: null, // theme-level pressure is not an event-specific counterclaim
     watch: buildWatchView(!!ev.developing, whyInvestorsCare),
   };
 }

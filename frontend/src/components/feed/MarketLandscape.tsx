@@ -45,13 +45,13 @@ function SpineNode({ node, active, from, onFocus }: {
         "flex flex-col items-center gap-0.5 rounded-md px-2 py-1 transition-colors motion-reduce:transition-none",
         active ? "bg-raised" : "hover:bg-raised/40",
       )}>
-      <span className="whitespace-nowrap text-[10px] font-semibold text-ink-secondary">{node.label}</span>
+      <span title={`${node.symbol} representative ETF; latest available daily close${series?.asOf ? ` as of ${series.asOf}` : ""}`} className="whitespace-nowrap text-[10px] font-semibold text-ink-secondary">{node.label}</span>
       {move != null ? (
         <span className={cn("font-mono text-[9.5px] tabular-nums", up ? "text-emerald-400" : down ? "text-rose-400" : "text-ink-muted")}>
-          {up ? "+" : ""}{move.toFixed(1)}%
+          {up ? "+" : ""}{move.toFixed(1)}%<span className="block text-[8px] text-ink-faint">{node.symbol} · {series?.asOf ?? "date unavailable"}</span>
         </span>
       ) : (
-        <span className="font-mono text-[9px] text-ink-faint">delayed</span>
+        <span className="font-mono text-[9px] text-ink-faint">Price unavailable</span>
       )}
     </button>
   );
@@ -67,7 +67,7 @@ function ProtagonistNode({ node, active, onFocus }: {
         active ? "border-accent/60 bg-accent/10" : "border-edge-subtle bg-raised/60 hover:border-edge",
       )}>
       <span className="whitespace-nowrap text-[12.5px] font-semibold text-ink">{node.label}</span>
-      <span className="text-[8px] uppercase tracking-[0.12em] text-ink-faint">in today&rsquo;s news</span>
+      <span className="text-[8px] uppercase tracking-[0.12em] text-ink-faint">named in reporting</span>
     </button>
   );
 }
@@ -86,6 +86,7 @@ export function MarketLandscape({ feed, activeId, onFocus }: {
   }, []);
 
   return (
+    <div><p className="mb-2 text-[11px] text-ink-muted">Connections show shared reporting topics, not causal effects. Select a label to inspect the matching developments. Prices are representative ETF daily changes.</p>
     <section aria-label="Today's market landscape"
       className="relative w-full overflow-hidden rounded-2xl border border-edge/60 bg-surface/30" style={{ height: HEIGHT }}>
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
@@ -108,6 +109,6 @@ export function MarketLandscape({ feed, activeId, onFocus }: {
           ? <SpineNode key={n.id} node={n} from={from} active={activeId === n.id} onFocus={onFocus} />
           : <ProtagonistNode key={n.id} node={n} active={activeId === n.id} onFocus={onFocus} />,
       )}
-    </section>
+    </section></div>
   );
 }

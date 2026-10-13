@@ -37,8 +37,8 @@ export function LeadStory({ story, why, watchLine }: {
   watchLine: string | null;
 }) {
   const meta = [
-    story.sources ? `${story.sources} ${story.sources === 1 ? "source" : "sources"}` : null,
-    timeAgo(story.when),
+    story.sources ? `${story.sources} ${story.sources === 1 ? "source label" : "source labels"}` : null,
+    story.when ? `Latest report ${timeAgo(story.when)}` : "Publication time unavailable",
   ].filter(Boolean).join(" · ");
 
   return (
@@ -58,7 +58,7 @@ export function LeadStory({ story, why, watchLine }: {
               <EntityChip key={`${c}-${i}`} kind={isTicker(c) ? "ticker" : "company"} label={c} size="md"
                 className="text-[11.5px] font-medium text-ink-secondary" />
             ))}
-            {meta && <span className="font-mono text-[10px] text-ink-faint">{meta}</span>}
+            {meta && <span title={story.when ?? undefined} className="font-mono text-[10px] text-ink-faint">{meta}</span>}
           </div>
         )}
       </div>
@@ -85,6 +85,7 @@ export function LeadStory({ story, why, watchLine }: {
         </div>
       )}
 
+      <Link href={`${story.href}#evidence`} className="text-[12px] text-accent underline underline-offset-2">Inspect reporting and implications</Link>
       {/* What to watch — the forward line */}
       {watchLine && (
         <p className="text-[11.5px] text-ink-muted">

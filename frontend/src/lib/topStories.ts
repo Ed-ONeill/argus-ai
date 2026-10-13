@@ -1,3 +1,4 @@
+import { directCompanies, latestReportTime } from "./eventPresentation";
 // lib/topStories.ts — the homepage's "what happened" (real news, not engine ranking).
 //
 // Institutional investors want the day's real developments first. This surfaces the
@@ -28,14 +29,14 @@ function fromEvents(events: MarketEvent[]): TopStory[] {
     .sort((a, b) => (b.editorial_score ?? 0) - (a.editorial_score ?? 0))
     .slice(0, 5)
     .map((ev) => {
-      const companies = (ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [];
+      const companies = directCompanies(ev);
       return {
         id: ev.id,
         title: sanitizeCopy(ev.title) ?? ev.title,
         tag: EVENT_TAG[ev.event_type] ?? "Market",
         companies: companies.slice(0, 3),
-        sources: ev.corroboration_count || ev.source_count || null,
-        when: ev.last_updated || ev.first_seen || null,
+        sources: ev.source_count || null,
+        when: latestReportTime(ev),
         href: `/event/${encodeURIComponent(ev.id)}`,
       };
     });
@@ -56,7 +57,7 @@ function fromTopStories(feed: FeedResponse): TopStory[] {
       tag,
       companies: (item!.affected_entities ?? []).slice(0, 3),
       sources: null,
-      when: item!.published_ts ?? item!.published ?? null,
+      when: item!.published_ts ?? null,
       href: item!.url,
     }));
 }

@@ -1,3 +1,4 @@
+import { directCompanies, latestReportTime } from "./eventPresentation";
 // lib/feedStream.ts — the Feed as EDITORIAL DISCOVERY (Law-10 compliance).
 //
 // The Feed lets you discover what you didn't know to look for. It is organized around
@@ -35,39 +36,21 @@ const EVENT_CATEGORY: Record<MarketEvent["event_type"], FeedCategory> = {
   macro: "Macro", policy: "Policy", ma: "M&A", market_event: "Markets",
 };
 
-// Law 10: never surface engine vocabulary. Editorial prose from the backend that carries
-// internal-object words is omitted rather than shown — honest absence over jargon.
-const ENGINE_RE = /\b(themes?|conviction|transmission|momentum|signals?|regime|lifecycle|thesis|node|entities|coherence|breadth)\b/i;
-
-function cap(text: string, maxWords: number): string {
-  const clean = sanitizeCopy(text) ?? "";
-  const sentence = (clean.match(/[^.!?]+[.!?]+/) ?? [clean])[0].trim();
-  const words = sentence.split(/\s+/);
-  return (words.length > maxWords ? words.slice(0, maxWords).join(" ") : sentence).trim();
-}
-
-function cleanWhy(text: string | undefined): string | null {
-  const s = cap(text ?? "", 28);
-  if (!s) return null;
-  if (ENGINE_RE.test(s)) return null;
-  return s;
-}
-
 function toEntities(labels: string[]): FeedCardEntity[] {
   return labels.map((s) => s.trim()).filter(Boolean).slice(0, 3)
     .map((label) => ({ label, kind: isTicker(label) ? "ticker" : "company" }));
 }
 
 function fromEvent(ev: MarketEvent): FeedCard {
-  const companies = (ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [];
+  const companies = directCompanies(ev);
   return {
     id: ev.id,
     category: EVENT_CATEGORY[ev.event_type] ?? "Markets",
     headline: sanitizeCopy(ev.title) ?? ev.title,
-    why: cleanWhy(ev.why_it_matters),
+    why: null,
     entities: toEntities(companies),
-    sources: ev.corroboration_count || ev.source_count || null,
-    when: ev.last_updated || ev.first_seen || null,
+    sources: ev.source_count || null,
+    when: latestReportTime(ev),
     href: `/event/${encodeURIComponent(ev.id)}`,
     developing: !!ev.developing,
   };
@@ -88,10 +71,10 @@ function fromItem(item: FeedItem): FeedCard {
     id: item.id,
     category: normalizeItemCategory(item.category),
     headline: sanitizeCopy(item.title) ?? item.title,
-    why: cleanWhy(item.why_it_matters || item.summary),
+    why: null,
     entities: toEntities(item.affected_entities ?? []),
     sources: null,
-    when: item.published_ts ?? item.published ?? null,
+    when: item.published_ts ?? null,
     href: item.url,
     developing: false,
   };

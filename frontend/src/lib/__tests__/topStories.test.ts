@@ -35,7 +35,7 @@ describe("buildTopStories", () => {
     ];
     const ts = buildTopStories(feed({ events }));
     expect(ts.map((s) => s.title)).toEqual(["NVIDIA beats and guides higher", "Fed holds rates"]);
-    expect(ts[0]).toMatchObject({ tag: "Earnings", companies: ["NVDA"], sources: 5, href: "/event/e2" });
+    expect(ts[0]).toMatchObject({ tag: "Earnings", companies: ["NVDA"], sources: null, href: "/event/e2" });
   });
 
   it("falls back to categorized top stories when no events are present", () => {

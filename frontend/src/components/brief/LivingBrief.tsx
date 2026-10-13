@@ -62,10 +62,12 @@ function Header({ session, generatedAt, isStale }: {
   );
 }
 
-export function LivingBrief({ feed, generatedAt, isStale }: {
+export function LivingBrief({ feed, generatedAt, isStale, isLoading, unavailable }: {
   feed: FeedResponse | undefined;
   generatedAt?: string;
   isStale?: boolean;
+  isLoading?: boolean;
+  unavailable?: boolean;
 }) {
   const session = useSession();
   const vm = useMemo(() => buildHomeBriefing(feed), [feed]);
@@ -81,7 +83,7 @@ export function LivingBrief({ feed, generatedAt, isStale }: {
 
       {!hasContent ? (
         <p className="max-w-[52ch] text-[15px] leading-relaxed text-ink-secondary">
-          Argus is assembling this session&rsquo;s intelligence. The workspace populates as evidence accumulates.
+          {isLoading ? "Loading the latest available reporting…" : unavailable ? "The briefing could not be loaded. This does not mean there are no market developments." : "No developments are available in this briefing yet."}
         </p>
       ) : (
         <>

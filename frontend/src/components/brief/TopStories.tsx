@@ -12,8 +12,8 @@ import type { TopStory } from "@/lib/topStories";
 
 function Story({ story }: { story: TopStory }) {
   const meta = [
-    story.sources ? `${story.sources} ${story.sources === 1 ? "source" : "sources"}` : null,
-    timeAgo(story.when),
+    story.sources ? `${story.sources} ${story.sources === 1 ? "source label" : "source labels"}` : null,
+    story.when ? `Latest report ${timeAgo(story.when)}` : "Publication time unavailable",
   ].filter(Boolean).join(" · ");
 
   return (
@@ -24,7 +24,7 @@ function Story({ story }: { story: TopStory }) {
         <span className="text-[12.5px] font-medium leading-snug text-ink-secondary transition-colors group-hover:text-ink motion-reduce:transition-none">
           {story.title}
         </span>
-        {meta && <span className="font-mono text-[9.5px] text-ink-faint">{meta}</span>}
+        {meta && <span title={story.when ?? undefined} className="font-mono text-[9.5px] text-ink-faint">{meta}</span>}
       </Link>
     </li>
   );

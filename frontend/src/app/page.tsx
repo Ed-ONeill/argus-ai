@@ -233,7 +233,7 @@ export default function LandingPage() {
   const needsNameCapture = !authLoading && !!user && !profile?.first_name && !meta?.first_name;
   const { followed } = useFollowedThemes();
   const { savedIds } = useSaved();
-  const { data: feedData } = useFeed();
+  const { data: feedData, isLoading: feedLoading, error: feedError } = useFeed();
 
   const brief = feedData?.market_brief;
 
@@ -407,7 +407,7 @@ export default function LandingPage() {
                   marginBottom: "18px",
                 }}
               >
-                Your Argus Brief is ready.
+                {feedLoading ? "Your Argus Brief is loading." : feedError && !feedData ? "Your Argus Brief is unavailable right now." : feedData?.events?.length ? "Your Argus Brief is ready." : "No developments are available for your brief yet."}
               </motion.p>
 
               {/* Date stamp */}
@@ -612,6 +612,8 @@ export default function LandingPage() {
             // sealed-envelope theater is retired).
             <LivingBrief
               feed={feedData}
+              isLoading={feedLoading}
+              unavailable={!!feedError && !feedData}
               generatedAt={feedData?.generated_at}
               isStale={feedData?.is_stale}
             />
