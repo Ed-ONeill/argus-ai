@@ -1,16 +1,12 @@
-// lib/companyView.ts — translate the (engine-worded) CompanyDossier into the Law-10
-// company page: recognizable market concepts, plain investor language, zero engine
-// vocabulary. The underlying intelligence (buildCompanyDossier, memory, ledger, the
-// relationship graph) is UNCHANGED and preserved — this layer only re-voices its output.
-// Themes/conviction/transmission/ledger never reach the surface; connections become plain
-// market concepts, exposures become a plain "why it matters", watch keeps only the plain
-// forward question. Pure and deterministic.
+// Company presentation: direct reporting stays separate from thematic context.
+// Theme metadata and legacy prose cannot establish financial impact or forecasts.
 
 import type { EntityKind } from "./entity";
 import type { AttributedEvent, CompanyDossier } from "./intel/dossier";
 import type { RelationshipRow } from "./api";
 import type { MarketEvent } from "./types";
 import { sanitizeCopy } from "./utils";
+import { directCompanies, latestReportTime } from "./eventPresentation";
 
 export interface ConnectedConcept { label: string; kind: EntityKind; }
 
@@ -60,6 +56,7 @@ export interface CompanyView {
   sector: string | null;
   identified: boolean;
   whyItMatters: string | null;
+  lead: CompanyDevelopment | null;
   connections: ConnectedConcept[];
   developments: CompanyDevelopment[];
   earningsFilings: CompanyDevelopment[];
@@ -69,22 +66,6 @@ export interface CompanyView {
 
 const isTicker = (s: string): boolean => /^[A-Z]{1,5}$/.test(s.trim());
 
-// Law 10: prose carrying an internal-object word is omitted rather than shown.
-const ENGINE_RE = /\b(themes?|conviction|transmission|momentum|signals?|regime|lifecycle|thesis|theses|node|entities|coherence|ledger|deadband)\b/i;
-
-function firstSentence(text: string): string {
-  const clean = sanitizeCopy(text) ?? "";
-  return (clean.match(/[^.!?]+[.!?]+/) ?? [clean])[0].trim();
-}
-
-function cleanProse(text: string | undefined, maxWords = 30): string | null {
-  const s = firstSentence(text ?? "");
-  if (!s) return null;
-  if (ENGINE_RE.test(s)) return null;
-  const words = s.split(/\s+/);
-  return (words.length > maxWords ? words.slice(0, maxWords).join(" ") : s).trim();
-}
-
 const EVENT_CATEGORY: Record<MarketEvent["event_type"], string> = {
   earnings: "Earnings", single_name: "Company", price_echo: "Markets",
   macro: "Macro", policy: "Policy", ma: "M&A", market_event: "Markets",
@@ -92,7 +73,7 @@ const EVENT_CATEGORY: Record<MarketEvent["event_type"], string> = {
 
 function toDevelopment(a: AttributedEvent, self: string): CompanyDevelopment {
   const ev = a.event;
-  const companies = (ev.companies_direct?.length ? ev.companies_direct : ev.companies) ?? [];
+  const companies = directCompanies(ev);
   // A related development's reason: keep plain peer/industry reasons; drop any that
   // names an internal object (theme exposure) to a generic phrase.
   const reason = a.attribution === "direct" ? null
@@ -102,10 +83,10 @@ function toDevelopment(a: AttributedEvent, self: string): CompanyDevelopment {
     id: ev.id,
     category: EVENT_CATEGORY[ev.event_type] ?? "Markets",
     headline: sanitizeCopy(ev.title) ?? ev.title,
-    why: cleanProse(ev.why_it_matters, 26),
+    why: null,
     companies: companies.filter((c) => c.toUpperCase() !== self).slice(0, 3),
-    sources: ev.corroboration_count || ev.source_count || null,
-    when: ev.last_updated || ev.first_seen || null,
+    sources: ev.source_count || null,
+    when: latestReportTime(ev),
     href: `/event/${encodeURIComponent(ev.id)}`,
     direct: a.attribution === "direct",
     reason,
@@ -135,37 +116,6 @@ function buildConnections(dossier: CompanyDossier): ConnectedConcept[] {
 }
 const rank = (k: EntityKind): number => (k === "sector" ? 0 : k === "ticker" || k === "company" ? 1 : 2);
 
-/** The primary company story, and the id of the event it used (so that same event is
- *  never repeated in the developments list or the earnings/filings section). */
-function buildWhyItMatters(dossier: CompanyDossier): { text: string | null; leadEventId: string | null } {
-  // Prefer what actually happened to the company today; else the market force it moves
-  // with (the theme's plain description), re-voiced without engine words.
-  const direct = dossier.record[0]?.event;
-  if (direct) {
-    const why = cleanProse(direct.why_it_matters, 30) || sanitizeCopy(direct.title);
-    if (why) return { text: why, leadEventId: direct.id };
-  }
-  const meaning = dossier.exposures[0]?.meaning;
-  const plain = cleanProse(meaning, 30);
-  return { text: plain ? `${dossier.name} moves with ${plain.charAt(0).toLowerCase()}${plain.slice(1)}` : null, leadEventId: null };
-}
-
-function buildWatch(dossier: CompanyDossier): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const w of dossier.watch) {
-    // Keep only the plain forward question (the first sentence); drop the engine tail.
-    const q = firstSentence(w.text);
-    if (!q || ENGINE_RE.test(q)) continue;
-    const key = q.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(q);
-    if (out.length >= 3) break;
-  }
-  return out;
-}
-
 function isEarningsOrFiling(ev: MarketEvent): boolean {
   if (ev.event_type === "earnings") return true;
   return (ev.evidence ?? []).some((e) => e.kind === "sec_filing" || e.kind === "transcript" || e.kind === "ir_release");
@@ -173,17 +123,20 @@ function isEarningsOrFiling(ev: MarketEvent): boolean {
 
 export function buildCompanyView(dossier: CompanyDossier | null): CompanyView | null {
   if (!dossier) return null;
-  const { text: whyItMatters, leadEventId } = buildWhyItMatters(dossier);
+  const directRecord = dossier.record.filter(a => directCompanies(a.event).some(c => c.toUpperCase() === dossier.ticker.toUpperCase()));
+  const lead = directRecord[0] ? toDevelopment(directRecord[0], dossier.ticker) : null;
+  const whyItMatters = lead?.headline ?? null;
+  const leadEventId = lead?.id;
   // The primary story's event must not appear a second time in the chronological list or a
   // third time under earnings & filings. Earnings & filings keeps only DISTINCT records.
-  const developments = [...dossier.record, ...dossier.related]
+  const developments = directRecord
     .filter((a) => a.event.id !== leadEventId)
     .map((a) => toDevelopment(a, dossier.ticker));
-  const earningsFilings = dossier.record
+  const earningsFilings = directRecord
     .filter((a) => isEarningsOrFiling(a.event) && a.event.id !== leadEventId)
     .map((a) => toDevelopment(a, dossier.ticker));
   const connections = buildConnections(dossier);
-  const watch = buildWatch(dossier);
+  const watch: string[] = [];
 
   return {
     ticker: dossier.ticker,
@@ -191,6 +144,7 @@ export function buildCompanyView(dossier: CompanyDossier | null): CompanyView | 
     sector: dossier.sector,
     identified: dossier.identified,
     whyItMatters,
+    lead,
     connections,
     developments,
     earningsFilings,

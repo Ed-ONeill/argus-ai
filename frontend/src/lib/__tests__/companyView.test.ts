@@ -69,7 +69,8 @@ describe("buildCompanyView", () => {
   });
 
   it("writes 'why it matters' plainly, from what happened to the company", () => {
-    expect(view.whyItMatters).toBe("Data-center orders are surging into year-end.");
+    expect(view.whyItMatters).toBe(EARN.title);
+    expect(view.lead?.href).toBe("/event/e1");
   });
 
   it("excludes the lead event everywhere, keeping only DISTINCT earnings/filings", () => {
@@ -88,7 +89,7 @@ describe("buildCompanyView", () => {
   });
 
   it("keeps only the plain forward question in 'what to watch'", () => {
-    expect(view.watch[0]).toBe("Does AI demand keep feeding chips?");
+    expect(view.watch).toEqual([]);
     expect(view.watch.join(" ")).not.toMatch(/conviction|chain/i);
   });
 
@@ -145,4 +146,23 @@ describe("buildConnectionMemory (relationship-memory enrichment)", () => {
     ]);
     expect(m).toMatchObject({ available: true, trackedSince: "2026-04-01T00:00:00Z", mostRecentFormedAt: null });
   });
+});
+
+// Controlled trust regression: theme membership cannot make a company a news subject.
+it("keeps thematic associations out of company reporting and refuses legacy impact prose", () => {
+  const indirect = event({ id: "indirect", title: "Retirement advice", companies: ["NVDA"], companies_direct: [], theme_ids: ["t1"], industries: ["Semiconductors"], why_it_matters: "This will drive NVDA higher." });
+  const direct = event({ ...EARN, evidence: [{ source: "Example", title: EARN.title, url: "https://example.test/report", published: "2026-10-13T12:00:00Z" }] as MarketEvent["evidence"] });
+  const dossier = buildCompanyDossier("NVDA", feed({ events: [direct, FILE, indirect], theme_intelligence: [AI] }))!;
+  const before = JSON.stringify(dossier);
+  const v = buildCompanyView(dossier)!;
+  expect(v.developments.map(d => d.id)).not.toContain("indirect");
+  expect(v.lead).toMatchObject({ when: "2026-10-13T12:00:00Z", sources: 4, why: null });
+  expect(v.developments.every(d => d.why === null && d.when === null)).toBe(true);
+  expect(v.watch).toEqual([]);
+  expect(JSON.stringify(dossier)).toBe(before);
+  const associationOnly = buildCompanyView(buildCompanyDossier("NVDA", feed({ events: [indirect], theme_intelligence: [AI] })))!;
+  expect(associationOnly.lead).toBeNull();
+  expect(associationOnly.whyItMatters).toBeNull();
+  expect(associationOnly.developments).toEqual([]);
+  expect(associationOnly.connections.length).toBeGreaterThan(0);
 });

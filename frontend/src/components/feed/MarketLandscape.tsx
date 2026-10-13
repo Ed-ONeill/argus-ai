@@ -66,7 +66,7 @@ function ProtagonistNode({ node, active, onFocus }: {
   return (
     <button type="button" onClick={() => onFocus(node)} style={nodeStyle(node)}
       className={cn(
-        "flex flex-col items-center gap-0.5 rounded-lg border px-2.5 py-1 transition-colors motion-reduce:transition-none",
+        "flex w-32 flex-col items-center gap-0.5 rounded-lg border px-2.5 py-1 transition-colors motion-reduce:transition-none",
         active ? "border-accent/60 bg-accent/10" : "border-edge-subtle bg-raised/60 hover:border-edge",
       )}>
       <span className="whitespace-nowrap text-[12.5px] font-semibold text-ink">{node.label}</span>
@@ -90,8 +90,8 @@ export function MarketLandscape({ feed, activeId, onFocus }: {
 
   return (
     <div><p className="mb-2 text-[11px] text-ink-muted">Connections show shared reporting topics, not causal effects. Select a label to inspect the matching developments. Prices are representative ETF daily changes; dates show the latest available daily close (UTC).</p>
-    <section aria-label="Today's market landscape"
-      className="relative w-full overflow-hidden rounded-2xl border border-edge/60 bg-surface/30" style={{ height: HEIGHT }}>
+    <div className="overflow-x-auto" role="region" aria-label="Scrollable market landscape" tabIndex={0}><section aria-label="Today's market landscape"
+      className="relative min-w-[640px] w-full overflow-hidden rounded-2xl border border-edge/60 bg-surface/30" style={{ height: HEIGHT }}>
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
         {model.edges.map((e, i) => {
           const a = nodeById.get(e.from);
@@ -112,6 +112,6 @@ export function MarketLandscape({ feed, activeId, onFocus }: {
           ? <SpineNode key={n.id} node={n} from={from} active={activeId === n.id} onFocus={onFocus} />
           : <ProtagonistNode key={n.id} node={n} active={activeId === n.id} onFocus={onFocus} />,
       )}
-    </section></div>
+    </section></div></div>
   );
 }

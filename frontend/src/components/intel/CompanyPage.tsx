@@ -1,14 +1,6 @@
 "use client";
 
-// CompanyPage — the canonical Law-10 company experience (Surface #2B). One page, built
-// around the company as a market concept: chart hero → why it matters today → what it's
-// connected to → latest developments → earnings & filings → what to watch. The underlying
-// intelligence (buildCompanyDossier + its memory/ledger/graph capabilities) is preserved
-// and unchanged; buildCompanyView only re-voices it into plain investor language. No
-// themes, conviction, transmission, ledger, or graph vocabulary reaches the surface.
-// The defining "connected to" panel is enriched with recorded relationship memory (how long
-// the company has been mapped, when its connections last grew) — the one durable memory a
-// company actually has; all still in plain language, and silently omitted when unrecorded.
+// Company reporting, source navigation and explicitly limited thematic context.
 
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -90,7 +82,7 @@ function ConnectionGroup({ label, items }: { label: string; items: ConnectedConc
       <span className="w-24 shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-faint">{label}</span>
       <div className="flex flex-wrap gap-1.5">
         {items.map((c, i) => (
-          <EntityChip key={`${c.label}-${i}`} kind={c.kind} label={c.label} size="md"
+          <EntityChip key={`${c.label}-${i}`} kind={c.kind} label={c.label} size="md" activatable={false}
             className="rounded-lg border border-edge-subtle bg-raised/60 px-2.5 py-1 text-[13px] font-semibold text-ink" />
         ))}
       </div>
@@ -101,7 +93,7 @@ function ConnectionGroup({ label, items }: { label: string; items: ConnectedConc
 const chipKind = (c: string): "ticker" | "company" => (/^[A-Z]{1,5}$/.test(c.trim()) ? "ticker" : "company");
 
 function DevRow({ d }: { d: CompanyDevelopment }) {
-  const meta = [d.sources ? `${d.sources} ${d.sources === 1 ? "source" : "sources"}` : null, timeAgo(d.when)].filter(Boolean).join(" · ");
+  const meta = [d.sources ? `${d.sources} source ${d.sources === 1 ? "label" : "labels"}` : null, d.when ? `Latest report ${timeAgo(d.when)}` : "Publication time unavailable"].filter(Boolean).join(" · ");
   return (
     <li className="group">
       <Link href={d.href} className="-mx-2 flex flex-col gap-0.5 rounded-md px-2 py-3 transition-colors hover:bg-raised/30 motion-reduce:transition-none">
@@ -113,8 +105,8 @@ function DevRow({ d }: { d: CompanyDevelopment }) {
         {d.why && <p className="max-w-[64ch] text-[12.5px] leading-relaxed text-ink-secondary">{d.why}</p>}
         {(d.companies.length > 0 || meta) && (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-            {d.companies.map((c, i) => <EntityChip key={`${c}-${i}`} kind={chipKind(c)} label={c} size="md" className="text-[10.5px] font-medium text-ink-muted" />)}
-            {meta && <span className="font-mono text-[9.5px] text-ink-faint">{meta}</span>}
+            {d.companies.map((c, i) => <EntityChip key={`${c}-${i}`} kind={chipKind(c)} label={c} size="md" activatable={false} className="text-[10.5px] font-medium text-ink-muted" />)}
+            {meta && <span title={d.when ?? undefined} className="font-mono text-[9.5px] text-ink-faint">{meta}</span>}
           </div>
         )}
       </Link>
@@ -159,13 +151,13 @@ export default function CompanyPage({ ticker }: { ticker: string }) {
           <div className="mt-4"><HeroChart ticker={view.ticker} name={view.name} /></div>
         </header>
 
-        {/* 2. Why it matters today */}
-        <Section title="Why it matters today">
-          {view.whyItMatters ? (
-            <p className="max-w-[64ch] font-serif text-[clamp(1.05rem,2vw,1.35rem)] leading-snug text-ink">{view.whyItMatters}</p>
+        <Section title="Latest reporting naming this company">
+          {view.lead ? (
+            <ol><DevRow d={view.lead} /></ol>
           ) : (
-            <p className="text-[13px] leading-relaxed text-ink-muted">No fresh developments name {view.name} today.</p>
+            <p className="text-[13px] leading-relaxed text-ink-muted">No developments in the current feed directly name {view.name}.</p>
           )}
+          <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">Company mentions and thematic associations do not establish a financial impact or forecast. Open a development to inspect its reporting and implication limits.</p>
         </Section>
 
         {/* 3. What it's connected to — the DEFINING section: the market ecosystem. Given
@@ -174,33 +166,33 @@ export default function CompanyPage({ ticker }: { ticker: string }) {
         {view.connections.length > 0 && (
           <section aria-labelledby="connected-heading" className="brief-panel overflow-hidden rounded-[20px] p-5 sm:p-7">
             <h2 id="connected-heading" className="text-[12px] font-semibold uppercase tracking-[0.22em] text-ink">
-              What it&rsquo;s connected to
+              Thematic context
             </h2>
             <p className="mt-1.5 max-w-[58ch] font-serif text-[clamp(1.02rem,1.9vw,1.28rem)] leading-snug text-ink-secondary">
-              The market ecosystem around {view.name}: the sectors it sits in, the companies it moves with, and the forces that drive it.
+              These sectors, assets and factors come from themes linked to {view.name}. They do not establish price co-movement, a business relationship, or a causal effect.
             </p>
             <div className="mt-5 flex flex-col gap-4">
-              <ConnectionGroup label="Sectors" items={view.connections.filter((c) => c.kind === "sector")} />
-              <ConnectionGroup label="Moves with" items={view.connections.filter((c) => c.kind === "ticker" || c.kind === "company")} />
-              <ConnectionGroup label="Driven by" items={view.connections.filter((c) => c.kind === "macro")} />
+              <ConnectionGroup label="Sectors in themes" items={view.connections.filter((c) => c.kind === "sector")} />
+              <ConnectionGroup label="Assets in themes" items={view.connections.filter((c) => c.kind === "ticker" || c.kind === "company")} />
+              <ConnectionGroup label="Factors in themes" items={view.connections.filter((c) => c.kind === "macro")} />
             </div>
             {/* Recorded temporal depth of the connections above (relationship memory) — the one
                 durable memory a company has. Subordinate to the chips; omitted when unrecorded. */}
             {connectionMemory.available && connectionMemory.trackedSince && (
               <p className="mt-5 border-t border-edge-subtle/40 pt-3.5 text-[11.5px] leading-relaxed text-ink-faint">
-                Argus has tracked {view.name}&rsquo;s market connections since {fmtDate(connectionMemory.trackedSince)}
-                {connectionMemory.mostRecentFormedAt ? `; the most recent formed ${timeAgo(connectionMemory.mostRecentFormedAt)}.` : "."}
+                Relationship records involving {view.name} were first recorded on {fmtDate(connectionMemory.trackedSince)}
+                {connectionMemory.mostRecentFormedAt ? `; the newest record was first recorded ${timeAgo(connectionMemory.mostRecentFormedAt)}.` : "."} These dates describe stored records, not when an economic relationship began or proof of the context above.
               </p>
             )}
           </section>
         )}
 
         {/* 4. Latest developments — secondary to the ecosystem: a compact news list. */}
-        <Section title="Latest developments">
+        <Section title="More reporting naming this company">
           {view.developments.length > 0 ? (
             <ol className="flex flex-col divide-y divide-edge-subtle/50">{view.developments.map((d) => <DevRow key={d.id} d={d} />)}</ol>
           ) : (
-            <p className="text-[13px] leading-relaxed text-ink-muted">No news names {view.name} this cycle. A quiet page is a short page, not a padded one.</p>
+            <p className="text-[13px] leading-relaxed text-ink-muted">No additional developments in the current feed directly name {view.name}.</p>
           )}
         </Section>
 

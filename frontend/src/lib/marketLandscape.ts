@@ -94,7 +94,6 @@ export function buildMarketLandscape(feed: FeedResponse | undefined): MarketLand
   const spineById = new Map(spineNodes.map((n) => [n.id, n]));
 
   const protagonists = new Map<string, LandscapeNode>();
-  const marketVotes = new Map<string, Map<string, number>>();   // protagonist -> market -> count
   const edgeKeys = new Set<string>();
   const edges: LandscapeEdge[] = [];
 
@@ -114,7 +113,6 @@ export function buildMarketLandscape(feed: FeedResponse | undefined): MarketLand
       if (!protagonists.has(p.id)) {
         if (protagonists.size >= MAX_PROTAGONISTS) continue;   // ranked: top events' protagonists win
         protagonists.set(p.id, { ...p, spine: false, eventIds: [], x: 0, y: 0 });
-        marketVotes.set(p.id, new Map());
       }
       const node = protagonists.get(p.id);
       if (!node) continue;
@@ -124,13 +122,11 @@ export function buildMarketLandscape(feed: FeedResponse | undefined): MarketLand
         const reason = (ev.title ?? "").trim();   // the one plain sentence explaining the link
         // Only draw a connection that can be explained simply (Refinement 2).
         if (!edgeKeys.has(key) && reason) { edgeKeys.add(key); edges.push({ from: p.id, to: market, reason }); }
-        const votes = marketVotes.get(p.id)!;
-        votes.set(market, (votes.get(market) ?? 0) + 1);
       }
     }
   }
 
-  layoutProtagonists([...protagonists.values()], marketVotes, spineById);
+  layoutProtagonists([...protagonists.values()]);
 
   return {
     nodes: [...spineNodes, ...protagonists.values()],
@@ -139,40 +135,13 @@ export function buildMarketLandscape(feed: FeedResponse | undefined): MarketLand
   };
 }
 
-// Deterministic, composed placement: each protagonist sits ABOVE its primary connected
-// market (short, near-vertical edge); ones with no market link form a top row. No physics.
-function layoutProtagonists(
-  prots: LandscapeNode[],
-  votes: Map<string, Map<string, number>>,
-  spineById: Map<string, LandscapeNode>,
-): void {
-  const columns = new Map<string, LandscapeNode[]>();   // market id -> its protagonists
-  const lone: LandscapeNode[] = [];
-
-  for (const p of prots) {
-    const v = votes.get(p.id);
-    let best: string | null = null;
-    let bestN = 0;
-    if (v) for (const [m, n] of v) if (n > bestN) { bestN = n; best = m; }
-    if (best) (columns.get(best) ?? columns.set(best, []).get(best)!).push(p);
-    else lone.push(p);
-  }
-
-  const clamp = (n: number) => Math.max(5, Math.min(95, n));
-  // Fan protagonists AROUND their anchored spine market (dynamic positions, not a rigid
-  // column) — the spine never moves; the protagonists arrange themselves around it.
-  const FAN: [number, number][] = [[0, 44], [-10, 31], [10, 31], [-10, 18], [10, 18], [0, 18]];
-  for (const [marketId, list] of columns) {
-    const mx = spineById.get(marketId)?.x ?? 50;
-    list.forEach((p, k) => {
-      const [dx, y] = FAN[Math.min(k, FAN.length - 1)];
-      const overflow = k >= FAN.length ? (k - FAN.length + 1) * 7 : 0;
-      p.x = clamp(mx + dx + overflow);
-      p.y = y;
-    });
-  }
-  lone.forEach((p, k) => {
-    p.x = lone.length === 1 ? 50 : clamp(((k + 0.5) / lone.length) * 100);
-    p.y = 10;
+// Reserved slots prevent unrelated market fans and unlinked nodes from overlapping.
+// The renderer guarantees at least 640px of canvas width and 128px-wide cards.
+function layoutProtagonists(prots: LandscapeNode[]): void {
+  prots.forEach((p, i) => {
+    const row = Math.floor(i / 4);
+    const count = Math.min(4, prots.length - row * 4);
+    p.x = ((i % 4 + 0.5) / count) * 100;
+    p.y = row === 0 ? 20 : 47;
   });
 }

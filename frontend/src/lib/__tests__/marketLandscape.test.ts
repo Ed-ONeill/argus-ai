@@ -96,3 +96,21 @@ describe("buildMarketLandscape", () => {
     }
   });
 });
+
+// Seven companies used to fan around the same left-edge market and overlap/clamp.
+it("keeps all seven cards separated and inside the minimum canvas", () => {
+  for (const title of ["Stocks report earnings", "Private funding announcement"]) {
+    const m = buildMarketLandscape(feed([event({ id: "crowded", title, companies_direct: ["JPM", "GS", "C", "WFC", "BAC", "MS", "BX"] })]));
+    const nodes = m.nodes.filter(n => !n.spine);
+    expect(nodes).toHaveLength(7);
+    for (const a of nodes) {
+      const x = a.x * 6.4;
+      expect(x - 64).toBeGreaterThanOrEqual(0);
+      expect(x + 64).toBeLessThanOrEqual(640);
+      for (const b of nodes) if (a !== b) {
+        expect(Math.abs(a.x - b.x) * 6.4 >= 128 || Math.abs(a.y - b.y) * 3 >= 48).toBe(true);
+      }
+    }
+    expect(buildMarketLandscape(feed([event({ id: "crowded", title, companies_direct: ["JPM", "GS", "C", "WFC", "BAC", "MS", "BX"] })]))).toEqual(m);
+  }
+});
