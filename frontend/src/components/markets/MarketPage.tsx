@@ -8,11 +8,13 @@
 // could change.
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useSeriesBatch } from "@/lib/platform/hooks/useSeriesBatch";
 import { buildMarketView, type RotationBlock, type Window, type Zoom } from "@/lib/marketView";
 import { blocksForZoom, SECTOR_BENCHMARK, type MarketBlock } from "@/lib/marketBlocks";
-import { getIndustryBySlug } from "@/lib/industryConfig";
+import { MarketInspector } from "@/components/markets/MarketInspector";
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
 import { RotationMap } from "@/components/markets/RotationMap";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +24,7 @@ const CRYPTO_FALLBACK = { symbol: "IBIT", exchange: "US" };   // labeled Bitcoin
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section>
+    <section className="discovery-panel p-6">
       <h2 className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-ink-faint">{title}</h2>
       {children}
     </section>
@@ -30,7 +32,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function MarketPage() {
-  const router = useRouter();
   const params = useSearchParams();
   const [zoom, setZoom] = useState<Zoom>(params.get("view") === "stocks" ? "inside-stocks" : "whole-market");
   const [window, setWindow] = useState<Window>("1M");
@@ -71,37 +72,41 @@ export default function MarketPage() {
   const benchmark = zoom === "inside-stocks" ? seriesMap[SECTOR_BENCHMARK.symbol]?.series?.points ?? null : null;
   const view = useMemo(() => buildMarketView({ zoom, window, blocks: blockInputs, benchmark }), [zoom, window, blockInputs, benchmark]);
 
-  const onSelect = (b: RotationBlock) => {
-    const nav = b.nav;
-    if (nav.kind === "focus-block") setFocusedId((cur) => (cur === nav.id ? null : nav.id));
-    else if (nav.kind === "sector") {
-      if (getIndustryBySlug(nav.slug)) router.push(`/industries/${nav.slug}`);
-      else setFocusedId((cur) => (cur === b.id ? null : b.id));   // no clean industry match -> focus in place
-    } else if (nav.kind === "company") router.push(`/intel/company:ticker:${nav.ticker.toUpperCase()}`);
-    else if (nav.kind === "event") router.push(`/event/${nav.id}`);
-  };
+  const onSelect = (b: RotationBlock) => setFocusedId(b.id);
+  const viz = view.visualization;
+  const available = viz.kind === "rotation-map" ? [...viz.rising, ...viz.falling, ...viz.steady] : [];
+  const selected = available.find(b => b.id === focusedId) ?? available[0];
+  const selectedInput = blockInputs.find(b => b.block.id === selected?.id);
+  const selectedSymbol = selectedInput?.block.proxyOf ?? selectedInput?.block.symbol;
+  const selectedResult = selectedSymbol ? seriesMap[selectedSymbol] : undefined;
+  const selectedState = viz.kind !== "rotation-map" || !selected ? "" : viz.rising.some(b => b.id === selected.id)
+    ? "Gaining leadership" : viz.falling.some(b => b.id === selected.id) ? "Losing leadership" : "Little changed";
 
   const setZoomTo = (z: Zoom) => { setZoom(z); setFocusedId(null); };
 
   return (
-    <div className="brief-dark min-h-[calc(100vh-3.5rem)] bg-canvas text-ink">
-      <div className="mx-auto max-w-3xl px-5 pb-16 pt-8 sm:px-8">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-accent">Markets</span>
-
-        <div className="mt-9 flex flex-col gap-9">
-          {/* 1. Posture */}
-          <h1 className="max-w-[40ch] font-serif text-[clamp(1.3rem,2.8vw,1.9rem)] font-normal leading-[1.28] tracking-[-0.01em] text-ink">
-            {view.posture.sentence}
-          </h1>
-
+    <div className="brief-dark discovery-page min-h-[calc(100vh-3.5rem)] bg-canvas text-ink">
+      <div className="mx-auto relative max-w-7xl px-5 pb-20 pt-10 sm:px-8 sm:pt-14">
+        <header className="discovery-enter mb-9 flex flex-wrap items-end justify-between gap-6">
+          <div><p className="discovery-eyebrow">Argus / Markets</p>
+            <h1 className="mt-4 font-serif text-[clamp(2.4rem,5vw,4.2rem)] leading-[1.06] tracking-tight">A market in motion.<br /><span className="text-cyan-200">A clearer perspective.</span></h1>
+            <p className="mt-5 max-w-[58ch] text-sm leading-relaxed text-ink-secondary">See where relative leadership is improving or fading. Explore an asset to understand the price comparison behind the picture.</p>
+          </div>
+          <Link href="/feed" className="discovery-control">Explore the reporting <ArrowUpRight size={15} /></Link>
+        </header>
+        <div className="mb-8 border-l-2 border-cyan-200/60 pl-5">
+          <p className="discovery-eyebrow">The current picture / {window}</p>
+          <p className="mt-3 max-w-[65ch] font-serif text-xl leading-relaxed sm:text-2xl">{anyLoading && viz.kind === "none" ? "Reading the available price history…" : view.posture.sentence}</p>
+        </div>
+        <div className="flex flex-col gap-8">
           {/* 2. Rotation Map (with the zoom + window controls) */}
           <section>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-edge-subtle bg-surface/40 p-3">
               <div className="flex gap-1" role="group" aria-label="Zoom">
                 {(["whole-market", "inside-stocks"] as Zoom[]).map((z) => (
                   <button key={z} type="button" onClick={() => setZoomTo(z)} aria-pressed={z === zoom}
-                    className={cn("rounded px-2.5 py-1 text-[11px] font-semibold tracking-wide transition-colors motion-reduce:transition-none",
-                      z === zoom ? "bg-raised text-ink" : "text-ink-faint hover:text-ink-secondary")}>
+                    className={cn("rounded-xl px-4 py-2.5 text-xs font-semibold tracking-wide transition-colors motion-reduce:transition-none",
+                      z === zoom ? "bg-cyan-200 text-slate-950" : "text-ink-secondary hover:text-ink")}>
                     {z === "whole-market" ? "Whole market" : "Inside stocks"}
                   </button>
                 ))}
@@ -109,19 +114,27 @@ export default function MarketPage() {
               <div className="flex gap-1" role="group" aria-label="Timeframe">
                 {WINDOWS.map((w) => (
                   <button key={w} type="button" onClick={() => setWindow(w)} aria-pressed={w === window}
-                    className={cn("rounded px-2 py-1 text-[11px] font-semibold tracking-wide transition-colors motion-reduce:transition-none",
-                      w === window ? "bg-raised text-ink" : "text-ink-faint hover:text-ink-secondary")}>
+                    className={cn("rounded-lg px-3 py-2 text-xs font-semibold tracking-wide transition-colors motion-reduce:transition-none",
+                      w === window ? "bg-cyan-200 text-slate-950" : "text-ink-secondary hover:text-ink")}>
                     {w}
                   </button>
                 ))}
               </div>
             </div>
 
-            {view.visualization.kind === "rotation-map"
-              ? <RotationMap viz={view.visualization} onSelect={onSelect} focusedId={focusedId} />
-              : <p className="text-[13.5px] text-ink-secondary">{anyLoading ? "Reading the market…" : "Market data is unavailable right now."}</p>}
+            {viz.kind === "rotation-map" ? (
+              <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
+                <div><div className="mb-5 flex items-baseline justify-between gap-4"><h2 className="font-serif text-2xl">The rotation map</h2><span className="font-mono text-[11px] text-ink-secondary">{available.length} references</span></div>
+                  <RotationMap viz={viz} onSelect={onSelect} focusedId={selected?.id ?? null} />
+                  {selected && <a href="#market-explanation" className="discovery-control mt-4 lg:hidden">Read {selected.label}&rsquo;s position ↓</a>}
+                </div>
+                <div id="market-explanation" className="min-w-0 scroll-mt-24 lg:sticky lg:top-24">
+                  {selected && <MarketInspector key={`${zoom}-${window}-${selected.id}`} block={selected} series={selectedResult?.series ?? null} stale={selectedResult?.stale ?? false} zoom={zoom} state={selectedState} />}
+                </div>
+              </div>
+            ) : <div role="status" className="discovery-panel p-8 text-sm text-ink-secondary">{anyLoading ? "Reading the market…" : "Market data is unavailable right now."}</div>}
           </section>
-
+          <div className="grid gap-5 md:grid-cols-2">
           {/* 3. What changed — transitions since the previous observation (not the current map) */}
           {view.whatChanged.length > 0 && (
             <Section title="What changed">
@@ -139,6 +152,7 @@ export default function MarketPage() {
               </ul>
             </Section>
           )}
+          </div>
         </div>
       </div>
     </div>

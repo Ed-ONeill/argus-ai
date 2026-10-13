@@ -18,25 +18,26 @@ export interface FeedFocus { id: string; label: string; eventIds: string[]; }
 
 const PAGE = 20;
 
-function Card({ card }: { card: FeedCard }) {
+function Card({ card, index }: { card: FeedCard; index: number }) {
   const meta = [
     card.sources ? `${card.sources} ${card.sources === 1 ? "source label" : "source labels"}` : null,
     card.when ? `Latest report ${timeAgo(card.when)}` : "Publication time unavailable",
   ].filter(Boolean).join(" · ");
 
   return (
-    <li className="group">
+    <li className="group discovery-story" style={{ animationDelay: `${Math.min(index, 5) * 45}ms` }}>
       <Link href={card.href}
-        className="-mx-3 flex flex-col gap-1.5 rounded-lg px-3 py-3.5 transition-colors hover:bg-raised/30 motion-reduce:transition-none">
+        className="flex flex-col gap-3 rounded-2xl border border-edge-subtle px-5 py-5 transition-colors hover:border-cyan-300/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-200 sm:px-6 motion-reduce:transition-none">
         <div className="flex items-center gap-2">
-          <span className="text-[8.5px] font-semibold uppercase tracking-[0.16em] text-ink-faint">{card.category}</span>
+          <span aria-hidden className="mr-2 font-mono text-xs text-ink-muted">{String(index + 1).padStart(2, "0")}</span>
+          <span className="rounded-full border border-cyan-300/15 bg-cyan-300/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-200">{card.category}</span>
           {card.developing && (
             <span className="rounded-full bg-amber-400/12 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-amber-400/90">
               Developing
             </span>
           )}
         </div>
-        <h3 className="text-[15px] font-semibold leading-snug text-ink transition-colors group-hover:text-accent motion-reduce:transition-none">
+        <h3 className="font-serif text-[clamp(1.15rem,2vw,1.55rem)] leading-snug text-ink transition-colors group-hover:text-cyan-100 motion-reduce:transition-none">
           {card.headline}
         </h3>
         {card.why && <p className="max-w-[70ch] text-[12.5px] leading-relaxed text-ink-secondary">{card.why}</p>}
@@ -48,6 +49,7 @@ function Card({ card }: { card: FeedCard }) {
             {meta && <span title={card.when ?? undefined} className="font-mono text-[10px] text-ink-faint">{meta}</span>}
           </div>
         )}
+        <span className="mt-1 flex items-center justify-between border-t border-edge-subtle pt-3 text-[11px] text-ink-secondary">Inspect reporting & evidence <span aria-hidden className="text-lg text-cyan-200">↗</span></span>
       </Link>
     </li>
   );
@@ -83,7 +85,7 @@ export function MarketFeed({ feed, isLoading, focus, onClearFocus }: {
           </button>
         </div>
         {focused.length > 0 ? (
-          <ol className="flex flex-col divide-y divide-edge-subtle/60">{focused.map((c) => <Card key={c.id} card={c} />)}</ol>
+          <ol className="flex flex-col gap-4">{focused.map((c, i) => <Card key={c.id} card={c} index={i} />)}</ol>
         ) : (
           <p className="text-[13px] leading-relaxed text-ink-muted">Everything on {focus.label} today is in your briefing above.</p>
         )}
@@ -107,22 +109,23 @@ export function MarketFeed({ feed, isLoading, focus, onClearFocus }: {
 
   return (
     <div>
-      <p className="mb-4 text-[12px] text-ink-muted">Developments and named companies from reporting. Financial implications require further evidence; open an event to inspect its sources and limits.</p>
+      <div className="mb-5 flex items-baseline justify-between gap-4"><h2 className="font-serif text-2xl text-ink">The developing picture</h2><span className="shrink-0 font-mono text-[11px] text-ink-muted">{visible.length} stories</span></div>
+      <p className="mb-5 text-[12px] leading-relaxed text-ink-secondary">Developments and named companies from reporting. Financial implications require further evidence; open an event to inspect its sources and limits.</p>
       <div className="mb-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Categories">
         {(["All", ...cats] as const).map((c) => (
           <button key={c} type="button" role="tab" aria-selected={active === c}
             onClick={() => { setActive(c); setCount(PAGE); }}
             className={cn(
               "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none",
-              active === c ? "bg-raised text-ink" : "text-ink-faint hover:text-ink-secondary",
+              active === c ? "bg-cyan-200 text-slate-950" : "bg-raised/40 text-ink-secondary hover:text-ink",
             )}>
             {c}
           </button>
         ))}
       </div>
 
-      <ol className="flex flex-col divide-y divide-edge-subtle/60">
-        {shown.map((c) => <Card key={c.id} card={c} />)}
+      <ol className="flex flex-col gap-4">
+        {shown.map((c, i) => <Card key={c.id} card={c} index={i} />)}
       </ol>
 
       {visible.length > count && (

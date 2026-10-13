@@ -207,3 +207,23 @@
   .tg-halo, .tg-wave, .tg-glow, .tg-recalc, .tg-packet { animation: none !important; }
   .tg-chip:hover { transform: none; }
 }
+
+/* Discovery surfaces: finite entrances and deliberate, user-driven emphasis. */
+.discovery-page {
+  background-image: radial-gradient(ellipse at 80% 0%, rgb(56 189 248 / .07), transparent 48%);
+}
+.discovery-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: rgb(165 243 252); }
+.discovery-panel { border: 1px solid rgb(148 163 184 / .17); border-radius: 20px; background: linear-gradient(145deg, rgb(30 41 59 / .45), rgb(15 23 42 / .16)); }
+.discovery-control { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgb(148 163 184 / .25); border-radius: 999px; padding: 10px 14px; font-size: 12px; color: rgb(203 213 225); transition: background .2s, border-color .2s; }
+.discovery-control:hover { background: rgb(103 232 249 / .07); border-color: rgb(103 232 249 / .5); }
+.discovery-control:disabled { opacity: .6; cursor: wait; }
+.discovery-page button:focus-visible, .discovery-page a:focus-visible { outline: 2px solid rgb(165 243 252); outline-offset: 4px; }
+.discovery-story { background: linear-gradient(120deg, rgb(30 41 59 / .26), transparent); border-radius: 16px; }
+@keyframes discovery-arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.discovery-enter, .discovery-story { animation: discovery-arrive .45s ease-out both; }
+.discovery-landscape { background-image: radial-gradient(ellipse at 50% 25%, rgb(34 211 238 / .09), transparent 65%), radial-gradient(rgb(148 163 184 / .13) .7px, transparent .7px); background-size: auto, 20px 20px; }
+.discovery-connection { transition: stroke .25s, stroke-opacity .25s; }
+@media (prefers-reduced-motion: reduce) {
+  .discovery-enter, .discovery-story { animation: none; }
+  .discovery-connection, .discovery-control { transition: none; }
+}
