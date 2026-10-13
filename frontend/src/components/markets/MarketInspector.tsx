@@ -26,7 +26,7 @@ export function MarketInspector({ block, series, zoom, state, stale }: {
         <div className="flex items-baseline justify-between gap-2"><span className="text-xs text-ink-secondary">Price change in this observation</span><span className="font-mono text-xl">{signed(block.absPct)}%</span></div>
         {current && <div className="mt-4"><ArgusChart series={current} variant="sparkline" config={{ height: 100, semanticColor: false }} ariaLabel={`${series?.symbol} adjusted-close history for the selected observation`} /></div>}
         <p className="mt-3 font-mono text-[10px] text-ink-secondary">{start && end ? `${start} → ${end} · UTC` : "Observation dates unavailable"}</p>
-        <p className="mt-1 text-[10px] text-ink-secondary">Adjusted closes · {stale || series?.quality?.freshness === "stale" || series?.quality?.grade === "STALE" ? "Marked stale" : "Latest available history"}. Not live quotes.</p>
+        <p className="mt-1 text-[10px] text-ink-secondary">Adjusted closes{series ? (series.exchange === "US" ? " · USD/share" : " · USD per unit") : ""} · {stale || series?.quality?.freshness === "stale" || series?.quality?.grade === "STALE" ? "Marked stale" : "Latest available history"}. Not live quotes.</p>
       </div>
       <h3 className="text-sm font-semibold">Why this position?</h3>
       <p className="mt-2 text-xs leading-relaxed text-ink-secondary">{zoom === "whole-market"

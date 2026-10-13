@@ -43,7 +43,7 @@ function SpineNode({ node, active, from, onFocus }: {
       <span title={`${node.symbol} representative ETF; latest available daily close${quote?.asOf ? ` as of ${quote.asOf}` : ""}`} className="whitespace-nowrap text-[10px] font-semibold text-ink-secondary">{node.label}</span>
       {move != null ? (
         <span className={cn("font-mono text-[9.5px] tabular-nums", up ? "text-emerald-400" : down ? "text-rose-400" : "text-ink-muted")}>
-          {up ? "+" : ""}{move.toFixed(1)}%<span title={quote?.asOf ?? "date unavailable"} className="block text-[9px] text-ink-secondary">{node.symbol}<span className="block">{asOf}{quote?.stale ? " · stale" : ""}</span></span>
+          {up ? "+" : ""}{move.toFixed(1)}%<span title={quote?.asOf ?? "date unavailable"} className="block text-[9px] text-ink-secondary">{node.symbol}<span className="block whitespace-nowrap">{asOf}{quote?.stale ? " · stale" : ""}</span></span>
         </span>
       ) : (
         <span className="font-mono text-[9px] text-ink-faint">Price unavailable</span>
