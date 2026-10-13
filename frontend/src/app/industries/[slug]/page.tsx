@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { IndustryGuide } from "@/components/industries/IndustryGuide";
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -962,6 +963,7 @@ export default function IndustryDetailPage() {
           <p className="text-sm text-white/45 mb-4 leading-relaxed">
             {industry.description}
           </p>
+          <nav aria-label="Industry page sections" className="mb-6 flex flex-wrap gap-2 text-xs"><a href="#industry-guide" className="discovery-control">Understand the industry ↓</a><a href="#industry-current-context" className="discovery-control">Explore current context ↓</a></nav>
 
           {/* Live narrative */}
           {heroNarrative && (
@@ -1081,6 +1083,12 @@ export default function IndustryDetailPage() {
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+
+        <IndustryGuide key={industry.slug} industry={industry} clusters={topClusters} />
+        <div id="industry-current-context" className="scroll-mt-24 pb-3 pt-5">
+          <h2 className="font-serif text-2xl text-ink">Current context & deeper exploration</h2>
+          <p className="mt-2 max-w-3xl text-xs leading-relaxed text-ink-secondary">The sections below combine matched reporting and broader {industry.sector} sector context. Theme connections describe recorded associations; they do not establish an effect on every business in {industry.name}. Use the guide above to distinguish the business models before interpreting a signal.</p>
+        </div>
 
         {/* ── What Matters — shared engine reads only (Phase 2.5): forward
             view (prediction engine), the canonical ledger record, and the
