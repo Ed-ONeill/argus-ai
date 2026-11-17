@@ -22,7 +22,7 @@ import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
 import {
   getIndustryBySlug,
-  getSectorIntelligence,
+  getIndustryIntelligence,
   getIndustrySignals,
   getTopTheme,
   filterIndustryClusters,
@@ -756,7 +756,7 @@ export default function IndustryDetailPage() {
   if (isLoading) return <DetailSkeleton color={industry.color} />;
 
   // ── Derived data ────────────────────────────────────────────────────────────
-  const sectorIntel    = getSectorIntelligence(industry, sectorData?.sectors ?? []);
+  const sectorIntel    = getIndustryIntelligence(industry, sectorData?.sectors ?? [], sectorData?.industries ?? []);
   const indSignals     = getIndustrySignals(industry, sectorData?.industries ?? []);
   const bestIndSignal  = indSignals[0] ?? null;
   const topClusters    = filterIndustryClusters(industry, clusters);
@@ -849,7 +849,9 @@ export default function IndustryDetailPage() {
   // so a page could be headlined by an unrelated industry's template. It is
   // retained only as an explicitly-labelled fallback when the canonical
   // projection has nothing to say, and never overrides it.
-  const heroNarrative = forwardSentence ?? bestIndSignal?.narrative ?? null;
+  const heroNarrative = forwardSentence
+    ? (industry.name === industry.sector ? forwardSentence : `${industry.sector} sector context: ${forwardSentence}`)
+    : bestIndSignal?.narrative ?? null;
   const heroNarrativeIsCanonical = forwardSentence !== null;
   const topStoryTitle = bestIndSignal?.top_story_title ?? null;
   const topStoryUrl   = bestIndSignal?.top_story_url   ?? null;
@@ -993,7 +995,7 @@ export default function IndustryDetailPage() {
                 sc.bg,
               )}>
                 <SIcon size={10} strokeWidth={2.5} />
-                {sc.label}
+                {hasData ? sc.label : "Not measured"}
               </span>
             </div>
 

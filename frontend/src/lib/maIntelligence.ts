@@ -162,12 +162,11 @@ function cleanParty(raw: string): string {
 }
 
 // Buyer → target from common headline grammars. Returns nulls when not cleanly
-// parseable (then the card falls back to extracted entities, or shows nothing).
+// parseable. Mention order never establishes buyer/target roles.
 function extractParties(deal: MADeal): { buyer: string | null; target: string | null } {
   const t = deal.title.trim();
   const pats: RegExp[] = [
     /^(.+?)\s+(?:agrees?\s+to\s+)?(?:acquires?|buys?|to\s+(?:buy|acquire)|purchases?|takes?\s+over|snaps?\s+up)\s+(.+)$/i,
-    /^(.+?)\s+(?:to\s+)?merges?\s+with\s+(.+)$/i,
   ];
   for (const re of pats) {
     const m = t.match(re);
@@ -175,11 +174,8 @@ function extractParties(deal: MADeal): { buyer: string | null; target: string | 
       const buyer  = cleanParty(m[1]);
       const target = cleanParty(m[2]);
       const ok = (s: string) => s.length >= 2 && s.length <= 40 && !/\b(deal|stake|unit|business|assets?|sale)\b/i.test(s);
-      if (ok(buyer) && ok(target)) return { buyer, target };
+      if (ok(buyer) && ok(target) && !/\b(?:says?|shares?|reports?|denies|not|may|could|might|seeks?|plans?|bid|offer|talks)\b/i.test(buyer)) return { buyer, target };
     }
-  }
-  if (deal.entities.length >= 2 && deal.entities[0] !== deal.entities[1]) {
-    return { buyer: deal.entities[0], target: deal.entities[1] };
   }
   return { buyer: null, target: null };
 }
@@ -207,15 +203,27 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function deriveStatus(deal: MADeal, text: string): string {
+  // Headline states take precedence over supporting text (which may describe
+  // an earlier agreement or a different transaction).
+  const headline = deal.title;
+  text = headline;
+  if (/\b(?:denies|not (?:yet )?(?:agreed|signed|completed|closed)|no (?:agreement|deal))\b/i.test(headline)) return "Not established";
+  if (/\b(?:seeks? to exit|plans? to back out|may withdraw|considering withdrawal)\b/i.test(headline)) return "Withdrawal reported";
+  if (/\b(?:backed out|withdrawn|terminated|abandoned|called off|walked away)\b/i.test(headline)) return "Withdrawn";
+  if (/\b(?:nears?|in (?:advanced )?talks|negotiat\w*|preferred bidder|vie[sd]?)\b/i.test(headline)
+      && !/\bclos(?:e|ing)\b/i.test(headline)) return "Negotiating";
+  // A filing's generic agreement item is not proof of an acquisition agreement.
+  if (/\b8-K\b/i.test(headline) && !/\b(?:acquisition|merger|takeover|buyout|take-private)\b/i.test(headline)) return "Not established";
   if (deal.dealType === "withdrawn") return "Withdrawn";
   if (/completed|closed\s+the\s+(?:deal|acquisition|transaction)|deal\s+closed|finalized/i.test(text)) return "Completed";
-  if (/(near|nearing|set\s+to|expected\s+to)\s+clos|on\s+track\s+to\s+clos/i.test(text)) return "Closing";
+  if (/(nears?|nearing|set\s+to|expected\s+to)\s+clos|on\s+track\s+to\s+clos/i.test(text)) return "Closing";
   if (/shareholder\s+vote|proxy\s+(?:vote|statement)|investor\s+vote/i.test(text)) return "Shareholder Vote";
   if (/antitrust|regulatory\s+(?:review|approval|scrutiny)|\bdoj\b|\bftc\b|european\s+commission|cma\b|merger\s+review/i.test(text)) return "Regulatory Review";
-  if (/definitive\s+agreement|agreed\s+to\s+(?:acquire|buy)|signs?\s+deal|enters?\s+into|signed/i.test(text)) return "Signed";
+  if (/(?:definitive|signed)\s+(?:merger|acquisition)\s+agreement|agreed\s+to\s+(?:acquire|buy)|signs?\s+(?:acquisition|merger)\s+deal/i.test(text)) return "Signed";
   if (/in\s+(?:advanced\s+)?talks|negotiat|exclusive\s+talks|due\s+diligence/i.test(text)) return "Negotiating";
   if (deal.dealType === "rumored") return "Rumored";
-  return "Announced";
+  if (/\b(?:announces? (?:an? |its )?(?:acquisition|merger|takeover)|buys|acquires|launches .{0,35}bid|makes .{0,25}offer)\b/i.test(headline)) return "Announced";
+  return "Not established";
 }
 
 function deriveTxnType(deal: MADeal, text: string): string {
@@ -226,8 +234,9 @@ function deriveTxnType(deal: MADeal, text: string): string {
   if (/asset\s+sale|sells?\s+(?:its\s+)?(?:unit|division|business|stake|assets)|divest/i.test(text)) return "Asset Sale";
   if (/minority\s+(?:stake|investment|interest)|stake\s+in|invests?\s+in/i.test(text)) return "Minority Investment";
   if (deal.dealType === "merger" || /merger\s+of\s+equals|merges?\s+with|combination/i.test(text)) return "Merger";
-  if (deal.dealType === "sponsor" || deal.peFirm) return "Sponsor Buyout";
-  return "Strategic";
+  if (deal.peFirm && /\b(?:buyout|takeover|acquires?|buys?)\b/i.test(text)) return "Sponsor-related acquisition";
+  if (/\b(?:acquires?|buys?|acquisition|takeover)\b/i.test(text)) return "Acquisition";
+  return "Type not established";
 }
 
 function deriveRationale(deal: MADeal, text: string): string {
@@ -239,9 +248,8 @@ function deriveRationale(deal: MADeal, text: string): string {
   if (/vertical\s+integrat|supply\s+chain|upstream|downstream|control\s+the\s+supply/i.test(text)) return "Vertical integration";
   if (/expand.{0,20}(?:market|presence|footprint)|enter.{0,12}market|geographic/i.test(text)) return "Geographic expansion";
   if (/recycl|monetiz|return\s+capital|capital\s+return/i.test(text)) return "Capital recycling";
-  if (deal.dealType === "sponsor") return "Sponsor value creation";
-  if (deal.dealType === "merger") return "Industry consolidation";
-  return "Scale & consolidation";
+  void deal;
+  return "Rationale not established";
 }
 
 // ── Additional fact extractors (present-or-omit) ──────────────────────────────
@@ -383,18 +391,9 @@ function classifySize(deal: MADeal, usdB: number | null): { sizeClass: DealIntel
 }
 
 function buildTimeline(status: string, text: string): DealIntel["timeline"] {
-  const stages = ["Rumor", "Negotiation", "Due Diligence", "Announcement", "Board Approval", "Antitrust Review", "Shareholder Vote", "Closing"];
-  const idx =
-    status === "Rumored"           ? 0 :
-    status === "Negotiating"       ? (/due\s+diligence/i.test(text) ? 2 : 1) :
-    status === "Announced"         ? 3 :
-    status === "Signed"            ? 4 :
-    status === "Regulatory Review" ? 5 :
-    status === "Shareholder Vote"  ? 6 :
-    status === "Closing"           ? 7 :
-    status === "Completed"         ? 8 :
-    status === "Withdrawn"         ? -1 : 0;
-  return stages.map((stage, i) => ({ stage, done: idx > i, current: i === idx }));
+  // A current status does not prove every prior milestone occurred.
+  void text;
+  return status === "Not established" ? [] : [{ stage: status, done: status === "Completed", current: true }];
 }
 
 // completion probability / capital transmission / Argus assessment / market
@@ -492,7 +491,7 @@ export function enrichDeal(deal: MADeal, _ctx: DealContext = {}): DealIntel {
   const competingBidders = extractCompetingBidders(text, buyer);
 
   const status    = deriveStatus(deal, text);
-  const txnType   = deriveTxnType(deal, text);
+  const txnType   = deriveTxnType(deal, deal.title);
   const rationale = deriveRationale(deal, text);
   const usdB      = valueToUsdB(dealValue);
   const { sizeClass, sizeLabel, featured } = classifySize(deal, usdB);
@@ -534,8 +533,8 @@ export function buildMarketRegime(deals: MADeal[], ctx: DealContext = {}): Regim
   const n = deals.length;
   const pctOf = (x: number) => Math.round((x / n) * 100);
   return [
-    { label: "Strategic Buyers", display: `${strat}`,          pct: pctOf(strat),   color: "#52b0c8", hint: "corporate acquirers" },
-    { label: "Sponsor Activity", display: `${spon}`,           pct: pctOf(spon),    color: "#a78bfa", hint: "PE buyouts & take-privates" },
+    { label: "Other Deal Coverage", display: `${strat}`,       pct: pctOf(strat),   color: "#52b0c8", hint: "classified reports, not verified acquirers" },
+    { label: "Sponsor Coverage", display: `${spon}`,           pct: pctOf(spon),    color: "#a78bfa", hint: "reports mentioning sponsors" },
     { label: "Rumor Flow",       display: `${rumor}`,          pct: pctOf(rumor),   color: "#fbbf24", hint: "unconfirmed / exploring" },
     { label: "Cross-Border",     display: `${pctOf(xborder)}%`, pct: pctOf(xborder), color: "#fb923c", hint: "share with foreign angle" },
     { label: "Mega / Large",     display: `${mega}`,           pct: pctOf(mega),    color: "#34d399", hint: "≥ $5B disclosed" },

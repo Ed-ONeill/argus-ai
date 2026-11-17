@@ -134,6 +134,7 @@ describe("Aerospace & Defense — a recovered industry renders normally", () => 
   const recovered = () => buildIndustryCardView(input("Aerospace & Defense", {
     sectorData: sector(14, 3),
     industrySignal: { narrative: "Defense budgets are repricing primes.",
+                      signal_score: 14, signal_count: 3,
                       primary_drivers: ["LMT", "RTX", "NOC"],
                       regime_alignment: "tailwind",
                       momentum_direction: "bullish" } as never,
@@ -206,11 +207,12 @@ describe("real derived content always wins when available", () => {
     expect(v.reference).toBeNull();
   });
 
-  it("topTheme is used when no narrative exists", () => {
+  it("a parent-sector count and topic label do not establish an industry score", () => {
     const v = buildIndustryCardView(input("Media & Telecom", {
       sectorData: sector(55, 6), topTheme: "Streaming consolidation",
     }));
-    expect(v.intelligenceText).toBe("Streaming consolidation");
+    expect(v.score).toBeNull();
+    expect(v.intelligenceText).toContain("not an industry-specific assessment");
   });
 
   it("a zero-score sector is NOT treated as coverage", () => {

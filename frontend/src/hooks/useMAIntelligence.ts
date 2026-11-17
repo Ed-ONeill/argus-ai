@@ -138,10 +138,10 @@ function detectPEFirm(text: string): string | null {
   return null;
 }
 
-function inferDealType(title: string, hasSponsor: boolean): DealType {
+export function inferDealType(title: string, hasSponsor: boolean): DealType {
   if (/withdrawn|terminat|pulled|abandoned|call(?:s|ed)?\s+off|walk(?:s|ed)?\s+away/i.test(title)) return "withdrawn";
-  if (/spac|blank\s+check|de-?spac/i.test(title))                                                  return "spac";
-  if (/rumor|report(?:edly)?|explore|consider|eye(?:ing)?|weigh|approach(?:ed)?|in\s+talks/i.test(title)) return "rumored";
+  if (/\b(?:spac|blank\s+check|de-?spac)\b/i.test(title))                                         return "spac";
+  if (/\b(?:rumou?rs?|reportedly|explores?|exploring|considers?|considering|eyes|eyeing|weighs?|weighing|approached)\b|\bin\s+talks\b/i.test(title)) return "rumored";
   if (/merge|combination|joint\s+venture/i.test(title))                                             return "merger";
   if (hasSponsor)                                                                                    return "sponsor";
   return "strategic";

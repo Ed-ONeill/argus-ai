@@ -18,6 +18,7 @@ import { sectionData, type XCounter } from "./intel/dossier";
 import type { Explanation, EventEvidence as RawEventEvidence, FeedResponse, MarketEvent, ThemeIntelligence, TransmissionHop } from "./types";
 import { sanitizeCopy } from "./utils";
 import { directCompanies, latestReportTime } from "./eventPresentation";
+import { eventSubjectTicker } from "./eventSubject";
 
 type EventEvidenceKind = RawEventEvidence["kind"];
 
@@ -90,9 +91,7 @@ const TYPE_TAG: Record<MarketEvent["event_type"], string> = {
 
 // ── instrument resolution (a detail of the price-chart visualization) ─────────
 function companyTicker(ev: MarketEvent): string | null {
-  const names = directCompanies(ev);
-  const t = names.map((s) => s.trim()).find((s) => isTicker(s));
-  return t ? t.toUpperCase() : null;
+  return eventSubjectTicker(ev);
 }
 // Representative proxies for market/mechanism events (labeled, deterministic).
 const REP: [RegExp, string, string][] = [

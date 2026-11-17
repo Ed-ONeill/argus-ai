@@ -193,6 +193,15 @@ export function getSectorIntelligence(
   return sectors.find(s => s.name === industry.sector) ?? null;
 }
 
+/** Industry detail metrics must not inherit the parent sector's totals. */
+export function getIndustryIntelligence(industry: IndustryConfig, sectors: SectorIntelligence[], signals: IndustrySignal[]): SectorIntelligence | null {
+  const own = getIndustrySignals(industry, signals)[0];
+  if (own) return { name: industry.name, signal_score: own.signal_score, signal_count: own.signal_count,
+    impact_sentiment: own.momentum_direction, top_entity: own.top_entity,
+    top_story_title: own.top_story_title, top_story_url: own.top_story_url, regime_alignment: own.regime_alignment };
+  return industry.name === industry.sector ? getSectorIntelligence(industry, sectors) : null;
+}
+
 export function getIndustrySignals(
   industry:      IndustryConfig,
   allIndustries: IndustrySignal[],
@@ -201,8 +210,7 @@ export function getIndustrySignals(
   return allIndustries
     .filter(sig => {
       const name = sig.name.toLowerCase();
-      return sig.sector === industry.sector ||
-             kws.some(kw => name.includes(kw));
+      return kws.some(kw => name.includes(kw));
     })
     .sort((a, b) => b.signal_score - a.signal_score);
 }
@@ -221,8 +229,8 @@ export function getTopTheme(
   );
   if (c) return c.theme_label;
 
-  // Second: WhatMattersNow for the broader GICS sector
-  const sectorSet = new Set((SECTOR_ENTITIES[industry.sector] ?? []).map(e => e.toUpperCase()));
+  // Second: WhatMattersNow with the same industry-specific asset support.
+  const sectorSet = assetSet;
   const wmn = whatMattersNow.find(w =>
     w.cluster.primary.affected_entities.some(e => sectorSet.has(e.toUpperCase()))
   );
@@ -237,7 +245,7 @@ export function filterIndustryClusters(
   limit     = 20,
 ): StoryCluster[] {
   const assetSet   = new Set(industry.keyAssets.map(a => a.toUpperCase()));
-  const sectorSet  = new Set((SECTOR_ENTITIES[industry.sector] ?? []).map(e => e.toUpperCase()));
+  const sectorSet  = new Set((industry.name === industry.sector ? SECTOR_ENTITIES[industry.sector] ?? [] : []).map(e => e.toUpperCase()));
   const indLower   = industry.name.toLowerCase();
   const secLower   = industry.sector.toLowerCase();
 
@@ -252,7 +260,7 @@ export function filterIndustryClusters(
       }
       const titleLower = cl.primary.title.toLowerCase();
       if (titleLower.includes(indLower))       score += 2;
-      else if (titleLower.includes(secLower))  score += 1;
+      else if (industry.name === industry.sector && titleLower.includes(secLower)) score += 1;
       return { cluster: cl, score: score * (1 + cl.cluster_score * 0.1) };
     })
     .filter(({ score }) => score > 0)

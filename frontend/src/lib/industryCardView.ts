@@ -102,7 +102,18 @@ const SENTIMENT_LABEL: Record<"bullish" | "bearish" | "mixed" | "neutral", strin
 };
 
 export function buildIndustryCardView(input: IndustryCardInput): IndustryCardView {
-  const { industry, sectorData, industrySignal, topTheme, themeSignal } = input;
+  const { industry, industrySignal, topTheme, themeSignal } = input;
+  // Parent-sector coverage is context, not a measurement of each child industry.
+  // Exact industry signals keep their own counts; exact-name theme activations
+  // remain a separately identified source. The backend payload is unchanged.
+  const sectorContext = input.sectorData;
+  const isParent = industry.name !== industry.sector;
+  const sectorData = industrySignal && industrySignal.signal_score > 0
+    ? { ...sectorContext, signal_score: industrySignal.signal_score,
+        signal_count: industrySignal.signal_count,
+        impact_sentiment: industrySignal.momentum_direction,
+        regime_alignment: industrySignal.regime_alignment }
+    : isParent ? null : sectorContext;
 
   const score = sectorData?.signal_score ?? 0;
   const count = sectorData?.signal_count ?? 0;
@@ -119,14 +130,17 @@ export function buildIndustryCardView(input: IndustryCardInput): IndustryCardVie
       score:     null,
       sentiment: null,
       stateBadge: { label: NOT_MEASURED_BADGE, measured: false },
-      intelligenceText: NO_SIGNAL_TEXT,
+      intelligenceText: sectorContext && sectorContext.signal_score > 0
+        ? `${NO_SIGNAL_TEXT} ${industry.sector} sector context is available; it is not an industry-specific assessment.`
+        : NO_SIGNAL_TEXT,
       drivers:   [],
       reference: {
         label:   REFERENCE_LABEL,
         driver:  industry.macroDrivers?.[0] ?? null,
         tickers: (industry.keyAssets ?? []).slice(0, 5),
       },
-      storyLabel: "No data",
+      storyLabel: isParent && sectorContext && sectorContext.signal_count > 0
+        ? `${sectorContext.signal_count} sector stories` : "No data",
       footer:     NOT_MEASURED_FOOTER,
       themeName:  null,
     };

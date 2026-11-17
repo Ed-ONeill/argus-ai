@@ -1152,8 +1152,8 @@ export default function MAPage() {
 
           {/* Stats row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8">
-            <StatCard label="Active Deals" value={activeDeals.length} sub="strategic + sponsor" color="#52b0c8" />
-            <StatCard label="Sponsor / PE" value={sponsorDeals.length} sub="buyouts & take-privates" color="#a78bfa" />
+            <StatCard label="M&A Coverage" value={activeDeals.length} sub="articles and filing references" color="#52b0c8" />
+            <StatCard label="Sponsor / PE" value={sponsorDeals.length} sub="sponsor-related reports" color="#a78bfa" />
             <StatCard label="Rumored" value={rumored.length} sub="reported / exploring" color="#fbbf24" />
             <StatCard label="Total Tracked" value={totalDealCount} sub="all categories" />
           </div>
