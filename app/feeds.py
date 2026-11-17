@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 # companies through app.companies; ingestion now uses the same authority so the
 # product has a single definition of "this token is a company".
 from app.companies import resolve_entities
+from app.rss_transport import FeedFetchError, read_feed
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ STALE_HOURS       = 48    # items older than this excluded in fresh-only mode
 _ITEMS_PER_FEED   = 12    # items fetched per source before age/signal filtering
 _CACHE_TTL        = 300   # 5-minute feed cache TTL (seconds)
 _FETCH_WORKERS    = 6     # parallel HTTP threads
-_FETCH_TIMEOUT    = 8     # per-request timeout (seconds) — not yet used by feedparser
+_FETCH_TIMEOUT    = 8     # per-request timeout; enforced by rss_transport
 _DEDUP_THRESHOLD  = 0.50  # Jaccard similarity above which headlines are duplicates
 _MAX_SNIPPET      = 500   # max chars to keep from RSS description
 
@@ -1629,6 +1630,7 @@ class FeedManager:
     def __init__(self, ttl: int = _CACHE_TTL) -> None:
         self._ttl = ttl
         self._cache: dict[str, tuple[float, list[FeedItem]]] = {}
+        self._retry_after: dict[str, tuple[float, str]] = {}
         self.fetch_errors:   dict[str, str] = {}  # source → error msg, cleared each call
         self.promo_excluded: int            = 0   # items hard-excluded per fetch_all call
         # OP1.1: first time this process observed each item URL. TTL re-fetches
@@ -1904,17 +1906,19 @@ class FeedManager:
     ) -> list[FeedItem]:
         now = time.time()
 
+        retry = self._retry_after.get(url)
+        if retry and time.monotonic() < retry[0]:
+            # Preserve the coverage error even when no new request is sent.
+            self.fetch_errors[name] = retry[1]
+            return self._cache.get(url, (0, []))[1]
+
         if not force_refresh and url in self._cache:
             ts, cached = self._cache[url]
             if now - ts < self._ttl:
                 return cached
 
         try:
-            import feedparser
-            feed = feedparser.parse(url, request_headers={"User-Agent": "Argus-AI/1.0"})
-
-            if feed.get("bozo") and not feed.entries:
-                raise ValueError(f"Malformed feed ({feed.get('bozo_exception', '?')})")
+            feed = read_feed(url)
 
             items: list[FeedItem] = []
             for entry in feed.entries[:max_items]:
@@ -1933,12 +1937,16 @@ class FeedManager:
                 ))
 
             self._cache[url] = (now, items)
+            self._retry_after.pop(url, None)
+            self.fetch_errors.pop(name, None)
             log.debug("Fetched %d items from %s", len(items), name)
             return items
 
         except Exception as exc:
             msg = str(exc)
             self.fetch_errors[name] = msg
+            if isinstance(exc, FeedFetchError):
+                self._retry_after[url] = (time.monotonic() + exc.retry_seconds, msg)
             log.debug("Feed fetch failed [%s]: %s", name, msg)  # DEBUG not WARNING
             if url in self._cache:
                 _, stale = self._cache[url]

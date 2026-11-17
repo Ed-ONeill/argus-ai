@@ -87,9 +87,8 @@ class _FakeFeed:
 
 
 def _run_feed(monkeypatch, registry, payloads):
-    import feedparser
     monkeypatch.setattr(
-        feedparser, "parse",
+        "app.feeds.read_feed",
         lambda url, *a, **kw: _FakeFeed(payloads.get(url, [])),
     )
     monkeypatch.setattr(FeedManager, "_fetch_sec_watchlist",

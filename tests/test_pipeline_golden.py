@@ -107,9 +107,8 @@ def pipeline(monkeypatch):
     now = datetime.now(timezone.utc)
     payloads = _payloads(now)
 
-    import feedparser
     monkeypatch.setattr(
-        feedparser, "parse",
+        "app.feeds.read_feed",
         lambda url, *a, **kw: _FakeFeed(payloads.get(url, [])),
     )
     monkeypatch.setattr(FeedManager, "_fetch_sec_watchlist",
