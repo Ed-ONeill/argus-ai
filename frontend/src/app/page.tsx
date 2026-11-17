@@ -27,26 +27,26 @@ const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(
 const INTELLIGENCE_LAYERS = [
   {
     index: "01",
-    title: "CAUSAL TRANSMISSION",
-    body:  "Capital moves across asset classes in sequence. Credit spreads widen before equities fall. Dollar strength compresses EM liquidity. Argus maps live transmission paths: causal flow, not static correlation.",
+    title: "EVIDENCE FIRST RESEARCH",
+    body:  "Inspect the reporting behind an event, distinguish named companies from contextual exposure, and see where a financial implication has not been established.",
   },
   {
     index: "02",
-    title: "MULTI-HORIZON ANALYSIS",
-    body:  "Intraday momentum, swing positioning, and structural regime operate at different speeds. When they conflict, inflection points form. Argus reads all three at once.",
+    title: "MARKET CONTEXT",
+    body:  "Read market prices and relative performance alongside company and industry reporting, with observation dates and proxy instruments identified.",
   },
   {
     index: "03",
-    title: "REGIME DETECTION",
-    body:  "Volatility regimes, liquidity conditions, and participant crowding accumulate gradually. Argus flags the shift as it forms, before price confirms it.",
+    title: "RESEARCH CONTINUITY",
+    body:  "Follow the themes that matter to you, keep research notes and open questions, and compare the current view with your last saved review.",
   },
 ] as const;
 
 const CAPABILITIES = [
-  { label: "Narrative Network",    desc: "Live causal mapping across equities, credit, rates, FX, and commodities" },
-  { label: "Multi-Horizon View",   desc: "Simultaneous intraday, swing, and structural timeframe analysis" },
-  { label: "Participant Dynamics", desc: "Live positioning model: CTAs, vol-targeters, macro funds, passive flows, dealers" },
-  { label: "Systemic Risk",        desc: "Liquidity stress, dealer positioning, and forced-unwind cascade risk" },
+  { label: "Evidence", desc: "Source reporting behind events and research cases" },
+  { label: "Market Context", desc: "Observed prices and relative performance with dated references" },
+  { label: "Research Notes", desc: "Account-owned themes, review checkpoints and open questions" },
+  { label: "Recorded Changes", desc: "Changes in the research view since your saved checkpoint" },
 ] as const;
 
 const fadeUp = {
@@ -366,7 +366,7 @@ export default function LandingPage() {
       )}
 
       {/* ── HERO ────────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex flex-col justify-center pt-14" style={{ overflow: "hidden" }}>
+      <section className={`relative flex flex-col justify-center pt-14 ${isSignedIn ? "min-h-0" : "min-h-screen"}`} style={{ overflow: "hidden" }}>
 
         <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: heroGrad }} />
         <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: sideGrad }} />

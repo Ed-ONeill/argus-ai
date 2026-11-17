@@ -14,6 +14,8 @@
  */
 
 import { useMemo } from "react";
+import { ResearchReview } from "@/components/saved/ResearchReview";
+import { ResearchSyncStatus } from "@/components/saved/ResearchSyncStatus";
 import { motion } from "framer-motion";
 import { Bookmark, Eye, ArrowUpRight, AlertTriangle } from "lucide-react";
 import Link from "next/link";
@@ -140,7 +142,10 @@ export default function SavedPage() {
 
   /* -- the monitored selection (user state only) -- */
   const followedInputs = useMemo<SavedEntityInput[]>(() => {
-    const out: SavedEntityInput[] = followed.map(f => ({ id: f.id, label: f.name, kind: "theme", savedAt: f.followedAt }));
+    const out: SavedEntityInput[] = followed.map(f => ({
+      id: f.id, label: f.name !== f.id ? f.name : argus.themes.find(t => t.id === f.id)?.name ?? f.name,
+      kind: "theme", savedAt: f.followedAt,
+    }));
     const have = new Set(followed.map(f => f.id));
     for (const id of watchedIds) {
       if (have.has(id)) continue;
@@ -220,7 +225,7 @@ export default function SavedPage() {
           {loading
             ? "Loading…"
             : user
-            ? "Synced across all your devices."
+            ? "Your account stores saved stories, subscriptions and research reviews. Sync requires a connection."
             : "Saved locally on this device."}
         </p>
         {!loading && !user && (
@@ -233,6 +238,7 @@ export default function SavedPage() {
         )}
       </div>
 
+      <ResearchSyncStatus />
       {/* ── Standing Watch summary - a projection of the shared ledger and
              research priorities over the monitored set ─────────────────── */}
       {summary && (
@@ -291,7 +297,7 @@ export default function SavedPage() {
           <>
             {vm.items.note && <p className="text-[9px] text-ink-muted/70 italic mb-2">{vm.items.note}</p>}
             <div className="space-y-2">
-              {monitoredItems.map(item => <MonitoredRow key={item.key} item={item} />)}
+              {monitoredItems.map(item => <div key={`${user?.id ?? "anonymous"}:${item.key}`}><MonitoredRow item={item} /><ResearchReview item={item} /></div>)}
             </div>
           </>
         )}
