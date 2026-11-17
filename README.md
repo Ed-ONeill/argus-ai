@@ -1,4 +1,19 @@
-# Atlas — Personal LLM Assistant
+# Argus Market Intelligence
+
+Argus is a Next.js and FastAPI research product for inspecting market reporting,
+following companies and themes, and reviewing changes against saved research.
+
+- Frontend: `frontend/`; install with `npm ci`, test with `npm test`, build with `npm run build`.
+- Production backend: Python 3.12; `pip install --require-hashes -r requirements/backend.txt`.
+- Backend tests: `pip install --require-hashes -r requirements/test.txt`, then `python -m pytest -q`.
+- Current audit changes and release evidence: [November 17 remediation](docs/AUDIT_REMEDIATION_2026_11_17.md).
+- Production setup: [Deployment checklist](docs/PRODUCTION_DEPLOYMENT_CHECKLIST.md).
+- Historical approvals: [Phases and milestones](docs/ARGUS_PHASES_AND_MILESTONES.md).
+
+The original local-assistant tools remain optional. Their broader dependencies
+are in `requirements.txt`; they are not installed into the deployed API image.
+
+## Legacy local assistant
 
 A fully local, customizable AI assistant built in Python.
 Supports Ollama (default), OpenAI, and any OpenAI-compatible local server.

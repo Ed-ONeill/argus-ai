@@ -3,6 +3,11 @@
 Core promise: Argus tells you when your research needs to change, and shows you
 exactly why. Governing direction: user-supplied phase plan, accepted 2026-09-15.
 
+November 17 update: the user explicitly authorized implementing the full audit
+findings and publishing after verification, superseding intermediate approval
+stops for that remediation only. See [the current remediation record](AUDIT_REMEDIATION_2026_11_17.md).
+Historical slice closures and human-label requirements below remain unchanged.
+
 ## Operating agreement
 
 - Work one causal problem per implementation slice, with separate commits and
