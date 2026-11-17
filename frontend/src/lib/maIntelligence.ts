@@ -174,7 +174,10 @@ function extractParties(deal: MADeal): { buyer: string | null; target: string | 
       const buyer  = cleanParty(m[1]);
       const target = cleanParty(m[2]);
       const ok = (s: string) => s.length >= 2 && s.length <= 40 && !/\b(deal|stake|unit|business|assets?|sale)\b/i.test(s);
-      if (ok(buyer) && ok(target) && !/\b(?:says?|shares?|reports?|denies|not|may|could|might|seeks?|plans?|bid|offer|talks)\b/i.test(buyer)) return { buyer, target };
+      if (ok(buyer) && !/\b(?:says?|shares?|reports?|denies|not|may|could|might|seeks?|plans?|bid|offer|talks)\b/i.test(buyer)) {
+        // A lower-case business description is not a resolved company name.
+        return { buyer, target: ok(target) && /[A-Z]/.test(target) ? target : null };
+      }
     }
   }
   return { buyer: null, target: null };
@@ -319,7 +322,11 @@ function extractCompetingBidders(text: string, buyer: string | null): string[] {
     ["Advent", /advent/i], ["TPG", /\btpg\b/i], ["Silver Lake", /silver\s+lake/i], ["Vista", /vista\s+equity/i],
   ]);
   const buyerUp = (buyer ?? "").toUpperCase();
-  return names.filter(n => !buyerUp.includes(n.toUpperCase())).slice(0, 4);
+  return names.filter(n => {
+    if (buyerUp.includes(n.toUpperCase())) return false;
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:rival bidder|competing bidder|other suitor)\\s+${escaped}\\b|\\b${escaped}\\s+(?:(?:has|also)\\s+)?(?:made|submitted|preparing)\\s+(?:a\\s+)?(?:rival|competing|counter)\\s+(?:bid|offer)`, "i").test(text);
+  }).slice(0, 4);
 }
 
 // Advisor role detection: only assert a role when the text makes it explicit
@@ -474,7 +481,7 @@ function computeTier(sizeClass: DealIntel["sizeClass"], usdB: number | null, sig
 // ── Public API ──────────────────────────────────────────────────────────────────
 
 export function enrichDeal(deal: MADeal, _ctx: DealContext = {}): DealIntel {
-  const text = `${deal.title} ${deal.summary} ${deal.whyItMatters}`;
+  const text = `${deal.title} ${deal.summary}`;
 
   const { buyer, target } = extractParties(deal);
   const dealValue   = extractValue(text);
@@ -559,7 +566,7 @@ export interface AdvisorActivity { name: string; deals: number; legal: boolean }
 export function rankAdvisors(deals: MADeal[]): AdvisorActivity[] {
   const counts = new Map<string, { n: number; legal: boolean }>();
   for (const d of deals) {
-    const text = `${d.title} ${d.summary} ${d.whyItMatters}`;
+    const text = `${d.title} ${d.summary}`;
     for (const b of firstMatch(text, ADVISOR_BANKS)) {
       const cur = counts.get(b) ?? { n: 0, legal: false }; cur.n++; counts.set(b, cur);
     }
@@ -604,10 +611,6 @@ export function rankIndustries(deals: MADeal[]): IndustryActivity[] {
 
 // ── Live IB dashboard, consolidated league tables (single pass) ────────────────
 
-function fmtUsdB(usdB: number): string {
-  return usdB >= 1000 ? `$${(usdB / 1000).toFixed(1)}T` : usdB >= 10 ? `$${usdB.toFixed(0)}B` : `$${usdB.toFixed(1)}B`;
-}
-
 export interface AdvisorLeague { name: string; deals: number; capital: string | null; avgSize: string | null }
 export interface SponsorLeague { firm: string; deals: number; capital: string | null; avgSize: string | null; topSector: string | null }
 export interface EntityLeague  { name: string; deals: number; sectors: string[] }
@@ -633,10 +636,12 @@ function toLeague(map: Map<string, ValAgg>, limit: number) {
   return [...map.entries()]
     .map(([name, v]) => ({
       name, deals: v.deals,
-      capital: v.valued ? fmtUsdB(v.usdB) : null,
-      avgSize: v.valued ? fmtUsdB(v.usdB / v.valued) : null,
+      // Article amounts can overlap and have different currencies. They are not
+      // independently established transaction totals or deployed capital.
+      capital: null,
+      avgSize: null,
     }))
-    .sort((a, b) => b.deals - a.deals || (parseFloat((b.capital ?? "0").replace(/[^\d.]/g, "")) - parseFloat((a.capital ?? "0").replace(/[^\d.]/g, ""))))
+    .sort((a, b) => b.deals - a.deals)
     .slice(0, limit);
 }
 
@@ -660,12 +665,12 @@ export function buildLeagueTables(deals: MADeal[]): LeagueTables {
   ].map(s => s.toUpperCase()));
 
   for (const d of deals) {
-    const text  = `${d.title} ${d.summary} ${d.whyItMatters}`;
+    const text  = `${d.title} ${d.summary}`;
     const usdB  = valueToUsdB(extractValue(text));
     const banks = firstMatch(text, ADVISOR_BANKS);
     const legal = firstMatch(text, LAW_FIRMS);
     const { buyer, target } = extractParties(d);
-    const cross = /cross[-\s]?border/i.test(text) || extractCountry(text) !== null;
+    const cross = /cross[-\s]?border/i.test(text);
     const status = deriveStatus(d, text);
     const sizeClass = classifySize(d, usdB).sizeClass;
     const tags = deriveThemeTags(d, text, cross, sizeClass);
@@ -714,8 +719,10 @@ export function buildLeagueTables(deals: MADeal[]): LeagueTables {
   const sectorHeat: SectorHeat[] = [...sec.entries()]
     .map(([sector, v]) => ({
       sector, deals: v.deals,
-      capital: v.valued ? fmtUsdB(v.usdB) : null,
-      avgSize: v.valued ? fmtUsdB(v.usdB / v.valued) : null,
+      // Article amounts can overlap and have different currencies. They are not
+      // independently established transaction totals or deployed capital.
+      capital: null,
+      avgSize: null,
       crossBorderPct: Math.round((v.xborder / v.deals) * 100),
       pipeline: Math.round((v.pipeline / v.deals) * 100),
     }))

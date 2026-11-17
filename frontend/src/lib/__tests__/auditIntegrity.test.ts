@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichDeal } from "../maIntelligence";
+import { enrichDeal, buildLeagueTables } from "../maIntelligence";
 import { inferDealType, type MADeal } from "@/hooks/useMAIntelligence";
 import { eventSubjectTicker } from "../eventSubject";
 import { buildIndustryCardView } from "../industryCardView";
@@ -49,6 +49,28 @@ describe("production-shaped transaction controls", () => {
   it("retains a stated closing stage and abstains on a denied agreement", () => {
     expect(deal("Alpha acquisition nears closing").status).toBe("Closing");
     expect(deal("Alpha says acquisition not yet completed").status).toBe("Not established");
+  });
+  it("does not promote a generic business description into a named target", () => {
+    expect(deal("Johnson & Johnson buys eye disease biotech for up to $3.3bn"))
+      .toMatchObject({ buyer: "Johnson & Johnson", target: null });
+  });
+  it("requires the competing bidder role to bind to the named firm", () => {
+    expect(deal("Chevron nears deal for Blackstone-backed producer", [], "Other suitors are interested.").competingBidders).toEqual([]);
+    expect(deal("Alpha buys Beta", [], "Apollo made a rival bid.").competingBidders).toEqual(["Apollo"]);
+  });
+  it("does not turn generated implications into reported transaction facts", () => {
+    const v = enrichDeal({ title: "Alpha buys Beta", summary: "", entities: [], dealType: "strategic", peFirm: null,
+      whyItMatters: "Apollo made a rival bid; bankruptcy could drive distressed acquisitions." } as unknown as MADeal);
+    expect(v.competingBidders).toEqual([]);
+    expect(v.rationale).toBe("Rationale not established");
+  });
+  it("keeps report counts without presenting overlapping or mixed-currency amounts as deployed capital", () => {
+    const v = buildLeagueTables([
+      { title: "Blackstone UK report mentions $5bn", summary: "", peFirm: "Blackstone", sector: "Other", dealType: "sponsor" },
+      { title: "Blackstone report mentions €5bn", summary: "", peFirm: "Blackstone", sector: "Other", dealType: "sponsor" },
+    ] as MADeal[]);
+    expect(v.sponsors[0]).toMatchObject({ deals: 2, capital: null, avgSize: null });
+    expect(v.sectorHeat[0]).toMatchObject({ deals: 2, capital: null, avgSize: null, crossBorderPct: 0 });
   });
 });
 

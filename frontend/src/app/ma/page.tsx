@@ -1285,7 +1285,7 @@ export default function MAPage() {
               <div className="rounded-xl border p-5" style={{ background: "rgba(255,255,255,0.025)", borderColor: "rgba(255,255,255,0.06)" }}>
                 <div className="flex items-center gap-2 mb-3.5">
                   <TrendingUp size={12} style={{ color: "rgba(251,191,36,0.6)" }} />
-                  <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>Largest Deals</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.36)", letterSpacing: "0.1em" }}>Largest Reported Amounts</h3>
                 </div>
                 <div className="space-y-2.5">
                   {biggestDeals.map(({ deal, value }) => (
@@ -1320,7 +1320,7 @@ export default function MAPage() {
 
             {/* Financial Advisor League Table */}
             {league.financialAdvisors.length > 0 && (
-              <SbCard title="Financial Advisors" icon={<Landmark size={12} style={{ color: "rgba(82,176,200,0.6)" }} />} sub="deals · value">
+              <SbCard title="Financial Firm Mentions" icon={<Landmark size={12} style={{ color: "rgba(82,176,200,0.6)" }} />} sub="deals · value">
                 <div className="space-y-2">
                   {league.financialAdvisors.map((a, i) => (
                     <LeagueRow key={a.name} rank={i + 1} name={a.name} accent="#52b0c8"
@@ -1333,7 +1333,7 @@ export default function MAPage() {
 
             {/* PE Leaderboard */}
             {league.sponsors.length > 0 && (
-              <SbCard title="PE Leaderboard" icon={<Building2 size={12} style={{ color: "rgba(167,139,250,0.55)" }} />} sub="capital deployed">
+              <SbCard title="Sponsor Mentions" icon={<Building2 size={12} style={{ color: "rgba(167,139,250,0.55)" }} />} sub="reports, not capital deployed">
                 <div className="space-y-2">
                   {league.sponsors.map((s, i) => (
                     <LeagueRow key={s.firm} rank={i + 1} name={s.firm} accent="#a78bfa"
@@ -1346,7 +1346,7 @@ export default function MAPage() {
 
             {/* Most Active Acquirers */}
             {league.acquirers.length > 0 && (
-              <SbCard title="Most Active Acquirers" icon={<Target size={12} style={{ color: "rgba(82,176,200,0.55)" }} />} sub="strategic">
+              <SbCard title="Named Buyers" icon={<Target size={12} style={{ color: "rgba(82,176,200,0.55)" }} />} sub="headline mentions">
                 <div className="space-y-2">
                   {league.acquirers.map((a, i) => (
                     <LeagueRow key={a.name} rank={i + 1} name={a.name} accent="#52b0c8"
@@ -1358,7 +1358,7 @@ export default function MAPage() {
 
             {/* Most Active Targets */}
             {league.targets.length > 0 && (
-              <SbCard title="Most Active Targets" icon={<Target size={12} style={{ color: "rgba(251,146,60,0.55)" }} />}>
+              <SbCard title="Named Targets" sub="headline mentions" icon={<Target size={12} style={{ color: "rgba(251,146,60,0.55)" }} />}>
                 <div className="space-y-2">
                   {league.targets.map((t, i) => (
                     <LeagueRow key={t.name} rank={i + 1} name={t.name} accent="#fb923c" sub={t.sector} secondary={String(t.deals)} />
@@ -1369,7 +1369,7 @@ export default function MAPage() {
 
             {/* Top Legal Advisors */}
             {league.legalAdvisors.length > 0 && (
-              <SbCard title="Top Legal Advisors" icon={<Landmark size={12} style={{ color: "rgba(251,191,36,0.55)" }} />}>
+              <SbCard title="Legal Firm Mentions" sub="report mentions" icon={<Landmark size={12} style={{ color: "rgba(251,191,36,0.55)" }} />}>
                 <div className="space-y-2">
                   {league.legalAdvisors.map((l, i) => (
                     <LeagueRow key={l.name} rank={i + 1} name={l.name} accent="#fbbf24" secondary={String(l.deals)} />
