@@ -74,3 +74,14 @@ browser connection or matched response-body captures is needed to validate the
 production rollout. Restoring the three unavailable publishers additionally
 requires a verified public or publisher-approved syndication endpoint; no
 credentials should be pasted into chat.
+
+## Deployment-status follow-up
+
+After the user reopened Chrome, browser inventory still timed out twice, so
+authenticated inspection remains blocked. The public GitHub deployment record
+`7867294784` for exact revision `6cbf3d4a341f020ddfa0c74eec6c4dcee594c4d1`
+reports `success` at `2026-11-17T21:54:13Z` for Railway's
+`creative-benevolence / production` environment. This is deployment-system
+confirmation, not a fresh feed/status inspection or rendered UI validation.
+Per-service runtime provenance and actual source outcomes remain to be checked.
+The user does not know of approved replacement feed access; none was assumed.
