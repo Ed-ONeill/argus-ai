@@ -56,7 +56,13 @@ Local results: 45 focused transport/pipeline controls passed; 1,417 backend
 tests passed from the exact committed release tree, excluding 18 pre-existing
 local TM1b1 tests; 1,536 frontend tests passed after updating the header-location
 assertion. The first cloud run caught that outdated assertion and blocked
-promotion. The corrected revision must pass the complete cloud gates.
+promotion. Corrected revision `6cbf3d4` passed both complete cloud jobs in
+[run 44183925636](https://github.com/Ed-ONeill/argus-ai/actions/runs/44183925636),
+including frontend tests, type-check, lint, build and dependency checks, and
+backend installation/tests. It was then promoted to `main`. Automatic production
+deployment is triggered by that promotion, but deployment success and the next
+authenticated production cycle have not been observed because browser access
+is unavailable. Do not mark the production repair validated yet.
 
 A direct check using the corrected reader returned 20 Federal Reserve entries,
 without a parser warning. This is not authenticated production validation and
