@@ -25,6 +25,13 @@ import pytest
 from api import podcast_feeds as PF
 from api.podcast_feeds import PODCAST_FEEDS
 
+
+@pytest.fixture(autouse=True)
+def offline_feed_transport(monkeypatch):
+    # Existing parser-contract fixtures still control parsed responses. The new
+    # bounded HTTP transport has separate tests and must never access the web here.
+    monkeypatch.setattr(PF, "_download_feed", lambda url: url)
+
 REQUIRED = ("rss_url", "show_name", "publisher", "default_topics", "source_tier")
 
 # Shows knowingly retained while outside the 14d cap at RC2-D1 audit time. Each

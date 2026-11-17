@@ -35,6 +35,7 @@ import type { Episode, ThemeIntelligence } from "@/lib/types";
 function Skeleton() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7">
+      <p role="status" className="text-sm text-ink-secondary mb-4">Loading Listen…</p>
       <div className="mb-7">
         <div className="h-6 w-36 bg-raised rounded animate-pulse mb-2" />
         <div className="h-4 w-72 bg-raised rounded animate-pulse" />

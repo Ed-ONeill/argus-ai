@@ -26,12 +26,13 @@ import hashlib
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 import feedparser
+import httpx
 
 from app.companies import resolve_entities   # RC2-D2: the ONE entity authority (RC2-A)
 
@@ -1554,6 +1555,22 @@ def _normalize(entry: Any, parsed_feed: feedparser.FeedParserDict, cfg: dict) ->
 # 12.  PER-FEED FETCHER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _download_feed(url: str) -> bytes:
+    """Bound podcast I/O instead of letting feedparser open an unbounded socket."""
+    started = time.monotonic()
+    chunks: list[bytes] = []
+    size = 0
+    with httpx.Client(timeout=6.0, follow_redirects=True, max_redirects=3) as client:
+        with client.stream("GET", url, headers={"User-Agent": "Argus/1.0 RSS reader"}) as response:
+            response.raise_for_status()
+            for chunk in response.iter_bytes():
+                size += len(chunk)
+                if size > 8 * 1024 * 1024 or time.monotonic() - started > 8:
+                    raise ValueError("Podcast feed exceeds download budget")
+                chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _fetch_one(cfg: dict) -> list[dict]:
     """Fetch + parse one RSS feed.  Returns [] on any error so others still run.
 
@@ -1573,7 +1590,7 @@ def _fetch_one(cfg: dict) -> list[dict]:
     url       = cfg["rss_url"]
     show_name = cfg["show_name"]
     try:
-        parsed = feedparser.parse(url)
+        parsed = feedparser.parse(_download_feed(url))
 
         status = getattr(parsed, "status", None)
         if status is not None and status >= 400:
@@ -1654,10 +1671,15 @@ def fetch_episodes() -> list[dict]:
         return _cache
 
     all_eps: list[dict] = []
-    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as pool:
+    pool = ThreadPoolExecutor(max_workers=_FETCH_WORKERS)
+    try:
         futures = {pool.submit(_fetch_one, cfg): cfg for cfg in PODCAST_FEEDS}
-        for fut in as_completed(futures):
+        for fut in as_completed(futures, timeout=20):
             all_eps.extend(fut.result())
+    except FuturesTimeoutError:
+        log.warning("podcast ingestion: deadline reached; returning completed sources")
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     if not all_eps:
         log.warning("podcast ingestion: all feeds returned no episodes after filtering")
