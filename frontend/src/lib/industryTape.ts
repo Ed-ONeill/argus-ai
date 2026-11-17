@@ -9,6 +9,22 @@ import type { PriceSeries } from "./platform/types/prices";
 
 export interface TapeQuote { price: number; pct: number; up: boolean; spark: string }
 
+const CRYPTO_ASSETS = new Set(["BTC", "ETH", "BNB", "SOL", "AVAX", "DOGE"]);
+export function industryTapeRequest(symbol: string) {
+  const sym = symbol.toUpperCase();
+  return CRYPTO_ASSETS.has(sym) ? { symbol: `${sym}-USD`, exchange: "CC" } : { symbol: sym, exchange: "US" };
+}
+
+/** Reject US-listed symbol collisions (BTC/ETH ETFs are not token prices). */
+export function verifiedIndustryQuote(symbol: string, series: PriceSeries | null | undefined) {
+  const request = industryTapeRequest(symbol);
+  if (!series || series.symbol !== request.symbol || series.exchange !== request.exchange) return null;
+  const quote = buildTapeQuote(series);
+  const asOf = series.points.filter(p => Number.isFinite(p.adjClose) || Number.isFinite(p.c)).at(-1)?.t?.slice(0, 10);
+  return quote && asOf && /^\d{4}-\d{2}-\d{2}$/.test(asOf)
+    ? { ...quote, asOf, stale: series.quality.freshness === "stale" } : null;
+}
+
 /** Build a real tape quote from a price series. Uses split/dividend-adjusted closes when present.
  *  Null unless there are at least two usable closes (needed for a day's move) and a positive base. */
 export function buildTapeQuote(

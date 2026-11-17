@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PriceSeries, PricePoint } from "@/lib/platform/types/prices";
 import type { DataQuality } from "@/lib/platform/quality";
-import { buildTapeQuote } from "@/lib/industryTape";
+import { buildTapeQuote, industryTapeRequest, verifiedIndustryQuote } from "@/lib/industryTape";
 
 const QUALITY: DataQuality = { source: "test", updatedAt: "2026-08-09T00:00:00Z", delayMs: 0, freshness: "fresh", grade: "DELAYED" };
 const pt = (t: string, c: number, adj = c): PricePoint => ({ t, o: c, h: c, l: c, c, adjClose: adj, v: 0 });
@@ -59,5 +59,21 @@ describe("buildTapeQuote — real move from real closes", () => {
     const q = buildTapeQuote(s)!;
     expect(q.price).toBe(60);                 // adjClose, not raw c
     expect(q.pct).toBeCloseTo(20, 6);         // (60-50)/50
+  });
+});
+
+
+describe("industry quote identity", () => {
+  it("requests crypto dollar pairs rather than similarly named US ETFs", () => {
+    expect(industryTapeRequest("BTC")).toEqual({ symbol: "BTC-USD", exchange: "CC" });
+    expect(industryTapeRequest("ETH")).toEqual({ symbol: "ETH-USD", exchange: "CC" });
+    expect(industryTapeRequest("COIN")).toEqual({ symbol: "COIN", exchange: "US" });
+  });
+  it("rejects mismatched instruments and preserves a correctly identified price and bar date", () => {
+    const etf = { ...series([28, 29]), symbol: "BTC", exchange: "US" };
+    expect(verifiedIndustryQuote("BTC", etf)).toBeNull();
+    const token = { ...series([65000, 66000]), symbol: "BTC-USD", exchange: "CC" };
+    expect(verifiedIndustryQuote("BTC", token)).toMatchObject({ price: 66000, asOf: "2026-08-02", stale: false });
+    expect(verifiedIndustryQuote("COIN", { ...series([100, 105]), symbol: "COIN" })?.price).toBe(105);
   });
 });

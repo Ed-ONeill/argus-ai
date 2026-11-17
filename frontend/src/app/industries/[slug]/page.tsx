@@ -16,7 +16,7 @@ import { cn, formatRelativeAge } from "@/lib/utils";
 import { TickerChip } from "@/components/common/TickerChip";
 import { SessionExpired } from "@/components/common/SessionExpired";
 import { useSeriesBatch } from "@/lib/platform/hooks/useSeriesBatch";
-import { buildTapeQuote, type TapeQuote } from "@/lib/industryTape";
+import { industryTapeRequest, verifiedIndustryQuote } from "@/lib/industryTape";
 import { useSectors } from "@/hooks/useSectors";
 import { useFeed } from "@/hooks/useFeed";
 import { useMAIntelligence } from "@/hooks/useMAIntelligence";
@@ -420,13 +420,13 @@ function IndustryTape({ tickers }: { tickers: string[] }) {
     d.setDate(d.getDate() - 45);
     return d.toISOString().slice(0, 10);
   }, []);
-  const batchSymbols = useMemo(() => uniq.map((symbol) => ({ symbol })), [uniq]);
+  const batchSymbols = useMemo(() => uniq.map(industryTapeRequest), [uniq]);
   const batch = useSeriesBatch(batchSymbols, { from });
 
   // Keep only symbols with real closes behind them — honest omission, never a placeholder.
-  const available: { sym: string; q: TapeQuote }[] = [];
+  const available: { sym: string; q: NonNullable<ReturnType<typeof verifiedIndustryQuote>> }[] = [];
   for (const sym of uniq) {
-    const q = buildTapeQuote(batch[sym]?.series);
+    const q = verifiedIndustryQuote(sym, batch[industryTapeRequest(sym).symbol]?.series);
     if (q) available.push({ sym, q });
   }
   if (available.length === 0) return null;
@@ -437,7 +437,7 @@ function IndustryTape({ tickers }: { tickers: string[] }) {
   while (group.length < 18) group.push(available[group.length % available.length]);
   const durationS = group.length * 2.7;
 
-  const renderSym = (item: { sym: string; q: TapeQuote }, k: string, i: number) => {
+  const renderSym = (item: (typeof available)[number], k: string, i: number) => {
     const { sym, q } = item;
     const col = q.up ? "#34d399" : "#f87171";
     const showSpark = i % 5 === 4;
@@ -445,7 +445,8 @@ function IndustryTape({ tickers }: { tickers: string[] }) {
       <span key={k} className="inline-flex items-baseline gap-2.5 px-[26px] shrink-0">
         <span className="text-[13px] font-bold font-mono tracking-tight" style={{ color: "rgba(255,255,255,0.92)" }}>{sym}</span>
         <span className="text-[8.5px]" style={{ color: col }}>{q.up ? "▲" : "▼"}</span>
-        <span className="text-[13px] font-semibold font-mono tabular-nums inline-block text-right" style={{ color: "rgba(255,255,255,0.78)", minWidth: 48 }}>{q.price.toFixed(2)}</span>
+        <span className="text-[13px] font-semibold font-mono tabular-nums inline-block text-right" style={{ color: "rgba(255,255,255,0.78)", minWidth: 48 }}>{q.price.toFixed(2)} USD</span>
+        <span className="text-[9px] text-white/50">{q.asOf}{q.stale ? " · stale" : ""}</span>
         <span className="text-[12.5px] font-bold font-mono tabular-nums inline-block text-right" style={{ color: col, minWidth: 52 }}>{q.up ? "+" : ""}{q.pct.toFixed(2)}%</span>
         {showSpark && (
           <svg width={30} height={11} viewBox="0 0 30 11" className="self-center" aria-hidden style={{ opacity: 0.42 }}>
@@ -915,7 +916,7 @@ export default function IndustryDetailPage() {
             )}
             {derivedRegime && (
               <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-[3px] rounded-full border bg-white/10 text-white/50 border-white/15">
-                {derivedRegime}
+                Market context: {derivedRegime}
               </span>
             )}
             {hasData && (() => {
@@ -1106,7 +1107,7 @@ export default function IndustryDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <Zap size={11} className="shrink-0" style={{ color: industry.color }} />
             <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink">
-              What Matters Now
+              What Matters Now · {industry.sector} sector context
             </span>
             {si?.narrative && (
               <span className="text-[9px] font-bold px-2 py-px rounded-full ml-1"
@@ -1251,7 +1252,7 @@ export default function IndustryDetailPage() {
           {/* Recorded Transmission - one graph-recorded path (replaces the
               editorial Cross-Asset Effects and Geopolitical Exposure prose) */}
           <div className="bg-surface rounded-xl border border-edge p-5 lg:col-span-2">
-            <SectionHeader icon={Target}>Recorded Transmission</SectionHeader>
+            <SectionHeader icon={Target}>Recorded {industry.sector} Sector Transmission</SectionHeader>
             {si?.transmission ? (
               <div className="flex items-center gap-1.5 flex-wrap">
                 {si.transmission.map((label, i) => (
