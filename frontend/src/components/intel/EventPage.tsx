@@ -115,12 +115,23 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 export default function EventPage({ clusterId }: { clusterId: string }) {
-  const { data: feed, isLoading } = useFeed();
+  const { data: feed, isLoading, error, isAuthWaiting, isUnauthorized } = useFeed();
   const dossier = useMemo(() => buildEventDossier(clusterId, feed ?? null), [clusterId, feed]);
   const view = useMemo(() => buildEventView(dossier, feed), [dossier, feed]);
 
-  if (!dossier) {
-    return <Shell><p className="pt-8 text-[14px] text-ink-secondary">{isLoading ? "Loading…" : "The market feed is unreachable right now, so this event cannot be read. Nothing is shown in its place."}</p></Shell>;
+  if (isUnauthorized) {
+    return (
+      <Shell>
+        <p className="pt-8 text-[14px] text-ink-secondary">Sign in to read this event.</p>
+        <Link href="/auth" className="mt-4 inline-block text-[12px] text-accent underline underline-offset-2">Sign in</Link>
+      </Shell>
+    );
+  }
+  // A query paused for session initialization is not loading yet and has no
+  // data. Keep that state distinct from a failed request, including with cache.
+  if (isAuthWaiting || !dossier) {
+    const failed = !isAuthWaiting && !isLoading && !!error;
+    return <Shell><p className="pt-8 text-[14px] text-ink-secondary">{failed ? "The market feed is unreachable right now, so this event cannot be read. Nothing is shown in its place." : "Loading…"}</p></Shell>;
   }
   if (!view) {
     return (
