@@ -171,10 +171,10 @@ describe("C2b endpoints, parsing and narrowing are unchanged", () => {
 
 describe("the non-SEC feed identity is not in scope", () => {
   it("the generic RSS User-Agent is still Argus-AI/1.0", () => {
-    const feeds = readFileSync(resolve(ROOT, "app/feeds.py"), "utf8");
-    // _fetch_feed serves every registry URL (Reuters, Bloomberg, ...), which is
-    // not a SEC fair-access path and was explicitly out of scope.
-    expect(feeds).toContain('request_headers={"User-Agent": "Argus-AI/1.0"}');
+    const transport = readFileSync(resolve(ROOT, "app/rss_transport.py"), "utf8");
+    // Generic RSS now downloads through its bounded transport. The identity
+    // remains unchanged and is separate from the SEC fair-access identity.
+    expect(transport).toContain('"User-Agent": "Argus-AI/1.0"');
   });
 
   it("the FRED credit-spread caller is untouched", () => {

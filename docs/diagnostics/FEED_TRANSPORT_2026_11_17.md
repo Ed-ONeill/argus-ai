@@ -41,7 +41,9 @@ prevent healthy reporting from being processed. No secret-bearing URL query or
 publisher response HTML is included in the new transport errors.
 
 The two pipeline fixture helpers now mock the explicit feed-reader boundary.
-Their clustering/evidence assertions are unchanged; EA1 is not reopened.
+Their clustering/evidence assertions are unchanged; EA1 is not reopened. The
+frontend SEC-identity regression test now locates the unchanged generic RSS
+identity in the new transport module. No frontend runtime code changed.
 
 ## Validation and limits
 
@@ -49,6 +51,12 @@ The focused controls cover HTTP failures, registration and legitimate redirects,
 gzip/BOM XML, valid empty XML, malformed/HTML payloads, recoverable XML, size/time
 limits, retry dates, fallback preservation, recovery, and mixed healthy/failed
 publishers. Full backend gates are required before promotion.
+
+Local results: 45 focused transport/pipeline controls passed; 1,417 backend
+tests passed from the exact committed release tree, excluding 18 pre-existing
+local TM1b1 tests; 1,536 frontend tests passed after updating the header-location
+assertion. The first cloud run caught that outdated assertion and blocked
+promotion. The corrected revision must pass the complete cloud gates.
 
 A direct check using the corrected reader returned 20 Federal Reserve entries,
 without a parser warning. This is not authenticated production validation and
