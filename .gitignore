@@ -1,4 +1,7 @@
 .venv/
+.audit-tools/
+.audit-runtime/
+.audit-results/
 __pycache__/
 *.pyc
 .env

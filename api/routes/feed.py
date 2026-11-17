@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.feeds           import FeedItem, FEED_REGISTRY, category_breakdown, source_breakdown
 from app.config          import settings
+from app.feed_health import snapshot_is_stale
 from app.processed_cache import ProcessedFeed, feed_cache, make_cache_key
 from app.background      import refresher, run_pipeline, WARM_TARGETS
 from app.clustering      import StoryCluster, WhatMattersNowItem as _WMNItem
@@ -592,7 +593,7 @@ def _build_response(entry: ProcessedFeed, age: float) -> FeedResponse:
         what_matters_now=wmn_schemas,
         events=event_schemas,
         explanations=getattr(entry, "explanations", None) or {},
-        is_stale=entry.is_refreshing,
+        is_stale=snapshot_is_stale(entry),
         generated_at=entry.generated_at.isoformat(),
         cache_age_seconds=round(age, 1),
     )
@@ -818,7 +819,7 @@ def feed_freshness(
         )
     return FeedFreshnessResponse(
         generated_at=entry.generated_at.isoformat(),
-        is_stale=entry.is_refreshing,
+        is_stale=snapshot_is_stale(entry),
         cache_age_seconds=round(age, 1),
         item_count=len(entry.items),
     )

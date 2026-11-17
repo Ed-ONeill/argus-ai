@@ -255,3 +255,15 @@ except Exception as _exc:
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/readiness", dependencies=[Depends(require_user)])
+def feed_readiness():
+    """Authenticated read-only full-feed readiness; health remains liveness."""
+    from fastapi.responses import JSONResponse
+    from app.processed_cache import feed_cache, make_cache_key
+    from app.diagnostics import diagnostics
+    from app.feed_health import readiness
+    key = make_cache_key("", "", False)
+    result = readiness(feed_cache.get(key), diagnostics.status_for(key))
+    return JSONResponse(result, status_code=200 if result["ready"] else 503)
