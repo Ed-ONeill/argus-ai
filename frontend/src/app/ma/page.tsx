@@ -1380,7 +1380,7 @@ export default function MAPage() {
 
             {/* Sector Heat Map */}
             {league.sectorHeat.length > 0 && (
-              <SbCard title="Sector Heat Map" sub="deals · capital · x-border">
+              <SbCard title="Sector Heat Map" sub="reports · classified deal stages">
                 <div className="space-y-2.5">
                   {league.sectorHeat.map(s => {
                     const heat = Math.min(100, s.deals * 18);
@@ -1398,7 +1398,7 @@ export default function MAPage() {
                           {s.avgSize && <span>avg {s.avgSize}</span>}
                           {s.crossBorderPct > 0 && <span>· {s.crossBorderPct}% x-border</span>}
                           <span className="ml-auto" style={{ color: s.pipeline >= 60 ? "#34d399" : s.pipeline >= 30 ? "#fbbf24" : "rgba(255,255,255,0.32)" }}>
-                            {s.pipeline >= 60 ? "▲ active pipeline" : s.pipeline >= 30 ? "→ steady" : "▾ maturing"}
+                            {s.pipeline}% classified rumored, negotiating or announced
                           </span>
                         </div>
                       </div>
