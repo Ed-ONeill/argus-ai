@@ -613,8 +613,10 @@ def _run_inline(
     key = make_cache_key(categories, sources, fresh_only)
     log.info("[api] cold-start inline pipeline  key=%s", key)
     t0 = time.perf_counter()
-    entry = run_pipeline(categories=categories, sources=sources, fresh_only=fresh_only)
-    feed_cache.set(key, entry)
+    from app.request_budget import feed_recompute_budget
+    with feed_recompute_budget.acquire():
+        entry = run_pipeline(categories=categories, sources=sources, fresh_only=fresh_only)
+        feed_cache.set(key, entry)
     log.info("[api] inline pipeline done in %.2fs", time.perf_counter() - t0)
     return entry
 
@@ -726,8 +728,8 @@ def _build_diagnostics() -> dict[str, Any]:
 @router.get("/", response_model=FeedResponse)
 def get_feed(
     background_tasks: BackgroundTasks,
-    categories:       str  = Query(default="",    description="Comma-separated category filter"),
-    sources:          str  = Query(default="",    description="Comma-separated source filter"),
+    categories:       str  = Query(default="", max_length=256, description="Comma-separated category filter"),
+    sources:          str  = Query(default="", max_length=1024, description="Comma-separated source filter"),
     fresh_only:       bool = Query(default=False, description="Only show items from last 48h"),
     force_refresh:    bool = Query(default=False, description="Run pipeline synchronously and return fresh data"),
     refresh:          bool = Query(default=False, description="Alias for force_refresh (?refresh=true)"),
@@ -764,6 +766,9 @@ def get_feed(
                 sum(1 for ia in raw_activations if ia.score > 0),
             )
         except Exception as exc:
+            from fastapi import HTTPException
+            if isinstance(exc, HTTPException):
+                raise
             log.exception(
                 "[feed] refresh pipeline FAILED  key=%s  error=%r — falling back to cache",
                 key, exc,
@@ -774,7 +779,7 @@ def get_feed(
                 from fastapi import HTTPException
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Refresh pipeline failed and no cached data available: {exc}",
+                    detail="Refresh is temporarily unavailable and no cached feed is ready.",
                 )
             age = feed_cache.age_seconds(key) or 0.0
             log.info("[feed] serving stale cache after refresh failure  key=%s  age=%.0fs", key, age)

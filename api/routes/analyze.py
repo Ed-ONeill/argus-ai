@@ -19,22 +19,28 @@ Both endpoints are cached in-memory so repeated opens of the same card are insta
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from app.summarizer import _summarize_batch, analyze_item_deep
 from app.feeds  import FeedItem
 from app.model  import get_client
+from app.request_budget import analysis_budget
 
-router = APIRouter()
+def reserve_analysis():
+    with analysis_budget.acquire():
+        yield
+
+
+router = APIRouter(dependencies=[Depends(reserve_analysis)])
 
 
 # ── Request / response models ─────────────────────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
-    title:      str
-    snippet:    str = ""
-    model_name: str = ""
+    title:      str = Field(min_length=1, max_length=1000)
+    snippet:    str = Field(default="", max_length=12000)
+    model_name: str = Field(default="", max_length=100)
 
 
 class AnalyzeResponse(BaseModel):
@@ -44,9 +50,9 @@ class AnalyzeResponse(BaseModel):
 
 
 class DeepAnalyzeRequest(BaseModel):
-    title:      str
-    snippet:    str = ""
-    model_name: str = ""
+    title:      str = Field(min_length=1, max_length=1000)
+    snippet:    str = Field(default="", max_length=12000)
+    model_name: str = Field(default="", max_length=100)
 
 
 class DeepAnalyzeResponse(BaseModel):
