@@ -36,20 +36,21 @@ import logging
 import os
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from app.observation_ledger import LEDGER_DIR, LedgerStream, shared_stream
+from app.storage import REGISTRY_PATH  # PH1 (C5): volume-backed durable root
 
 log = logging.getLogger(__name__)
-
-from app.storage import REGISTRY_PATH  # PH1 (C5): volume-backed durable root
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SNAPSHOT_PATH = REGISTRY_PATH
 
-SNAPSHOT_VERSION = 1
+# v1 omitted mint-time URL provenance. Rebuild the disposable view from the
+# unchanged journal once, rather than trusting its accumulated member URLs.
+SNAPSHOT_VERSION = 2
 TTL_DAYS = 14                 # hot-view residency, NEVER identity lifetime
 MAX_ENTRIES = 5_000           # hot-view cap; eviction is journaled
 MATCH_WINDOW_H = 72
@@ -58,7 +59,7 @@ _ALIAS_HOP_CAP = 10           # corruption armor; writes are single-hop
 
 _J_ENTITY = 0.4               # rule 2: entity + title similarity
 _J_TITLE = 0.6                # rule 3: title-only
-_J_ORIGIN_ANCHOR = 0.4        # drift guard fallback for entity-less stories
+_J_ORIGIN_ANCHOR = 0.4        # required origin-title support for fuzzy continuity
 
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -98,6 +99,7 @@ class RegistryEntry:
     latest_title_words:     set[str] = field(default_factory=set)   # updates on attach
     natural_keys:           list[str] = field(default_factory=list)
     member_urls:            set[str] = field(default_factory=set)   # capped
+    anchor_urls:            set[str] = field(default_factory=set)   # mint or origin-supported reporting
     first_seen:             str = ""
     last_seen:              str = ""
     cycles_observed:        int = 0
@@ -108,7 +110,7 @@ class RegistryEntry:
 
     def to_dict(self) -> dict:
         d = self.__dict__.copy()
-        for k in ("origin_title_words", "origin_anchor_entities", "latest_title_words", "member_urls"):
+        for k in ("origin_title_words", "origin_anchor_entities", "latest_title_words", "member_urls", "anchor_urls"):
             d[k] = sorted(d[k])
         return d
 
@@ -116,7 +118,7 @@ class RegistryEntry:
     def from_dict(cls, d: dict) -> "RegistryEntry":
         known = {f for f in cls.__dataclass_fields__}     # tolerate additive fields
         kw = {k: v for k, v in d.items() if k in known}
-        for k in ("origin_title_words", "origin_anchor_entities", "latest_title_words", "member_urls"):
+        for k in ("origin_title_words", "origin_anchor_entities", "latest_title_words", "member_urls", "anchor_urls"):
             if k in kw:
                 kw[k] = set(kw[k])
         return cls(**kw)
@@ -131,18 +133,26 @@ class _Candidate:
     event_type:   str
     first_seen:   str
     natural_keys: tuple[str, ...]
+    article_titles: tuple[tuple[str, set[str]], ...]
 
 
 def _candidate_from_event(event: Any) -> _Candidate:
-    urls = {e.url for e in (getattr(event, "evidence", None) or []) if getattr(e, "url", "")}
+    evidence = getattr(event, "evidence", None) or []
+    urls = {e.url for e in evidence if getattr(e, "url", "")}
+    title = getattr(event, "title", "") or ""
     return _Candidate(
         cluster_id=getattr(event, "id", "") or "",
-        title_words=_words(getattr(event, "title", "") or ""),
+        title_words=_words(title),
         entities=set(getattr(event, "companies_direct", None) or []),
         urls=urls,
         event_type=getattr(event, "event_type", "") or "",
         first_seen=getattr(event, "first_seen", "") or "",
         natural_keys=tuple(getattr(event, "natural_keys", None) or []),
+        # Missing article titles may use the event headline only for a single
+        # URL. A multi-article event cannot vouch for each article that way.
+        article_titles=tuple((e.url, _words(getattr(e, "title", "") or
+                                           (title if len(urls) == 1 else "")))
+                             for e in evidence if getattr(e, "url", "")),
     )
 
 
@@ -164,7 +174,6 @@ class IdentityAuthority:
         self.entries: dict[str, RegistryEntry] = {}
         self.aliases: dict[str, str] = {}          # younger uid -> canonical uid (single hop at write)
         self._nk_index: dict[str, str] = {}        # natural key -> uid
-        self._url_index: dict[str, str] = {}       # member url -> uid
         self._watermark: tuple[str, int] = ("", 0) # (day, seq) of last applied journal row
         self._load()
 
@@ -216,12 +225,9 @@ class IdentityAuthority:
 
     def _reindex(self) -> None:
         self._nk_index = {}
-        self._url_index = {}
         for e in self.entries.values():
             for nk in e.natural_keys:
                 self._nk_index[nk] = e.uid
-            for u in e.member_urls:
-                self._url_index[u] = e.uid
 
     # ── the one record-application path (live == replay) ──────────────────────
 
@@ -237,6 +243,7 @@ class IdentityAuthority:
                     latest_title_words=set(row.get("origin_fingerprint", {}).get("title_words", [])),
                     natural_keys=list(row.get("natural_keys", [])),
                     member_urls=set(row.get("member_urls", [])[:MEMBER_URL_CAP]),
+                    anchor_urls=set(row.get("member_urls", [])[:MEMBER_URL_CAP]),
                     first_seen=row.get("first_seen", "") or row.get("ts", ""),
                     last_seen=row.get("ts", ""),
                     cycles_observed=1,
@@ -246,8 +253,6 @@ class IdentityAuthority:
                 self.entries[e.uid] = e
                 for nk in e.natural_keys:
                     self._nk_index[nk] = e.uid
-                for u in e.member_urls:
-                    self._url_index[u] = e.uid
             elif kind == "attach":
                 e = self.entries.get(row["uid"])
                 if e is None:
@@ -258,7 +263,9 @@ class IdentityAuthority:
                     if len(e.member_urls) >= MEMBER_URL_CAP:
                         break
                     e.member_urls.add(u)
-                    self._url_index[u] = e.uid
+                # Legacy attachments have no origin-support attestation. Keep
+                # their membership for history, but never promote it on replay.
+                e.anchor_urls.update(set(row.get("anchor_urls_added", [])) & e.member_urls)
                 for nk in row.get("natural_keys_added", []):
                     if nk not in e.natural_keys:
                         e.natural_keys.append(nk)
@@ -295,7 +302,7 @@ class IdentityAuthority:
                         for u in moved.member_urls:
                             if len(canon.member_urls) < MEMBER_URL_CAP:
                                 canon.member_urls.add(u)
-                            self._url_index[u] = canonical
+                        canon.anchor_urls.update(moved.anchor_urls & canon.member_urls)
                         for nk in moved.natural_keys:
                             if nk not in canon.natural_keys:
                                 canon.natural_keys.append(nk)
@@ -314,8 +321,6 @@ class IdentityAuthority:
                 if e is not None:
                     for nk in e.natural_keys:
                         self._nk_index.pop(nk, None)
-                    for u in e.member_urls:
-                        self._url_index.pop(u, None)
             # unknown kinds: tolerated (additive schema growth)
         except Exception as exc:
             log.warning("[identity] journal record skipped (kind=%s, %s)", kind, exc)
@@ -389,13 +394,8 @@ class IdentityAuthority:
 
     def _drift_anchored(self, cand: _Candidate, e: RegistryEntry) -> bool:
         """A candidate may match the LATEST fingerprint, but must remain
-        anchored to ORIGIN: shared origin entity, shared member URL, or (for
-        entity-less stories) direct origin-title similarity. Chained headline
-        drift dies here."""
-        if cand.entities & e.origin_anchor_entities:
-            return True
-        if cand.urls & e.member_urls:
-            return True
+        topically anchored to ORIGIN. Company overlap and accumulated URLs
+        cannot prove that two reports describe the same occurrence."""
         return _jaccard(cand.title_words, e.origin_title_words) >= _J_ORIGIN_ANCHOR
 
     def _match(self, cand: _Candidate, now: datetime) -> tuple[str, str, float] | None:
@@ -406,11 +406,24 @@ class IdentityAuthority:
             uid = self._nk_index.get(nk)
             if uid is not None:
                 return (self.resolve(uid), "natural_key", 1.0)
-        # rule 1 — shared member URL: definitionally the same event
-        for url in sorted(cand.urls):
-            uid = self._url_index.get(url)
-            if uid is not None:
-                return (self.resolve(uid), "url", 1.0)
+        # rule 1 — attested article continuity. Historical membership alone is
+        # insufficient. Look at ALL owners: a URL can occur in both an old
+        # contaminated identity and a new, correctly grounded identity. A
+        # last-writer-wins URL index loses that distinction across replay.
+        url_matches = [e for e in self.entries.values()
+                       if e.status == "active"
+                       and cand.urls & e.anchor_urls]
+        if len(url_matches) == 1:
+            return (url_matches[0].uid, "url", 1.0)
+        if url_matches:
+            # Conflicting anchor ownership cannot be settled by insertion
+            # order or URL alone. Prefer direct origin-title support; otherwise
+            # fall through to guarded matching (or a new identity).
+            supported = [e for e in url_matches if self._drift_anchored(cand, e)]
+            if supported:
+                winner = min(supported, key=lambda e: (
+                    -_jaccard(cand.title_words, e.origin_title_words), e.uid))
+                return (winner.uid, "url_origin", 1.0)
         # rules 2-3 — fingerprint matching within the window, drift-guarded
         window_floor = now - timedelta(hours=MATCH_WINDOW_H)
         best: tuple[float, str, str] | None = None   # (score, uid, rule)
@@ -464,6 +477,7 @@ class IdentityAuthority:
                 if hit is not None:
                     uid, rule, score = hit
                     if full_feed:
+                        entry = self.entries.get(uid)
                         ok = self._journal_apply("attach", {
                             "uid": uid,
                             "member_urls_added": sorted(cand.urls - self.entries[uid].member_urls)
@@ -471,6 +485,14 @@ class IdentityAuthority:
                             "natural_keys_added": [nk for nk in cand.natural_keys
                                                    if nk not in self._nk_index],
                             "latest_fingerprint": sorted(cand.title_words),
+                            # Only independently origin-supported article
+                            # headlines become continuity anchors. A shared
+                            # anchor URL must not bless every co-member URL.
+                            "anchor_urls_added": sorted({
+                                url for url, words in cand.article_titles
+                                if entry is not None and _jaccard(words, entry.origin_title_words)
+                                >= _J_ORIGIN_ANCHOR
+                            } - (entry.anchor_urls if entry else set())),
                             "match_rule": rule,
                             "match_score": round(score, 3),
                             "last_seen": now.isoformat(),
