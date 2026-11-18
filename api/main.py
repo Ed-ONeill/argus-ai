@@ -267,3 +267,16 @@ def feed_readiness():
     key = make_cache_key("", "", False)
     result = readiness(feed_cache.get(key), diagnostics.status_for(key))
     return JSONResponse(result, status_code=200 if result["ready"] else 503)
+
+
+@app.get("/api/health/ready")
+def public_monitor_health():
+    """Minimal public operational status; detailed/data routes stay authenticated."""
+    from fastapi.responses import JSONResponse
+    from app.processed_cache import feed_cache, make_cache_key
+    from app.diagnostics import diagnostics
+    from app.feed_health import monitor_health
+    key = make_cache_key("", "", False)
+    result = monitor_health(feed_cache.get(key), diagnostics.status_for(key))
+    return JSONResponse(result, status_code=200 if result["ready"] else 503,
+                        headers={"Cache-Control": "no-store"})

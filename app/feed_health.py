@@ -30,3 +30,23 @@ def readiness(entry, diagnostics: dict, *, now: datetime | None = None) -> dict:
     )
     return {"ready": reason == "ready", "reason": reason,
             "snapshot_available": entry is not None}
+
+
+def monitor_health(entry, diagnostics: dict, *, now: datetime | None = None) -> dict:
+    """Public status booleans only: no articles, sources, paths or exceptions.
+
+    Partial source coverage is not full coverage, but need not mean the entire
+    service is down. No available reporting with source errors is an outage.
+    """
+    result = readiness(entry, diagnostics, now=now)
+    persistence = diagnostics.get("persistence") or {}
+    persisted = (persistence.get("memory_cache") == "ok"
+                 and persistence.get("disk_cache") == "ok"
+                 and persistence.get("institutional_memory") == "completed")
+    errors = getattr(entry, "errors", {}) if entry else {}
+    coverage = "unknown" if entry is None else "partial" if errors else "complete"
+    if errors and not getattr(entry, "items", []):
+        coverage = "unavailable"
+    return {"ready": result["ready"] and persisted and coverage != "unavailable",
+            "pipeline_ready": result["ready"], "persistence_ready": persisted,
+            "source_coverage": coverage}
