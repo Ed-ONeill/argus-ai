@@ -1575,6 +1575,7 @@ def _dedup_items(items: list[FeedItem]) -> list[FeedItem]:
     (instant rollback, not a long-lived mode).
     """
     from app.config import settings
+    from app.treasury_identity import compatible
     if not settings.merge_dedup:
         return _dedup_items_legacy(items)
 
@@ -1584,7 +1585,7 @@ def _dedup_items(items: list[FeedItem]) -> list[FeedItem]:
         words = _title_words(item.title)
         matched = False
         for i, aw in enumerate(anchor_words):
-            if _jaccard(words, aw) >= _DEDUP_THRESHOLD:
+            if compatible(item, survivors[i]) and _jaccard(words, aw) >= _DEDUP_THRESHOLD:
                 incumbent = survivors[i]
                 if _source_tier(item.source) < _source_tier(incumbent.source):
                     # better tier wins; incumbent (and its provenance) folds in
@@ -1610,11 +1611,13 @@ def _dedup_items_legacy(items: list[FeedItem]) -> list[FeedItem]:
     newest-first, so the freshest survives and corroboration is destroyed).
     Kept verbatim as the merge_dedup=False rollback path.
     """
+    from app.treasury_identity import compatible
     kept: list[FeedItem]       = []
     kept_words: list[set[str]] = []
     for item in items:
         words = _title_words(item.title)
-        if any(_jaccard(words, kw) >= _DEDUP_THRESHOLD for kw in kept_words):
+        if any(compatible(item, prior) and _jaccard(words, kw) >= _DEDUP_THRESHOLD
+               for prior, kw in zip(kept, kept_words)):
             log.debug("Dedup dropped: %.80s", item.title)
             continue
         kept.append(item)

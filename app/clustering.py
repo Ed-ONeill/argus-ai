@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from app.treasury_identity import compatible as same_treasury_occurrence, item_identity_text
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -298,6 +299,8 @@ def _should_cluster(
     primary:   "FeedItem",                  # noqa: F821
     salient_vocab: frozenset[str] = frozenset(),
 ) -> bool:
+    if not same_treasury_occurrence(candidate, primary):
+        return False
     # ── Time gate — fast, always first ────────────────────────────────────────
     dt_c, dt_p = getattr(candidate, "published_dt", None), getattr(primary, "published_dt", None)
     if dt_c and dt_p:
@@ -402,7 +405,7 @@ def _build_cluster(items: list) -> StoryCluster:
             for m in all_related[_MAX_RELATED:]
         ]
     cid = hashlib.md5(
-        (primary.title + primary.url).encode("utf-8", errors="ignore")
+        item_identity_text(primary).encode("utf-8", errors="ignore")
     ).hexdigest()[:12]
     return StoryCluster(
         id=cid,

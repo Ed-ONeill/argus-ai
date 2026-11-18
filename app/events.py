@@ -64,6 +64,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.companies import looks_like_ticker, resolve_companies
+from app.treasury_identity import occurrence_key as treasury_occurrence_key
 
 log = logging.getLogger(__name__)
 
@@ -231,6 +232,7 @@ class MarketEvent:
     uid: str = ""
     cycles_observed: int = 0
     schema_version: int = EVENT_SCHEMA_VERSION
+    occurrence_key: str = ""      # exact official Treasury auction, not its shared landing URL
 
     def to_dict(self) -> dict:
         return {
@@ -432,6 +434,10 @@ def _fold_near_duplicates(events: list[MarketEvent],
         target = None
         ev_tokens = _title_tokens(ev.title)
         for k in kept:
+            occurrence = getattr(ev, "occurrence_key", "")
+            prior_occurrence = getattr(k, "occurrence_key", "")
+            if (occurrence or prior_occurrence) and occurrence != prior_occurrence:
+                continue
             if k.event_type != ev.event_type:
                 continue
             if k.companies and ev.companies and set(k.companies) == set(ev.companies):
@@ -627,6 +633,7 @@ def build_market_events(clusters: list, themes: list,
                                getattr(cluster.primary, "snippet", "") or "")
         event = MarketEvent(
             id=cluster.id,
+            occurrence_key=treasury_occurrence_key(cluster.primary),
             title=getattr(cluster.primary, "title", "") or cluster.theme_label,
             event_type=etype,
             first_seen=first_seen,

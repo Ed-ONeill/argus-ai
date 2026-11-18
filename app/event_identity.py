@@ -147,7 +147,8 @@ def _candidate_from_event(event: Any) -> _Candidate:
         urls=urls,
         event_type=getattr(event, "event_type", "") or "",
         first_seen=getattr(event, "first_seen", "") or "",
-        natural_keys=tuple(getattr(event, "natural_keys", None) or []),
+        natural_keys=tuple(getattr(event, "natural_keys", None) or []) + (
+            (event.occurrence_key,) if getattr(event, "occurrence_key", "") else ()),
         # Missing article titles may use the event headline only for a single
         # URL. A multi-article event cannot vouch for each article that way.
         article_titles=tuple((e.url, _words(getattr(e, "title", "") or
@@ -406,6 +407,10 @@ class IdentityAuthority:
             uid = self._nk_index.get(nk)
             if uid is not None:
                 return (self.resolve(uid), "natural_key", 1.0)
+        # A reusable Treasury landing page and boilerplate title cannot link
+        # distinct issuances (or revive a pre-discriminator historical union).
+        if any(nk.startswith("treasury:") for nk in cand.natural_keys):
+            return None
         # rule 1 — attested article continuity. Historical membership alone is
         # insufficient. Look at ALL owners: a URL can occur in both an old
         # contaminated identity and a new, correctly grounded identity. A
