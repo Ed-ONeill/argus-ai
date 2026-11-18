@@ -1,0 +1,47 @@
+[
+  {
+    "id": "R24",
+    "split": "development",
+    "title": "Nvidia’s booming demand is ‘hard to ignore,’ but these four questions loom over the stock",
+    "snippet": "Nvidia investors face uncertainty around CEO succession, the AI ecosystem, export controls and China.",
+    "url": "https://www.marketwatch.com/story/what-wall-street-analysts-are-now-saying-after-nvidias-beat-and-raise-quarter-9311c85d?mod=mw_rss_topstories",
+    "source": "MarketWatch",
+    "theme": "semiconductor-capex-cycle",
+    "mechanism": "AI-driven chip demand and export-control-induced supply concentration are sustaining an elevated semiconductor equipment investment cycle, with TSMC capacity expansion and domestic-fab subsidies creating multi-year earnings visibility for the equipment-and-materials stack.",
+    "human_decision": null,
+    "reviewer": null,
+    "rationale": null,
+    "reviewed_at": null,
+    "model_recommendation": null
+  },
+  {
+    "id": "R25",
+    "split": "development",
+    "title": "How copper’s plunge could hurt the AI buildout",
+    "snippet": "The world might not be able to mine enough copper to meet AI’s demand for years to come.",
+    "url": "https://www.marketwatch.com/story/coppers-plunge-could-make-the-ai-data-center-buildout-more-painful-7057f41c?mod=mw_rss_topstories",
+    "source": "MarketWatch",
+    "theme": "ai-compute-arms-race",
+    "mechanism": "Frontier-model labs and hyperscalers are committing to multi-gigawatt training clusters faster than accelerator supply can scale, turning raw compute access into the binding competitive constraint and a durable demand floor under the entire AI hardware stack.",
+    "human_decision": null,
+    "reviewer": null,
+    "rationale": null,
+    "reviewed_at": null,
+    "model_recommendation": null
+  },
+  {
+    "id": "R26",
+    "split": "development",
+    "title": "Direct lenders provide $1.3bn for L Catterton’s Fullscript deal",
+    "snippet": "A group of private credit managers has provided a $1.3bn loan to finance L Catterton and Altas Partners’ acquisition of a majority stake in healthcare platform Fullscript, replacing debt commitments underwritten by a Morgan Stanley-led bank group, according to a report by Bloomberg.Morgan Stanley reportedly placed the loan with direct lenders including Antares Capital, Blue Owl Capital, Carlyle and Golub Capital. It priced at 400 basis points above the Secured Overnight Financing Rate and was is",
+    "url": "https://privateequitywire.com/news/direct-lenders-provide-1-3bn-for-l-cattertons-fullscript-deal",
+    "source": "PE Wire",
+    "theme": "private-credit-expansion",
+    "mechanism": "Structural capital-requirement increases under Basel III are accelerating the transfer of lending market share from regulated banks to alternative credit managers. A secular shift that is creating fee-income winners irrespective of the credit cycle.",
+    "human_decision": null,
+    "reviewer": null,
+    "rationale": null,
+    "reviewed_at": null,
+    "model_recommendation": null
+  }
+]

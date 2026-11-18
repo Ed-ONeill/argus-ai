@@ -8,6 +8,12 @@ findings and publishing after verification, superseding intermediate approval
 stops for that remediation only. See [the current remediation record](AUDIT_REMEDIATION_2026_11_17.md).
 Historical slice closures and human-label requirements below remain unchanged.
 
+November 18 update: the user authorized finishing all outstanding audit findings
+without further intermediate implementation approvals, and volunteered for the
+accuracy review and owner pilot. [Current evidence and remaining dependencies](AUDIT_CLOSEOUT_2026_11_18.md)
+supersede stale statuses below. This does not authorize invented human labels,
+paid plan changes, third-party outreach or historical data cleanup.
+
 ## Operating agreement
 
 - Work one causal problem per implementation slice, with separate commits and
@@ -30,18 +36,19 @@ Historical slice closures and human-label requirements below remain unchanged.
 |---|---|---|
 | A1 / TM1a | Fresh post-deployment full-cycle ticker-collision negative and legitimate-company positive controls, traced source to membership, with evidence checks | CLOSED 2026-09-16; exact cycle-139 snapshot and bounded controls validated |
 | A2 / TM1b | Read-only generic/entity/multiple-specific-term diagnosis, reviewed relevance labels, then a separately scoped correction and production validation | Diagnosis and 23/23 human review accepted 2026-09-22; TM1b1 `0b1acc0` implemented/deployed, 1,384 backend tests passed; fresh semantic controls pending |
-| A3 / DI1 | Direct participants and contextual exposures have distinct, tested source-to-display contracts | Not started |
-| A4 / MI1 | Instrument, proxy role, unit, and observation date are honest everywhere affected | Not started |
-| A5 / MA1 | Transaction existence, type, and lifecycle are distinct; unknown is valid | Not started |
-| A6 / HG1 | Home explanations/questions have recorded support or are omitted | Not started |
+| A3 / DI1 | Direct participants and contextual exposures have distinct, tested source-to-display contracts | Audit corrections shipped for subject selection and contextual exposure; see November 17 release record; no blanket formal DI1 closure claimed |
+| A4 / MI1 | Instrument, proxy role, unit, and observation date are honest everywhere affected | Crypto identity/unit/date corrections shipped and authenticated observations recorded; broader all-surface milestone not automatically closed |
+| A5 / MA1 | Transaction existence, type, and lifecycle are distinct; unknown is valid | Explicit role/lifecycle/unknown-state corrections shipped and validated; separate from theme matching |
+| A6 / HG1 | Home explanations/questions have recorded support or are omitted | Audit Home grounding/presentation work recorded in November remediation; no blanket claim that every inference is causally validated |
 | E1 / Evaluation | 150-200 distinct events with human-approved dimension-specific labels and unseen event-group holdout | 125 unreviewed observation candidates; first review batch prepared |
-| O1 / Release gates | Existing tests/checks run reproducibly before release; release revision and rollback are recorded | Prior gates run locally; automation not implemented |
-| O2 / Pipeline health | Liveness, readiness, freshness, source coverage, and archive outcomes have separate truthful operational states | Separate read-only ticket prepared; no runtime change |
+| O1 / Release gates | Existing tests/checks run reproducibly before release; release revision and rollback are recorded | CI implemented and main branch protected; required frontend/backend checks enforced |
+| O2 / Pipeline health | Liveness, readiness, freshness, source coverage, and archive outcomes have separate truthful operational states | Runtime checks deployed; external scheduled monitor passed; four publisher access gaps and production recovery proof remain open |
 
 A1 is complete. The user accepted TM1b human review and authorized only
 consumer-stress spending qualification (TM1b1), including normal deployment.
-See [implementation and validation record](RC3_TM1B1_IMPLEMENTATION.md). Stop
-after this slice; another trigger family or DI1 requires a separate decision.
+See [implementation and validation record](RC3_TM1B1_IMPLEMENTATION.md).
+The November audit authorizations above supersede the former intermediate stop
+for the named remediation work. TM1b1's specified live positive is still pending.
 
 Phase 1 exit: each semantic milestone has its own validated closure; the reviewed
 benchmark and release/operational gates have explicit evidence. Report incomplete
