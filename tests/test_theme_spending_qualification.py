@@ -89,7 +89,9 @@ def test_other_existing_support_bypasses_spending_only_gate(title, snippet):
     assert "candidate" in extract(seeded(cluster("candidate", title, snippet)))["consumer-stress"]["contributing_cluster_ids"]
 
 
-def test_unrelated_theme_payloads_match_prechange_capture():
+def test_unrelated_theme_payloads_match_prechange_capture(monkeypatch):
+    # Isolate TM1b1's spending rule; later mechanism eligibility has its own controls.
+    monkeypatch.setattr(graph, "mechanism_supported", lambda *args: True)
     baseline = json.loads((FIXTURES / "theme_spending_unrelated_baseline.json").read_text(encoding="utf-8"))
     for record in CONTROLS:
         candidates = seeded(cluster(record["id"], record["title"], record["snippet"],
