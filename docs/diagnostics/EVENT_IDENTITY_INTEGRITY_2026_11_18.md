@@ -1,6 +1,10 @@
-# Persistent event-identity integrity — local implementation
+# Persistent event-identity integrity — implementation
 
-Status: **IMPLEMENTED / LOCALLY VALIDATED / NOT DEPLOYED**.
+Status: **IMPLEMENTED / DEPLOYED / FRESH-CYCLE AUTHENTICATED UI VALIDATED**.
+
+Implementation: `4f6277960a541fd1f9a189622fe9f56a6132fbde`.
+See [production validation](EVENT_IDENTITY_PRODUCTION_VALIDATION_2026_11_18.md)
+for the bounded deployment result and remaining limits.
 
 Scope: persistent identity matching and regression coverage only. Path 1,
 TM1b1, frontend behavior, event scoring formulas, and historical cleanup are
@@ -81,5 +85,5 @@ cache clearing or production journal editing is required. After a separately
 approved deployment, validate a successful fresh full-feed cycle: distinct
 Microsoft/debt/loan events (if still present), no contaminated UID reuse or
 evidence union, a legitimate same-event continuity control, and unchanged
-source-count rules. Production validation remains pending; no next slice has
-started.
+source-count rules. That separately authorized validation is recorded in the
+linked production report. No next slice has started.
