@@ -6,8 +6,8 @@ theme label (e.g. "Japan Rate Shock", "NVDA Earnings Beat").
 
 Design principles:
   - Prefer under-clustering over over-clustering.
-  - Two distinct paths: entity-overlap (stronger) and title-similarity (weaker).
-  - Both paths require a time-window gate; similarity path is stricter.
+  - Entity overlap needs supporting headline content beyond company identity.
+  - All three paths require time-window gates; title similarity is stricter.
   - Generic entities (USD, Fed, S&P, etc.) are excluded from entity-overlap matching
     to prevent semantically unrelated stories from being grouped.
   - Path 3 (salient topic anchor) never merges on a lone shared word (RC3-EA1):
@@ -21,7 +21,10 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.feeds import FeedItem
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +32,8 @@ log = logging.getLogger(__name__)
 # ── Thresholds ─────────────────────────────────────────────────────────────────
 
 _ENTITY_WINDOW_H  = 6     # max hours between items to cluster via shared entity
+_ENTITY_MIN_SUPPORT = 2   # shared headline tokens beyond company names/tickers
+_ENTITY_CONTENT_THRESH = 0.45  # Jaccard on that remaining headline content
 _JACCARD_WINDOW_H = 3     # window for title-similarity path
 _JACCARD_THRESH   = 0.45  # minimum Jaccard on non-stop title tokens (high = strict)
 _JACCARD_MIN_TOKS = 4     # both titles must have ≥ N tokens to use Jaccard path
@@ -260,6 +265,34 @@ def _build_salient_vocab(items: list) -> frozenset[str]:
 
 # ── Clustering predicate ───────────────────────────────────────────────────────
 
+def _entity_event_support(candidate: "FeedItem", primary: "FeedItem",
+                          entities: set[str]) -> bool:
+    """Company identity cannot also serve as evidence of event identity.
+
+    Compare headline content after removing the supplied entities and their
+    registered names/aliases. Require both multiple shared content words and
+    substantial overlap, so a long name or one incidental topic cannot carry
+    Path 1. This is conservative lexical support, not semantic equivalence.
+    The registry is read only; entity resolution and other paths are unchanged.
+    """
+    from app.companies import COMPANY_REGISTRY
+
+    identity_tokens: set[str] = set()
+    for entity in entities:
+        identity_tokens.update(_title_tokens(entity))
+        company = COMPANY_REGISTRY.get(entity)
+        if company is not None:
+            for name in (company.name, *company.aliases):
+                identity_tokens.update(_title_tokens(name))
+    content_c = _title_tokens(candidate.title) - identity_tokens
+    content_p = _title_tokens(primary.title) - identity_tokens
+    shared = content_c & content_p
+    return (
+        len(shared) >= _ENTITY_MIN_SUPPORT
+        and len(shared) / len(content_c | content_p) >= _ENTITY_CONTENT_THRESH
+    )
+
+
 def _should_cluster(
     candidate: "FeedItem",                  # noqa: F821
     primary:   "FeedItem",                  # noqa: F821
@@ -274,10 +307,16 @@ def _should_cluster(
 
     # ── Path 1: Shared specific entity ────────────────────────────────────────
     # Both items must carry at least one specific (non-broad, non-sector) entity in
-    # common. Sector labels are excluded so unrelated same-sector stories don't merge.
+    # common. Subject overlap alone is insufficient: the headlines must also
+    # support the same event independently of those company names/tickers.
+    # Sector labels are excluded so same-sector stories do not get this path.
     spec_c = {e for e in getattr(candidate, "affected_entities", []) if e not in _NON_SPECIFIC}
     spec_p = {e for e in getattr(primary,   "affected_entities", []) if e not in _NON_SPECIFIC}
-    if spec_c and spec_p and (spec_c & spec_p) and delta_h <= _ENTITY_WINDOW_H:
+    if (
+        spec_c & spec_p
+        and delta_h <= _ENTITY_WINDOW_H
+        and _entity_event_support(candidate, primary, spec_c | spec_p)
+    ):
         return True
 
     # ── Path 2: High title-token similarity (conservative fallback) ────────────
