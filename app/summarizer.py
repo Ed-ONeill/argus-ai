@@ -32,6 +32,7 @@ from typing import NamedTuple
 from app.config import settings
 from app.feeds  import FeedItem
 from app.model  import Message, get_client
+from app.bounded_cache import BoundedCache
 
 log = logging.getLogger(__name__)
 
@@ -65,17 +66,17 @@ _TEMPERATURE = 0.2  # low = factual and deterministic
 # ── In-memory summary cache ───────────────────────────────────────────────────
 # key → (summary, why_it_matters, impact)
 
-_SUMMARY_CACHE: dict[str, tuple[str, str, str]] = {}
+_SUMMARY_CACHE = BoundedCache(2048)
 
 # ── In-memory deep-analysis cache ─────────────────────────────────────────────
 # key → (what_changed, why_markets_care, who_wins_loses, what_to_watch)
 
-_DEEP_CACHE: dict[str, tuple[str, str, str, str]] = {}
+_DEEP_CACHE = BoundedCache(512)
 
 # ── In-memory Today's Take cache ──────────────────────────────────────────────
 # key → 2-3 sentence market environment summary
 
-_TAKE_CACHE: dict[str, str] = {}
+_TAKE_CACHE = BoundedCache(128)
 
 _TAKE_SYSTEM = """\
 You are the head of macro strategy at a top-tier multi-strategy hedge fund. Write exactly 2 sentences. No labels, no headers.
@@ -472,9 +473,10 @@ def analyze_item_deep(
     raw = (title + "|" + snippet).encode("utf-8", errors="ignore")
     key = hashlib.md5(raw).hexdigest()
 
-    if key in _DEEP_CACHE:
+    cached = _DEEP_CACHE.get(key)
+    if cached is not None:
         log.debug("Deep analysis cache hit: %.60s", title)
-        changed, why_care, who_wins, watch = _DEEP_CACHE[key]
+        changed, why_care, who_wins, watch = cached
         return DeepAnalysis(changed, why_care, who_wins, watch)
 
     _ = model_name  # informational only; backend determines actual model
@@ -595,8 +597,8 @@ def generate_market_take(
         return ""
 
     key = _take_cache_key(candidates)
-    if key in _TAKE_CACHE:
-        cached = _TAKE_CACHE[key]
+    cached = _TAKE_CACHE.get(key)
+    if cached is not None:
         log.info("[take] cache hit  chars=%d  preview=%.80r", len(cached), cached)
         return cached
 
@@ -668,7 +670,7 @@ Confidence: 50 = contradictory data, 65 = moderate conviction, 80 = strong conse
 Hard rules: Be specific — name instruments, figures, sectors. No hedging language. No filler. No "could", "may", "might", "suggests".\
 """
 
-_BRIEF_CACHE: dict[str, MarketBrief] = {}
+_BRIEF_CACHE = BoundedCache(128)
 
 
 def _parse_market_brief(text: str) -> "MarketBrief | None":
@@ -731,10 +733,11 @@ def generate_market_brief(
         )
 
     key = _take_cache_key(candidates)   # reuse same hash logic as market take
-    if key in _BRIEF_CACHE:
+    cached = _BRIEF_CACHE.get(key)
+    if cached is not None:
         log.info("[brief] cache hit  regime=%s  confidence=%d",
-                 _BRIEF_CACHE[key].market_regime, _BRIEF_CACHE[key].confidence)
-        return _BRIEF_CACHE[key]
+                 cached.market_regime, cached.confidence)
+        return cached
 
     lines = [
         f"{n}. {(i.summary or i.title)[:120]}"
