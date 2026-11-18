@@ -71,8 +71,9 @@ class FeedItemSchema(BaseModel):
     @classmethod
     def from_item(cls, item: FeedItem) -> "FeedItemSchema":
         import hashlib
+        from app.treasury_identity import item_identity_text
         item_id = hashlib.md5(
-            (item.title + item.url).encode("utf-8", errors="ignore")
+            item_identity_text(item).encode("utf-8", errors="ignore")
         ).hexdigest()
         fetched = getattr(item, "fetched_at", None)
         return cls(
@@ -148,8 +149,9 @@ class RelatedStorySchema(BaseModel):
     @classmethod
     def from_item(cls, item: FeedItem) -> "RelatedStorySchema":
         import hashlib
+        from app.treasury_identity import item_identity_text
         return cls(
-            id=hashlib.md5((item.title + item.url).encode("utf-8", errors="ignore")).hexdigest()[:12],
+            id=hashlib.md5(item_identity_text(item).encode("utf-8", errors="ignore")).hexdigest()[:12],
             title=item.title,
             url=item.url,
             source=item.source,
