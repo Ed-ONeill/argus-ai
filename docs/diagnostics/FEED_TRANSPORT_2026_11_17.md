@@ -85,3 +85,56 @@ reports `success` at `2026-11-17T21:54:13Z` for Railway's
 confirmation, not a fresh feed/status inspection or rendered UI validation.
 Per-service runtime provenance and actual source outcomes remain to be checked.
 The user does not know of approved replacement feed access; none was assumed.
+
+## Authenticated production validation — November 18
+
+Status: IMPLEMENTED / DEPLOYED / BOUNDED PRODUCTION CHECKS PASSED.
+Publisher coverage remains partial; this is not an all-sources-healthy closure.
+
+Chrome access was restored. Railway's refreshed backend Details panel showed
+active successful deployment `a320b219-f442-4c1f-a087-8a0af7b52f62`, linked to
+`6cbf3d4a341f020ddfa0c74eec6c4dcee594c4d1`, deployed November 17 at 16:52 EST.
+The initially open Railway tab was stale; the refreshed service-specific
+deployment, rather than its old cached display, is the provenance evidence.
+
+Authenticated `/api/feed/` and `/api/feed/status` bodies matched exactly twice:
+
+| Full-feed cycle | Snapshot generated_at (UTC) | Items / clusters / returned events | Completed at (UTC) |
+| --- | --- | --- | --- |
+| cycle-208 / `20261118T181524091176Z` | `2026-11-18T18:15:41.589004+00:00` | 86 / 74 / 36 | `2026-11-18T18:16:05.694006+00:00` |
+| cycle-209 / `20261118T182110143727Z` | `2026-11-18T18:21:42.324111+00:00` | 88 / 76 / 37 | `2026-11-18T18:22:10.683101+00:00` |
+
+Both were naturally completed cycles with all stages `ok`, successful memory
+and disk caches, completed institutional-memory persistence, no last failure,
+and non-stale feed responses. The final snapshot was not loaded from disk and
+did not predate the last refresh. Authenticated readiness returned
+`ready: true`, `reason: ready`. No Refresh button, recompute or redeploy was used.
+
+Both payloads exposed the corrected coverage errors:
+
+| Source | Production error | Result |
+| --- | --- | --- |
+| Yahoo Finance | `HTTP 404: feed endpoint unavailable` | Still unavailable; accurately reported |
+| PE Hub | `publisher access page: www.privateequityinternational.com/registration/` | Approved syndication endpoint still needed |
+| Buyouts | Same PEI access-page error | Approved syndication endpoint still needed |
+| Power Magazine | `HTTP 403: publisher access denied` | Additional observed coverage failure; not bypassed |
+| FERC | `HTTP 503: publisher request failed` | Additional observed coverage failure |
+
+Federal Reserve was absent from the error map and contributed one retained
+report: item `fafd06538209df6e8835b4f356125826`, the agencies' extension of the
+third-party risk guidance comment period, published November 13 at 21:15 UTC.
+Its source URL remained
+`https://www.federalreserve.gov/newsevents/pressreleases/bcreg20261113a.htm`.
+This establishes restored visible coverage in the inspected snapshots, not the
+cause of the previous intermittent failure or a guarantee of future availability.
+
+The FERC-labelled registry request was visible in production logs as a Google
+News RSS query returning 503; it is not proof that FERC's own website failed.
+The healthy refresh cycle does not erase any of these five coverage failures.
+Cooldown correctness, time/size limits and cache-recovery branches remain
+regression-test evidence; they were not all deliberately induced in production.
+
+Observations were extracted from browser-visible response bodies and UI.
+Complete raw response bodies were not exported. No authentication material was
+copied. TM1b1's separate result is recorded in
+`rc3-tm1b1/PRODUCTION_VALIDATION_2026_11_18.md`.
