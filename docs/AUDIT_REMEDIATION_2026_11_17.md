@@ -29,6 +29,14 @@ change theme matching, event membership, graph semantics, or benchmark truth.
 
 ## Security exception
 
+**November 18 follow-up: exception removed.** GitHub withdrew
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) on
+November 18. A fresh complete npm audit reported zero vulnerabilities. The
+tooling gate now rejects every high/critical advisory with no allowlist. This
+is an advisory withdrawal and stricter release policy, not an upstream patch
+or a guarantee against undiscovered vulnerabilities. The original record below
+describes the November 17 state.
+
 The production dependency audit has no exemptions. A current unpatched
 picomatch advisory, GHSA-fc5q-39xc-vjpf, remains in development/build tooling.
 These patterns are repository-controlled, not user input to the deployed app.
