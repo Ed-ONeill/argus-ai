@@ -25,6 +25,7 @@ from app.data.theme_ontology import THEME_ONTOLOGY, THEME_CATALOG  # noqa: F401
 from app.causal_chain import build_causal_narrative
 from app.language_quality import score_text_quality
 from app.companies import COMPANY_REGISTRY, resolve_companies
+from app.theme_relevance import mechanism_supported
 
 log = logging.getLogger(__name__)
 
@@ -528,6 +529,10 @@ def extract_themes(
                 continue
 
             if raw <= 0:
+                continue
+
+            if not mechanism_supported(theme_id, getattr(item, "title", "") or "",
+                                       getattr(item, "snippet", "") or ""):
                 continue
 
             all_kw_hits_total += kw_hits

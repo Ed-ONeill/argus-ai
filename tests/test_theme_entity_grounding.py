@@ -90,7 +90,9 @@ def test_explicit_company_controls_keep_membership(title, theme_id):
     assert 'candidate' in theme(seeded(theme_id, cluster('candidate', title)), theme_id).contributing_cluster_ids
 
 
-def test_positive_payloads_preserve_existing_scores_and_order():
+def test_positive_payloads_preserve_existing_scores_and_order(monkeypatch):
+    # Isolate the closed TM1a resolver contract from the later mechanism gate.
+    monkeypatch.setattr(graph, 'mechanism_supported', lambda *args: True)
     expected = json.loads((FIXTURES / 'theme_entity_positive_baseline.json').read_text(encoding='utf-8'))
     for theme_id, titles in POSITIVES.items():
         graph._momentum_tracker = graph.ThemeMomentumTracker()
@@ -113,7 +115,9 @@ def test_event_evidence_and_direct_entities_are_not_mutated_by_theme_gating():
     assert len(actual) == len(candidates)
 
 
-def test_generic_keyword_policy_is_unchanged_in_tm1a():
+def test_generic_keyword_policy_is_unchanged_in_tm1a(monkeypatch):
+    # This historical layer check does not authorize generic-only production relevance.
+    monkeypatch.setattr(graph, 'mechanism_supported', lambda *args: True)
     candidates = [cluster('a', 'Alibaba reports results'),
                   cluster('b', 'PDD authorizes dividend payment', source='Financial Times'),
                   cluster('generic', 'Chinese athletes open sports festival')]
