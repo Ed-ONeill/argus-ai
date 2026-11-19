@@ -39,6 +39,9 @@ Full local backend suite: 1,555 passed, two existing short-test-key warnings.
 This includes 18 pre-existing local tests that are not part of this change.
 Three existing E701 style findings in `source_tier` are outside the patch; no
 new lint findings. Protected-branch release checks are required before merge.
+The frontend's source-contract test is updated to recognize the unchanged
+generic User-Agent as the downloader's default parameter; backend HTTP tests
+verify both the generic default and explicitly configured SEC identity.
 
 Production acceptance remains pending deployment: observe the deployed revision,
 one successful fresh full-feed cycle and persistence, RSS/SEC timings, readiness,

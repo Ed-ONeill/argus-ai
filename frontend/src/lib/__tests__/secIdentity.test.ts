@@ -174,7 +174,8 @@ describe("the non-SEC feed identity is not in scope", () => {
     const transport = readFileSync(resolve(ROOT, "app/rss_transport.py"), "utf8");
     // Generic RSS now downloads through its bounded transport. The identity
     // remains unchanged and is separate from the SEC fair-access identity.
-    expect(transport).toContain('"User-Agent": "Argus-AI/1.0"');
+    expect(transport).toContain('user_agent: str = "Argus-AI/1.0"');
+    expect(transport).toContain('"User-Agent": user_agent');
   });
 
   it("the FRED credit-spread caller is untouched", () => {
