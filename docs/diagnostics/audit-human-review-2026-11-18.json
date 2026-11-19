@@ -8,11 +8,12 @@
     "source": "MarketWatch",
     "theme": "semiconductor-capex-cycle",
     "mechanism": "AI-driven chip demand and export-control-induced supply concentration are sustaining an elevated semiconductor equipment investment cycle, with TSMC capacity expansion and domestic-fab subsidies creating multi-year earnings visibility for the equipment-and-materials stack.",
-    "human_decision": null,
-    "reviewer": null,
+    "human_decision": "A",
+    "reviewer": "Edward (user)",
     "rationale": null,
-    "reviewed_at": null,
-    "model_recommendation": null
+    "reviewed_at": "2026-11-18",
+    "model_recommendation": null,
+    "user_message_reference": "ok i upgraded to pro, and my accuracy is A for all"
   },
   {
     "id": "R25",
@@ -23,11 +24,12 @@
     "source": "MarketWatch",
     "theme": "ai-compute-arms-race",
     "mechanism": "Frontier-model labs and hyperscalers are committing to multi-gigawatt training clusters faster than accelerator supply can scale, turning raw compute access into the binding competitive constraint and a durable demand floor under the entire AI hardware stack.",
-    "human_decision": null,
-    "reviewer": null,
+    "human_decision": "A",
+    "reviewer": "Edward (user)",
     "rationale": null,
-    "reviewed_at": null,
-    "model_recommendation": null
+    "reviewed_at": "2026-11-18",
+    "model_recommendation": null,
+    "user_message_reference": "ok i upgraded to pro, and my accuracy is A for all"
   },
   {
     "id": "R26",
@@ -38,10 +40,11 @@
     "source": "PE Wire",
     "theme": "private-credit-expansion",
     "mechanism": "Structural capital-requirement increases under Basel III are accelerating the transfer of lending market share from regulated banks to alternative credit managers. A secular shift that is creating fee-income winners irrespective of the credit cycle.",
-    "human_decision": null,
-    "reviewer": null,
+    "human_decision": "A",
+    "reviewer": "Edward (user)",
     "rationale": null,
-    "reviewed_at": null,
-    "model_recommendation": null
+    "reviewed_at": "2026-11-18",
+    "model_recommendation": null,
+    "user_message_reference": "ok i upgraded to pro, and my accuracy is A for all"
   }
 ]
