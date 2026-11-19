@@ -1627,6 +1627,11 @@ def _dedup_items_legacy(items: list[FeedItem]) -> list[FeedItem]:
 
 # ── FeedManager ───────────────────────────────────────────────────────────────
 
+_SEC_BATCH_BUDGET_SECONDS = 20.0
+_SEC_REQUEST_TIMEOUT_SECONDS = 4.0
+_SEC_REQUEST_INTERVAL_SECONDS = 0.11
+
+
 class FeedManager:
     """Fetches, scores, deduplicates, and sorts RSS feed items."""
 
@@ -1634,6 +1639,8 @@ class FeedManager:
         self._ttl = ttl
         self._cache: dict[str, tuple[float, list[FeedItem]]] = {}
         self._retry_after: dict[str, tuple[float, str]] = {}
+        self._sec_cursor = 0
+        self._sec_next_request_at = 0.0
         self.fetch_errors:   dict[str, str] = {}  # source → error msg, cleared each call
         self.promo_excluded: int            = 0   # items hard-excluded per fetch_all call
         # OP1.1: first time this process observed each item URL. TTL re-fetches
@@ -1666,6 +1673,7 @@ class FeedManager:
         self.fetch_errors.clear()
 
         # ── Parallel fetch ────────────────────────────────────────────────────
+        rss_started = time.monotonic()
         raw_items: list[FeedItem] = []
         with ThreadPoolExecutor(max_workers=min(len(registry), _FETCH_WORKERS)) as pool:
             futures = {
@@ -1684,9 +1692,12 @@ class FeedManager:
                     self.fetch_errors[name] = msg
                     log.debug("Feed future failed [%s]: %s", name, msg)
 
+        log.info("Feed RSS fetch completed in %.2fs", time.monotonic() - rss_started)
+
         # ── SEC watchlist (curated 8-K material events) ───────────────────────
         # Fetched outside the RSS pool so item-level materiality filtering and
         # title rewriting can run. Items merge into the same scoring/dedup path.
+        sec_started = time.monotonic()
         try:
             sec_items = self._fetch_sec_watchlist(force_refresh=force_refresh)
             raw_items.extend(sec_items)
@@ -1694,6 +1705,8 @@ class FeedManager:
         except Exception as exc:
             self.fetch_errors["SEC Filings"] = str(exc)
             log.debug("SEC watchlist fetch failed: %s", exc)
+        finally:
+            log.info("Feed SEC fetch completed in %.2fs", time.monotonic() - sec_started)
 
         # ── First-observation stamp (OP1.1) ───────────────────────────────────
         # Stable per URL for the process lifetime; items returned from the
@@ -1836,7 +1849,6 @@ class FeedManager:
         WARNING so the absence is visible in production (which runs at INFO), the
         same observability rule RC2-D1 established for dead podcast sources.
         """
-        import feedparser
         ua = _sec_user_agent()
         if not ua:
             log.warning(
@@ -1847,16 +1859,47 @@ class FeedManager:
             self.fetch_errors["SEC:config"] = "ARGUS_SEC_CONTACT not set"
             return []
         out: list[FeedItem] = []
-        for ticker, cik in _SEC_WATCHLIST.items():
+        issuers = list(_SEC_WATCHLIST.items())
+        deadline = time.monotonic() + _SEC_BATCH_BUDGET_SECONDS
+        start = self._sec_cursor
+        for offset in range(len(issuers)):
+            index = (start + offset) % len(issuers)
+            ticker, cik = issuers[index]
             url = _SEC_8K_ATOM_URL.format(cik=cik)
+            error_key = f"SEC:{ticker}"
             now = time.time()
+            retry = self._retry_after.get(url)
+            if retry and time.monotonic() < retry[0]:
+                self.fetch_errors[error_key] = retry[1]
+                out.extend(self._cache.get(url, (0, []))[1])
+                continue
             if not force_refresh and url in self._cache:
                 ts, cached = self._cache[url]
                 if now - ts < self._ttl:
                     out.extend(cached)
                     continue
+            # Stop starting requests once the batch budget is consumed. An
+            # in-flight HTTP operation may finish after it (per-operation timeout).
+            remaining = deadline - time.monotonic()
+            wait = max(0.0, self._sec_next_request_at - time.monotonic())
+            if remaining <= wait:
+                self.fetch_errors[error_key] = "SEC batch time budget exhausted"
+                out.extend(self._cache.get(url, (0, []))[1])
+                continue
+            if wait:
+                time.sleep(wait)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.fetch_errors[error_key] = "SEC batch time budget exhausted"
+                out.extend(self._cache.get(url, (0, []))[1])
+                continue
+            # Resume after the last attempted issuer, not always at the start;
+            # slow publishers cannot starve the tail of the watchlist.
+            self._sec_cursor = (index + 1) % len(issuers)
+            self._sec_next_request_at = time.monotonic() + _SEC_REQUEST_INTERVAL_SECONDS
             try:
-                feed = feedparser.parse(url, request_headers={"User-Agent": ua})
+                feed = read_feed(url, user_agent=ua,
+                                 timeout_seconds=min(_SEC_REQUEST_TIMEOUT_SECONDS, remaining))
                 items: list[FeedItem] = []
                 for entry in feed.entries:
                     summary = str(entry.get("summary", "") or "")
@@ -1889,10 +1932,15 @@ class FeedManager:
                     if len(items) >= _SEC_MAX_PER_CO:
                         break
                 self._cache[url] = (now, items)
+                self._retry_after.pop(url, None)
+                self.fetch_errors.pop(error_key, None)
                 out.extend(items)
                 log.debug("SEC watchlist [%s]: %d material 8-K(s)", ticker, len(items))
             except Exception as exc:
-                self.fetch_errors[f"SEC:{ticker}"] = str(exc)
+                msg = str(exc) if isinstance(exc, FeedFetchError) else type(exc).__name__
+                self.fetch_errors[error_key] = msg
+                if isinstance(exc, FeedFetchError):
+                    self._retry_after[url] = (time.monotonic() + exc.retry_seconds, msg)
                 if url in self._cache:
                     out.extend(self._cache[url][1])
         return out
