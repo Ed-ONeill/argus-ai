@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REVIEW = ROOT / "docs/diagnostics/rc3-tm1b"
 PACKETS = {p["id"]: p for p in json.loads((REVIEW / "human-review.json").read_text(encoding="utf-8"))}
 JUDGMENTS = json.loads((REVIEW / "human-adjudications.json").read_text(encoding="utf-8"))["judgments"]
+FOLLOWUP = json.loads((ROOT / "docs/diagnostics/audit-human-review-2026-11-18.json").read_text(encoding="utf-8"))
 NOW = datetime(2026, 11, 18, tzinfo=timezone.utc)
 
 
@@ -40,6 +41,39 @@ def test_reviewed_contributor_authority(judgment, isolated):
     actual = any(t.id == judgment["theme"] and packet["id"] in t.contributing_cluster_ids for t in themes)
     # B remains contextual, not re-labelled irrelevant; only A authorizes full contribution.
     assert actual == (judgment["human_decision"] == "A")
+
+
+@pytest.mark.parametrize("packet", FOLLOWUP, ids=lambda p: p["id"])
+def test_owner_followup_review(packet, isolated):
+    assert packet["human_decision"] == "A" and packet["reviewer"]
+    themes = graph.extract_themes([cluster(packet["id"], packet["title"], packet["snippet"])], now=NOW)
+    assert any(t.id == packet["theme"] and packet["id"] in t.contributing_cluster_ids for t in themes)
+
+
+@pytest.mark.parametrize("theme,title,snippet", [
+    ("semiconductor-capex-cycle", "Nvidia reports results", ""),
+    ("semiconductor-capex-cycle", "NVDA 8-K results of operations", ""),
+    ("semiconductor-capex-cycle", "Nvidia investors demand CEO resignation", ""),
+    ("semiconductor-capex-cycle", "Nvidia sees booming demand for its shares", ""),
+    ("semiconductor-capex-cycle", "Retailer sees booming demand", "Nvidia announces results."),
+    ("ai-compute-arms-race", "Copper prices fall while AI shares rise", ""),
+    ("ai-compute-arms-race", "AI forecasts copper shortages", "The housing industry faces insufficient copper."),
+    ("ai-compute-arms-race", "AI investment drives bond issuance", "Copper supply is insufficient for housing."),
+])
+def test_followup_does_not_admit_company_only_or_disconnected_material_context(theme, title, snippet):
+    assert not mechanism_supported(theme, title, snippet)
+
+
+@pytest.mark.parametrize("theme,title,snippet", [
+    ("semiconductor-capex-cycle", "Broadcom reports surging demand", ""),
+    ("semiconductor-capex-cycle", "TSMC’s growing demand drives outlook", ""),
+    ("semiconductor-capex-cycle", "$NVDA faces slowing demand", ""),
+    ("ai-compute-arms-race", "Copper shortages threaten AI buildout", ""),
+    ("ai-compute-arms-race", "Material constraints emerge", "Insufficient copper to meet AI demand."),
+])
+def test_followup_mechanisms_generalize_beyond_reviewed_titles(theme, title, snippet):
+    # Synthetic paraphrases test the contract, not additional human accuracy labels.
+    assert mechanism_supported(theme, title, snippet)
 
 
 @pytest.mark.parametrize("theme,title", [

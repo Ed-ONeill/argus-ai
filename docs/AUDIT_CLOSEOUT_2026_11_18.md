@@ -61,8 +61,17 @@ non-metabolic healthcare, corporate bonds and geographic China mentions cannot
 substitute for the reviewed theme mechanisms. Other theme families retain their
 existing policy. The gate remains lexical and may miss paraphrases or accept
 coincidental wording. This is a bounded correction, not full causal validation or
-a measured population precision/recall claim. R24–R26 are additional human-review
-requests; their answers remain separate from model predictions and benchmark truth.
+a measured population precision/recall claim. The owner subsequently adjudicated
+R24–R26 as A (directly relevant). These remain development judgments, separate
+from model predictions and unseen benchmark truth. The engine previously retained
+R26 but excluded R24 and R25. A focused follow-up recognizes resolved chip-supplier
+operating demand in a headline and explicit copper scarcity supporting AI demand
+or buildout. Company-only filings, securities demand and disconnected AI/commodity
+mentions remain insufficient. No rationale was invented for the owner's answers.
+The 26 development judgments now total 12 A, 5 B and 9 C. All 26 match the gate's
+full-contributor policy in isolated tests; that is not an accuracy estimate.
+The follow-up has 49 focused tests, with 1,547 passing in the local backend suite
+(including 18 pre-existing local tests excluded from the release).
 
 ## Operational exercises and external dependencies
 
@@ -76,11 +85,18 @@ approximately 483 KB responses. Observed p95 values were 7.5, 37.4 and 120.9 ms
 on this computer. This excludes real network/authentication, production hardware,
 ingestion and browser rendering; it is not a production user-capacity claim.
 
-Railway's authenticated backup screen showed **No Backups** and required Pro to
-create/schedule backups. No plan purchase, volume reset or destructive restore
-was performed. Owner preference requested: upgrade the existing service or use
-an approved external backup destination. A production restore exercise remains
-blocked until a real backup and isolated restore destination are available.
+Initially Railway's authenticated backup screen showed **No Backups** and required
+Pro. The owner upgraded the plan. On November 18, the authenticated backend-volume
+screen accepted daily (6-day retention), weekly (27-day retention), and monthly
+(89-day retention) schedules. A manual backup completed, displayed as
+**2026-11-18 19:18, 245 MB**, with a Restore control. Local screenshot:
+`outputs/backup-review-2026-11-18/backup-created.png` (not published).
+No production volume replacement, restore or deletion was performed. A successful
+backup and enabled schedules do not establish recovery correctness. The isolated
+cloud restore exercise still needs a safe destination/procedure; this backup does
+not cover the separate Supabase research store. Railway's documented restore
+replaces a service's volume through a staged deployment, so using the production
+Restore button as a test would put live data at risk.
 
 The fresh cycle reports four publisher failures: Yahoo Finance HTTP 404,
 PE Hub and Buyouts redirected to PEI registration, and Power Magazine HTTP 403.
@@ -94,8 +110,9 @@ coverage replacement. Existing other providers remain active.
 
 - TM1b1 household-pressure live positive and Path 1 live positive: await naturally
   occurring matching controls; do not force production examples or substitute tests.
-- Production backup/restore and deployment-sized capacity evidence: local
-  exercises are available, cloud proof remains outstanding.
+- Production backup creation/scheduling verified; isolated cloud restore and
+  deployment-sized capacity evidence remain outstanding. Local exercises alone
+  do not establish those results.
 - Human accuracy: 125 retained candidates are development observations; no labels
   have been automatically promoted. Future event-group holdout predictions must
   be frozen before human judgments and excluded from further tuning.
