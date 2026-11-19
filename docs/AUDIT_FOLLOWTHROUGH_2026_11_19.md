@@ -52,6 +52,13 @@ This is a small pilot smoke test, not API latency, sustained throughput, indepen
 users, saturation, write/load capacity, or a production scaling ceiling. No forced
 refresh, pipeline run, load-generating analysis call or authentication change.
 
+Subsequent readiness degradation exposed a separate unbounded SEC transport
+path. PR #13 now bounds issuer requests and records RSS/SEC timing separately.
+Fresh production validation passed; see
+[the transport validation](SEC_TRANSPORT_BUDGET_2026_11_19.md). Publisher/SEC
+coverage remains partial. A successful small read smoke test did not predict
+this refresh stall and must not be used to close sustained capacity work.
+
 ## Exact fresh snapshot and semantic controls
 
 Authenticated feed and status match `2026-11-19T18:19:36.317524+00:00`, cycle
@@ -105,6 +112,14 @@ false positives, and stratified sampling prevents a population accuracy claim.
 Reconcile source/mechanism support in the four disagreements before choosing a
 correction; do not automatically expand themes to fit every new answer. No runtime
 tuning has used this batch. The frozen prediction artifact remains unchanged.
+
+An additional reconciliation check flags H08 even though engine and owner both
+accepted it: the supplied grocery-delivery merger excerpt does not itself
+establish the household-pressure mechanism. Agreement alone is not independent
+proof. H01 lacks a snippet, while H02–H04 concern an Anthropic IPO rather than
+explicit power constraints. These are source-support gaps, not substituted human
+labels. Full text was not retrievable through the web tool. Additional source
+support or reviewer rationale is required before changing contribution rules.
 
 The owner selected five pilot subjects. A private first-session worksheet is
 prepared. Participation is not actual usage; no start date, voluntary visit,
