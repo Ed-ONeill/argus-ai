@@ -39,6 +39,29 @@ def test_compressed_xml_bom_is_decoded_and_metadata_preserved(monkeypatch):
     assert manager.fetch_errors == {}
 
 
+def test_configured_sec_identity_and_timeout_reach_http_client(monkeypatch):
+    def handler(request):
+        assert request.headers["user-agent"] == "Argus Market Intelligence ops@example.org"
+        assert request.extensions["timeout"]["read"] == 0.5
+        assert request.extensions["timeout"]["connect"] == 0.5
+        return httpx.Response(200, content=RSS)
+    mock_http(monkeypatch, handler)
+    assert len(rss.read_feed("https://example.test/feed",
+                            user_agent="Argus Market Intelligence ops@example.org",
+                            timeout_seconds=0.5).entries) == 1
+
+
+def test_custom_elapsed_budget_is_enforced(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(rss.time, "monotonic", lambda: clock[0])
+    def handler(request):
+        clock[0] = 0.6
+        return httpx.Response(200, content=RSS)
+    mock_http(monkeypatch, handler)
+    with pytest.raises(rss.FeedFetchError, match="time budget"):
+        rss.read_feed("https://example.test/feed", timeout_seconds=0.5)
+
+
 @pytest.mark.parametrize("status,reason", [
     (401, "authentication required"), (403, "access denied"),
     (404, "endpoint unavailable"), (410, "endpoint retired"),

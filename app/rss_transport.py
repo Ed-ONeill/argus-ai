@@ -40,15 +40,18 @@ def _retry_seconds(value: str | None, default: int = 300) -> float:
     return max(60, min(seconds, MAX_RETRY_SECONDS))
 
 
-def read_feed(url: str):
+def read_feed(url: str, *, user_agent: str = "Argus-AI/1.0",
+              timeout_seconds: float = TIMEOUT_SECONDS):
+    if timeout_seconds <= 0:
+        raise ValueError("Feed timeout must be positive")
     started = time.monotonic()
     chunks: list[bytes] = []
     size = 0
     try:
-        with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True,
+        with httpx.Client(timeout=timeout_seconds, follow_redirects=True,
                           max_redirects=3) as client:
             with client.stream("GET", url, headers={
-                "User-Agent": "Argus-AI/1.0",
+                "User-Agent": user_agent,
                 "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9",
             }) as response:
                 status = response.status_code
@@ -69,7 +72,7 @@ def read_feed(url: str):
                     size += len(chunk)
                     if size > MAX_BYTES:
                         raise FeedFetchError("RSS response exceeds 4 MiB download limit")
-                    if time.monotonic() - started > TIMEOUT_SECONDS:
+                    if time.monotonic() - started > timeout_seconds:
                         raise FeedFetchError("RSS download exceeded time budget")
                     chunks.append(chunk)
                 body = b"".join(chunks)
